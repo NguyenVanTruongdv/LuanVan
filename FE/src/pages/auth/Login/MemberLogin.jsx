@@ -1,0 +1,384 @@
+import { useState } from "react";
+import { useNavigate } from "react-router-dom";
+
+export default function MemberLogin() {
+    const [phone, setPhone] = useState("");
+    const [password, setPassword] = useState("");
+    const [showPassword, setShowPassword] = useState(false);
+    const [phoneError, setPhoneError] = useState(false);
+    const navigate = useNavigate();
+
+    const handleLogin = () => {
+        if (!phone.trim()) {
+            setPhoneError(true);
+            return;
+        }
+        // TODO: call login API
+    };
+
+    return (
+        <div style={styles.root}>
+            <div style={styles.pageWrap}>
+                {/* Left panel */}
+                <div style={styles.leftPanel}>
+                    <div style={styles.logoMark}>
+                        <svg width="22" height="22" viewBox="0 0 32 32" fill="none">
+                            <rect x="2" y="13" width="6" height="6" rx="1.5" fill="white" />
+                            <rect x="13" y="2" width="6" height="28" rx="2" fill="white" />
+                            <rect x="24" y="13" width="6" height="6" rx="1.5" fill="white" />
+                            <rect x="2" y="15" width="28" height="2" fill="rgba(255,255,255,0.4)" />
+                        </svg>
+                    </div>
+                    <h2 style={styles.panelTitle}>Member Portal</h2>
+                    <p style={styles.panelDesc}>Quản lý tài khoản thành viên và theo dõi hành trình luyện tập của bạn</p>
+
+                    <div style={styles.statsRow}>
+                        <div style={styles.statBox}>
+                            <span style={styles.statNum}>1,248</span>
+                            <span style={styles.statLabel}>Thành viên</span>
+                        </div>
+                        <div style={styles.statDivider} />
+                        <div style={styles.statBox}>
+                            <span style={styles.statNum}>36</span>
+                            <span style={styles.statLabel}>Buổi hôm nay</span>
+                        </div>
+                    </div>
+
+                    <p style={styles.sysLabel}>VT Gym Management System v2.1</p>
+                </div>
+
+                {/* Right panel / form */}
+                <div style={styles.rightPanel}>
+                    <div style={styles.logoArea}>
+                        <div style={styles.logoText}>
+                            VT<span style={styles.logoAccent}>GYM</span>
+                        </div>
+                    </div>
+
+                    <h1 style={styles.heading}>Đăng nhập</h1>
+                    <p style={styles.subheading}>Chào mừng trở lại, vui lòng xác thực để tiếp tục</p>
+
+                    {/* Phone */}
+                    <div style={styles.formGroup}>
+                        <label style={styles.label}>SỐ ĐIỆN THOẠI THÀNH VIÊN</label>
+                        <div style={styles.inputWrap}>
+                            <span style={styles.inputIcon}>
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 12 19.79 19.79 0 0 1 1.61 3.35 2 2 0 0 1 3.6 1h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L7.91 8.6a16 16 0 0 0 6.29 6.29l.96-.96a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z" />
+                                </svg>
+                            </span>
+                            <input
+                                style={{ ...styles.input, ...(phoneError ? styles.inputError : {}) }}
+                                type="tel"
+                                placeholder="0901 234 567"
+                                value={phone}
+                                onChange={e => { setPhone(e.target.value); setPhoneError(false); }}
+                                onFocus={e => { if (!phoneError) { e.target.style.borderColor = "#00c2cb"; e.target.style.boxShadow = "0 0 0 3px rgba(0,194,203,0.15)"; e.target.style.background = "#1e2e42"; } }}
+                                onBlur={e => { if (!phoneError) { e.target.style.borderColor = "rgba(255,255,255,0.1)"; e.target.style.boxShadow = "none"; e.target.style.background = "#162030"; } }}
+                            />
+                        </div>
+                        {phoneError && <p style={styles.errorText}>Vui lòng nhập số điện thoại</p>}
+                    </div>
+
+                    {/* Password */}
+                    <div style={styles.formGroup}>
+                        <label style={styles.label}>MẬT KHẨU</label>
+                        <div style={styles.inputWrap}>
+                            <span style={styles.inputIcon}>
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                                    <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                                </svg>
+                            </span>
+                            <input
+                                style={{ ...styles.input, paddingRight: "44px" }}
+                                type={showPassword ? "text" : "password"}
+                                placeholder="••••••••"
+                                value={password}
+                                onChange={e => setPassword(e.target.value)}
+                                onFocus={e => { e.target.style.borderColor = "#00c2cb"; e.target.style.boxShadow = "0 0 0 3px rgba(0,194,203,0.15)"; e.target.style.background = "#1e2e42"; }}
+                                onBlur={e => { e.target.style.borderColor = "rgba(255,255,255,0.1)"; e.target.style.boxShadow = "none"; e.target.style.background = "#162030"; }}
+                            />
+                            <button style={styles.eyeBtn} onClick={() => setShowPassword(!showPassword)}>
+                                {showPassword ? (
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#5a7a94" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                        <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94" />
+                                        <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19" />
+                                        <line x1="1" y1="1" x2="23" y2="23" />
+                                    </svg>
+                                ) : (
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#5a7a94" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                                        <circle cx="12" cy="12" r="3" />
+                                    </svg>
+                                )}
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* Submit */}
+                    <button
+                        style={styles.loginBtn}
+                        onClick={handleLogin}
+                        onMouseEnter={e => { e.currentTarget.style.background = "#00d4de"; e.currentTarget.style.boxShadow = "0 8px 28px rgba(0,194,203,0.5)"; }}
+                        onMouseLeave={e => { e.currentTarget.style.background = "#00c2cb"; e.currentTarget.style.boxShadow = "0 4px 18px rgba(0,194,203,0.35)"; }}
+                    >
+                        Đăng nhập hệ thống
+                    </button>
+
+                    <p style={styles.sslNote}>
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ display: "inline", marginRight: "6px", verticalAlign: "middle" }}>
+                            <circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" />
+                        </svg>
+                        Phiên đăng nhập được mã hóa SSL ·
+                    </p>
+
+                    <div style={styles.bottom}>
+                        <span style={styles.bottomText}>Chưa có tài khoản?</span>
+                        <span style={styles.sep}>·</span>
+                        <button
+                            style={styles.registerBtn}
+                            onClick={() => navigate("/member/register")}
+                            onMouseEnter={e => { e.currentTarget.style.color = "#00c2cb"; e.currentTarget.style.borderColor = "#00c2cb"; }}
+                            onMouseLeave={e => { e.currentTarget.style.color = "#5a7a94"; e.currentTarget.style.borderColor = "rgba(255,255,255,0.1)"; }}
+                        >
+                            Đăng ký thành viên
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <style>{`
+                @media (max-width: 720px) {
+                    .vtgym-wrap { flex-direction: column !important; }
+                    .vtgym-left { border-radius: 20px 20px 0 0 !important; padding: 28px 24px !important; }
+                    .vtgym-right { border-radius: 0 0 20px 20px !important; padding: 28px 24px !important; }
+                }
+                input::placeholder { color: #3d5a72; }
+            `}</style>
+        </div>
+    );
+}
+
+const styles = {
+    root: {
+        minHeight: "100vh",
+        background: "#0c1520",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        fontFamily: "'Inter', 'Segoe UI', -apple-system, sans-serif",
+        padding: "24px 16px",
+    },
+    pageWrap: {
+        display: "flex",
+        width: "100%",
+        maxWidth: "860px",
+        borderRadius: "20px",
+        overflow: "hidden",
+        boxShadow: "0 24px 80px rgba(0,0,0,0.5)",
+    },
+    leftPanel: {
+        flex: "0 0 340px",
+        background: "#111e2d",
+        padding: "44px 36px",
+        display: "flex",
+        flexDirection: "column",
+        gap: "0",
+        borderRight: "1px solid rgba(255,255,255,0.06)",
+    },
+    logoMark: {
+        width: "52px",
+        height: "52px",
+        background: "linear-gradient(135deg, #00c2cb, #007b9e)",
+        borderRadius: "14px",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        marginBottom: "24px",
+        boxShadow: "0 6px 20px rgba(0,194,203,0.3)",
+    },
+    panelTitle: {
+        fontSize: "22px",
+        fontWeight: 800,
+        color: "#ffffff",
+        margin: "0 0 12px",
+        letterSpacing: "-0.3px",
+    },
+    panelDesc: {
+        fontSize: "14px",
+        color: "#5a7a94",
+        lineHeight: 1.6,
+        margin: "0 0 36px",
+    },
+    statsRow: {
+        display: "flex",
+        alignItems: "center",
+        background: "#0c1824",
+        borderRadius: "14px",
+        padding: "20px 24px",
+        gap: "24px",
+        marginBottom: "auto",
+    },
+    statBox: {
+        display: "flex",
+        flexDirection: "column",
+        gap: "4px",
+        flex: 1,
+    },
+    statNum: {
+        fontSize: "26px",
+        fontWeight: 800,
+        color: "#00c2cb",
+        lineHeight: 1,
+    },
+    statLabel: {
+        fontSize: "12px",
+        color: "#5a7a94",
+        fontWeight: 500,
+    },
+    statDivider: {
+        width: "1px",
+        height: "36px",
+        background: "rgba(255,255,255,0.08)",
+    },
+    sysLabel: {
+        fontSize: "12px",
+        color: "#2d4459",
+        marginTop: "32px",
+    },
+    rightPanel: {
+        flex: 1,
+        background: "#13202f",
+        padding: "44px 40px",
+    },
+    logoArea: {
+        marginBottom: "28px",
+    },
+    logoText: {
+        fontSize: "18px",
+        fontWeight: 800,
+        letterSpacing: "3px",
+        color: "#ffffff",
+    },
+    logoAccent: {
+        color: "#00c2cb",
+    },
+    heading: {
+        fontSize: "28px",
+        fontWeight: 800,
+        color: "#ffffff",
+        letterSpacing: "-0.5px",
+        margin: "0 0 8px",
+    },
+    subheading: {
+        fontSize: "14px",
+        color: "#5a7a94",
+        margin: "0 0 32px",
+    },
+    formGroup: {
+        marginBottom: "20px",
+    },
+    label: {
+        display: "block",
+        fontSize: "11px",
+        fontWeight: 700,
+        color: "#5a7a94",
+        letterSpacing: "0.8px",
+        marginBottom: "8px",
+    },
+    inputWrap: {
+        position: "relative",
+        display: "flex",
+        alignItems: "center",
+    },
+    inputIcon: {
+        position: "absolute",
+        left: "14px",
+        color: "#3d5a72",
+        pointerEvents: "none",
+        display: "flex",
+    },
+    input: {
+        width: "100%",
+        background: "#162030",
+        border: "1.5px solid rgba(255,255,255,0.08)",
+        borderRadius: "12px",
+        padding: "13px 14px 13px 44px",
+        fontSize: "15px",
+        fontFamily: "inherit",
+        color: "#e0eaf2",
+        outline: "none",
+        transition: "border-color 0.2s, box-shadow 0.2s, background 0.2s",
+        boxSizing: "border-box",
+    },
+    inputError: {
+        borderColor: "#f05050",
+        boxShadow: "0 0 0 3px rgba(240,80,80,0.15)",
+    },
+    errorText: {
+        fontSize: "12px",
+        color: "#f05050",
+        marginTop: "6px",
+    },
+    eyeBtn: {
+        position: "absolute",
+        right: "14px",
+        background: "none",
+        border: "none",
+        cursor: "pointer",
+        padding: "4px",
+        display: "flex",
+        alignItems: "center",
+    },
+    loginBtn: {
+        width: "100%",
+        padding: "15px",
+        background: "#00c2cb",
+        border: "none",
+        borderRadius: "12px",
+        color: "#0c1520",
+        fontSize: "15px",
+        fontWeight: 800,
+        fontFamily: "inherit",
+        letterSpacing: "0.5px",
+        cursor: "pointer",
+        transition: "all 0.2s",
+        boxShadow: "0 4px 18px rgba(0,194,203,0.35)",
+        marginTop: "8px",
+        marginBottom: "16px",
+    },
+    sslNote: {
+        fontSize: "12px",
+        color: "#3d5a72",
+        textAlign: "center",
+        marginBottom: "24px",
+        lineHeight: 1.5,
+    },
+    bottom: {
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: "10px",
+        flexWrap: "wrap",
+    },
+    bottomText: {
+        fontSize: "13px",
+        color: "#3d5a72",
+    },
+    sep: {
+        color: "#2d4459",
+    },
+    registerBtn: {
+        background: "none",
+        border: "1px solid rgba(255,255,255,0.1)",
+        borderRadius: "8px",
+        color: "#5a7a94",
+        fontSize: "13px",
+        fontWeight: 600,
+        fontFamily: "inherit",
+        cursor: "pointer",
+        padding: "7px 16px",
+        transition: "all 0.2s",
+    },
+};
