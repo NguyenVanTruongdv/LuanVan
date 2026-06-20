@@ -27,7 +27,7 @@ function AppRoutes() {
             <Route path="/cashier" element={<CashierLayout />}>
                 <Route index element={<Dashboard />} />
                 <Route path="checkin" element={<Checkin />} />
-                <Route path="register-member" element={<GymMemberRegistration></GymMemberRegistration>} />
+                <Route path="member-create" element={<GymMemberRegistration></GymMemberRegistration>} />
             </Route>
 
             {/* </Route> */}

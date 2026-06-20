@@ -590,19 +590,32 @@ CREATE TABLE account_lock_log (
 -- ============================================================
 --  BẢNG 23: phone_change_log  (Lịch sử đổi số điện thoại)
 -- ============================================================
-CREATE TABLE phone_change_log (
-  log_id     BIGINT      NOT NULL AUTO_INCREMENT  COMMENT 'Mã bản ghi — khóa chính tự tăng',
-  member_id  BIGINT      NOT NULL                 COMMENT 'Hội viên được đổi số điện thoại — FK tới members.member_id',
-  old_phone  VARCHAR(15) NOT NULL                 COMMENT 'Số điện thoại cũ trước khi thay đổi',
-  new_phone  VARCHAR(15) NOT NULL                 COMMENT 'Số điện thoại mới sau khi thay đổi',
-  changed_by BIGINT      NOT NULL                 COMMENT 'Quản lý thực hiện đổi số — FK tới employees.employee_id',
-  changed_at DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'Thời điểm thực hiện đổi số điện thoại',
-  PRIMARY KEY (log_id),
-  CONSTRAINT fk_dl_hv
-    FOREIGN KEY (member_id)  REFERENCES members   (member_id),
-  CONSTRAINT fk_dl_ql
-    FOREIGN KEY (changed_by) REFERENCES employees (employee_id)
-) ENGINE=InnoDB COMMENT='Lịch sử thay đổi số điện thoại hội viên — chỉ Manager thực hiện được';
+-- ============================================================
+--  BẢNG 23: member_update_logs  (Lịch sử cập nhật thông tin hội viên)
+--
+--  Thay thế cho phone_change_log cũ — tổng quát hóa để ghi
+--  được nhiều loại field thay đổi (không chỉ số điện thoại).
+--  update_session_id dùng để gộp các field_name cùng thay đổi
+--  trong 1 lần cập nhật (ứng dụng tự sinh UUID cho mỗi lần lưu).
+--  Bảng này chỉ ghi thêm, không sửa, không xóa.
+-- ============================================================
+CREATE TABLE member_update_logs (
+  id                      BIGINT       NOT NULL AUTO_INCREMENT  COMMENT 'Mã bản ghi — khóa chính tự tăng',
+  update_session_id       CHAR(36)     NOT NULL                 COMMENT 'Mã phiên cập nhật (UUID) — nhóm các field_name cùng thay đổi trong 1 lần lưu',
+  member_id               BIGINT       NOT NULL                 COMMENT 'Hội viên được cập nhật thông tin — FK tới members.member_id',
+  field_name              VARCHAR(100) NOT NULL                 COMMENT 'Tên trường dữ liệu bị thay đổi, VD: phone, full_name, gender',
+  old_value               TEXT         NULL                     COMMENT 'Giá trị cũ trước khi thay đổi — NULL nếu trường trước đó chưa có giá trị',
+  new_value                TEXT        NOT NULL                 COMMENT 'Giá trị mới sau khi thay đổi',
+  updated_by_employee_id   BIGINT      NOT NULL                 COMMENT 'Nhân viên thực hiện cập nhật — FK tới employees.employee_id',
+  updated_at               DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'Thời điểm thực hiện cập nhật',
+  PRIMARY KEY (id),
+  INDEX idx_mul_session (update_session_id),
+  INDEX idx_mul_member  (member_id, field_name),
+  CONSTRAINT fk_mul_member
+    FOREIGN KEY (member_id)             REFERENCES members   (member_id),
+  CONSTRAINT fk_mul_employee
+    FOREIGN KEY (updated_by_employee_id) REFERENCES employees (employee_id)
+) ENGINE=InnoDB COMMENT='Lịch sử cập nhật thông tin hội viên (theo từng field) — chỉ ghi thêm, không sửa xóa';
 
 
 -- ============================================================

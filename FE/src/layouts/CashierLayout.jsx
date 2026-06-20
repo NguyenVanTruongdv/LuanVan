@@ -3,7 +3,17 @@ import { Outlet, useLocation, useNavigate } from "react-router-dom";
 
 const NAV_ITEMS = [
     { id: "dashboard", icon: "🏠", label: "Dashboard", path: "/cashier" },
-    { id: "members", icon: "👥", label: "Hội viên", path: "/members" },
+    {
+        id: "members",
+        icon: "👥",
+        label: "Hội viên",
+        matchPrefix: "cashier/members",
+        children: [
+            { id: "members-list", icon: "📃", label: "Danh sách hội viên", path: "members" },
+            { id: "members-activate", icon: "✅", label: "Kích hoạt hội viên", path: "member-activate" },
+            { id: "members-create", icon: "➕", label: "Tạo hội viên mới", path: "member-create" },
+        ],
+    },
     {
         id: "packages",
         icon: "📦",
@@ -41,11 +51,11 @@ export default function CashierLayout({ branchName = "Chi nhánh Quận 1" }) {
     const location = useLocation();
 
     const [sidebarOpen, setSidebarOpen] = useState(false);
-    const [openSubmenu, setOpenSubmenu] = useState(() => {
+    const [openSubmenus, setOpenSubmenus] = useState(() => {
         const match = NAV_ITEMS.find(
             (i) => i.matchPrefix && location.pathname.startsWith(i.matchPrefix)
         );
-        return match ? match.id : null;
+        return match ? new Set([match.id]) : new Set();
     });
 
     const isItemActive = (item) => {
@@ -60,7 +70,15 @@ export default function CashierLayout({ branchName = "Chi nhánh Quận 1" }) {
 
     const handleTopClick = (item) => {
         if (item.children) {
-            setOpenSubmenu((current) => (current === item.id ? null : item.id));
+            setOpenSubmenus((current) => {
+                const next = new Set(current);
+                if (next.has(item.id)) {
+                    next.delete(item.id);
+                } else {
+                    next.add(item.id);
+                }
+                return next;
+            });
         } else {
             navigate(item.path);
             setSidebarOpen(false);
@@ -232,7 +250,7 @@ export default function CashierLayout({ branchName = "Chi nhánh Quận 1" }) {
                         <div style={styles.navColumn}>
                             {NAV_ITEMS.map((item) => {
                                 const active = isItemActive(item);
-                                const isOpen = openSubmenu === item.id;
+                                const isOpen = openSubmenus.has(item.id);
                                 return (
                                     <div key={item.id}>
                                         <button
@@ -259,7 +277,12 @@ export default function CashierLayout({ branchName = "Chi nhánh Quận 1" }) {
                                         </button>
 
                                         {item.children && isOpen && (
-                                            <div style={styles.submenu}>
+                                            <div
+                                                style={{
+                                                    ...styles.submenu,
+                                                    ...(active ? styles.submenuActive : null),
+                                                }}
+                                            >
                                                 {item.children.map((child) => {
                                                     const childActive = location.pathname === child.path;
                                                     return (
@@ -556,6 +579,12 @@ const styles = {
         marginLeft: 16,
         borderLeft: "2px solid #EEF2FF",
         marginTop: 2,
+        borderRadius: 10,
+        transition: "background 0.15s, border-color 0.15s",
+    },
+    submenuActive: {
+        background: "#EEF2FF",
+        borderLeft: "2px solid #818CF8",
     },
     subItem: {
         display: "flex",
