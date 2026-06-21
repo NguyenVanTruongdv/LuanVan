@@ -6,6 +6,7 @@ import {
   ChevronDown,
   LogIn,
   Phone,
+  ShieldAlert,
   Sparkles,
   UserRound,
   X,
@@ -15,24 +16,124 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 /* =========================================================================
  * DỮ LIỆU MẪU — thay bằng dữ liệu thật khi gắn API
+ * Cấu trúc field được đặt tên bám theo entity `Member` ở BE (BE.Models.Member)
+ * để khi nối API thật, chỉ cần map response → state, không cần đổi UI.
+ *
+ *   memberId        ← Member.MemberId
+ *   fullName        ← Member.FullName
+ *   phone           ← Member.Phone
+ *   gender          ← Member.Gender
+ *   branchName      ← Member.Branch?.BranchName
+ *   accountStatus   ← Member.Status            ("PendingActivation" | "Active" | "Expired" | "Suspended")
+ *   suspendReason   ← Member.SuspendReason
+ *   internalNotes   ← Member.InternalNotes      (CHỈ nhân viên thấy — hiển thị nổi bật màu đỏ)
+ *   package         ← MemberPackage hiện tại (tên gói)
+ *   expiryDate      ← MemberPackage hiện tại (ngày hết hạn)
+ *   packageStatus   ← suy ra từ expiryDate: "active" | "expiring" | "expired" (dùng cho badge)
  * ======================================================================= */
 const SAMPLE_MEMBERS = [
-  { id: "M001", fullName: "Nguyễn Văn An", phone: "0901234567", memberCode: "GYM-0001", package: "Gói 12 tháng — Premium", expiryDate: "01/12/2026", status: "active" },
-  { id: "M002", fullName: "Trần Thị Bích", phone: "0912345678", memberCode: "GYM-0002", package: "Gói 6 tháng — Standard", expiryDate: "05/07/2026", status: "expiring" },
-  { id: "M003", fullName: "Lê Hoàng Cường", phone: "0987654321", memberCode: "GYM-0003", package: "Gói 1 tháng", expiryDate: "10/06/2026", status: "expired" },
-  { id: "M004", fullName: "Phạm Thị Dung", phone: "0978123456", memberCode: "GYM-0004", package: "Gói 12 tháng — VIP", expiryDate: "20/01/2027", status: "active" },
-  { id: "M005", fullName: "Hoàng Minh Đức", phone: "0966112233", memberCode: "GYM-0005", package: "Gói 3 tháng", expiryDate: "15/08/2026", status: "active" },
-  { id: "M006", fullName: "Vũ Thị Hoa", phone: "0945667788", memberCode: "GYM-0006", package: "Gói 6 tháng — Standard", expiryDate: "20/06/2026", status: "expiring" },
+  {
+    memberId: 1,
+    fullName: "Nguyễn Văn An",
+    phone: "0901234567",
+    gender: "Male",
+    branchName: "VTGYM Quận 1",
+    accountStatus: "Active",
+    suspendReason: null,
+    internalNotes: null,
+    package: "Gói 12 tháng — Premium",
+    expiryDate: "01/12/2026",
+    packageStatus: "active",
+  },
+  {
+    memberId: 2,
+    fullName: "Trần Thị Bích",
+    phone: "0912345678",
+    gender: "Female",
+    branchName: "VTGYM Quận 7",
+    accountStatus: "Active",
+    suspendReason: null,
+    internalNotes: "Hay khiếu nại về máy tập, cần ưu tiên hỗ trợ khi đến gym.",
+    package: "Gói 6 tháng — Standard",
+    expiryDate: "05/07/2026",
+    packageStatus: "expiring",
+  },
+  {
+    memberId: 3,
+    fullName: "Lê Hoàng Cường",
+    phone: "0987654321",
+    gender: "Male",
+    branchName: "VTGYM Quận 1",
+    accountStatus: "Expired",
+    suspendReason: null,
+    internalNotes: null,
+    package: "Gói 1 tháng",
+    expiryDate: "10/06/2026",
+    packageStatus: "expired",
+  },
+  {
+    memberId: 4,
+    fullName: "Phạm Thị Dung",
+    phone: "0978123456",
+    gender: "Female",
+    branchName: "VTGYM Bình Thạnh",
+    accountStatus: "Active",
+    suspendReason: null,
+    internalNotes: "Hội viên VIP — ưu tiên hỗ trợ riêng, không xếp lớp đông.",
+    package: "Gói 12 tháng — VIP",
+    expiryDate: "20/01/2027",
+    packageStatus: "active",
+  },
+  {
+    memberId: 5,
+    fullName: "Hoàng Minh Đức",
+    phone: "0966112233",
+    gender: "Male",
+    branchName: "VTGYM Tân Bình",
+    accountStatus: "Suspended",
+    suspendReason: "Vi phạm nội quy phòng tập (gây mất an toàn cho hội viên khác).",
+    internalNotes: "Đã nhắc nhở 2 lần trước đó, lần này tạm khóa 30 ngày.",
+    package: "Gói 3 tháng",
+    expiryDate: "15/08/2026",
+    packageStatus: "active",
+  },
+  {
+    memberId: 6,
+    fullName: "Vũ Thị Hoa",
+    phone: "0945667788",
+    gender: "Female",
+    branchName: "VTGYM Thủ Đức",
+    accountStatus: "Active",
+    suspendReason: null,
+    internalNotes: null,
+    package: "Gói 6 tháng — Standard",
+    expiryDate: "20/06/2026",
+    packageStatus: "expiring",
+  },
 ];
 
-const STATUS_MAP = {
+/* ── Badge trạng thái gói tập (hiển thị nhanh trên UI check-in) ── */
+const PACKAGE_STATUS_MAP = {
   active: { label: "Còn hạn", cls: "badge-success" },
   expiring: { label: "Sắp hết hạn", cls: "badge-warning" },
   expired: { label: "Hết hạn", cls: "badge-danger" },
 };
 
+/* ── Nhãn hiển thị cho Member.Status (accountStatus) ── */
+const ACCOUNT_STATUS_MAP = {
+  PendingActivation: { label: "Chờ kích hoạt", cls: "badge-warning" },
+  Active: { label: "Đang hoạt động", cls: "badge-success" },
+  Expired: { label: "Hết hạn", cls: "badge-danger" },
+  Suspended: { label: "Đã bị khoá", cls: "badge-danger" },
+};
+
 function StatusBadge({ status }) {
-  const s = STATUS_MAP[status] || STATUS_MAP.active;
+  const s = PACKAGE_STATUS_MAP[status] || PACKAGE_STATUS_MAP.active;
+  return <span className={`ck-badge ${s.cls}`}>{s.label}</span>;
+}
+
+function AccountStatusBadge({ status }) {
+  const s = ACCOUNT_STATUS_MAP[status] || ACCOUNT_STATUS_MAP.Active;
   return <span className={`ck-badge ${s.cls}`}>{s.label}</span>;
 }
 
@@ -40,31 +141,60 @@ function initials(name) {
   return name.split(" ").filter(Boolean).slice(-2).map(w => w[0]).join("").toUpperCase();
 }
 
+/* ── Có cho phép check-in hay không, dựa trên accountStatus + packageStatus ── */
+function canCheckin(member) {
+  if (!member) return false;
+  if (member.accountStatus === "Suspended") return false;
+  if (member.accountStatus === "Expired") return false;
+  if (member.packageStatus === "expired") return false;
+  return true;
+}
+
+/* =========================================================================
+ * CAMERA STREAM — lưu ở module-level (ngoài component) để sống sót qua việc
+ * unmount/remount khi chuyển route trong SPA (vd: qua trang "Danh sách hội
+ * viên" rồi quay lại). Stream KHÔNG bị dừng tự động khi đổi tab hay đổi
+ * trang — chỉ dừng khi người dùng bấm nút "Dừng" tường minh.
+ * ======================================================================= */
+const cameraStore = {
+  stream: null,
+  deviceId: null,
+};
+
 export default function Checkin() {
   /* ── Camera state ── */
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
-  const streamRef = useRef(null);
-  const [isCameraOn, setIsCameraOn] = useState(false);
+  const [isCameraOn, setIsCameraOn] = useState(!!cameraStore.stream);
   const [cameraError, setCameraError] = useState("");
   const [devices, setDevices] = useState([]);
-  const [selectedDevId, setSelectedDevId] = useState("");
+  const [selectedDevId, setSelectedDevId] = useState(cameraStore.deviceId || "");
 
-  /* ── Stop camera helper (used in multiple places) ── */
+  /* ── Stop camera helper — CHỈ được gọi khi người dùng bấm "Dừng" tường minh ── */
   const stopCamera = useCallback(() => {
-    streamRef.current?.getTracks().forEach(t => t.stop());
-    streamRef.current = null;
+    cameraStore.stream?.getTracks().forEach(t => t.stop());
+    cameraStore.stream = null;
     if (videoRef.current) videoRef.current.srcObject = null;
     setIsCameraOn(false);
+  }, []);
+
+  /* ── Nếu đã có stream từ trước (do chuyển trang rồi quay lại), gắn lại vào <video> ── */
+  useEffect(() => {
+    if (cameraStore.stream && videoRef.current) {
+      videoRef.current.srcObject = cameraStore.stream;
+      setIsCameraOn(true);
+    }
   }, []);
 
   /* ── Lấy danh sách camera ── */
   useEffect(() => {
     async function loadDevices() {
       try {
-        await navigator.mediaDevices.getUserMedia({ video: true, audio: false })
-          .then(s => s.getTracks().forEach(t => t.stop()))
-          .catch(() => { });
+        if (!cameraStore.stream) {
+          await navigator.mediaDevices.getUserMedia({ video: true, audio: false })
+            .then(s => s.getTracks().forEach(t => t.stop()))
+            .catch(() => { });
+        }
         const all = await navigator.mediaDevices.enumerateDevices();
         const cams = all.filter(d => d.kind === "videoinput");
         setDevices(cams);
@@ -76,17 +206,9 @@ export default function Checkin() {
     return () => navigator.mediaDevices.removeEventListener?.("devicechange", loadDevices);
   }, []);
 
-  /* ── Dừng camera khi chuyển tab / ẩn trang ── */
-  useEffect(() => {
-    const handleVisibility = () => {
-      if (document.hidden) stopCamera();
-    };
-    document.addEventListener("visibilitychange", handleVisibility);
-    return () => document.removeEventListener("visibilitychange", handleVisibility);
-  }, [stopCamera]);
-
-  /* ── Cleanup khi unmount (navigate sang trang khác) ── */
-  useEffect(() => () => stopCamera(), [stopCamera]);
+  // Lưu ý: KHÔNG dừng camera khi tab ẩn (visibilitychange) và KHÔNG dừng khi
+  // component unmount (chuyển sang trang khác trong app). Hội viên check-in
+  // liên tục nên camera phải luôn sẵn sàng cho đến khi nhân viên bấm "Dừng".
 
   const startCamera = useCallback(async () => {
     setCameraError("");
@@ -96,7 +218,8 @@ export default function Checkin() {
         audio: false,
       };
       const stream = await navigator.mediaDevices.getUserMedia(constraints);
-      streamRef.current = stream;
+      cameraStore.stream = stream;
+      cameraStore.deviceId = selectedDevId;
       if (videoRef.current) videoRef.current.srcObject = stream;
       setIsCameraOn(true);
     } catch {
@@ -130,14 +253,26 @@ export default function Checkin() {
     setTimeout(() => setToast(null), 3500);
   };
 
-  /* ── Nhận diện → check-in ngay, không cần modal xác nhận ── */
+  /* =====================================================================
+   * THÔNG TIN NGƯỜI CHECK-IN GẦN NHẤT
+   * Dùng chung cho cả 2 luồng (camera nhận diện & tra cứu SĐT) — chỉ cần
+   * gọi setLastCheckin(member, { source, success }) sau khi BE trả kết quả.
+   * ===================================================================== */
+  const [lastCheckin, setLastCheckin] = useState(null);
+  // lastCheckin = { member, source: "camera" | "phone", result: "success" | "error", at: Date }
+
+  const recordCheckin = (member, source, result) => {
+    setLastCheckin({ member, source, result, at: new Date() });
+  };
+
+  /* ── Camera → nhận diện → check-in ngay, không cần modal xác nhận ── */
   const [cameraResult, setCameraResult] = useState(null);
   const [cameraCheckin, setCameraCheckin] = useState(null); // "loading" | "success" | "error"
 
   const handleMockRecognize = async () => {
     if (!isCameraOn) return;
     captureFrame();
-    // TODO: gửi base64 lên POST /api/face-recognize
+    // TODO API: gửi base64 lên POST /api/face-recognize → trả về member tương ứng
     setCameraResult(null);
     setCameraCheckin("loading");
 
@@ -145,14 +280,16 @@ export default function Checkin() {
     const member = SAMPLE_MEMBERS[Math.floor(Math.random() * SAMPLE_MEMBERS.length)];
     setCameraResult(member);
 
-    if (member.status === "expired") {
+    if (!canCheckin(member)) {
       setCameraCheckin("error");
-      showToast("error", `${member.fullName} — Thẻ đã hết hạn`);
+      showToast("error", `${member.fullName} — không thể check-in`);
+      recordCheckin(member, "camera", "error");
     } else {
-      // TODO API: POST /api/checkins { memberId: member.id, method: "camera" }
+      // TODO API: POST /api/checkins { memberId: member.memberId, method: "camera" }
       await new Promise(r => setTimeout(r, 300));
       setCameraCheckin("success");
       showToast("success", `Check-in thành công — ${member.fullName}`);
+      recordCheckin(member, "camera", "success");
     }
 
     setTimeout(() => setCameraCheckin(null), 3000);
@@ -173,6 +310,7 @@ export default function Checkin() {
       return;
     }
     setLookupLoading(true);
+    // TODO API: GET /api/members/lookup?phone={phone}
     await new Promise(r => setTimeout(r, 400));
     const member = SAMPLE_MEMBERS.find(m => m.phone === phone) || null;
     setLookupLoading(false);
@@ -188,9 +326,11 @@ export default function Checkin() {
   const handleConfirmCheckin = async () => {
     if (!modal) return;
     setCheckinState("loading");
+    // TODO API: POST /api/checkins { memberId: modal.member.memberId, method: "phone" }
     await new Promise(r => setTimeout(r, 600));
-    const ok = modal.member.status !== "expired";
+    const ok = canCheckin(modal.member);
     setCheckinState(ok ? "success" : "error");
+    recordCheckin(modal.member, "phone", ok ? "success" : "error");
     if (ok) {
       showToast("success", `Check-in thành công — ${modal.member.fullName}`);
       setTimeout(closeModal, 1200);
@@ -254,6 +394,8 @@ export default function Checkin() {
         .ck-card-title {
           display: flex; align-items: center; justify-content: space-between;
           margin-bottom: 12px;
+          gap: 8px;
+          flex-wrap: wrap;
         }
         .ck-card-title h2 {
           font-family: 'Outfit', sans-serif;
@@ -373,9 +515,9 @@ export default function Checkin() {
 
         /* ── Phone panel ── */
         .ck-phone-panel { display: flex; flex-direction: column; gap: 12px; }
-        .ck-phone-input-block { display: flex; gap: 8px; align-items: stretch; }
+        .ck-phone-input-block { display: flex; gap: 8px; align-items: stretch; flex-wrap: wrap; }
         .ck-input-wrap {
-          flex: 1; display: flex; align-items: center; gap: 7px;
+          flex: 1; min-width: 160px; display: flex; align-items: center; gap: 7px;
           border: 1px solid var(--border); border-radius: var(--radius-sm);
           padding: 0 10px; background: #fff; transition: border-color .15s;
         }
@@ -391,34 +533,107 @@ export default function Checkin() {
           font-size: 12px; color: var(--danger); font-weight: 500;
         }
 
-        /* ── Quick list ── */
+        /* ── Hint label ── */
         .ck-hint {
           font-size: 11px; color: var(--text-muted); font-weight: 600;
           text-transform: uppercase; letter-spacing: .04em; margin-bottom: 7px;
         }
-        .ck-quick-list { display: flex; flex-direction: column; gap: 5px; }
-        .ck-quick-item {
-          display: flex; align-items: center; gap: 9px;
-          padding: 8px 10px; border-radius: var(--radius-sm);
-          border: 1px solid var(--border); background: #fff;
-          cursor: pointer; transition: background .12s; font-size: 13px;
+
+        /* ── Panel: thông tin người check-in gần nhất ── */
+        .ck-lastcheckin-empty {
+          display: flex; flex-direction: column; align-items: center; justify-content: center;
+          gap: 6px; text-align: center;
+          padding: 28px 12px;
+          border: 1.5px dashed var(--border); border-radius: var(--radius-md);
+          color: var(--text-muted);
         }
-        .ck-quick-item:hover { background: var(--surface-alt); }
-        .ck-quick-avatar {
-          width: 28px; height: 28px; border-radius: 50%;
-          background: var(--primary-light); color: var(--primary-dark);
+        .ck-lastcheckin-empty p { margin: 0; font-size: 12.5px; font-weight: 600; }
+        .ck-lastcheckin-empty span { font-size: 11px; }
+
+        .ck-lc-card {
+          border-radius: var(--radius-md);
+          border: 1.5px solid var(--border);
+          background: #fff;
+          overflow: hidden;
+        }
+        .ck-lc-card.success { border-color: var(--primary); }
+        .ck-lc-card.error   { border-color: var(--danger); }
+
+        .ck-lc-top {
+          display: flex; align-items: center; gap: 10px;
+          padding: 12px 14px;
+          background: var(--surface-alt);
+        }
+        .ck-lc-card.success .ck-lc-top { background: var(--primary-light); }
+        .ck-lc-card.error   .ck-lc-top { background: var(--danger-light); }
+
+        .ck-lc-avatar {
+          width: 38px; height: 38px; border-radius: 50%;
+          background: var(--primary-dark); color: #fff;
           display: flex; align-items: center; justify-content: center;
-          font-family: 'Outfit', sans-serif; font-weight: 700; font-size: 11px;
+          font-family: 'Outfit', sans-serif; font-weight: 700; font-size: 13px;
           flex-shrink: 0;
         }
-        .ck-quick-name  { font-weight: 600; font-size: 12.5px; }
-        .ck-quick-phone { font-size: 11px; color: var(--text-muted); }
+        .ck-lc-card.error .ck-lc-avatar { background: var(--danger); }
+
+        .ck-lc-name { font-weight: 700; font-size: 13.5px; margin: 0 0 3px; word-break: break-word; }
+        .ck-lc-result-line {
+          display: flex; align-items: center; gap: 5px;
+          font-size: 11.5px; font-weight: 700;
+        }
+        .ck-lc-result-line.success { color: var(--primary-dark); }
+        .ck-lc-result-line.error   { color: var(--danger); }
+
+        .ck-lc-source {
+          margin-left: auto; flex-shrink: 0;
+          font-size: 10.5px; font-weight: 600; color: var(--text-muted);
+          background: #fff; border: 1px solid var(--border);
+          padding: 3px 8px; border-radius: 999px; white-space: nowrap;
+        }
+
+        .ck-lc-body { padding: 4px 14px 12px; }
+        .ck-lc-row {
+          display: flex; justify-content: space-between; align-items: baseline; gap: 10px;
+          padding: 7px 0; border-bottom: 1px dashed var(--border);
+          font-size: 12.5px;
+        }
+        .ck-lc-row:last-of-type { border-bottom: none; }
+        .ck-lc-row-label { color: var(--text-muted); flex-shrink: 0; }
+        .ck-lc-row-value { font-weight: 600; text-align: right; word-break: break-word; }
+
+        /* Ghi chú nội bộ — luôn nổi bật màu đỏ, chỉ nhân viên thấy */
+        .ck-lc-internal-note {
+          margin-top: 10px;
+          padding: 9px 10px;
+          border-radius: var(--radius-sm);
+          background: var(--danger-light);
+          border: 1px solid #fca5a5;
+          display: flex; align-items: flex-start; gap: 7px;
+        }
+        .ck-lc-internal-note svg { flex-shrink: 0; margin-top: 1px; color: var(--danger); }
+        .ck-lc-internal-note-text {
+          font-size: 12px; font-weight: 700; color: var(--danger);
+          line-height: 1.45; word-break: break-word;
+        }
+        .ck-lc-internal-note-label {
+          display: block; font-size: 10px; font-weight: 800; letter-spacing: .04em;
+          text-transform: uppercase; color: var(--danger); margin-bottom: 2px;
+        }
+
+        .ck-lc-suspend-note {
+          margin-top: 8px; padding: 9px 10px;
+          border-radius: var(--radius-sm);
+          background: #fff7ed; border: 1px solid #fed7aa;
+          font-size: 12px; color: var(--warning); font-weight: 600;
+          display: flex; align-items: flex-start; gap: 7px;
+        }
+        .ck-lc-suspend-note svg { flex-shrink: 0; margin-top: 1px; }
 
         /* ── Badge ── */
         .ck-badge {
           display: inline-flex; align-items: center;
           padding: 2px 8px; border-radius: 999px;
-          font-size: 11px; font-weight: 700;
+          font-size: 11px; font-weight: 700; white-space: nowrap;
         }
         .badge-success { background: var(--primary-light); color: var(--primary-dark); }
         .badge-warning { background: var(--warning-light); color: var(--warning); }
@@ -437,6 +652,7 @@ export default function Checkin() {
           width: 100%; max-width: 380px;
           box-shadow: 0 20px 60px rgba(0,0,0,.2);
           animation: ck-slide-up .2s ease; overflow: hidden;
+          max-height: 90vh; overflow-y: auto;
         }
         @keyframes ck-slide-up {
           from { transform: translateY(16px); opacity: 0; }
@@ -458,7 +674,7 @@ export default function Checkin() {
         .ck-modal-close:hover { background: var(--border); }
         .ck-modal-body { padding: 16px; }
         .ck-modal-member-top {
-          display: flex; align-items: center; gap: 12px; margin-bottom: 14px;
+          display: flex; align-items: center; gap: 12px; margin-bottom: 14px; flex-wrap: wrap;
         }
         .ck-modal-avatar {
           width: 44px; height: 44px; border-radius: 50%;
@@ -470,23 +686,30 @@ export default function Checkin() {
         .ck-modal-name {
           font-family: 'Outfit', sans-serif; font-size: 15px; font-weight: 700; margin: 0 0 4px;
         }
+        .ck-modal-badges { display: flex; gap: 6px; flex-wrap: wrap; }
         .ck-info-row {
           display: flex; justify-content: space-between; gap: 8px;
           padding: 7px 0; border-bottom: 1px dashed var(--border); font-size: 13px;
         }
         .ck-info-row:last-child { border-bottom: none; }
-        .ck-info-label { color: var(--text-muted); }
-        .ck-info-value { font-weight: 600; text-align: right; }
+        .ck-info-label { color: var(--text-muted); flex-shrink: 0; }
+        .ck-info-value { font-weight: 600; text-align: right; word-break: break-word; }
         .ck-modal-expired-warn {
           margin-top: 12px; padding: 9px 10px;
           background: var(--danger-light); color: var(--danger);
           border-radius: var(--radius-sm); font-size: 12px;
           display: flex; align-items: flex-start; gap: 7px; font-weight: 500;
         }
+        .ck-modal-internal-note {
+          margin-top: 12px; padding: 9px 10px;
+          background: var(--danger-light); border: 1px solid #fca5a5;
+          border-radius: var(--radius-sm);
+          display: flex; align-items: flex-start; gap: 7px;
+        }
         .ck-modal-foot {
           padding: 12px 16px 14px;
           display: flex; gap: 8px; justify-content: flex-end;
-          border-top: 1px solid var(--border);
+          border-top: 1px solid var(--border); flex-wrap: wrap;
         }
         .ck-btn-cancel {
           background: var(--surface); border: 1px solid var(--border); color: var(--text-muted);
@@ -510,6 +733,7 @@ export default function Checkin() {
           font-size: 13px; font-weight: 600;
           box-shadow: 0 8px 24px rgba(0,0,0,.15);
           animation: ck-toast-in .2s ease; white-space: nowrap;
+          max-width: calc(100vw - 32px); overflow: hidden; text-overflow: ellipsis;
         }
         @keyframes ck-toast-in {
           from { opacity: 0; transform: translateX(-50%) translateY(8px); }
@@ -524,6 +748,12 @@ export default function Checkin() {
           border-top-color: var(--primary); animation: ck-spin .7s linear infinite;
         }
         @keyframes ck-spin { to { transform: rotate(360deg); } }
+
+        @media (max-width: 480px) {
+          .ck-wrap { padding: 8px; }
+          .ck-card { padding: 12px; }
+          .ck-lc-row { font-size: 12px; }
+        }
       `}</style>
 
       <canvas ref={canvasRef} style={{ display: "none" }} />
@@ -585,7 +815,7 @@ export default function Checkin() {
             {cameraCheckin === "error" && cameraResult && (
               <div className="ck-viewport-overlay error">
                 <XCircle size={40} color="#fff" />
-                <p>Thẻ hết hạn<br />{cameraResult.fullName}</p>
+                <p>Không thể check-in<br />{cameraResult.fullName}</p>
               </div>
             )}
           </div>
@@ -613,22 +843,22 @@ export default function Checkin() {
             </button>
           </div>
 
-          {/* Last result bar */}
+          {/* Last camera result bar (riêng cho camera, hiển thị ngay dưới khung hình) */}
           {cameraResult && cameraCheckin !== "loading" && (
             <div className="ck-cam-result">
               <div className="ck-cam-result-avatar">{initials(cameraResult.fullName)}</div>
-              <div style={{ flex: 1 }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
                 <div className="ck-cam-result-name">{cameraResult.fullName}</div>
                 <div className="ck-cam-result-sub">
-                  {cameraCheckin === "success" ? "✓ Đã check-in" : cameraCheckin === "error" ? "✗ Thẻ hết hạn" : "Lần nhận diện gần nhất"}
+                  {cameraCheckin === "success" ? "✓ Đã check-in" : cameraCheckin === "error" ? "✗ Không thể check-in" : "Lần nhận diện gần nhất"}
                 </div>
               </div>
-              <StatusBadge status={cameraResult.status} />
+              <StatusBadge status={cameraResult.packageStatus} />
             </div>
           )}
         </div>
 
-        {/* ── Right: Phone lookup ── */}
+        {/* ── Right: Phone lookup + Thông tin check-in gần nhất ── */}
         <div className="ck-card ck-phone-panel">
           <div className="ck-card-title">
             <h2>Check-in bằng số điện thoại</h2>
@@ -665,24 +895,81 @@ export default function Checkin() {
             </div>
           )}
 
+          {/* ── Thông tin người check-in gần nhất (thay cho danh sách "Gợi ý nhanh") ── */}
           <div>
-            <p className="ck-hint">Gợi ý nhanh</p>
-            <div className="ck-quick-list">
-              {SAMPLE_MEMBERS.slice(0, 5).map(m => (
-                <div
-                  key={m.id}
-                  className="ck-quick-item"
-                  onClick={() => { setPhoneInput(m.phone); setPhoneError(""); setModal({ member: m, source: "phone" }); }}
-                >
-                  <div className="ck-quick-avatar">{initials(m.fullName)}</div>
-                  <div style={{ flex: 1 }}>
-                    <div className="ck-quick-name">{m.fullName}</div>
-                    <div className="ck-quick-phone">{m.phone}</div>
+            <p className="ck-hint">Người check-in gần nhất</p>
+
+            {!lastCheckin ? (
+              <div className="ck-lastcheckin-empty">
+                <UserRound size={22} />
+                <p>Chưa có lượt check-in nào</p>
+                <span>Thông tin hội viên sẽ hiện ra đây sau khi check-in</span>
+              </div>
+            ) : (
+              <div className={`ck-lc-card ${lastCheckin.result}`}>
+                <div className="ck-lc-top">
+                  <div className="ck-lc-avatar">{initials(lastCheckin.member.fullName)}</div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <p className="ck-lc-name">{lastCheckin.member.fullName}</p>
+                    <div className={`ck-lc-result-line ${lastCheckin.result}`}>
+                      {lastCheckin.result === "success"
+                        ? <><CheckCircle2 size={13} /> Check-in thành công</>
+                        : <><XCircle size={13} /> Không thể check-in</>}
+                    </div>
                   </div>
-                  <StatusBadge status={m.status} />
+                  <span className="ck-lc-source">
+                    {lastCheckin.source === "camera" ? "📷 Camera" : "📞 SĐT"}
+                  </span>
                 </div>
-              ))}
-            </div>
+
+                <div className="ck-lc-body">
+                  <div className="ck-lc-row">
+                    <span className="ck-lc-row-label">Mã hội viên</span>
+                    <span className="ck-lc-row-value">#{lastCheckin.member.memberId}</span>
+                  </div>
+                  <div className="ck-lc-row">
+                    <span className="ck-lc-row-label">Số điện thoại</span>
+                    <span className="ck-lc-row-value">{lastCheckin.member.phone}</span>
+                  </div>
+                  <div className="ck-lc-row">
+                    <span className="ck-lc-row-label">Chi nhánh</span>
+                    <span className="ck-lc-row-value">{lastCheckin.member.branchName}</span>
+                  </div>
+                  <div className="ck-lc-row">
+                    <span className="ck-lc-row-label">Gói tập</span>
+                    <span className="ck-lc-row-value">{lastCheckin.member.package}</span>
+                  </div>
+                  <div className="ck-lc-row">
+                    <span className="ck-lc-row-label">Hết hạn gói</span>
+                    <span className="ck-lc-row-value">{lastCheckin.member.expiryDate}</span>
+                  </div>
+                  <div className="ck-lc-row">
+                    <span className="ck-lc-row-label">Trạng thái tài khoản</span>
+                    <span className="ck-lc-row-value">
+                      <AccountStatusBadge status={lastCheckin.member.accountStatus} />
+                    </span>
+                  </div>
+
+                  {lastCheckin.member.accountStatus === "Suspended" && lastCheckin.member.suspendReason && (
+                    <div className="ck-lc-suspend-note">
+                      <ShieldAlert size={13} />
+                      <span>Lý do khoá: {lastCheckin.member.suspendReason}</span>
+                    </div>
+                  )}
+
+                  {/* Ghi chú nội bộ — luôn nổi bật màu đỏ, chỉ nhân viên thấy, hội viên không thấy */}
+                  {lastCheckin.member.internalNotes && (
+                    <div className="ck-lc-internal-note">
+                      <AlertCircle size={15} />
+                      <div className="ck-lc-internal-note-text">
+                        <span className="ck-lc-internal-note-label">Ghi chú nội bộ</span>
+                        {lastCheckin.member.internalNotes}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -712,7 +999,7 @@ export default function Checkin() {
               <div>
                 <div className="ck-checkin-state" style={{ paddingBottom: 0 }}>
                   <XCircle size={44} color="var(--danger)" />
-                  <p style={{ color: "var(--danger)" }}>Check-in thất bại. Thẻ hội viên đã hết hạn.</p>
+                  <p style={{ color: "var(--danger)" }}>Check-in thất bại. Không thể check-in cho hội viên này.</p>
                 </div>
                 <div className="ck-modal-foot">
                   <button className="ck-btn-cancel" onClick={closeModal}>Đóng</button>
@@ -727,16 +1014,23 @@ export default function Checkin() {
                     <div className="ck-modal-avatar">{initials(modal.member.fullName)}</div>
                     <div>
                       <p className="ck-modal-name">{modal.member.fullName}</p>
-                      <StatusBadge status={modal.member.status} />
+                      <div className="ck-modal-badges">
+                        <StatusBadge status={modal.member.packageStatus} />
+                        <AccountStatusBadge status={modal.member.accountStatus} />
+                      </div>
                     </div>
                   </div>
                   <div className="ck-info-row">
                     <span className="ck-info-label">Mã hội viên</span>
-                    <span className="ck-info-value">{modal.member.memberCode}</span>
+                    <span className="ck-info-value">#{modal.member.memberId}</span>
                   </div>
                   <div className="ck-info-row">
                     <span className="ck-info-label">Số điện thoại</span>
                     <span className="ck-info-value">{modal.member.phone}</span>
+                  </div>
+                  <div className="ck-info-row">
+                    <span className="ck-info-label">Chi nhánh</span>
+                    <span className="ck-info-value">{modal.member.branchName}</span>
                   </div>
                   <div className="ck-info-row">
                     <span className="ck-info-label">Gói tập</span>
@@ -746,10 +1040,24 @@ export default function Checkin() {
                     <span className="ck-info-label">Ngày hết hạn</span>
                     <span className="ck-info-value">{modal.member.expiryDate}</span>
                   </div>
-                  {modal.member.status === "expired" && (
+
+                  {!canCheckin(modal.member) && (
                     <div className="ck-modal-expired-warn">
                       <AlertCircle size={13} style={{ flexShrink: 0, marginTop: 1 }} />
-                      Thẻ hội viên đã hết hạn. Không thể check-in.
+                      {modal.member.accountStatus === "Suspended"
+                        ? `Tài khoản đã bị khoá${modal.member.suspendReason ? `: ${modal.member.suspendReason}` : "."}`
+                        : "Tài khoản hoặc gói tập đã hết hạn. Không thể check-in."}
+                    </div>
+                  )}
+
+                  {/* Ghi chú nội bộ — luôn hiện nổi bật màu đỏ trong modal xác nhận */}
+                  {modal.member.internalNotes && (
+                    <div className="ck-modal-internal-note">
+                      <AlertCircle size={15} style={{ color: "var(--danger)" }} />
+                      <div className="ck-lc-internal-note-text">
+                        <span className="ck-lc-internal-note-label">Ghi chú nội bộ</span>
+                        {modal.member.internalNotes}
+                      </div>
                     </div>
                   )}
                 </div>
@@ -758,7 +1066,7 @@ export default function Checkin() {
                   <button
                     className="ck-btn ck-btn-primary"
                     onClick={handleConfirmCheckin}
-                    disabled={modal.member.status === "expired"}
+                    disabled={!canCheckin(modal.member)}
                   >
                     <LogIn size={13} /> Xác nhận check-in
                   </button>

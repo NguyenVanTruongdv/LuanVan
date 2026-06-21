@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import authApi from "../../api/authApi";
 
 /* ─── Design tokens ─── */
@@ -18,6 +19,15 @@ const C = {
     dim: "#2d4459",
     error: "#f05050",
 };
+
+/* ─── Mock branches (sẽ thay bằng API sau) ─── */
+export const BRANCHES = [
+    { id: "q1", name: "VTGYM Quận 1", address: "12 Nguyễn Huệ, Bến Nghé, Quận 1, TP.HCM" },
+    { id: "q7", name: "VTGYM Quận 7", address: "88 Nguyễn Thị Thập, Tân Phú, Quận 7, TP.HCM" },
+    { id: "binh-thanh", name: "VTGYM Bình Thạnh", address: "245 Điện Biên Phủ, Bình Thạnh, TP.HCM" },
+    { id: "tan-binh", name: "VTGYM Tân Bình", address: "56 Cộng Hòa, Tân Bình, TP.HCM" },
+    { id: "thu-duc", name: "VTGYM Thủ Đức", address: "120 Võ Văn Ngân, Thủ Đức, TP.HCM" },
+];
 
 /* ─── Responsive helpers ─── */
 function useIsMobile() {
@@ -118,6 +128,29 @@ function getStyles(isMobile) {
             fontFamily: "inherit",
             WebkitAppearance: "none",
         },
+        select: {
+            width: "100%",
+            padding: isMobile ? "12px 36px 12px 38px" : "13px 36px 13px 40px",
+            border: `1.5px solid ${C.border}`,
+            borderRadius: "12px",
+            fontSize: isMobile ? "15px" : "14px",
+            color: C.text,
+            background: C.surface,
+            outline: "none",
+            boxSizing: "border-box",
+            transition: "border-color .2s, box-shadow .2s, background .2s",
+            fontFamily: "inherit",
+            WebkitAppearance: "none",
+            appearance: "none",
+            cursor: "pointer",
+        },
+        selectArrow: {
+            position: "absolute",
+            right: "13px",
+            color: C.subtle,
+            fontSize: "12px",
+            pointerEvents: "none",
+        },
         inputFocus: {
             borderColor: C.borderFocus,
             boxShadow: "0 0 0 3px rgba(0,194,203,0.15)",
@@ -150,6 +183,21 @@ function getStyles(isMobile) {
             display: "flex",
             alignItems: "center",
             gap: "4px",
+        },
+        helperLink: {
+            fontSize: "12px",
+            color: C.accent,
+            marginTop: "6px",
+            display: "inline-flex",
+            alignItems: "center",
+            gap: "4px",
+            textDecoration: "none",
+            fontWeight: "700",
+            cursor: "pointer",
+            background: "none",
+            border: "none",
+            padding: 0,
+            fontFamily: "inherit",
         },
         genderRow: {
             display: "grid",
@@ -358,7 +406,7 @@ function Logo() {
 }
 
 /* ─── OTP Step ─── */
-function OTPStep({ phone, fullName, password, gender, onBack, onSuccess }) {
+function OTPStep({ phone, fullName, password, gender, branchId, onBack, onSuccess }) {
     const OTP_LEN = 6;
     const isMobile = useIsMobile();
     const S = getStyles(isMobile);
@@ -419,6 +467,7 @@ function OTPStep({ phone, fullName, password, gender, onBack, onSuccess }) {
                 fullName,
                 password,
                 gender,
+                branchId,
             });
             onSuccess();
         } catch (err) {
@@ -505,10 +554,13 @@ function ConfirmStep({ formData, onConfirm, onBack }) {
         } finally { setLoading(false); }
     };
 
+    const branchName = BRANCHES.find((b) => b.id === formData.branchId)?.name || "—";
+
     const infoRows = [
         { icon: "👤", label: "HỌ VÀ TÊN", value: formData.fullName, highlight: false },
         { icon: "📞", label: "SỐ ĐIỆN THOẠI", value: formData.phone, highlight: true },
         { icon: "🧑", label: "GIỚI TÍNH", value: GENDERS.find((g) => g.value === formData.gender)?.label, highlight: false },
+        { icon: "🏋️", label: "CHI NHÁNH", value: branchName, highlight: false },
     ];
 
     return (
@@ -648,6 +700,7 @@ function ConfirmStep({ formData, onConfirm, onBack }) {
 /* ─── Success Step ─── */
 function SuccessStep({ isMobile }) {
     const S = getStyles(isMobile);
+    const navigate = useNavigate();
     return (
         <div style={S.successBox}>
             <div style={S.successIcon}>✓</div>
@@ -657,7 +710,7 @@ function SuccessStep({ isMobile }) {
             </p>
             <button
                 style={S.btnPrimary}
-                onClick={() => (window.location.href = "/member/login")}
+                onClick={() => navigate("/member/login")}
             >
                 ĐĂNG NHẬP NGAY
             </button>
@@ -665,20 +718,55 @@ function SuccessStep({ isMobile }) {
     );
 }
 
+/* ─── Lưu tạm dữ liệu đăng ký để không bị mất khi rời trang (xem chi nhánh, ...) ─── */
+const REGISTER_DRAFT_KEY = "vtgym_register_draft";
+
+function loadDraft() {
+    try {
+        const raw = sessionStorage.getItem(REGISTER_DRAFT_KEY);
+        return raw ? JSON.parse(raw) : null;
+    } catch {
+        return null;
+    }
+}
+
+function saveDraft(data) {
+    try {
+        sessionStorage.setItem(REGISTER_DRAFT_KEY, JSON.stringify(data));
+    } catch {
+        /* ignore */
+    }
+}
+
+function clearDraft() {
+    try {
+        sessionStorage.removeItem(REGISTER_DRAFT_KEY);
+    } catch {
+        /* ignore */
+    }
+}
+
 /* ─── Register Step ─── */
 function RegisterStep({ onSendOTP, initialData }) {
     const isMobile = useIsMobile();
     const S = getStyles(isMobile);
+    const navigate = useNavigate();
+    const location = useLocation();
 
+    // Thứ tự ưu tiên dữ liệu khôi phục: state truyền qua router (khi quay lại từ trang chi nhánh)
+    // → initialData (đang ở trong state cha) → draft lưu tạm trong sessionStorage → form trống
     const [formData, setFormData] = useState(
-        initialData || {
-            fullName: "", phone: "", password: "", confirmPassword: "", gender: "Male",
+        location.state?.formData || initialData || loadDraft() || {
+            fullName: "", phone: "", password: "", confirmPassword: "", gender: "Male", branchId: "",
         }
     );
     const [errors, setErrors] = useState({});
     const [showPass, setShowPass] = useState(false);
     const [showConfirm, setShowConfirm] = useState(false);
     const { isFocused, bind } = useInputFocus();
+
+    // Lưu lại mỗi khi người dùng thay đổi thông tin (kể cả khi họ bấm sang trang chi nhánh)
+    useEffect(() => { saveDraft(formData); }, [formData]);
 
     const handleChange = (e) => setFormData({ ...formData, [e.target.name]: e.target.value });
 
@@ -690,6 +778,7 @@ function RegisterStep({ onSendOTP, initialData }) {
         if (!formData.password) errs.password = "Vui lòng nhập mật khẩu.";
         else if (formData.password.length < 6) errs.password = "Mật khẩu tối thiểu 6 ký tự.";
         if (formData.confirmPassword !== formData.password) errs.confirmPassword = "Mật khẩu xác nhận không khớp.";
+        if (!formData.branchId) errs.branchId = "Vui lòng chọn chi nhánh.";
         return errs;
     };
 
@@ -753,6 +842,39 @@ function RegisterStep({ onSendOTP, initialData }) {
                 {field("password", "MẬT KHẨU", "🔒", "password", { placeholder: "Tối thiểu 6 ký tự" })}
                 {field("confirmPassword", "XÁC NHẬN MẬT KHẨU", "🔒", "password", { placeholder: "Nhập lại mật khẩu" })}
 
+                {/* Chọn chi nhánh */}
+                <div style={S.fieldGroup}>
+                    <label style={S.label}>CHI NHÁNH TẬP LUYỆN</label>
+                    <div style={S.inputWrap}>
+                        <span style={S.inputIcon}>📍</span>
+                        <select
+                            name="branchId"
+                            value={formData.branchId}
+                            onChange={handleChange}
+                            style={{
+                                ...S.select,
+                                ...(isFocused("branchId") ? S.inputFocus : {}),
+                                ...(errors.branchId ? S.inputError : {}),
+                            }}
+                            {...bind("branchId")}
+                        >
+                            <option value="" disabled>— Chọn chi nhánh gần bạn —</option>
+                            {BRANCHES.map((b) => (
+                                <option key={b.id} value={b.id}>{b.name}</option>
+                            ))}
+                        </select>
+                        <span style={S.selectArrow}>▾</span>
+                    </div>
+                    {errors.branchId && <div style={S.errorMsg}>⚠ {errors.branchId}</div>}
+                    <button
+                        type="button"
+                        style={S.helperLink}
+                        onClick={() => navigate("/member/branches", { state: { formData } })}
+                    >
+                        Xem danh sách chi nhánh →
+                    </button>
+                </div>
+
                 <div style={S.fieldGroup}>
                     <label style={S.label}>GIỚI TÍNH</label>
                     <div style={S.genderRow}>
@@ -777,7 +899,9 @@ function RegisterStep({ onSendOTP, initialData }) {
             <div style={S.footer}>
                 <span>Đã có tài khoản?</span>
                 <span style={{ color: C.dim }}>·</span>
-                <a href="/member/login" style={S.loginLink}>Đăng nhập</a>
+                <button type="button" style={{ ...S.loginLink, fontFamily: "inherit" }} onClick={() => navigate("/member/login")}>
+                    Đăng nhập
+                </button>
             </div>
         </>
     );
@@ -795,7 +919,7 @@ function Register() {
     const handleConfirmed = () => setStep("otp");
     const handleBackToRegister = () => setStep("register");
     const handleBackToConfirm = () => setStep("confirm");
-    const handleSuccess = () => setStep("success");
+    const handleSuccess = () => { clearDraft(); setStep("success"); };
 
     return (
         <div style={S.page}>
@@ -818,6 +942,7 @@ function Register() {
                         fullName={formData.fullName}
                         password={formData.password}
                         gender={formData.gender}
+                        branchId={formData.branchId}
                         onBack={handleBackToConfirm}
                         onSuccess={handleSuccess}
                     />
@@ -830,9 +955,10 @@ function Register() {
             <style>{`
             * { box-sizing: border-box; }
             input::placeholder { color: #3d5a72; }
-            input:focus { outline: none; }
+            input:focus, select:focus { outline: none; }
             button:active { transform: scale(0.98); }
             button, a { touch-action: manipulation; }
+            select option { background: #162030; color: #e0eaf2; }
             @media (max-height: 700px) {
             body { overflow-y: auto; }
             }

@@ -28,13 +28,12 @@ const MOCK_PACKAGES = [
     { packageId: 2, name: "Gói 3 tháng", durationDays: 90, price: 900000, description: "Tiết kiệm 14% so với gói tháng" },
     { packageId: 3, name: "Gói 6 tháng", durationDays: 180, price: 1600000, description: "Tiết kiệm 24% — phổ biến nhất" },
     { packageId: 4, name: "Gói 1 năm", durationDays: 365, price: 2800000, description: "Tiết kiệm 33% — cam kết dài hạn" },
+    { packageId: 5, name: "Gói 3 năm", durationDays: 365, price: 2800000, description: "Tiết kiệm 33% — cam kết dài hạn" },
 ];
 
 const PAYMENT_METHODS = [
     { id: "cash", label: "Tiền mặt", icon: "💵" },
     { id: "bank_transfer", label: "Chuyển khoản", icon: "🏦" },
-    { id: "momo", label: "MoMo", icon: "📱" },
-    { id: "vnpay", label: "VNPay", icon: "💳" },
 ];
 
 const CURRENT_BRANCH_ID = 1;
