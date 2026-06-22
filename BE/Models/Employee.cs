@@ -87,11 +87,11 @@ public partial class Employee
 
     public virtual ICollection<MemberGroup> MemberGroups { get; set; } = new List<MemberGroup>();
 
+    public virtual ICollection<MemberUpdateLog> MemberUpdateLogs { get; set; } = new List<MemberUpdateLog>();
+
     public virtual ICollection<Member> Members { get; set; } = new List<Member>();
 
     public virtual ICollection<Notification> Notifications { get; set; } = new List<Notification>();
-
-    public virtual ICollection<PhoneChangeLog> PhoneChangeLogs { get; set; } = new List<PhoneChangeLog>();
 
     public virtual ICollection<Promotion> Promotions { get; set; } = new List<Promotion>();
 

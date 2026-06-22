@@ -112,6 +112,13 @@ const SAMPLE_MEMBERS = [
   },
 ];
 
+/* ── Lý do check-in thủ công (khi nhân viên tra cứu bằng SĐT) ── */
+const MANUAL_REASON_OPTIONS = [
+  { value: "no_recognition", label: "Không nhận diện được khuôn mặt" },
+  { value: "renewed", label: "Khách vừa gia hạn" },
+  { value: "other", label: "Khác" },
+];
+
 /* ── Badge trạng thái gói tập (hiển thị nhanh trên UI check-in) ── */
 const PACKAGE_STATUS_MAP = {
   active: { label: "Còn hạn", cls: "badge-success" },
@@ -148,6 +155,21 @@ function canCheckin(member) {
   if (member.accountStatus === "Expired") return false;
   if (member.packageStatus === "expired") return false;
   return true;
+}
+
+/* ── Lý do KHÔNG cho phép check-in, dùng để hiển thị dòng đỏ bên dưới nút ── */
+function getIneligibleReason(member) {
+  if (!member) return "";
+  if (member.accountStatus === "Suspended") {
+    return `Tài khoản đã bị khoá${member.suspendReason ? `: ${member.suspendReason}` : "."}`;
+  }
+  if (member.accountStatus === "Expired") {
+    return "Tài khoản đã hết hạn sử dụng. Không thể check-in.";
+  }
+  if (member.packageStatus === "expired") {
+    return "Gói tập đã hết hạn. Vui lòng gia hạn trước khi check-in.";
+  }
+  return "";
 }
 
 /* =========================================================================
@@ -259,10 +281,10 @@ export default function Checkin() {
    * gọi setLastCheckin(member, { source, success }) sau khi BE trả kết quả.
    * ===================================================================== */
   const [lastCheckin, setLastCheckin] = useState(null);
-  // lastCheckin = { member, source: "camera" | "phone", result: "success" | "error", at: Date }
+  // lastCheckin = { member, source: "camera" | "phone", result: "success" | "error", reason?, at: Date }
 
-  const recordCheckin = (member, source, result) => {
-    setLastCheckin({ member, source, result, at: new Date() });
+  const recordCheckin = (member, source, result, reason) => {
+    setLastCheckin({ member, source, result, reason, at: new Date() });
   };
 
   /* ── Camera → nhận diện → check-in ngay, không cần modal xác nhận ── */
@@ -295,12 +317,12 @@ export default function Checkin() {
     setTimeout(() => setCameraCheckin(null), 3000);
   };
 
-  /* ── Phone lookup ── */
+  /* ── Phone lookup — kết quả hiển thị NGAY tại khu vực "người check-in gần
+   * nhất", đẩy thông tin lượt check-in trước đó xuống dưới. ── */
   const [phoneInput, setPhoneInput] = useState("");
   const [phoneError, setPhoneError] = useState("");
   const [lookupLoading, setLookupLoading] = useState(false);
-  const [modal, setModal] = useState(null);
-  const [checkinState, setCheckinState] = useState(null);
+  const [phoneLookupResult, setPhoneLookupResult] = useState(null); // { member }
 
   const handlePhoneLookup = async () => {
     const phone = phoneInput.trim();
@@ -310,31 +332,66 @@ export default function Checkin() {
       return;
     }
     setLookupLoading(true);
+    setPhoneLookupResult(null);
     // TODO API: GET /api/members/lookup?phone={phone}
     await new Promise(r => setTimeout(r, 400));
     const member = SAMPLE_MEMBERS.find(m => m.phone === phone) || null;
     setLookupLoading(false);
     if (member) {
-      setModal({ member, source: "phone" });
+      setPhoneLookupResult({ member });
     } else {
       setPhoneError("Không tìm thấy hội viên với số điện thoại này.");
     }
   };
 
-  const closeModal = () => { setModal(null); setCheckinState(null); };
+  const dismissLookupResult = () => {
+    setPhoneLookupResult(null);
+    setPhoneInput("");
+    setPhoneError("");
+  };
 
-  const handleConfirmCheckin = async () => {
-    if (!modal) return;
+  /* ── Modal "Check-in thủ công" — chọn lý do trước khi xác nhận ── */
+  const [reasonModalOpen, setReasonModalOpen] = useState(false);
+  const [reasonType, setReasonType] = useState("");
+  const [customReason, setCustomReason] = useState("");
+  const [checkinState, setCheckinState] = useState(null); // "loading" | "success" | null
+
+  const openReasonModal = () => {
+    if (!phoneLookupResult || !canCheckin(phoneLookupResult.member)) return;
+    setReasonType("");
+    setCustomReason("");
+    setCheckinState(null);
+    setReasonModalOpen(true);
+  };
+
+  const closeReasonModal = () => {
+    setReasonModalOpen(false);
+    setReasonType("");
+    setCustomReason("");
+    setCheckinState(null);
+  };
+
+  const isReasonValid = !!reasonType && (reasonType !== "other" || customReason.trim().length > 0);
+
+  const handleConfirmManualCheckin = async () => {
+    if (!phoneLookupResult || !isReasonValid) return;
+    const member = phoneLookupResult.member;
+    const reasonLabel = reasonType === "other"
+      ? customReason.trim()
+      : MANUAL_REASON_OPTIONS.find(r => r.value === reasonType)?.label;
+
     setCheckinState("loading");
-    // TODO API: POST /api/checkins { memberId: modal.member.memberId, method: "phone" }
+    // TODO API: POST /api/checkins { memberId: member.memberId, method: "phone", manualReason: reasonLabel }
     await new Promise(r => setTimeout(r, 600));
-    const ok = canCheckin(modal.member);
-    setCheckinState(ok ? "success" : "error");
-    recordCheckin(modal.member, "phone", ok ? "success" : "error");
-    if (ok) {
-      showToast("success", `Check-in thành công — ${modal.member.fullName}`);
-      setTimeout(closeModal, 1200);
-    }
+    setCheckinState("success");
+    recordCheckin(member, "phone", "success", reasonLabel);
+    showToast("success", `Check-in thành công — ${member.fullName}`);
+
+    setTimeout(() => {
+      closeReasonModal();
+      setPhoneLookupResult(null);
+      setPhoneInput("");
+    }, 1200);
   };
 
   /* ── Render ── */
@@ -482,7 +539,7 @@ export default function Checkin() {
         /* ── Buttons ── */
         .ck-btn-row { display: flex; gap: 6px; margin-top: 10px; flex-wrap: wrap; }
         .ck-btn {
-          display: inline-flex; align-items: center; gap: 5px;
+          display: inline-flex; align-items: center; justify-content: center; gap: 5px;
           padding: 7px 12px; border-radius: var(--radius-sm);
           font-size: 12.5px; font-weight: 600; cursor: pointer;
           border: 1px solid transparent; transition: all .15s; font-family: 'Inter', sans-serif;
@@ -538,6 +595,58 @@ export default function Checkin() {
           font-size: 11px; color: var(--text-muted); font-weight: 600;
           text-transform: uppercase; letter-spacing: .04em; margin-bottom: 7px;
         }
+
+        /* ── Khối kết quả tra cứu SĐT (hiện ngay khi tìm thấy hội viên) ── */
+        .ck-lookup-block { display: flex; flex-direction: column; gap: 0; }
+        .ck-lookup-head {
+          display: flex; align-items: center; justify-content: space-between;
+          margin-bottom: 7px;
+        }
+        .ck-lookup-head .ck-hint { margin-bottom: 0; }
+        .ck-lookup-close {
+          width: 22px; height: 22px; border-radius: 50%;
+          display: flex; align-items: center; justify-content: center;
+          background: var(--surface-alt); border: none; cursor: pointer;
+          color: var(--text-muted); transition: background .15s; flex-shrink: 0;
+        }
+        .ck-lookup-close:hover { background: var(--border); }
+
+        .ck-lookup-card {
+          border-radius: var(--radius-md);
+          border: 1.5px solid var(--border);
+          background: #fff;
+          overflow: hidden;
+        }
+        .ck-lookup-card.ok      { border-color: var(--primary); }
+        .ck-lookup-card.blocked { border-color: var(--danger); }
+
+        .ck-lookup-top {
+          display: flex; align-items: center; gap: 10px;
+          padding: 12px 14px;
+          background: var(--surface-alt);
+        }
+        .ck-lookup-card.ok .ck-lookup-top      { background: var(--primary-light); }
+        .ck-lookup-card.blocked .ck-lookup-top { background: var(--danger-light); }
+
+        .ck-lookup-avatar {
+          width: 38px; height: 38px; border-radius: 50%;
+          background: var(--primary-dark); color: #fff;
+          display: flex; align-items: center; justify-content: center;
+          font-family: 'Outfit', sans-serif; font-weight: 700; font-size: 13px;
+          flex-shrink: 0;
+        }
+        .ck-lookup-card.blocked .ck-lookup-avatar { background: var(--danger); }
+        .ck-lookup-name { font-weight: 700; font-size: 13.5px; margin: 0 0 5px; word-break: break-word; }
+
+        .ck-lookup-body { padding: 4px 14px 14px; }
+        .ck-lookup-reason-blocked {
+          margin-top: 4px; padding: 9px 10px;
+          border-radius: var(--radius-sm);
+          background: var(--danger-light); color: var(--danger);
+          font-size: 12px; font-weight: 600;
+          display: flex; align-items: flex-start; gap: 7px;
+        }
+        .ck-lookup-checkin-btn { width: 100%; margin-top: 10px; padding: 9px 12px; font-size: 13px; }
 
         /* ── Panel: thông tin người check-in gần nhất ── */
         .ck-lastcheckin-empty {
@@ -694,18 +803,22 @@ export default function Checkin() {
         .ck-info-row:last-child { border-bottom: none; }
         .ck-info-label { color: var(--text-muted); flex-shrink: 0; }
         .ck-info-value { font-weight: 600; text-align: right; word-break: break-word; }
-        .ck-modal-expired-warn {
-          margin-top: 12px; padding: 9px 10px;
-          background: var(--danger-light); color: var(--danger);
-          border-radius: var(--radius-sm); font-size: 12px;
-          display: flex; align-items: flex-start; gap: 7px; font-weight: 500;
+
+        /* ── Chọn lý do check-in thủ công, trong modal ── */
+        .ck-reason-field { margin-top: 14px; }
+        .ck-reason-label {
+          display: block; font-size: 12.5px; font-weight: 700; color: var(--text);
+          margin-bottom: 6px;
         }
-        .ck-modal-internal-note {
-          margin-top: 12px; padding: 9px 10px;
-          background: var(--danger-light); border: 1px solid #fca5a5;
-          border-radius: var(--radius-sm);
-          display: flex; align-items: flex-start; gap: 7px;
+        .ck-reason-textarea {
+          width: 100%; margin-top: 8px;
+          border: 1px solid var(--border); border-radius: var(--radius-sm);
+          padding: 8px 10px; font-size: 13px; font-family: 'Inter', sans-serif;
+          color: var(--text); resize: vertical; outline: none;
+          transition: border-color .15s;
         }
+        .ck-reason-textarea:focus { border-color: var(--primary); }
+
         .ck-modal-foot {
           padding: 12px 16px 14px;
           display: flex; gap: 8px; justify-content: flex-end;
@@ -839,7 +952,7 @@ export default function Checkin() {
               onClick={handleMockRecognize}
               disabled={!isCameraOn || cameraCheckin === "loading"}
             >
-              <Sparkles size={13} /> Giả lập nhận diện
+              <Sparkles size={13} /> Mở Cửa ( Demo )
             </button>
           </div>
 
@@ -858,7 +971,7 @@ export default function Checkin() {
           )}
         </div>
 
-        {/* ── Right: Phone lookup + Thông tin check-in gần nhất ── */}
+        {/* ── Right: Phone lookup + kết quả tra cứu + Thông tin check-in gần nhất ── */}
         <div className="ck-card ck-phone-panel">
           <div className="ck-card-title">
             <h2>Check-in bằng số điện thoại</h2>
@@ -895,7 +1008,82 @@ export default function Checkin() {
             </div>
           )}
 
-          {/* ── Thông tin người check-in gần nhất (thay cho danh sách "Gợi ý nhanh") ── */}
+          {/* ── Kết quả tra cứu SĐT — hiện ngay tại đây, đẩy "người check-in gần nhất" xuống dưới ── */}
+          {phoneLookupResult && (
+            <div className="ck-lookup-block">
+              <div className="ck-lookup-head">
+                <p className="ck-hint">Kết quả tra cứu</p>
+                <button className="ck-lookup-close" onClick={dismissLookupResult} title="Đóng">
+                  <X size={12} />
+                </button>
+              </div>
+
+              <div className={`ck-lookup-card ${canCheckin(phoneLookupResult.member) ? "ok" : "blocked"}`}>
+                <div className="ck-lookup-top">
+                  <div className="ck-lookup-avatar">{initials(phoneLookupResult.member.fullName)}</div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <p className="ck-lookup-name">{phoneLookupResult.member.fullName}</p>
+                    <div className="ck-modal-badges">
+                      <StatusBadge status={phoneLookupResult.member.packageStatus} />
+                      <AccountStatusBadge status={phoneLookupResult.member.accountStatus} />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="ck-lookup-body">
+                  <div className="ck-lc-row">
+                    <span className="ck-lc-row-label">Mã hội viên</span>
+                    <span className="ck-lc-row-value">#{phoneLookupResult.member.memberId}</span>
+                  </div>
+                  <div className="ck-lc-row">
+                    <span className="ck-lc-row-label">Số điện thoại</span>
+                    <span className="ck-lc-row-value">{phoneLookupResult.member.phone}</span>
+                  </div>
+                  <div className="ck-lc-row">
+                    <span className="ck-lc-row-label">Chi nhánh</span>
+                    <span className="ck-lc-row-value">{phoneLookupResult.member.branchName}</span>
+                  </div>
+                  <div className="ck-lc-row">
+                    <span className="ck-lc-row-label">Gói tập</span>
+                    <span className="ck-lc-row-value">{phoneLookupResult.member.package}</span>
+                  </div>
+                  <div className="ck-lc-row">
+                    <span className="ck-lc-row-label">Hết hạn gói</span>
+                    <span className="ck-lc-row-value">{phoneLookupResult.member.expiryDate}</span>
+                  </div>
+
+                  {/* Ghi chú nội bộ — luôn nổi bật màu đỏ, chỉ nhân viên thấy */}
+                  {phoneLookupResult.member.internalNotes && (
+                    <div className="ck-lc-internal-note">
+                      <AlertCircle size={15} />
+                      <div className="ck-lc-internal-note-text">
+                        <span className="ck-lc-internal-note-label">Ghi chú nội bộ</span>
+                        {phoneLookupResult.member.internalNotes}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Dòng lý do màu đỏ khi không đủ điều kiện check-in */}
+                  {!canCheckin(phoneLookupResult.member) && (
+                    <div className="ck-lookup-reason-blocked">
+                      <AlertCircle size={13} style={{ flexShrink: 0, marginTop: 1 }} />
+                      {getIneligibleReason(phoneLookupResult.member)}
+                    </div>
+                  )}
+
+                  <button
+                    className="ck-btn ck-btn-primary ck-lookup-checkin-btn"
+                    onClick={openReasonModal}
+                    disabled={!canCheckin(phoneLookupResult.member)}
+                  >
+                    <LogIn size={13} /> Check-in cho hội viên này
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ── Thông tin người check-in gần nhất ── */}
           <div>
             <p className="ck-hint">Người check-in gần nhất</p>
 
@@ -950,6 +1138,14 @@ export default function Checkin() {
                     </span>
                   </div>
 
+                  {/* Lý do check-in thủ công — chỉ có khi check-in qua tra cứu SĐT */}
+                  {lastCheckin.reason && (
+                    <div className="ck-lc-row">
+                      <span className="ck-lc-row-label">Lý do check-in thủ công</span>
+                      <span className="ck-lc-row-value">{lastCheckin.reason}</span>
+                    </div>
+                  )}
+
                   {lastCheckin.member.accountStatus === "Suspended" && lastCheckin.member.suspendReason && (
                     <div className="ck-lc-suspend-note">
                       <ShieldAlert size={13} />
@@ -974,13 +1170,13 @@ export default function Checkin() {
         </div>
       </div>
 
-      {/* ── Modal xác nhận check-in (phone) ── */}
-      {modal && (
-        <div className="ck-overlay" onClick={e => e.target === e.currentTarget && closeModal()}>
+      {/* ── Modal "Check-in thủ công" — chọn lý do trước khi xác nhận check-in qua SĐT ── */}
+      {reasonModalOpen && phoneLookupResult && (
+        <div className="ck-overlay" onClick={e => e.target === e.currentTarget && closeReasonModal()}>
           <div className="ck-modal">
             <div className="ck-modal-head">
-              <h3>Xác nhận check-in</h3>
-              <button className="ck-modal-close" onClick={closeModal}><X size={13} /></button>
+              <h3>Check-in thủ công</h3>
+              <button className="ck-modal-close" onClick={closeReasonModal}><X size={13} /></button>
             </div>
 
             {checkinState === "loading" && (
@@ -995,78 +1191,70 @@ export default function Checkin() {
                 <p style={{ color: "var(--primary-dark)" }}>Check-in thành công!</p>
               </div>
             )}
-            {checkinState === "error" && (
-              <div>
-                <div className="ck-checkin-state" style={{ paddingBottom: 0 }}>
-                  <XCircle size={44} color="var(--danger)" />
-                  <p style={{ color: "var(--danger)" }}>Check-in thất bại. Không thể check-in cho hội viên này.</p>
-                </div>
-                <div className="ck-modal-foot">
-                  <button className="ck-btn-cancel" onClick={closeModal}>Đóng</button>
-                </div>
-              </div>
-            )}
 
             {!checkinState && (
               <>
                 <div className="ck-modal-body">
                   <div className="ck-modal-member-top">
-                    <div className="ck-modal-avatar">{initials(modal.member.fullName)}</div>
+                    <div className="ck-modal-avatar">{initials(phoneLookupResult.member.fullName)}</div>
                     <div>
-                      <p className="ck-modal-name">{modal.member.fullName}</p>
+                      <p className="ck-modal-name">{phoneLookupResult.member.fullName}</p>
                       <div className="ck-modal-badges">
-                        <StatusBadge status={modal.member.packageStatus} />
-                        <AccountStatusBadge status={modal.member.accountStatus} />
+                        <StatusBadge status={phoneLookupResult.member.packageStatus} />
+                        <AccountStatusBadge status={phoneLookupResult.member.accountStatus} />
                       </div>
                     </div>
                   </div>
                   <div className="ck-info-row">
                     <span className="ck-info-label">Mã hội viên</span>
-                    <span className="ck-info-value">#{modal.member.memberId}</span>
+                    <span className="ck-info-value">#{phoneLookupResult.member.memberId}</span>
                   </div>
                   <div className="ck-info-row">
                     <span className="ck-info-label">Số điện thoại</span>
-                    <span className="ck-info-value">{modal.member.phone}</span>
+                    <span className="ck-info-value">{phoneLookupResult.member.phone}</span>
                   </div>
                   <div className="ck-info-row">
                     <span className="ck-info-label">Chi nhánh</span>
-                    <span className="ck-info-value">{modal.member.branchName}</span>
-                  </div>
-                  <div className="ck-info-row">
-                    <span className="ck-info-label">Gói tập</span>
-                    <span className="ck-info-value">{modal.member.package}</span>
-                  </div>
-                  <div className="ck-info-row">
-                    <span className="ck-info-label">Ngày hết hạn</span>
-                    <span className="ck-info-value">{modal.member.expiryDate}</span>
+                    <span className="ck-info-value">{phoneLookupResult.member.branchName}</span>
                   </div>
 
-                  {!canCheckin(modal.member) && (
-                    <div className="ck-modal-expired-warn">
-                      <AlertCircle size={13} style={{ flexShrink: 0, marginTop: 1 }} />
-                      {modal.member.accountStatus === "Suspended"
-                        ? `Tài khoản đã bị khoá${modal.member.suspendReason ? `: ${modal.member.suspendReason}` : "."}`
-                        : "Tài khoản hoặc gói tập đã hết hạn. Không thể check-in."}
+                  <div className="ck-reason-field">
+                    <label className="ck-reason-label">
+                      Lý do check-in thủ công <span style={{ color: "var(--danger)" }}>*</span>
+                    </label>
+                    <div className="ck-device-select-wrap" style={{ margin: 0 }}>
+                      <select
+                        value={reasonType}
+                        onChange={e => {
+                          setReasonType(e.target.value);
+                          if (e.target.value !== "other") setCustomReason("");
+                        }}
+                      >
+                        <option value="">-- Chọn lý do --</option>
+                        {MANUAL_REASON_OPTIONS.map(opt => (
+                          <option key={opt.value} value={opt.value}>{opt.label}</option>
+                        ))}
+                      </select>
+                      <ChevronDown size={13} className="ck-chevron" />
                     </div>
-                  )}
 
-                  {/* Ghi chú nội bộ — luôn hiện nổi bật màu đỏ trong modal xác nhận */}
-                  {modal.member.internalNotes && (
-                    <div className="ck-modal-internal-note">
-                      <AlertCircle size={15} style={{ color: "var(--danger)" }} />
-                      <div className="ck-lc-internal-note-text">
-                        <span className="ck-lc-internal-note-label">Ghi chú nội bộ</span>
-                        {modal.member.internalNotes}
-                      </div>
-                    </div>
-                  )}
+                    {reasonType === "other" && (
+                      <textarea
+                        className="ck-reason-textarea"
+                        placeholder="Nhập lý do check-in thủ công…"
+                        value={customReason}
+                        onChange={e => setCustomReason(e.target.value)}
+                        rows={2}
+                      />
+                    )}
+                  </div>
                 </div>
                 <div className="ck-modal-foot">
-                  <button className="ck-btn-cancel" onClick={closeModal}>Huỷ</button>
+                  <button className="ck-btn-cancel" onClick={closeReasonModal}>Huỷ</button>
                   <button
                     className="ck-btn ck-btn-primary"
-                    onClick={handleConfirmCheckin}
-                    disabled={!canCheckin(modal.member)}
+                    onClick={handleConfirmManualCheckin}
+                    disabled={!isReasonValid}
                   >
                     <LogIn size={13} /> Xác nhận check-in
                   </button>

@@ -44,6 +44,8 @@ public partial class GymManagementContext : DbContext
 
     public virtual DbSet<MemberPackage> MemberPackages { get; set; }
 
+    public virtual DbSet<MemberUpdateLog> MemberUpdateLogs { get; set; }
+
     public virtual DbSet<MembershipPlan> MembershipPlans { get; set; }
 
     public virtual DbSet<Notification> Notifications { get; set; }
@@ -51,8 +53,6 @@ public partial class GymManagementContext : DbContext
     public virtual DbSet<NotificationRecipient> NotificationRecipients { get; set; }
 
     public virtual DbSet<Otp> Otps { get; set; }
-
-    public virtual DbSet<PhoneChangeLog> PhoneChangeLogs { get; set; }
 
     public virtual DbSet<Promotion> Promotions { get; set; }
 
@@ -878,6 +878,59 @@ public partial class GymManagementContext : DbContext
                 .HasConstraintName("fk_mp_transaction");
         });
 
+        modelBuilder.Entity<MemberUpdateLog>(entity =>
+        {
+            entity.HasKey(e => e.Id).HasName("PRIMARY");
+
+            entity.ToTable("member_update_logs", tb => tb.HasComment("Lịch sử cập nhật thông tin hội viên (theo từng field) — chỉ ghi thêm, không sửa xóa"));
+
+            entity.HasIndex(e => e.UpdatedByEmployeeId, "fk_mul_employee");
+
+            entity.HasIndex(e => new { e.MemberId, e.FieldName }, "idx_mul_member");
+
+            entity.HasIndex(e => e.UpdateSessionId, "idx_mul_session");
+
+            entity.Property(e => e.Id)
+                .HasComment("Mã bản ghi — khóa chính tự tăng")
+                .HasColumnName("id");
+            entity.Property(e => e.FieldName)
+                .HasMaxLength(100)
+                .HasComment("Tên trường dữ liệu bị thay đổi, VD: phone, full_name, gender")
+                .HasColumnName("field_name");
+            entity.Property(e => e.MemberId)
+                .HasComment("Hội viên được cập nhật thông tin — FK tới members.member_id")
+                .HasColumnName("member_id");
+            entity.Property(e => e.NewValue)
+                .HasComment("Giá trị mới sau khi thay đổi")
+                .HasColumnType("text")
+                .HasColumnName("new_value");
+            entity.Property(e => e.OldValue)
+                .HasComment("Giá trị cũ trước khi thay đổi — NULL nếu trường trước đó chưa có giá trị")
+                .HasColumnType("text")
+                .HasColumnName("old_value");
+            entity.Property(e => e.UpdateSessionId)
+                .HasComment("Mã phiên cập nhật (UUID) — nhóm các field_name cùng thay đổi trong 1 lần lưu")
+                .HasColumnName("update_session_id");
+            entity.Property(e => e.UpdatedAt)
+                .HasDefaultValueSql("CURRENT_TIMESTAMP")
+                .HasComment("Thời điểm thực hiện cập nhật")
+                .HasColumnType("datetime")
+                .HasColumnName("updated_at");
+            entity.Property(e => e.UpdatedByEmployeeId)
+                .HasComment("Nhân viên thực hiện cập nhật — FK tới employees.employee_id")
+                .HasColumnName("updated_by_employee_id");
+
+            entity.HasOne(d => d.Member).WithMany(p => p.MemberUpdateLogs)
+                .HasForeignKey(d => d.MemberId)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("fk_mul_member");
+
+            entity.HasOne(d => d.UpdatedByEmployee).WithMany(p => p.MemberUpdateLogs)
+                .HasForeignKey(d => d.UpdatedByEmployeeId)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("fk_mul_employee");
+        });
+
         modelBuilder.Entity<MembershipPlan>(entity =>
         {
             entity.HasKey(e => e.PlanId).HasName("PRIMARY");
@@ -1051,50 +1104,6 @@ public partial class GymManagementContext : DbContext
                 .HasComment("Mục đích: DangKy=đăng ký mới, QuenMatKhau=đặt lại mật khẩu, DoiSoDienThoai=xác nhận đổi số")
                 .HasColumnType("enum('DangKy','QuenMatKhau','DoiSoDienThoai')")
                 .HasColumnName("purpose");
-        });
-
-        modelBuilder.Entity<PhoneChangeLog>(entity =>
-        {
-            entity.HasKey(e => e.LogId).HasName("PRIMARY");
-
-            entity.ToTable("phone_change_log", tb => tb.HasComment("Lịch sử thay đổi số điện thoại hội viên — chỉ Manager thực hiện được"));
-
-            entity.HasIndex(e => e.MemberId, "fk_dl_hv");
-
-            entity.HasIndex(e => e.ChangedBy, "fk_dl_ql");
-
-            entity.Property(e => e.LogId)
-                .HasComment("Mã bản ghi — khóa chính tự tăng")
-                .HasColumnName("log_id");
-            entity.Property(e => e.ChangedAt)
-                .HasDefaultValueSql("CURRENT_TIMESTAMP")
-                .HasComment("Thời điểm thực hiện đổi số điện thoại")
-                .HasColumnType("datetime")
-                .HasColumnName("changed_at");
-            entity.Property(e => e.ChangedBy)
-                .HasComment("Quản lý thực hiện đổi số — FK tới employees.employee_id")
-                .HasColumnName("changed_by");
-            entity.Property(e => e.MemberId)
-                .HasComment("Hội viên được đổi số điện thoại — FK tới members.member_id")
-                .HasColumnName("member_id");
-            entity.Property(e => e.NewPhone)
-                .HasMaxLength(15)
-                .HasComment("Số điện thoại mới sau khi thay đổi")
-                .HasColumnName("new_phone");
-            entity.Property(e => e.OldPhone)
-                .HasMaxLength(15)
-                .HasComment("Số điện thoại cũ trước khi thay đổi")
-                .HasColumnName("old_phone");
-
-            entity.HasOne(d => d.ChangedByNavigation).WithMany(p => p.PhoneChangeLogs)
-                .HasForeignKey(d => d.ChangedBy)
-                .OnDelete(DeleteBehavior.ClientSetNull)
-                .HasConstraintName("fk_dl_ql");
-
-            entity.HasOne(d => d.Member).WithMany(p => p.PhoneChangeLogs)
-                .HasForeignKey(d => d.MemberId)
-                .OnDelete(DeleteBehavior.ClientSetNull)
-                .HasConstraintName("fk_dl_hv");
         });
 
         modelBuilder.Entity<Promotion>(entity =>
@@ -1277,31 +1286,42 @@ public partial class GymManagementContext : DbContext
         {
             entity.HasKey(e => e.TokenId).HasName("PRIMARY");
 
-            entity.ToTable("refresh_tokens");
+            entity.ToTable("refresh_tokens", tb => tb.HasComment("Refresh token cho hội viên và nhân viên"));
 
             entity.HasIndex(e => new { e.EntityId, e.EntityType }, "idx_rt_entity");
 
             entity.HasIndex(e => e.TokenHash, "uq_token_hash").IsUnique();
 
-            entity.Property(e => e.TokenId).HasColumnName("token_id");
+            entity.Property(e => e.TokenId)
+                .HasComment("Mã token — khóa chính tự tăng")
+                .HasColumnName("token_id");
             entity.Property(e => e.CreatedAt)
                 .HasDefaultValueSql("CURRENT_TIMESTAMP")
+                .HasComment("Thời điểm tạo token")
                 .HasColumnType("datetime")
                 .HasColumnName("created_at");
-            entity.Property(e => e.EntityId).HasColumnName("entity_id");
+            entity.Property(e => e.EntityId)
+                .HasComment("ID của tài khoản sở hữu token (member_id hoặc employee_id)")
+                .HasColumnName("entity_id");
             entity.Property(e => e.EntityType)
-                .HasColumnType("enum('Employee','Member')")
+                .HasComment("Loại tài khoản sở hữu token")
+                .HasColumnType("enum('Member','Employee')")
                 .HasColumnName("entity_type");
             entity.Property(e => e.ExpiresAt)
+                .HasComment("Thời điểm token hết hạn")
                 .HasColumnType("datetime")
                 .HasColumnName("expires_at");
             entity.Property(e => e.RevokedAt)
+                .HasComment("Thời điểm token bị thu hồi")
                 .HasColumnType("datetime")
                 .HasColumnName("revoked_at");
             entity.Property(e => e.Role)
                 .HasMaxLength(50)
+                .HasComment("Role tại thời điểm đăng nhập")
                 .HasColumnName("role");
-            entity.Property(e => e.TokenHash).HasColumnName("token_hash");
+            entity.Property(e => e.TokenHash)
+                .HasComment("SHA-256 hash của refresh token")
+                .HasColumnName("token_hash");
         });
 
         modelBuilder.Entity<Role>(entity =>

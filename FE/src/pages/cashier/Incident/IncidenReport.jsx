@@ -1,258 +1,485 @@
 import {
     AlertTriangle,
-    Building2,
     CheckCircle2,
     ChevronDown,
-    Dumbbell,
-    ImagePlus,
-    PenLine,
+    ImageIcon,
     RotateCcw,
-    Send,
+    Search,
     Upload,
     Video as VideoIcon,
-    X,
+    Wrench,
+    X
 } from "lucide-react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
-/* ----------------------------------------------------------------------- */
-/* Mock data — thay bằng dữ liệu thật từ API (chi nhánh, thiết bị...)      */
-/* ----------------------------------------------------------------------- */
-
-const BRANCHES = [
-    { id: 1, name: "Chi nhánh Quận 1" },
-    { id: 2, name: "Chi nhánh Quận 7" },
-    { id: 3, name: "Chi nhánh Thủ Đức" },
-];
-
-const EQUIPMENT_BY_BRANCH = {
-    1: [
-        { id: 101, name: "Máy chạy bộ #04" },
-        { id: 102, name: "Giàn tập Cable Crossover" },
-        { id: 103, name: "Xe đạp tập #02" },
-    ],
-    2: [
-        { id: 201, name: "Máy Smith Machine" },
-        { id: 202, name: "Máy Elliptical #01" },
-    ],
-    3: [
-        { id: 301, name: "Giàn Squat Rack #03" },
-        { id: 302, name: "Máy chạy bộ #07" },
-    ],
-};
-
+// ─── Constants ────────────────────────────────────────────────────────────────
 const MAX_IMAGES = 3;
 const MAX_IMAGE_SIZE_MB = 5;
 const MAX_VIDEO_SIZE_MB = 50;
 
-/* ----------------------------------------------------------------------- */
-/* Style chung                                                             */
-/* ----------------------------------------------------------------------- */
+// ─── Mock equipment list (replace with real API call) ─────────────────────────
+// Shape must match: { equipment_id: number, code: string, name: string, location?: string }
+const MOCK_EQUIPMENT = [
+    { equipment_id: 1, code: "TB001", name: "Máy chạy bộ #01", location: "Tầng 1 – Khu Cardio" },
+    { equipment_id: 2, code: "TB002", name: "Máy chạy bộ #02", location: "Tầng 1 – Khu Cardio" },
+    { equipment_id: 3, code: "TB003", name: "Máy chạy bộ #03", location: "Tầng 1 – Khu Cardio" },
+    { equipment_id: 4, code: "TB004", name: "Máy chạy bộ #04", location: "Tầng 1 – Khu Cardio" },
+    { equipment_id: 5, code: "XD001", name: "Xe đạp cố định #01", location: "Tầng 1 – Khu Cardio" },
+    { equipment_id: 6, code: "XD002", name: "Xe đạp cố định #02", location: "Tầng 1 – Khu Cardio" },
+    { equipment_id: 7, code: "TL001", name: "Tạ đòn 20kg", location: "Tầng 2 – Khu Free Weight" },
+    { equipment_id: 8, code: "TL002", name: "Tạ đòn 40kg", location: "Tầng 2 – Khu Free Weight" },
+    { equipment_id: 9, code: "SM001", name: "Smith Machine #01", location: "Tầng 2 – Khu Máy" },
+    { equipment_id: 10, code: "DX001", name: "Dây kéo cáp #01", location: "Tầng 2 – Khu Máy" },
+    { equipment_id: 11, code: "DX002", name: "Dây kéo cáp #02", location: "Tầng 2 – Khu Máy" },
+    { equipment_id: 12, code: "LP001", name: "Leg Press #01", location: "Tầng 2 – Khu Máy" },
+];
 
+// ─── Styles ───────────────────────────────────────────────────────────────────
 const STYLES = `
-  @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@600;700;800&family=Inter:wght@400;500;600;700&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
 
-  .ir-app {
-    --bg: #FFFFFF;
-    --surface: #F7F8FC;
-    --surface-2: #F0F1F9;
-    --border: #E7E9F5;
-    --ink: #181B34;
-    --ink-soft: #6E7191;
-    --violet: #6D5DFB;
-    --violet-dark: #5747E0;
-    --violet-tint: #EFF0FF;
-    --teal: #14C38E;
-    --teal-dark: #0EA374;
-    --teal-tint: #E6FBF3;
-    --amber: #FFB627;
-    --amber-dark: #C98300;
-    --amber-tint: #FFF6E0;
-    background: var(--bg);
-    color: var(--ink);
-    font-family: 'Inter', system-ui, -apple-system, sans-serif;
-    position: relative;
-  }
-  .ir-app *, .ir-app *::before, .ir-app *::after { box-sizing: border-box; }
-  .ir-display { font-family: 'Poppins', system-ui, sans-serif; }
+    .vt-app {
+        --bg: #F0F4FA;
+        --card: #FFFFFF;
+        --field: #F7F9FC;
+        --field-focus: #FFFFFF;
+        --border: #DDE3EE;
+        --border-focus: #3B82F6;
+        --text: #475569;
+        --text-soft: #6B7A99;
+        --teal: #0EA5E9;
+        --teal-dark: #0284C7;
+        --teal-light: #E0F2FE;
+        --accent: #6366F1;
+        --accent-light: #EEF2FF;
+        --success: #10B981;
+        --danger: #EF4444;
+        --danger-light: #FEF2F2;
+        background: var(--bg);
+        color: var(--text);
+        font-family: 'Inter', system-ui, -apple-system, sans-serif;
+        min-height: 100vh;
+    }
+    .vt-app *, .vt-app *::before, .vt-app *::after { box-sizing: border-box; margin: 0; }
 
-  .ir-card {
-    background: #fff;
-    border: 1px solid var(--border);
-    border-radius: 16px;
-    box-shadow: 0 1px 2px rgba(24,27,52,0.03), 0 6px 16px -8px rgba(24,27,52,0.05);
-  }
+    .vt-page {
+        min-height: 100vh;
+        display: flex; align-items: flex-start; justify-content: center;
+        padding: 0px 20px 60px;
+    }
+    .vt-card {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 20px;
+        box-shadow: 0 4px 6px -1px rgba(15,23,41,0.06), 0 10px 40px -10px rgba(15,23,41,0.10);
+        width: 100%; max-width: 680px;
+        padding: 40px 44px;
+    }
 
-  .ir-badge {
-    width: 32px; height: 32px; border-radius: 9px;
-    display: flex; align-items: center; justify-content: center;
-    flex-shrink: 0;
-  }
+    /* ── Header ── */
+    .vt-header {
+        display: flex; align-items: center; gap: 14px;
+        margin-bottom: 28px; padding-bottom: 24px;
+        border-bottom: 1px solid var(--border);
+    }
+    .vt-logo {
+        width: 48px; height: 48px; border-radius: 14px;
+        background: linear-gradient(135deg, var(--teal), var(--teal-dark));
+        display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+        box-shadow: 0 4px 12px rgba(14,165,233,0.35);
+    }
+    .vt-brand-name { font-size: 20px; font-weight: 800; letter-spacing: -0.02em; line-height: 1; }
+    .vt-brand-name span { color: var(--teal); }
+    .vt-brand-sub { font-size: 12px; color: var(--text-soft); margin-top: 3px; font-weight: 500; }
+    .vt-pill {
+        margin-left: auto;
+        display: inline-flex; align-items: center; gap: 6px;
+        background: var(--teal-light); border: 1px solid rgba(14,165,233,0.25);
+        color: var(--teal-dark); font-size: 11px; font-weight: 700;
+        letter-spacing: 0.07em; padding: 6px 14px; border-radius: 999px; white-space: nowrap;
+    }
+    .vt-pill-dot {
+        width: 6px; height: 6px; border-radius: 50%; background: var(--teal);
+        animation: pulse-dot 2s infinite;
+    }
+    @keyframes pulse-dot { 0%,100%{opacity:1} 50%{opacity:.4} }
 
-  .ir-label { font-size: 12.5px; font-weight: 600; color: var(--ink); margin-bottom: 6px; display: flex; align-items: center; gap: 5px; }
+    /* ── Labels / sections ── */
+    .vt-section { margin-bottom: 24px; }
+    .vt-label {
+        display: block; font-size: 11px; font-weight: 700;
+        letter-spacing: 0.08em; color: var(--text-soft);
+        margin-bottom: 8px; text-transform: uppercase;
+    }
+    .vt-required { color: var(--danger); margin-left: 2px; }
+    .vt-optional {
+        font-size: 10px; font-weight: 600; letter-spacing: 0.04em;
+        color: var(--text-soft); background: var(--field);
+        border: 1px solid var(--border); border-radius: 4px;
+        padding: 1px 6px; margin-left: 6px; text-transform: uppercase; vertical-align: middle;
+    }
 
-  .ir-input, .ir-select, .ir-textarea {
-    width: 100%;
-    background: var(--surface);
-    border: 1.5px solid var(--border);
-    border-radius: 10px;
-    padding: 9px 12px;
-    font-size: 13.5px;
-    color: var(--ink);
-    font-family: 'Inter', sans-serif;
-    transition: border-color .15s, background .15s, box-shadow .15s;
-    outline: none;
-  }
-  .ir-textarea { resize: vertical; min-height: 84px; line-height: 1.5; }
-  .ir-input::placeholder, .ir-textarea::placeholder { color: #A4A7C4; }
-  .ir-input:focus, .ir-select:focus, .ir-textarea:focus {
-    border-color: var(--violet);
-    background: #fff;
-    box-shadow: 0 0 0 3px rgba(109,93,251,0.12);
-  }
-  .ir-input.ir-error, .ir-textarea.ir-error, .ir-select.ir-error {
-    border-color: var(--amber-dark);
-    background: var(--amber-tint);
-  }
-  .ir-select { appearance: none; cursor: pointer; }
-  .ir-select:disabled { cursor: not-allowed; opacity: .55; }
+    /* ── Inputs ── */
+    .vt-input, .vt-textarea {
+        width: 100%; background: var(--field); border: 1.5px solid var(--border);
+        border-radius: 12px; padding: 13px 16px; font-size: 14px; color: var(--text);
+        outline: none; transition: border-color .15s, background .15s, box-shadow .15s;
+        font-family: 'Inter', sans-serif; font-weight: 500;
+    }
+    .vt-textarea { resize: vertical; min-height: 110px; line-height: 1.6; }
+    .vt-input::placeholder, .vt-textarea::placeholder { color: #B0BAD0; font-weight: 400; }
+    .vt-input:focus, .vt-textarea:focus {
+        border-color: var(--border-focus); background: var(--field-focus);
+        box-shadow: 0 0 0 3px rgba(59,130,246,0.12);
+    }
+    .vt-input.has-error, .vt-textarea.has-error {
+        border-color: var(--danger); background: var(--danger-light);
+        box-shadow: 0 0 0 3px rgba(239,68,68,0.08);
+    }
+    .vt-error {
+        font-size: 12px; color: var(--danger); margin-top: 7px;
+        font-weight: 600; display: flex; align-items: center; gap: 5px;
+    }
+    .vt-counter { font-size: 11.5px; color: var(--text-soft); text-align: right; margin-top: 6px; font-weight: 500; }
 
-  .ir-error-text { font-size: 12px; color: var(--amber-dark); margin-top: 5px; display: flex; align-items: center; gap: 4px; font-weight: 600; }
+    /* ── Equipment picker ── */
+    .eq-wrapper { position: relative; }
 
-  .ir-dropzone {
-    border: 2px dashed var(--border);
-    border-radius: 12px;
-    background: var(--surface);
-    transition: border-color .15s, background .15s;
-    cursor: pointer;
-  }
-  .ir-dropzone:hover { border-color: var(--violet); background: var(--violet-tint); }
-  .ir-dropzone.is-active { border-color: var(--violet); background: var(--violet-tint); }
+    .eq-trigger {
+        width: 100%; background: var(--field); border: 1.5px solid var(--border);
+        border-radius: 12px; padding: 13px 16px; font-size: 14px; color: var(--text);
+        outline: none; cursor: pointer; text-align: left; font-family: 'Inter', sans-serif;
+        font-weight: 500; display: flex; align-items: center; gap: 10px;
+        transition: border-color .15s, background .15s, box-shadow .15s;
+    }
+    .eq-trigger:hover, .eq-trigger.is-open {
+        border-color: var(--border-focus); background: var(--field-focus);
+        box-shadow: 0 0 0 3px rgba(59,130,246,0.12);
+    }
+    .eq-trigger-label { flex: 1; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+    .eq-trigger-placeholder { color: #B0BAD0; font-weight: 400; }
+    .eq-trigger-chevron { color: var(--text-soft); flex-shrink: 0; transition: transform .15s; }
+    .eq-trigger.is-open .eq-trigger-chevron { transform: rotate(180deg); }
 
-  .ir-btn-primary {
-    display: inline-flex; align-items: center; justify-content: center; gap: 7px;
-    width: 100%;
-    background: var(--violet);
-    color: #fff;
-    font-weight: 600;
-    font-size: 13.5px;
-    padding: 10px 16px;
-    border-radius: 10px;
-    border: none;
-    cursor: pointer;
-    transition: background .15s, transform .1s;
-  }
-  .ir-btn-primary:hover { background: var(--violet-dark); }
-  .ir-btn-primary:active { transform: translateY(1px); }
+    .eq-selected-badge {
+        display: inline-flex; align-items: center; gap: 6px;
+        background: var(--accent-light); border: 1px solid rgba(99,102,241,0.25);
+        color: var(--accent); border-radius: 8px; padding: 3px 10px;
+        font-size: 12px; font-weight: 700; flex-shrink: 0;
+    }
 
-  .ir-thumb { position: relative; border-radius: 10px; overflow: hidden; aspect-ratio: 1 / 1; background: var(--surface-2); border: 1px solid var(--border); }
-  .ir-thumb img, .ir-thumb video { width: 100%; height: 100%; object-fit: cover; display: block; }
-  .ir-thumb-remove { position: absolute; top: 5px; right: 5px; width: 20px; height: 20px; border-radius: 50%; background: rgba(24,27,52,0.6); color: #fff; display: flex; align-items: center; justify-content: center; border: none; cursor: pointer; }
-  .ir-thumb-remove:hover { background: var(--ink); }
+    /* Clear selected btn */
+    .eq-clear {
+        width: 18px; height: 18px; border-radius: 50%; border: none; cursor: pointer;
+        background: rgba(99,102,241,0.15); color: var(--accent);
+        display: flex; align-items: center; justify-content: center;
+        transition: background .1s; flex-shrink: 0;
+    }
+    .eq-clear:hover { background: rgba(239,68,68,0.15); color: var(--danger); }
 
-  @media (prefers-reduced-motion: reduce) {
-    .ir-btn-primary, .ir-dropzone { transition: none; }
-  }
+    .eq-dropdown {
+        position: absolute; top: calc(100% + 6px); left: 0; right: 0; z-index: 200;
+        background: var(--card); border: 1.5px solid var(--border);
+        border-radius: 14px; box-shadow: 0 8px 30px -4px rgba(15,23,41,0.14);
+        overflow: hidden;
+    }
+
+    .eq-search-wrap {
+        padding: 10px 10px 8px;
+        border-bottom: 1px solid var(--border);
+        display: flex; align-items: center; gap: 8px;
+        background: var(--field);
+    }
+    .eq-search {
+        flex: 1; border: none; background: transparent; outline: none;
+        font-size: 13.5px; color: var(--text); font-family: 'Inter', sans-serif; font-weight: 500;
+    }
+    .eq-search::placeholder { color: #B0BAD0; font-weight: 400; }
+
+    .eq-list { max-height: 220px; overflow-y: auto; padding: 6px; }
+    .eq-list::-webkit-scrollbar { width: 4px; }
+    .eq-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+    .eq-option {
+        display: flex; align-items: center; gap: 10px;
+        padding: 9px 12px; border-radius: 9px; cursor: pointer;
+        transition: background .1s;
+    }
+    .eq-option:hover { background: var(--field); }
+    .eq-option.is-selected { background: var(--accent-light); }
+
+    .eq-option-code {
+        font-size: 11px; font-weight: 700; letter-spacing: 0.05em;
+        color: var(--accent); background: var(--accent-light);
+        border: 1px solid rgba(99,102,241,0.2);
+        border-radius: 6px; padding: 2px 7px; flex-shrink: 0;
+    }
+    .eq-option-info { flex: 1; min-width: 0; }
+    .eq-option-name { font-size: 13.5px; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .eq-option-loc { font-size: 11.5px; color: var(--text-soft); margin-top: 1px; font-weight: 400; }
+    .eq-option-check { color: var(--accent); flex-shrink: 0; }
+    .eq-empty { padding: 20px; text-align: center; font-size: 13px; color: var(--text-soft); font-weight: 500; }
+
+    .eq-none-option {
+        display: flex; align-items: center; gap: 10px;
+        padding: 9px 12px; border-radius: 9px; cursor: pointer;
+        transition: background .1s; color: var(--text-soft); font-size: 13px; font-weight: 500;
+        border-top: 1px solid var(--border); margin-top: 4px;
+    }
+    .eq-none-option:hover { background: var(--field); }
+
+    /* ── Media ── */
+    .vt-media-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+    .vt-media-count {
+        font-size: 12px; color: var(--text-soft); font-weight: 600;
+        background: var(--field); border: 1px solid var(--border); border-radius: 999px; padding: 2px 10px;
+    }
+    .vt-img-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+    .vt-thumb {
+        position: relative; border-radius: 10px; overflow: hidden;
+        aspect-ratio: 1/1; background: var(--field); border: 1.5px solid var(--border);
+    }
+    .vt-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .vt-thumb-remove {
+        position: absolute; top: 5px; right: 5px; width: 22px; height: 22px; border-radius: 50%;
+        background: rgba(255,255,255,0.92); color: var(--danger);
+        display: flex; align-items: center; justify-content: center;
+        border: none; cursor: pointer; box-shadow: 0 1px 4px rgba(0,0,0,0.15); transition: background .1s;
+    }
+    .vt-thumb-remove:hover { background: var(--danger-light); }
+    .vt-img-slot {
+        aspect-ratio: 1/1; border: 1.5px dashed var(--border); border-radius: 10px;
+        background: var(--field); display: flex; flex-direction: column; align-items: center;
+        justify-content: center; gap: 6px; cursor: pointer; transition: border-color .15s, background .15s;
+        color: var(--text-soft);
+    }
+    .vt-img-slot:hover, .vt-img-slot.drag-active { border-color: var(--teal); background: var(--teal-light); color: var(--teal-dark); }
+    .vt-img-slot span { font-size: 11px; font-weight: 600; }
+    .vt-img-empty { aspect-ratio: 1/1; border: 1.5px dashed var(--border); border-radius: 10px; background: var(--field); opacity: .4; }
+    .vt-video-drop {
+        border: 1.5px dashed var(--border); border-radius: 12px; background: var(--field);
+        padding: 20px; display: flex; flex-direction: column; align-items: center;
+        justify-content: center; gap: 7px; cursor: pointer; text-align: center;
+        transition: border-color .15s, background .15s;
+    }
+    .vt-video-drop:hover, .vt-video-drop.drag-active { border-color: var(--accent); background: var(--accent-light); }
+    .vt-video-drop .title { font-size: 13.5px; font-weight: 600; color: var(--text); }
+    .vt-video-drop .title span { color: var(--accent); }
+    .vt-video-drop .sub { font-size: 11.5px; color: var(--text-soft); font-weight: 500; }
+    .vt-video-thumb {
+        position: relative; border-radius: 12px; overflow: hidden;
+        aspect-ratio: 16/9; border: 1.5px solid var(--border); background: #000;
+    }
+    .vt-video-thumb video { width: 100%; height: 100%; object-fit: contain; display: block; }
+    .vt-video-thumb .vt-thumb-remove { top: 8px; right: 8px; width: 26px; height: 26px; }
+    .vt-hint { font-size: 11.5px; color: var(--text-soft); margin-top: 8px; font-weight: 500; }
+    .vt-divider { height: 1px; background: var(--border); margin: 4px 0 24px; }
+
+    /* ── Submit ── */
+    .vt-submit {
+        width: 100%; background: linear-gradient(135deg, #0EA5E9, #0284C7);
+        color: #fff; font-weight: 700; font-size: 15px; padding: 14px 0;
+        border-radius: 12px; border: none; cursor: pointer;
+        display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+        transition: filter .15s, transform .1s; box-shadow: 0 4px 14px rgba(14,165,233,0.35);
+        letter-spacing: .01em;
+    }
+    .vt-submit:hover { filter: brightness(1.06); }
+    .vt-submit:active { transform: translateY(1px); }
+
+    /* ── Success ── */
+    .vt-success-icon {
+        width: 56px; height: 56px; border-radius: 50%;
+        background: linear-gradient(135deg,#10B981,#059669);
+        display: flex; align-items: center; justify-content: center;
+        margin: 0 auto 20px; box-shadow: 0 4px 16px rgba(16,185,129,0.35);
+    }
+    .vt-summary {
+        background: var(--field); border: 1px solid var(--border);
+        border-radius: 12px; padding: 14px 18px; margin: 18px 0 22px;
+    }
+    .vt-summary-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; font-size: 13px; }
+    .vt-summary-row + .vt-summary-row { margin-top: 10px; }
+    .vt-summary-row .key { color: var(--text-soft); font-weight: 500; }
+    .vt-summary-row .val { font-weight: 700; text-align: right; }
 `;
 
-/* ----------------------------------------------------------------------- */
-/* Thành phần nhỏ                                                          */
-/* ----------------------------------------------------------------------- */
+// ─── Equipment Picker component ───────────────────────────────────────────────
+function EquipmentPicker({ value, onChange, equipmentList }) {
+    const [open, setOpen] = useState(false);
+    const [search, setSearch] = useState("");
+    const wrapRef = useRef(null);
+    const searchRef = useRef(null);
 
-function SectionHeading({ icon, tint, title, subtitle }) {
+    const selected = equipmentList.find((e) => e.equipment_id === value) ?? null;
+
+    const filtered = equipmentList.filter((e) => {
+        const q = search.toLowerCase();
+        return (
+            e.code.toLowerCase().includes(q) ||
+            e.name.toLowerCase().includes(q) ||
+            (e.location ?? "").toLowerCase().includes(q)
+        );
+    });
+
+    // Close when clicking outside
+    useEffect(() => {
+        function handle(e) {
+            if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false);
+        }
+        document.addEventListener("mousedown", handle);
+        return () => document.removeEventListener("mousedown", handle);
+    }, []);
+
+    // Focus search on open
+    useEffect(() => {
+        if (open) setTimeout(() => searchRef.current?.focus(), 50);
+        else setSearch("");
+    }, [open]);
+
+    function select(id) {
+        onChange(id);
+        setOpen(false);
+    }
+
     return (
-        <div className="flex items-start gap-2.5" style={{ marginBottom: 14 }}>
-            <div className="ir-badge" style={{ background: tint }}>
-                {icon}
-            </div>
-            <div>
-                <h2 className="ir-display" style={{ fontSize: 14.5, fontWeight: 700, color: "var(--ink)" }}>
-                    {title}
-                </h2>
-                {subtitle && <p style={{ fontSize: 12, color: "var(--ink-soft)", marginTop: 1 }}>{subtitle}</p>}
-            </div>
-        </div>
-    );
-}
+        <div className="eq-wrapper" ref={wrapRef}>
+            {/* Trigger */}
+            <button
+                type="button"
+                className={`eq-trigger ${open ? "is-open" : ""}`}
+                onClick={() => setOpen((o) => !o)}
+            >
+                <Wrench size={15} style={{ color: "var(--text-soft)", flexShrink: 0 }} />
+                {selected ? (
+                    <>
+                        <span className="eq-trigger-label">
+                            <span className="eq-selected-badge">{selected.code}</span>
+                            {" "}{selected.name}
+                        </span>
+                        <button
+                            type="button"
+                            className="eq-clear"
+                            onClick={(e) => { e.stopPropagation(); onChange(null); }}
+                            title="Bỏ chọn"
+                        >
+                            <X size={10} strokeWidth={3} />
+                        </button>
+                    </>
+                ) : (
+                    <span className="eq-trigger-label eq-trigger-placeholder">
+                        Chọn thiết bị liên quan (tuỳ chọn)
+                    </span>
+                )}
+                <ChevronDown size={15} className="eq-trigger-chevron" />
+            </button>
 
-function PreviewRow({ label, value, placeholder = "Chưa có", alwaysShow }) {
-    const has = alwaysShow ? true : !!value;
-    return (
-        <div className="flex items-start justify-between gap-3">
-            <span style={{ fontSize: 12, color: "var(--ink-soft)", flexShrink: 0 }}>{label}</span>
-            <span style={{ fontSize: 12.5, fontWeight: 600, color: has ? "var(--ink)" : "#AEB1CC", textAlign: "right", fontStyle: has ? "normal" : "italic" }}>
-                {value || placeholder}
-            </span>
-        </div>
-    );
-}
+            {/* Dropdown */}
+            {open && (
+                <div className="eq-dropdown">
+                    {/* Search */}
+                    <div className="eq-search-wrap">
+                        <Search size={14} style={{ color: "var(--text-soft)", flexShrink: 0 }} />
+                        <input
+                            ref={searchRef}
+                            className="eq-search"
+                            placeholder="Nhập mã hoặc tên thiết bị..."
+                            value={search}
+                            onChange={(e) => setSearch(e.target.value)}
+                        />
+                        {search && (
+                            <button type="button" className="eq-clear" onClick={() => setSearch("")}>
+                                <X size={10} strokeWidth={3} />
+                            </button>
+                        )}
+                    </div>
 
-function Bg() {
-    return (
-        <>
-            <div style={{ position: "fixed", top: -110, right: -100, width: 280, height: 280, borderRadius: "50%", background: "var(--violet)", opacity: 0.06, filter: "blur(60px)", pointerEvents: "none", zIndex: 0 }} />
-            <div style={{ position: "fixed", bottom: -120, left: -110, width: 300, height: 300, borderRadius: "50%", background: "var(--teal)", opacity: 0.06, filter: "blur(65px)", pointerEvents: "none", zIndex: 0 }} />
-        </>
-    );
-}
-
-/* ----------------------------------------------------------------------- */
-/* Màn hình sau khi gửi                                                    */
-/* ----------------------------------------------------------------------- */
-
-function SuccessScreen({ data, onReset }) {
-    return (
-        <div className="ir-app min-h-screen flex items-center justify-center px-4 py-10">
-            <style>{STYLES}</style>
-            <Bg />
-            <div className="ir-card" style={{ maxWidth: 360, width: "100%", position: "relative", zIndex: 1, padding: "28px 24px" }}>
-                <div
-                    style={{
-                        width: 48,
-                        height: 48,
-                        borderRadius: "50%",
-                        background: "var(--violet)",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        margin: "0 auto 16px",
-                    }}
-                >
-                    <CheckCircle2 size={24} color="#fff" />
-                </div>
-                <h2 className="ir-display" style={{ fontSize: 18, fontWeight: 800, textAlign: "center", color: "var(--ink)" }}>
-                    Đã gửi đến quản lý!
-                </h2>
-                <p style={{ fontSize: 13, color: "var(--ink-soft)", textAlign: "center", marginTop: 6, lineHeight: 1.5 }}>
-                    Quản lý chi nhánh sẽ xem và phản hồi báo cáo này sớm nhất có thể.
-                </p>
-
-                <div style={{ background: "var(--surface)", borderRadius: 12, padding: "12px 14px", marginTop: 18, marginBottom: 18 }}>
-                    <div className="flex flex-col gap-2">
-                        <PreviewRow label="Tiêu đề" value={data.title} alwaysShow />
-                        <PreviewRow label="Chi nhánh" value={data.branchName} alwaysShow />
-                        <PreviewRow label="Minh chứng" value={`${data.imageCount} ảnh${data.hasVideo ? " • 1 video" : ""}`} alwaysShow />
+                    {/* List */}
+                    <div className="eq-list">
+                        {filtered.length === 0 ? (
+                            <p className="eq-empty">Không tìm thấy thiết bị phù hợp</p>
+                        ) : (
+                            filtered.map((eq) => (
+                                <div
+                                    key={eq.equipment_id}
+                                    className={`eq-option ${value === eq.equipment_id ? "is-selected" : ""}`}
+                                    onClick={() => select(eq.equipment_id)}
+                                >
+                                    <span className="eq-option-code">{eq.code}</span>
+                                    <div className="eq-option-info">
+                                        <div className="eq-option-name">{eq.name}</div>
+                                        {eq.location && <div className="eq-option-loc">{eq.location}</div>}
+                                    </div>
+                                    {value === eq.equipment_id && (
+                                        <CheckCircle2 size={15} className="eq-option-check" />
+                                    )}
+                                </div>
+                            ))
+                        )}
+                        {/* None option */}
+                        <div
+                            className="eq-none-option"
+                            onClick={() => select(null)}
+                        >
+                            <X size={14} style={{ opacity: .5 }} />
+                            Không liên quan thiết bị cụ thể
+                        </div>
                     </div>
                 </div>
+            )}
+        </div>
+    );
+}
 
-                <button type="button" className="ir-btn-primary" onClick={onReset}>
-                    <RotateCcw size={14} /> Gửi báo cáo khác
-                </button>
+// ─── Success screen ───────────────────────────────────────────────────────────
+function SuccessScreen({ data, onReset }) {
+    return (
+        <div className="vt-app">
+            <style>{STYLES}</style>
+            <div className="vt-page" style={{ alignItems: "center" }}>
+                <div className="vt-card" style={{ maxWidth: 480, textAlign: "center" }}>
+                    <div className="vt-success-icon">
+                        <CheckCircle2 size={26} color="#fff" strokeWidth={2.5} />
+                    </div>
+                    <h2 style={{ fontSize: 22, fontWeight: 800, letterSpacing: "-0.02em" }}>Báo cáo đã được gửi!</h2>
+                    <p style={{ fontSize: 14, color: "var(--text-soft)", marginTop: 8, lineHeight: 1.6 }}>
+                        Sự cố đã được ghi nhận và sẽ được xử lý sớm.
+                    </p>
+                    <div className="vt-summary">
+                        <div className="vt-summary-row">
+                            <span className="key">Tiêu đề</span>
+                            <span className="val">{data.title}</span>
+                        </div>
+                        {data.equipmentCode && (
+                            <div className="vt-summary-row">
+                                <span className="key">Thiết bị</span>
+                                <span className="val">{data.equipmentCode} – {data.equipmentName}</span>
+                            </div>
+                        )}
+                        <div className="vt-summary-row">
+                            <span className="key">Minh chứng</span>
+                            <span className="val">{data.imageCount} ảnh{data.hasVideo ? " • 1 video" : ""}</span>
+                        </div>
+                    </div>
+                    <button className="vt-submit" onClick={onReset}>
+                        <RotateCcw size={15} /> Gửi báo cáo khác
+                    </button>
+                </div>
             </div>
         </div>
     );
 }
 
-/* ----------------------------------------------------------------------- */
-/* Form chính                                                               */
-/* ----------------------------------------------------------------------- */
-
+// ─── Main form ────────────────────────────────────────────────────────────────
 export default function IncidentReportForm() {
+    // ── Form state ──
     const [title, setTitle] = useState("");
     const [description, setDescription] = useState("");
-    const [branchId, setBranchId] = useState("");
-    const [equipmentId, setEquipmentId] = useState("");
+    const [equipmentId, setEquipmentId] = useState(null);   // number | null → maps to EquipmentId
     const [images, setImages] = useState([]);
     const [video, setVideo] = useState(null);
+
+    // ── UI state ──
     const [imageError, setImageError] = useState("");
     const [videoError, setVideoError] = useState("");
     const [touched, setTouched] = useState({});
@@ -263,88 +490,89 @@ export default function IncidentReportForm() {
     const imageInputRef = useRef(null);
     const videoInputRef = useRef(null);
 
-    const branch = BRANCHES.find((b) => String(b.id) === String(branchId));
-    const equipmentList = branchId ? EQUIPMENT_BY_BRANCH[branchId] || [] : [];
-    const equipment = equipmentList.find((e) => String(e.id) === String(equipmentId));
-
+    // ── Validation ──
     const errors = {
         title: !title.trim() ? "Vui lòng nhập tiêu đề sự cố" : "",
         description: !description.trim() ? "Vui lòng mô tả chi tiết sự cố" : "",
-        branchId: !branchId ? "Vui lòng chọn chi nhánh" : "",
     };
-    const isValid = !errors.title && !errors.description && !errors.branchId;
+    const isValid = !errors.title && !errors.description;
 
-    function handleBranchChange(e) {
-        setBranchId(e.target.value);
-        setEquipmentId("");
-    }
-
+    // ── Image handlers ──
     function addImages(fileList) {
         const list = Array.from(fileList || []).filter((f) => f.type.startsWith("image/"));
-        if (list.length === 0) {
-            setImageError("Chỉ chấp nhận file hình ảnh");
-            return;
-        }
+        if (!list.length) { setImageError("Chỉ chấp nhận file hình ảnh"); return; }
         const room = MAX_IMAGES - images.length;
-        if (room <= 0) {
-            setImageError(`Chỉ được thêm tối đa ${MAX_IMAGES} hình ảnh`);
-            return;
-        }
+        if (room <= 0) { setImageError(`Đã đạt giới hạn ${MAX_IMAGES} hình ảnh`); return; }
         const oversize = list.find((f) => f.size > MAX_IMAGE_SIZE_MB * 1024 * 1024);
-        if (oversize) {
-            setImageError(`Hình "${oversize.name}" vượt quá ${MAX_IMAGE_SIZE_MB}MB`);
-            return;
-        }
+        if (oversize) { setImageError(`Hình "${oversize.name}" vượt quá ${MAX_IMAGE_SIZE_MB}MB`); return; }
         const toAdd = list.slice(0, room).map((f) => ({
-            id: `${f.name}-${f.size}-${Date.now()}-${Math.random()}`,
-            file: f,
-            url: URL.createObjectURL(f),
+            id: `${f.name}-${Date.now()}-${Math.random()}`,
+            file: f, url: URL.createObjectURL(f),
         }));
         setImages((prev) => [...prev, ...toAdd]);
-        setImageError(list.length > room ? `Chỉ thêm được ${room} ảnh, đã đạt giới hạn ${MAX_IMAGES} hình` : "");
+        setImageError(list.length > room ? `Chỉ thêm được ${room} ảnh nữa` : "");
     }
 
     function removeImage(id) {
         setImages((prev) => {
-            const target = prev.find((i) => i.id === id);
-            if (target) URL.revokeObjectURL(target.url);
+            const t = prev.find((i) => i.id === id);
+            if (t) URL.revokeObjectURL(t.url);
             return prev.filter((i) => i.id !== id);
         });
         setImageError("");
     }
 
+    // ── Video handlers ──
     function addVideo(fileList) {
         const file = (fileList || [])[0];
         if (!file) return;
-        if (!file.type.startsWith("video/")) {
-            setVideoError("Chỉ chấp nhận file video");
-            return;
-        }
-        if (video) {
-            setVideoError("Đã có 1 video — vui lòng xoá video hiện tại trước khi thêm mới");
-            return;
-        }
-        if (file.size > MAX_VIDEO_SIZE_MB * 1024 * 1024) {
-            setVideoError(`Video vượt quá ${MAX_VIDEO_SIZE_MB}MB`);
-            return;
-        }
+        if (!file.type.startsWith("video/")) { setVideoError("Chỉ chấp nhận file video"); return; }
+        if (video) { setVideoError("Hãy xoá video hiện tại trước khi thêm mới"); return; }
+        if (file.size > MAX_VIDEO_SIZE_MB * 1024 * 1024) { setVideoError(`Video vượt quá ${MAX_VIDEO_SIZE_MB}MB`); return; }
         setVideo({ file, url: URL.createObjectURL(file) });
         setVideoError("");
     }
 
     function removeVideo() {
         if (video) URL.revokeObjectURL(video.url);
-        setVideo(null);
-        setVideoError("");
+        setVideo(null); setVideoError("");
+    }
+
+    // ── Submit ──
+    // buildPayload() returns the object you POST to the API.
+    // Attach images/video as FormData separately if your API needs multipart.
+    function buildPayload() {
+        return {
+            title: title.trim(),
+            description: description.trim(),
+            equipment_id: equipmentId,          // number | null → maps to EquipmentId
+            // images and video are File objects — upload via FormData
+            image_files: images.map((i) => i.file),
+            video_file: video?.file ?? null,
+        };
     }
 
     function handleSubmit(e) {
         e.preventDefault();
-        setTouched({ title: true, description: true, branchId: true });
+        setTouched({ title: true, description: true });
         if (!isValid) return;
+
+        const payload = buildPayload();
+        // TODO: replace with real API call
+        // const fd = new FormData();
+        // fd.append("title",        payload.title);
+        // fd.append("description",  payload.description);
+        // if (payload.equipment_id) fd.append("equipment_id", payload.equipment_id);
+        // payload.image_files.forEach((f) => fd.append("images", f));
+        // if (payload.video_file)   fd.append("video", payload.video_file);
+        // await fetch("/api/incidents", { method: "POST", body: fd });
+        console.log("📤 Payload:", payload);
+
+        const eq = MOCK_EQUIPMENT.find((e) => e.equipment_id === equipmentId);
         setSubmitted({
-            title,
-            branchName: branch?.name,
+            title: payload.title,
+            equipmentCode: eq?.code ?? null,
+            equipmentName: eq?.name ?? null,
             imageCount: images.length,
             hasVideo: !!video,
         });
@@ -353,261 +581,177 @@ export default function IncidentReportForm() {
     function resetForm() {
         images.forEach((i) => URL.revokeObjectURL(i.url));
         if (video) URL.revokeObjectURL(video.url);
-        setTitle("");
-        setDescription("");
-        setBranchId("");
-        setEquipmentId("");
-        setImages([]);
-        setVideo(null);
-        setImageError("");
-        setVideoError("");
-        setTouched({});
-        setSubmitted(null);
+        setTitle(""); setDescription(""); setEquipmentId(null);
+        setImages([]); setVideo(null);
+        setImageError(""); setVideoError(""); setTouched({}); setSubmitted(null);
     }
 
-    if (submitted) {
-        return <SuccessScreen data={submitted} onReset={resetForm} />;
+    if (submitted) return <SuccessScreen data={submitted} onReset={resetForm} />;
+
+    // ── Image grid (always 3 slots) ──
+    const imageSlots = [];
+    for (let i = 0; i < MAX_IMAGES; i++) {
+        if (i < images.length) {
+            imageSlots.push(
+                <div key={images[i].id} className="vt-thumb">
+                    <img src={images[i].url} alt={`Ảnh ${i + 1}`} />
+                    <button type="button" className="vt-thumb-remove" onClick={() => removeImage(images[i].id)}>
+                        <X size={11} strokeWidth={3} />
+                    </button>
+                </div>
+            );
+        } else if (i === images.length) {
+            imageSlots.push(
+                <div
+                    key="add"
+                    className={`vt-img-slot ${imgDragActive ? "drag-active" : ""}`}
+                    onClick={() => imageInputRef.current?.click()}
+                    onDragOver={(e) => { e.preventDefault(); setImgDragActive(true); }}
+                    onDragLeave={() => setImgDragActive(false)}
+                    onDrop={(e) => { e.preventDefault(); setImgDragActive(false); addImages(e.dataTransfer.files); }}
+                >
+                    <Upload size={16} />
+                    <span>Thêm ảnh</span>
+                </div>
+            );
+        } else {
+            imageSlots.push(<div key={`empty-${i}`} className="vt-img-empty" />);
+        }
     }
 
+    // ── Render ──
     return (
-        <div className="ir-app min-h-screen">
+        <div className="vt-app">
             <style>{STYLES}</style>
-            <Bg />
-
-            <div className="max-w-4xl mx-auto px-4 sm:px-5 py-5 sm:py-6" style={{ position: "relative", zIndex: 1 }}>
-                <div className="flex items-center gap-2 text-sm mb-2.5">
-                    <span style={{ color: "var(--ink-soft)", fontSize: 12.5 }}>Sự cố</span>
-                    <span style={{ color: "#D2D4EA" }}>/</span>
-                    <span style={{ color: "var(--ink)", fontWeight: 600, fontSize: 12.5 }}>Báo cáo sự cố</span>
-                </div>
-
-                <div className="flex items-start gap-2.5 mb-5">
-                    <div className="ir-badge" style={{ width: 38, height: 38, borderRadius: 11, background: "var(--violet-tint)" }}>
-                        <AlertTriangle size={18} strokeWidth={2.3} style={{ color: "var(--violet)" }} />
+            <div className="vt-page">
+                <div className="vt-card">
+                    {/* Header */}
+                    <div className="vt-header">
+                        <div className="vt-logo">
+                            <span style={{ color: "#fff", fontWeight: 900, fontSize: 20, lineHeight: 1 }}>+</span>
+                        </div>
+                        <div>
+                            <div className="vt-brand-name">VT<span>GYM</span></div>
+                            <div className="vt-brand-sub">Quản lý cơ sở vật chất</div>
+                        </div>
+                        <div className="vt-pill">
+                            <span className="vt-pill-dot" /> BÁO CÁO SỰ CỐ
+                        </div>
                     </div>
-                    <div>
-                        <h1 className="ir-display" style={{ fontSize: 20, fontWeight: 800, color: "var(--ink)", letterSpacing: "-0.01em" }}>
-                            Báo cáo sự cố
-                        </h1>
-                        <p style={{ color: "var(--ink-soft)", fontSize: 12.5, marginTop: 2 }}>
-                            Gửi thông tin sự cố đến quản lý chi nhánh để được xem xét và phê duyệt.
-                        </p>
-                    </div>
-                </div>
 
-                <form onSubmit={handleSubmit}>
-                    <div className="flex flex-col gap-4">
-                        {/* Nội dung */}
-                        <div className="ir-card p-4 sm:p-5">
-                            <SectionHeading
-                                icon={<PenLine size={15} style={{ color: "var(--violet)" }} />}
-                                tint="var(--violet-tint)"
-                                title="Chuyện gì đã xảy ra?"
-                                subtitle="Mô tả ngắn gọn và rõ ràng để quản lý dễ hiểu"
+                    <form onSubmit={handleSubmit}>
+
+                        {/* ── Tiêu đề ── */}
+                        <div className="vt-section">
+                            <label className="vt-label">
+                                TIÊU ĐỀ SỰ CỐ <span className="vt-required">*</span>
+                            </label>
+                            <input
+                                className={`vt-input ${touched.title && errors.title ? "has-error" : ""}`}
+                                placeholder="VD: Máy chạy bộ #04 phát tiếng kêu lạ"
+                                value={title}
+                                maxLength={150}
+                                onChange={(e) => setTitle(e.target.value)}
+                                onBlur={() => setTouched((t) => ({ ...t, title: true }))}
                             />
+                            {touched.title && errors.title && (
+                                <p className="vt-error"><AlertTriangle size={13} /> {errors.title}</p>
+                            )}
+                        </div>
 
-                            <div className="mb-3.5">
-                                <label className="ir-label">
-                                    Tiêu đề sự cố <span style={{ color: "var(--violet)" }}>*</span>
-                                </label>
-                                <input
-                                    className={`ir-input ${touched.title && errors.title ? "ir-error" : ""}`}
-                                    placeholder="VD: Máy chạy bộ #04 phát tiếng kêu lạ"
-                                    value={title}
-                                    maxLength={150}
-                                    onChange={(e) => setTitle(e.target.value)}
-                                    onBlur={() => setTouched((t) => ({ ...t, title: true }))}
-                                />
-                                {touched.title && errors.title && (
-                                    <p className="ir-error-text">
-                                        <AlertTriangle size={12} /> {errors.title}
-                                    </p>
-                                )}
-                            </div>
-
-                            <div>
-                                <label className="ir-label">
-                                    Mô tả chi tiết <span style={{ color: "var(--violet)" }}>*</span>
-                                </label>
-                                <textarea
-                                    className={`ir-textarea ${touched.description && errors.description ? "ir-error" : ""}`}
-                                    rows={3}
-                                    maxLength={1000}
-                                    placeholder="Sự cố xảy ra ở đâu, từ khi nào, ảnh hưởng thế nào đến hội viên hoặc nhân viên..."
-                                    value={description}
-                                    onChange={(e) => setDescription(e.target.value)}
-                                    onBlur={() => setTouched((t) => ({ ...t, description: true }))}
-                                />
-                                <div className="flex items-center justify-between" style={{ marginTop: 4 }}>
-                                    <div>
-                                        {touched.description && errors.description && (
-                                            <p className="ir-error-text">
-                                                <AlertTriangle size={12} /> {errors.description}
-                                            </p>
-                                        )}
-                                    </div>
-                                    <p style={{ fontSize: 11, color: "var(--ink-soft)" }}>{description.length}/1000</p>
-                                </div>
+                        {/* ── Mô tả ── */}
+                        <div className="vt-section">
+                            <label className="vt-label">
+                                MÔ TẢ CHI TIẾT <span className="vt-required">*</span>
+                            </label>
+                            <textarea
+                                className={`vt-textarea ${touched.description && errors.description ? "has-error" : ""}`}
+                                rows={4}
+                                maxLength={1000}
+                                placeholder="Sự cố xảy ra từ khi nào, ảnh hưởng thế nào đến hội viên hoặc nhân viên..."
+                                value={description}
+                                onChange={(e) => setDescription(e.target.value)}
+                                onBlur={() => setTouched((t) => ({ ...t, description: true }))}
+                            />
+                            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 4 }}>
+                                {touched.description && errors.description
+                                    ? <p className="vt-error"><AlertTriangle size={13} /> {errors.description}</p>
+                                    : <span />}
+                                <p className="vt-counter">{description.length}/1000</p>
                             </div>
                         </div>
 
-                        {/* Vị trí */}
-                        <div className="ir-card p-4 sm:p-5">
-                            <SectionHeading
-                                icon={<Building2 size={15} style={{ color: "var(--teal-dark)" }} />}
-                                tint="var(--teal-tint)"
-                                title="Sự cố xảy ra ở đâu?"
-                                subtitle="Chọn chi nhánh và thiết bị liên quan (nếu có)"
+                        {/* ── Thiết bị ── */}
+                        <div className="vt-section">
+                            <label className="vt-label">
+                                THIẾT BỊ LIÊN QUAN
+                                <span className="vt-optional">Tuỳ chọn</span>
+                            </label>
+                            <EquipmentPicker
+                                value={equipmentId}
+                                onChange={setEquipmentId}
+                                equipmentList={MOCK_EQUIPMENT}
                             />
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-                                <div>
-                                    <label className="ir-label">
-                                        Chi nhánh <span style={{ color: "var(--violet)" }}>*</span>
-                                    </label>
-                                    <div style={{ position: "relative" }}>
-                                        <select
-                                            className={`ir-select ${touched.branchId && errors.branchId ? "ir-error" : ""}`}
-                                            value={branchId}
-                                            onChange={handleBranchChange}
-                                            onBlur={() => setTouched((t) => ({ ...t, branchId: true }))}
-                                        >
-                                            <option value="">-- Chọn chi nhánh --</option>
-                                            {BRANCHES.map((b) => (
-                                                <option key={b.id} value={b.id}>{b.name}</option>
-                                            ))}
-                                        </select>
-                                        <ChevronDown size={14} style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", pointerEvents: "none", color: "var(--ink-soft)" }} />
-                                    </div>
-                                    {touched.branchId && errors.branchId && (
-                                        <p className="ir-error-text">
-                                            <AlertTriangle size={12} /> {errors.branchId}
-                                        </p>
-                                    )}
-                                </div>
-
-                                <div>
-                                    <label className="ir-label">
-                                        <Dumbbell size={12.5} /> Thiết bị liên quan
-                                    </label>
-                                    <div style={{ position: "relative" }}>
-                                        <select className="ir-select" value={equipmentId} onChange={(e) => setEquipmentId(e.target.value)} disabled={!branchId}>
-                                            <option value="">{branchId ? "-- Không liên quan thiết bị cụ thể --" : "Chọn chi nhánh trước"}</option>
-                                            {equipmentList.map((eq) => (
-                                                <option key={eq.id} value={eq.id}>{eq.name}</option>
-                                            ))}
-                                        </select>
-                                        <ChevronDown size={14} style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", pointerEvents: "none", color: "var(--ink-soft)" }} />
-                                    </div>
-                                    <p style={{ fontSize: 11, color: "var(--ink-soft)", marginTop: 5 }}>Bỏ qua nếu không liên quan thiết bị cụ thể</p>
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* Hình ảnh & video */}
-                        <div className="ir-card p-4 sm:p-5">
-                            <SectionHeading
-                                icon={<ImagePlus size={15} style={{ color: "var(--amber-dark)" }} />}
-                                tint="var(--amber-tint)"
-                                title="Hình ảnh & video minh chứng"
-                                subtitle="Giúp quản lý hình dung sự cố rõ và nhanh hơn"
-                            />
-
-                            <div className="mb-4">
-                                <div className="flex items-center justify-between mb-2">
-                                    <label className="ir-label" style={{ marginBottom: 0 }}>Hình ảnh</label>
-                                    <span style={{ fontSize: 11.5, fontWeight: 600, color: "var(--ink-soft)" }}>{images.length}/{MAX_IMAGES}</span>
-                                </div>
-
-                                <div className="grid grid-cols-3 gap-2" style={{ maxWidth: 320 }}>
-                                    {images.map((img) => (
-                                        <div key={img.id} className="ir-thumb">
-                                            <img src={img.url} alt="Minh chứng sự cố" />
-                                            <button type="button" className="ir-thumb-remove" onClick={() => removeImage(img.id)} aria-label="Xoá ảnh">
-                                                <X size={11} />
-                                            </button>
-                                        </div>
-                                    ))}
-                                    {images.length < MAX_IMAGES && (
-                                        <div
-                                            className={`ir-dropzone ${imgDragActive ? "is-active" : ""}`}
-                                            style={{ aspectRatio: "1 / 1", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 4, padding: 6, textAlign: "center" }}
-                                            onClick={() => imageInputRef.current?.click()}
-                                            onDragOver={(e) => { e.preventDefault(); setImgDragActive(true); }}
-                                            onDragLeave={() => setImgDragActive(false)}
-                                            onDrop={(e) => { e.preventDefault(); setImgDragActive(false); addImages(e.dataTransfer.files); }}
-                                        >
-                                            <Upload size={15} style={{ color: "var(--violet)" }} />
-                                            <span style={{ fontSize: 10.5, color: "var(--ink-soft)", lineHeight: 1.25 }}>Thêm ảnh</span>
-                                        </div>
-                                    )}
-                                </div>
-
-                                <input ref={imageInputRef} type="file" accept="image/*" multiple hidden onChange={(e) => { addImages(e.target.files); e.target.value = ""; }} />
-                                <p style={{ fontSize: 11, color: "var(--ink-soft)", marginTop: 6 }}>Tối đa {MAX_IMAGES} ảnh, mỗi ảnh dưới {MAX_IMAGE_SIZE_MB}MB</p>
-                                {imageError && (
-                                    <p className="ir-error-text">
-                                        <AlertTriangle size={12} /> {imageError}
-                                    </p>
-                                )}
-                            </div>
-
-                            <div>
-                                <div className="flex items-center justify-between mb-2">
-                                    <label className="ir-label" style={{ marginBottom: 0 }}>Video</label>
-                                    <span style={{ fontSize: 11.5, fontWeight: 600, color: "var(--ink-soft)" }}>{video ? 1 : 0}/1</span>
-                                </div>
-
-                                {!video ? (
-                                    <div
-                                        className={`ir-dropzone ${vidDragActive ? "is-active" : ""}`}
-                                        style={{ padding: "16px 14px", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 5, textAlign: "center" }}
-                                        onClick={() => videoInputRef.current?.click()}
-                                        onDragOver={(e) => { e.preventDefault(); setVidDragActive(true); }}
-                                        onDragLeave={() => setVidDragActive(false)}
-                                        onDrop={(e) => { e.preventDefault(); setVidDragActive(false); addVideo(e.dataTransfer.files); }}
-                                    >
-                                        <VideoIcon size={17} style={{ color: "var(--violet)" }} />
-                                        <span style={{ fontSize: 12, color: "var(--ink)" }}>
-                                            Kéo thả video vào đây hoặc <span style={{ color: "var(--violet)", fontWeight: 600 }}>bấm để chọn</span>
-                                        </span>
-                                        <span style={{ fontSize: 10.5, color: "var(--ink-soft)" }}>Tối đa 1 video, dưới {MAX_VIDEO_SIZE_MB}MB</span>
-                                    </div>
-                                ) : (
-                                    <div className="ir-thumb" style={{ aspectRatio: "16 / 9", maxWidth: 320 }}>
-                                        <video src={video.url} controls />
-                                        <button type="button" className="ir-thumb-remove" onClick={removeVideo} aria-label="Xoá video">
-                                            <X size={11} />
-                                        </button>
-                                    </div>
-                                )}
-
-                                <input ref={videoInputRef} type="file" accept="video/*" hidden onChange={(e) => { addVideo(e.target.files); e.target.value = ""; }} />
-                                {videoError && (
-                                    <p className="ir-error-text">
-                                        <AlertTriangle size={12} /> {videoError}
-                                    </p>
-                                )}
-                            </div>
-                        </div>
-
-                        {/* Tóm tắt & gửi */}
-                        <div className="ir-card p-4 sm:p-5">
-                            <div className="flex flex-col gap-2 mb-3" style={{ background: "var(--surface)", borderRadius: 10, padding: "10px 12px" }}>
-                                <PreviewRow label="Tiêu đề" value={title} placeholder="Chưa nhập" />
-                                <PreviewRow label="Chi nhánh" value={branch?.name} placeholder="Chưa chọn" />
-                                <PreviewRow label="Thiết bị" value={equipment?.name} placeholder="Không liên quan" />
-                                <PreviewRow label="Minh chứng" value={`${images.length} ảnh${video ? " • 1 video" : ""}`} alwaysShow />
-                            </div>
-
-                            <button type="submit" className="ir-btn-primary">
-                                <Send size={14} /> Gửi cho quản lý duyệt
-                            </button>
-                            <p style={{ fontSize: 11, color: "var(--ink-soft)", textAlign: "center", marginTop: 8 }}>
-                                Sau khi gửi, báo cáo sẽ ở trạng thái chờ quản lý duyệt
+                            <p className="vt-hint" style={{ marginTop: 7 }}>
+                                Để trống nếu sự cố không liên quan đến thiết bị cụ thể
                             </p>
                         </div>
-                    </div>
-                </form>
+
+                        <div className="vt-divider" />
+
+                        {/* ── Hình ảnh ── */}
+                        <div className="vt-section">
+                            <div className="vt-media-header">
+                                <label className="vt-label" style={{ marginBottom: 0 }}>
+                                    <ImageIcon size={13} style={{ display: "inline", marginRight: 6, verticalAlign: "text-bottom" }} />
+                                    HÌNH ẢNH MINH CHỨNG
+                                </label>
+                                <span className="vt-media-count">{images.length} / {MAX_IMAGES}</span>
+                            </div>
+                            <div className="vt-img-grid">{imageSlots}</div>
+                            <input ref={imageInputRef} type="file" accept="image/*" multiple hidden
+                                onChange={(e) => { addImages(e.target.files); e.target.value = ""; }} />
+                            <p className="vt-hint">Tối đa {MAX_IMAGES} ảnh · mỗi ảnh dưới {MAX_IMAGE_SIZE_MB}MB</p>
+                            {imageError && <p className="vt-error" style={{ marginTop: 8 }}><AlertTriangle size={13} /> {imageError}</p>}
+                        </div>
+
+                        {/* ── Video ── */}
+                        <div className="vt-section">
+                            <div className="vt-media-header">
+                                <label className="vt-label" style={{ marginBottom: 0 }}>
+                                    <VideoIcon size={13} style={{ display: "inline", marginRight: 6, verticalAlign: "text-bottom" }} />
+                                    VIDEO MINH CHỨNG
+                                </label>
+                                <span className="vt-media-count">{video ? 1 : 0} / 1</span>
+                            </div>
+                            {!video ? (
+                                <div
+                                    className={`vt-video-drop ${vidDragActive ? "drag-active" : ""}`}
+                                    onClick={() => videoInputRef.current?.click()}
+                                    onDragOver={(e) => { e.preventDefault(); setVidDragActive(true); }}
+                                    onDragLeave={() => setVidDragActive(false)}
+                                    onDrop={(e) => { e.preventDefault(); setVidDragActive(false); addVideo(e.dataTransfer.files); }}
+                                >
+                                    <VideoIcon size={22} style={{ color: "var(--accent)", opacity: .7 }} />
+                                    <p className="title">Kéo thả video vào đây hoặc <span>bấm để chọn</span></p>
+                                    <p className="sub">Tối đa 1 video · dưới {MAX_VIDEO_SIZE_MB}MB</p>
+                                </div>
+                            ) : (
+                                <div className="vt-video-thumb">
+                                    <video src={video.url} controls />
+                                    <button type="button" className="vt-thumb-remove" onClick={removeVideo}>
+                                        <X size={12} strokeWidth={3} />
+                                    </button>
+                                </div>
+                            )}
+                            <input ref={videoInputRef} type="file" accept="video/*" hidden
+                                onChange={(e) => { addVideo(e.target.files); e.target.value = ""; }} />
+                            {videoError && <p className="vt-error" style={{ marginTop: 8 }}><AlertTriangle size={13} /> {videoError}</p>}
+                        </div>
+
+                        <button type="submit" className="vt-submit">Gửi báo cáo</button>
+                    </form>
+                </div>
             </div>
         </div>
     );

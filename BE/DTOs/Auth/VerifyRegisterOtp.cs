@@ -9,4 +9,5 @@ public class VerifyRegisterOtpDto
     public string Password { get; set; } = null!;
 
     public string Gender { get; set; } = null!;
+    public  int BranchId {get ; set; } 
 }

@@ -84,9 +84,9 @@ public partial class Member
 
     public virtual ICollection<MemberPackage> MemberPackages { get; set; } = new List<MemberPackage>();
 
-    public virtual ICollection<NotificationRecipient> NotificationRecipients { get; set; } = new List<NotificationRecipient>();
+    public virtual ICollection<MemberUpdateLog> MemberUpdateLogs { get; set; } = new List<MemberUpdateLog>();
 
-    public virtual ICollection<PhoneChangeLog> PhoneChangeLogs { get; set; } = new List<PhoneChangeLog>();
+    public virtual ICollection<NotificationRecipient> NotificationRecipients { get; set; } = new List<NotificationRecipient>();
 
     public virtual ICollection<PromotionUsage> PromotionUsages { get; set; } = new List<PromotionUsage>();
 

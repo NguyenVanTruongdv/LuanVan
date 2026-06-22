@@ -8,6 +8,7 @@ import StaffLogin from "../pages/auth/Login/StaffLogin";
 import Dashboard from "../pages/cashier/CashierDashboard";
 import Checkin from "../pages/cashier/checkin/Checkin";
 import IncidentReportForm from "../pages/cashier/Incident/IncidenReport";
+import IncidentList from "../pages/cashier/Incident/IncidentList";
 import MemberListPage from "../pages/cashier/member/ListMember";
 import GymMemberRegistration from "../pages/cashier/member/RegisterMember";
 
@@ -35,7 +36,8 @@ function AppRoutes() {
                 <Route path="checkin" element={<Checkin />} />
                 <Route path="member-create" element={<GymMemberRegistration></GymMemberRegistration>} />
                 <Route path="members" element={<MemberListPage></MemberListPage>} />
-                <Route path="incident-report" element={<IncidentReportForm></IncidentReportForm>} />
+                <Route path="incidents-report" element={<IncidentReportForm></IncidentReportForm>} />
+                <Route path="incidents-list" element={<IncidentList></IncidentList>} />
             </Route>
 
             {/* </Route> */}

@@ -125,6 +125,7 @@ public class AuthService : IAuthService
             PasswordHash = BCrypt.Net.BCrypt.HashPassword(req.Password),
             Gender = req.Gender,
             Status = MemberStatus.PendingActivation.ToString(),
+            BranchId=req.BranchId,
         });
 
         await _db.SaveChangesAsync();

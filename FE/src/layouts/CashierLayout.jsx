@@ -1,47 +1,96 @@
 import { useState } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
-
+import logo from "../assets/logo.png";
 const NAV_ITEMS = [
     { id: "dashboard", icon: "🏠", label: "Dashboard", path: "/cashier" },
+
     {
         id: "members",
         icon: "👥",
         label: "Hội viên",
-        matchPrefix: "cashier/members",
+        matchPrefix: "/cashier/member",
         children: [
-            { id: "members-list", icon: "📃", label: "Danh sách hội viên", path: "members" },
-            { id: "members-activate", icon: "✅", label: "Kích hoạt hội viên", path: "member-activate" },
-            { id: "members-create", icon: "➕", label: "Tạo hội viên mới", path: "member-create" },
+            {
+                id: "members-list",
+                icon: "📃",
+                label: "Danh sách hội viên",
+                path: "/cashier/members",
+            },
+            {
+                id: "members-activate",
+                icon: "✅",
+                label: "Kích hoạt hội viên",
+                path: "/cashier/member-activate",
+            },
+            {
+                id: "members-create",
+                icon: "➕",
+                label: "Tạo hội viên mới",
+                path: "/cashier/member-create",
+            },
         ],
     },
+
     {
         id: "packages",
         icon: "📦",
         label: "Gói tập",
-        matchPrefix: "/packages",
+        matchPrefix: "/cashier/packages",
         children: [
-            { id: "packages-renew", icon: "🔄", label: "Gia hạn gói tập", path: "/packages/renew" },
-            { id: "packages-history", icon: "🗂️", label: "Lịch sử đăng ký", path: "/packages/history" },
+            {
+                id: "packages-renew",
+                icon: "🔄",
+                label: "Gia hạn gói tập",
+                path: "/cashier/packages/renew",
+            },
+            {
+                id: "packages-history",
+                icon: "🗂️",
+                label: "Lịch sử đăng ký",
+                path: "/cashier/packages/history",
+            },
         ],
     },
+
     {
         id: "checkin",
         icon: "📷",
         label: "Check-in",
         matchPrefix: "/cashier/checkin",
         children: [
-            { id: "checkin-action", icon: "📷", label: "Check-in", path: "/cashier/checkin" },
-            { id: "checkin-history", icon: "🕒", label: "Lịch sử check-in", path: "/checkin/history" },
+            {
+                id: "checkin-action",
+                icon: "📷",
+                label: "Check-in",
+                path: "/cashier/checkin",
+            },
+            {
+                id: "checkin-history",
+                icon: "🕒",
+                label: "Lịch sử check-in",
+                path: "/cashier/checkin/history",
+            },
         ],
     },
+
     {
         id: "incidents",
         icon: "⚠️",
         label: "Sự cố",
-        matchPrefix: "/incidents",
+        matchPrefix: "/cashier/incidents",
         children: [
-            { id: "incidents-report", icon: "📝", label: "Báo cáo sự cố", path: "/incidents/report" },
-            { id: "incidents-list", icon: "📋", label: "Danh sách sự cố", path: "/incidents/list" },
+            {
+                id: "incidents-report",
+                icon: "📝",
+                label: "Báo cáo sự cố",
+                path: "/cashier/incidents-report",
+            },
+            {
+                id: "incidents-list",
+                icon: "📋",
+                label: "Danh sách sự cố",
+                path: "/cashier/incidents-list",
+            },
         ],
     },
 ];
@@ -208,10 +257,12 @@ export default function CashierLayout({ branchName = "Chi nhánh Quận 1" }) {
                     </button>
 
                     <div style={styles.logo}>
-                        <div style={styles.logoIconWrap}>
-                            <span style={styles.logoIcon}>🏋️</span>
-                        </div>
-                        <span style={styles.logoText}>VT <span style={styles.logoAccent}>Gym</span></span>
+                        <img
+                            src={logo}
+                            alt="VT Gym"
+                            style={styles.logoImage}
+                        />
+
                     </div>
 
                     {/* Divider */}
@@ -340,7 +391,11 @@ const styles = {
         fontFamily: "'Inter', sans-serif",
         background: "#F0F2F8",
     },
-
+    logoImage: {
+        width: 40,
+        height: 40,
+        objectFit: "contain",
+    },
     // ── TOPBAR ──
     topbar: {
         height: 64,
