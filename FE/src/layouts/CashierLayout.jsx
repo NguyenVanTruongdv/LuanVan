@@ -1,104 +1,146 @@
 import { useState } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import logo from "../assets/logo.png";
-const NAV_ITEMS = [
-    { id: "dashboard", icon: "🏠", label: "Dashboard", path: "/cashier" },
 
+// Outline SVG icons (no color — inherits currentColor)
+const Icons = {
+    dashboard: (
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" />
+            <rect x="14" y="14" width="7" height="7" rx="1" /><rect x="3" y="14" width="7" height="7" rx="1" />
+        </svg>
+    ),
+    members: (
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" />
+            <path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" />
+        </svg>
+    ),
+    packages: (
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
+            <polyline points="3.27 6.96 12 12.01 20.73 6.96" /><line x1="12" y1="22.08" x2="12" y2="12" />
+        </svg>
+    ),
+    checkin: (
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
+            <circle cx="12" cy="13" r="4" />
+        </svg>
+    ),
+    incidents: (
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+            <line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" />
+        </svg>
+    ),
+    list: (
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+            <line x1="8" y1="6" x2="21" y2="6" /><line x1="8" y1="12" x2="21" y2="12" /><line x1="8" y1="18" x2="21" y2="18" />
+            <line x1="3" y1="6" x2="3.01" y2="6" /><line x1="3" y1="12" x2="3.01" y2="12" /><line x1="3" y1="18" x2="3.01" y2="18" />
+        </svg>
+    ),
+    activate: (
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="9 11 12 14 22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
+        </svg>
+    ),
+    add: (
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="16" /><line x1="8" y1="12" x2="16" y2="12" />
+        </svg>
+    ),
+    renew: (
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="23 4 23 10 17 10" /><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
+        </svg>
+    ),
+    history: (
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" />
+        </svg>
+    ),
+    report: (
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+            <polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /><polyline points="10 9 9 9 8 9" />
+        </svg>
+    ),
+    logout: (
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" y1="12" x2="9" y2="12" />
+        </svg>
+    ),
+    chevronDown: (
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="6 9 12 15 18 9" />
+        </svg>
+    ),
+    bell: (
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.73 21a2 2 0 0 1-3.46 0" />
+        </svg>
+    ),
+};
+
+const NAV_ITEMS = [
+    { id: "dashboard", icon: Icons.dashboard, label: "Tổng quan", path: "/cashier" },
     {
         id: "members",
-        icon: "👥",
+        icon: Icons.members,
         label: "Hội viên",
         matchPrefix: "/cashier/member",
         children: [
-            {
-                id: "members-list",
-                icon: "📃",
-                label: "Danh sách hội viên",
-                path: "/cashier/members",
-            },
-            {
-                id: "members-activate",
-                icon: "✅",
-                label: "Kích hoạt hội viên",
-                path: "/cashier/member-activate",
-            },
-            {
-                id: "members-create",
-                icon: "➕",
-                label: "Tạo hội viên mới",
-                path: "/cashier/member-create",
-            },
+            { id: "members-list", icon: Icons.list, label: "Danh sách hội viên", path: "/cashier/members" },
+            { id: "members-activate", icon: Icons.activate, label: "Kích hoạt hội viên", path: "/cashier/member-activate" },
+            { id: "members-create", icon: Icons.add, label: "Tạo hội viên mới", path: "/cashier/member-create" },
         ],
     },
-
     {
         id: "packages",
-        icon: "📦",
+        icon: Icons.packages,
         label: "Gói tập",
         matchPrefix: "/cashier/packages",
         children: [
-            {
-                id: "packages-renew",
-                icon: "🔄",
-                label: "Gia hạn gói tập",
-                path: "/cashier/packages/renew",
-            },
-            {
-                id: "packages-history",
-                icon: "🗂️",
-                label: "Lịch sử đăng ký",
-                path: "/cashier/packages/history",
-            },
+            { id: "packages-renew", icon: Icons.renew, label: "Gia hạn gói tập", path: "/cashier/packages/renew" },
+            { id: "packages-history", icon: Icons.history, label: "Lịch sử đăng ký", path: "/cashier/packages/history" },
         ],
     },
-
     {
         id: "checkin",
-        icon: "📷",
+        icon: Icons.checkin,
         label: "Check-in",
         matchPrefix: "/cashier/checkin",
         children: [
-            {
-                id: "checkin-action",
-                icon: "📷",
-                label: "Check-in",
-                path: "/cashier/checkin",
-            },
-            {
-                id: "checkin-history",
-                icon: "🕒",
-                label: "Lịch sử check-in",
-                path: "/cashier/checkin/history",
-            },
+            { id: "checkin-action", icon: Icons.checkin, label: "Check-in", path: "/cashier/checkin" },
+            { id: "checkin-history", icon: Icons.history, label: "Lịch sử check-in", path: "/cashier/checkin-history" },
         ],
     },
-
     {
         id: "incidents",
-        icon: "⚠️",
+        icon: Icons.incidents,
         label: "Sự cố",
         matchPrefix: "/cashier/incidents",
         children: [
-            {
-                id: "incidents-report",
-                icon: "📝",
-                label: "Báo cáo sự cố",
-                path: "/cashier/incidents-report",
-            },
-            {
-                id: "incidents-list",
-                icon: "📋",
-                label: "Danh sách sự cố",
-                path: "/cashier/incidents-list",
-            },
+            { id: "incidents-report", icon: Icons.report, label: "Báo cáo sự cố", path: "/cashier/incidents-report" },
+            { id: "incidents-list", icon: Icons.list, label: "Danh sách sự cố", path: "/cashier/incidents-list" },
         ],
     },
 ];
 
+// Green palette matching reference image
+const GREEN = {
+    primary: "#1B6B52",      // dark green active bg
+    primaryHover: "#154f3d",
+    light: "#E8F5F0",        // light green hover bg
+    accent: "#1B6B52",
+    border: "#d0e8df",
+    text: "#1B6B52",
+};
+
 export default function CashierLayout({ branchName = "Chi nhánh Quận 1" }) {
     const navigate = useNavigate();
     const location = useLocation();
-
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const [openSubmenus, setOpenSubmenus] = useState(() => {
         const match = NAV_ITEMS.find(
@@ -108,10 +150,7 @@ export default function CashierLayout({ branchName = "Chi nhánh Quận 1" }) {
     });
 
     const isItemActive = (item) => {
-        if (item.id === "dashboard") {
-            return location.pathname === "/cashier";
-        }
-
+        if (item.id === "dashboard") return location.pathname === "/cashier";
         return item.matchPrefix
             ? location.pathname.startsWith(item.matchPrefix)
             : location.pathname.startsWith(item.path);
@@ -119,13 +158,9 @@ export default function CashierLayout({ branchName = "Chi nhánh Quận 1" }) {
 
     const handleTopClick = (item) => {
         if (item.children) {
-            setOpenSubmenus((current) => {
-                const next = new Set(current);
-                if (next.has(item.id)) {
-                    next.delete(item.id);
-                } else {
-                    next.add(item.id);
-                }
+            setOpenSubmenus((cur) => {
+                const next = new Set(cur);
+                next.has(item.id) ? next.delete(item.id) : next.add(item.id);
                 return next;
             });
         } else {
@@ -140,97 +175,40 @@ export default function CashierLayout({ branchName = "Chi nhánh Quận 1" }) {
     };
 
     return (
-        <div style={styles.root}>
+        <div style={S.root}>
             <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
         * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { font-family: 'Inter', sans-serif; background: #F0F2F8; }
+        body { font-family: 'Inter', sans-serif; background: #F4F6F8; }
         button { cursor: pointer; border: none; background: none; font-family: inherit; }
 
         .hamburger-btn { display: none; }
 
-        /* Nav item hover/focus */
-        .nav-item-btn:hover:not(.nav-item-active) {
-          background: #F1F0FE !important;
-          color: #4F46E5 !important;
-          transform: translateX(2px);
-        }
-        .nav-item-btn:focus-visible {
-          outline: 2px solid #6366F1;
-          outline-offset: 2px;
-        }
         .nav-item-btn {
-          transition: background 0.15s, color 0.15s, transform 0.15s, box-shadow 0.15s !important;
+          transition: background 0.15s, color 0.15s !important;
         }
-
-        /* Sub item hover/focus */
-        .sub-item-btn:hover:not(.sub-item-active) {
-          background: #F1F0FE !important;
-          color: #4338CA !important;
-        }
-        .sub-item-btn:focus-visible {
-          outline: 2px solid #6366F1;
-          outline-offset: 2px;
+        .nav-item-btn:hover:not(.nav-item-active) {
+          background: ${GREEN.light} !important;
+          color: ${GREEN.primary} !important;
         }
         .sub-item-btn {
           transition: background 0.15s, color 0.15s !important;
         }
-
-        /* Logout hover */
+        .sub-item-btn:hover:not(.sub-item-active) {
+          background: ${GREEN.light} !important;
+          color: ${GREEN.primary} !important;
+        }
         .logout-btn:hover {
           background: #FEE2E2 !important;
           border-color: #FCA5A5 !important;
-          transform: translateX(2px);
         }
-        .logout-btn:focus-visible {
-          outline: 2px solid #EF4444;
-          outline-offset: 2px;
-        }
-        .logout-btn {
-          transition: background 0.15s, border-color 0.15s, transform 0.15s !important;
-        }
-
-        /* Staff badge hover */
-        .staff-badge:hover {
-          background: #F8FAFF;
-          border-radius: 12px;
-        }
-        .staff-badge {
-          transition: background 0.15s;
-          padding: 6px 8px;
-          margin-right: -8px;
-          cursor: pointer;
-        }
-
-        /* Branch badge pulse on hover */
-        .branch-badge:hover {
-          background: #E0E7FF !important;
-          box-shadow: 0 0 0 3px rgba(99,102,241,0.12);
-        }
-        .branch-badge {
-          transition: background 0.15s, box-shadow 0.15s !important;
-        }
-
-        /* Hamburger button hover */
-        .hamburger-btn:hover {
-          background: #F1F0FE;
-        }
-        .hamburger-btn:focus-visible {
-          outline: 2px solid #6366F1;
-          outline-offset: 2px;
-        }
-        .hamburger-btn {
-          transition: background 0.15s;
-          border-radius: 10px;
-        }
+        .logout-btn { transition: background 0.15s, border-color 0.15s !important; }
 
         @media (max-width: 767px) {
           .hamburger-btn { display: flex !important; }
           .app-sidebar {
             position: fixed !important;
-            top: 64px;
-            bottom: 0;
-            left: 0;
+            top: 60px; bottom: 0; left: 0;
             transform: translateX(-100%);
             transition: transform 0.25s cubic-bezier(0.4,0,0.2,1);
             z-index: 200;
@@ -243,62 +221,66 @@ export default function CashierLayout({ branchName = "Chi nhánh Quận 1" }) {
       `}</style>
 
             {/* ── TOPBAR ── */}
-            <header style={styles.topbar}>
-                <div style={styles.topbarLeft}>
+            <header style={S.topbar}>
+                <div style={S.topbarLeft}>
                     <button
                         className="hamburger-btn"
-                        style={styles.hamburger}
+                        style={S.hamburger}
                         onClick={() => setSidebarOpen(!sidebarOpen)}
                         aria-label="Toggle menu"
                     >
-                        <span style={styles.hamburgerLine} />
-                        <span style={styles.hamburgerLine} />
-                        <span style={styles.hamburgerLine} />
+                        <span style={S.hamburgerLine} />
+                        <span style={S.hamburgerLine} />
+                        <span style={S.hamburgerLine} />
                     </button>
 
-                    <div style={styles.logo}>
-                        <img
-                            src={logo}
-                            alt="VT Gym"
-                            style={styles.logoImage}
-                        />
-
-                    </div>
-
-                    {/* Divider */}
-                    <div style={styles.topbarDivider} />
-
-                    {/* Branch badge — moved closer to logo */}
-                    <div className="branch-badge" style={styles.branchBadge} title="Chi nhánh hiện tại">
-                        <span style={styles.branchPin}>📍</span>
-                        <span style={styles.branchName}>{branchName}</span>
+                    {/* Logo — compact size */}
+                    <div style={S.logo}>
+                        <img src={logo} alt="Logo" style={S.logoImage} />
+                        <div style={S.logoText}>
+                            <span style={S.logoTitle}>VT Gym</span>
+                            <span style={S.logoSub}>Cashier Portal</span>
+                        </div>
                     </div>
                 </div>
 
-                {/* Staff badge */}
-                <div className="staff-badge" style={styles.staffBadge}>
-                    <div style={styles.avatar}>
-                        <span style={styles.avatarText}>NA</span>
+                <div style={S.topbarRight}>
+                    {/* Bell */}
+                    <button style={S.iconBtn} aria-label="Thông báo">
+                        <span style={{ color: "#64748B" }}>{Icons.bell}</span>
+                    </button>
+
+                    {/* Branch selector */}
+                    <div style={S.branchSelect}>
+                        <span style={S.branchName}>{branchName}</span>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#64748B" strokeWidth="2"><polyline points="6 9 12 15 18 9" /></svg>
                     </div>
-                    <div style={styles.staffInfo}>
-                        <span style={styles.staffName}>Nguyễn Văn A</span>
-                        <span style={styles.staffRole}>
-                            <span style={styles.staffRoleDot} />
-                            Cashier
-                        </span>
+
+                    {/* Staff */}
+                    <div style={S.staffBadge}>
+                        <div style={S.avatar}>
+                            <span style={S.avatarText}>NA</span>
+                        </div>
+                        <div style={S.staffInfo}>
+                            <span style={S.staffName}>thuphuongdn2</span>
+                            <span style={S.staffRole}>Đối tác</span>
+                        </div>
                     </div>
                 </div>
             </header>
 
-            <div style={styles.body}>
+            <div style={S.body}>
                 {sidebarOpen && (
-                    <div style={styles.overlay} onClick={() => setSidebarOpen(false)} />
+                    <div style={S.overlay} onClick={() => setSidebarOpen(false)} />
                 )}
 
                 {/* ── SIDEBAR ── */}
-                <aside className={`app-sidebar ${sidebarOpen ? "is-open" : ""}`} style={styles.sidebar}>
-                    <nav style={styles.nav}>
-                        <div style={styles.navColumn}>
+                <aside className={`app-sidebar ${sidebarOpen ? "is-open" : ""}`} style={S.sidebar}>
+                    {/* Menu label */}
+                    <div style={S.menuLabel}>MENU CHÍNH</div>
+
+                    <nav style={S.nav}>
+                        <div style={S.navColumn}>
                             {NAV_ITEMS.map((item) => {
                                 const active = isItemActive(item);
                                 const isOpen = openSubmenus.has(item.id);
@@ -307,33 +289,28 @@ export default function CashierLayout({ branchName = "Chi nhánh Quận 1" }) {
                                         <button
                                             className={`nav-item-btn${active ? " nav-item-active" : ""}`}
                                             style={{
-                                                ...styles.navItem,
-                                                ...(active ? styles.navItemActive : styles.navItemInactive),
+                                                ...S.navItem,
+                                                ...(active ? S.navItemActive : S.navItemInactive),
                                             }}
                                             onClick={() => handleTopClick(item)}
                                         >
-                                            <span style={styles.navIconWrap}>{item.icon}</span>
-                                            <span style={styles.navLabel}>{item.label}</span>
+                                            <span style={{ ...S.navIconWrap, color: active ? "white" : "#64748B" }}>
+                                                {item.icon}
+                                            </span>
+                                            <span style={S.navLabel}>{item.label}</span>
                                             {item.children && (
-                                                <span
-                                                    style={{
-                                                        ...styles.chevron,
-                                                        transform: isOpen ? "rotate(180deg)" : "rotate(0deg)",
-                                                        color: active ? "rgba(255,255,255,0.7)" : "#94A3B8",
-                                                    }}
-                                                >
-                                                    ▾
+                                                <span style={{
+                                                    ...S.chevron,
+                                                    transform: isOpen ? "rotate(180deg)" : "rotate(0deg)",
+                                                    color: active ? "rgba(255,255,255,0.8)" : "#94A3B8",
+                                                }}>
+                                                    {Icons.chevronDown}
                                                 </span>
                                             )}
                                         </button>
 
                                         {item.children && isOpen && (
-                                            <div
-                                                style={{
-                                                    ...styles.submenu,
-                                                    ...(active ? styles.submenuActive : null),
-                                                }}
-                                            >
+                                            <div style={S.submenu}>
                                                 {item.children.map((child) => {
                                                     const childActive = location.pathname === child.path;
                                                     return (
@@ -341,16 +318,15 @@ export default function CashierLayout({ branchName = "Chi nhánh Quận 1" }) {
                                                             key={child.id}
                                                             className={`sub-item-btn${childActive ? " sub-item-active" : ""}`}
                                                             style={{
-                                                                ...styles.subItem,
-                                                                ...(childActive
-                                                                    ? styles.subItemActive
-                                                                    : styles.subItemInactive),
+                                                                ...S.subItem,
+                                                                ...(childActive ? S.subItemActive : S.subItemInactive),
                                                             }}
                                                             onClick={() => handleChildClick(child.path)}
                                                         >
-                                                            <span style={styles.subIcon}>{child.icon}</span>
-                                                            <span style={styles.subLabel}>{child.label}</span>
-                                                            {childActive && <span style={styles.subActiveDot} />}
+                                                            <span style={{ color: childActive ? GREEN.primary : "#94A3B8", flexShrink: 0 }}>
+                                                                {child.icon}
+                                                            </span>
+                                                            <span style={S.subLabel}>{child.label}</span>
                                                         </button>
                                                     );
                                                 })}
@@ -364,17 +340,17 @@ export default function CashierLayout({ branchName = "Chi nhánh Quận 1" }) {
                         {/* Logout */}
                         <button
                             className="logout-btn"
-                            style={styles.logoutBtn}
+                            style={S.logoutBtn}
                             onClick={() => alert("Đăng xuất")}
                         >
-                            <span style={styles.logoutIcon}>🚪</span>
-                            <span style={styles.logoutLabel}>Đăng xuất</span>
+                            <span style={{ color: "#DC2626" }}>{Icons.logout}</span>
+                            <span style={S.logoutLabel}>Đăng xuất</span>
                         </button>
                     </nav>
                 </aside>
 
                 {/* ── PAGE CONTENT ── */}
-                <main style={styles.main}>
+                <main style={S.main}>
                     <Outlet />
                 </main>
             </div>
@@ -382,53 +358,83 @@ export default function CashierLayout({ branchName = "Chi nhánh Quận 1" }) {
     );
 }
 
-const styles = {
+const S = {
     root: {
         display: "flex",
         flexDirection: "column",
         height: "100vh",
         overflow: "hidden",
         fontFamily: "'Inter', sans-serif",
-        background: "#F0F2F8",
+        background: "#F4F6F8",
     },
-    logoImage: {
-        width: 40,
-        height: 40,
-        objectFit: "contain",
-    },
-    // ── TOPBAR ──
+
+    // TOPBAR
     topbar: {
-        height: 64,
+        height: 60,
         flexShrink: 0,
         background: "white",
         borderBottom: "1px solid #E8ECF4",
         display: "flex",
         alignItems: "center",
         justifyContent: "space-between",
-        padding: "0 20px",
+        padding: "0 20px 0 0",
         zIndex: 110,
-        boxShadow: "0 1px 4px rgba(15,23,42,0.06)",
-        gap: 8,
+        boxShadow: "0 1px 3px rgba(0,0,0,0.06)",
     },
     topbarLeft: {
         display: "flex",
         alignItems: "center",
+        gap: 0,
+    },
+    topbarRight: {
+        display: "flex",
+        alignItems: "center",
+        gap: 12,
+    },
+
+    // Logo — fits nicely in sidebar width
+    logo: {
+        width: 240,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "flex-start",
         gap: 10,
-        flex: 1,
-        minWidth: 0,
-    },
-    topbarDivider: {
-        width: 1,
-        height: 28,
-        background: "#E2E8F0",
+        padding: "0 20px",
+        borderRight: "1px solid #E8ECF4",
+        height: 60,
         flexShrink: 0,
-        marginLeft: 2,
     },
+    logoImage: {
+        height: 34,
+        width: "auto",
+        objectFit: "contain",
+        flexShrink: 0,
+    },
+    logoText: {
+        display: "flex",
+        flexDirection: "column",
+        lineHeight: 1.2,
+    },
+    logoTitle: {
+        fontSize: 13,
+        fontWeight: 800,
+        color: "#0D1117",
+        letterSpacing: "-0.2px",
+        whiteSpace: "nowrap",
+    },
+    logoSub: {
+        fontSize: 11,
+        fontWeight: 500,
+        color: "#1B6B52",
+        whiteSpace: "nowrap",
+    },
+
     hamburger: {
         flexDirection: "column",
         gap: 5,
         padding: "7px 8px",
         cursor: "pointer",
+        marginLeft: 8,
     },
     hamburgerLine: {
         display: "block",
@@ -438,87 +444,59 @@ const styles = {
         borderRadius: 2,
     },
 
-    // ── LOGO ──
-    logo: {
-        display: "flex",
-        alignItems: "center",
-        gap: 9,
-        flexShrink: 0,
-    },
-    logoIconWrap: {
+    // Bell button
+    iconBtn: {
         width: 36,
         height: 36,
-        borderRadius: 10,
-        background: "linear-gradient(135deg, #4F46E5 0%, #7C3AED 100%)",
+        borderRadius: 8,
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        boxShadow: "0 4px 10px rgba(79,70,229,0.28)",
-        flexShrink: 0,
-    },
-    logoIcon: {
-        fontSize: 18,
-        filter: "drop-shadow(0 1px 1px rgba(0,0,0,0.2))",
-    },
-    logoText: {
-        fontWeight: 800,
-        fontSize: 19,
-        color: "#0F172A",
-        letterSpacing: "-0.5px",
-        lineHeight: 1,
-    },
-    logoAccent: {
-        color: "#4F46E5",
+        background: "transparent",
+        cursor: "pointer",
     },
 
-    // ── BRANCH BADGE ──
-    branchBadge: {
+    // Branch selector
+    branchSelect: {
         display: "flex",
         alignItems: "center",
         gap: 6,
-        padding: "7px 14px",
-        borderRadius: 999,
-        background: "#EEF2FF",
-        color: "#4338CA",
+        padding: "6px 12px",
+        borderRadius: 8,
+        border: "1px solid #E2E8F0",
+        background: "white",
+        cursor: "pointer",
+        color: "#334155",
         fontSize: 13,
-        fontWeight: 600,
+        fontWeight: 500,
         whiteSpace: "nowrap",
-        userSelect: "none",
-        cursor: "default",
-        border: "1px solid #C7D2FE",
     },
-    branchPin: { fontSize: 13 },
     branchName: {
-        maxWidth: 180,
-        overflow: "hidden",
-        textOverflow: "ellipsis",
-        whiteSpace: "nowrap",
+        color: "#334155",
+        fontSize: 13,
     },
 
-    // ── STAFF BADGE ──
+    // Staff badge
     staffBadge: {
         display: "flex",
         alignItems: "center",
-        gap: 10,
+        gap: 8,
         flexShrink: 0,
     },
     avatar: {
-        width: 36,
-        height: 36,
+        width: 32,
+        height: 32,
         borderRadius: "50%",
-        background: "linear-gradient(135deg, #4F46E5 0%, #7C3AED 100%)",
+        background: GREEN.primary,
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        boxShadow: "0 2px 8px rgba(79,70,229,0.3)",
         flexShrink: 0,
-        border: "2px solid white",
     },
     avatarText: {
         color: "white",
         fontWeight: 700,
-        fontSize: 13,
-        letterSpacing: "0.3px",
+        fontSize: 12,
     },
     staffInfo: {
         display: "flex",
@@ -526,47 +504,36 @@ const styles = {
         lineHeight: 1.3,
     },
     staffName: {
-        fontSize: 14,
-        fontWeight: 700,
+        fontSize: 13,
+        fontWeight: 600,
         color: "#0F172A",
         whiteSpace: "nowrap",
     },
     staffRole: {
-        fontSize: 11.5,
+        fontSize: 11,
         color: "#64748B",
-        fontWeight: 500,
-        display: "flex",
-        alignItems: "center",
-        gap: 4,
-    },
-    staffRoleDot: {
-        width: 6,
-        height: 6,
-        borderRadius: "50%",
-        background: "#22C55E",
-        display: "inline-block",
-        boxShadow: "0 0 0 2px rgba(34,197,94,0.2)",
+        fontWeight: 400,
     },
 
-    // ── BODY ──
+    // BODY
     body: {
         display: "flex",
         flex: 1,
         overflow: "hidden",
         position: "relative",
-        height: "calc(100vh - 64px)",
+        height: "calc(100vh - 60px)",
     },
     overlay: {
         position: "fixed",
         inset: 0,
-        background: "rgba(15,23,42,0.45)",
+        background: "rgba(15,23,42,0.4)",
         zIndex: 150,
         backdropFilter: "blur(2px)",
     },
 
-    // ── SIDEBAR ──
+    // SIDEBAR
     sidebar: {
-        width: 260,
+        width: 240,
         background: "white",
         borderRight: "1px solid #E8ECF4",
         display: "flex",
@@ -574,54 +541,59 @@ const styles = {
         flexShrink: 0,
         height: "100%",
         overflowY: "auto",
-        boxShadow: "1px 0 0 #E8ECF4",
+    },
+    menuLabel: {
+        fontSize: 11,
+        fontWeight: 700,
+        color: "#64748B",
+        letterSpacing: "0.08em",
+        padding: "20px 16px 8px",
+        textTransform: "uppercase",
     },
     nav: {
         display: "flex",
         flexDirection: "column",
-        height: "100%",
-        padding: "16px 12px",
-        gap: 12,
+        flex: 1,
+        padding: "4px 10px 16px",
+        gap: 2,
     },
     navColumn: {
         display: "flex",
         flexDirection: "column",
-        gap: 3,
+        gap: 1,
+        flex: 1,
     },
 
     // Nav items
     navItem: {
         display: "flex",
         alignItems: "center",
-        gap: 11,
+        gap: 10,
         width: "100%",
-        padding: "11px 14px",
-        borderRadius: 12,
+        padding: "10px 12px",
+        borderRadius: 8,
         fontSize: 14.5,
         fontWeight: 600,
         textAlign: "left",
-        letterSpacing: "-0.1px",
     },
     navItemActive: {
-        background: "linear-gradient(135deg, #4F46E5 0%, #6D28D9 100%)",
+        background: GREEN.primary,
         color: "white",
-        boxShadow: "0 6px 16px rgba(79,70,229,0.28), inset 0 1px 0 rgba(255,255,255,0.1)",
     },
     navItemInactive: {
         background: "transparent",
-        color: "#334155",
+        color: "#0D1117",
     },
     navIconWrap: {
-        fontSize: 20,
-        lineHeight: 1,
         flexShrink: 0,
-        width: 24,
-        textAlign: "center",
+        display: "flex",
+        alignItems: "center",
     },
     navLabel: { flex: 1 },
     chevron: {
-        fontSize: 12,
-        transition: "transform 0.2s cubic-bezier(0.4,0,0.2,1)",
+        display: "flex",
+        alignItems: "center",
+        transition: "transform 0.2s ease",
         flexShrink: 0,
     },
 
@@ -629,75 +601,53 @@ const styles = {
     submenu: {
         display: "flex",
         flexDirection: "column",
-        gap: 2,
-        padding: "4px 0 4px 16px",
-        marginLeft: 16,
-        borderLeft: "2px solid #EEF2FF",
-        marginTop: 2,
-        borderRadius: 10,
-        transition: "background 0.15s, border-color 0.15s",
-    },
-    submenuActive: {
-        background: "#EEF2FF",
-        borderLeft: "2px solid #818CF8",
+        gap: 1,
+        paddingLeft: 12,
+        marginTop: 1,
+        marginBottom: 2,
     },
     subItem: {
         display: "flex",
         alignItems: "center",
-        gap: 9,
+        gap: 8,
         width: "100%",
-        padding: "9px 12px",
-        borderRadius: 9,
+        padding: "9px 10px",
+        borderRadius: 7,
         fontSize: 13.5,
         textAlign: "left",
     },
     subItemActive: {
-        background: "#EEF2FF",
-        color: "#4338CA",
+        background: GREEN.light,
+        color: GREEN.primary,
         fontWeight: 700,
     },
     subItemInactive: {
         background: "transparent",
-        color: "#64748B",
+        color: "#1E293B",
         fontWeight: 500,
     },
-    subIcon: {
-        fontSize: 15,
-        width: 18,
-        textAlign: "center",
-        flexShrink: 0,
-    },
     subLabel: { flex: 1 },
-    subActiveDot: {
-        width: 5,
-        height: 5,
-        borderRadius: "50%",
-        background: "#4F46E5",
-        flexShrink: 0,
-    },
 
     // Logout
     logoutBtn: {
         display: "flex",
         alignItems: "center",
-        gap: 11,
+        gap: 10,
         marginTop: "auto",
-        padding: "11px 14px",
-        borderRadius: 12,
+        padding: "9px 12px",
+        borderRadius: 8,
         background: "#FFF5F5",
         border: "1px solid #FECACA",
         width: "100%",
+        marginTop: 8,
     },
-    logoutIcon: { fontSize: 20, lineHeight: 1, flexShrink: 0 },
     logoutLabel: {
         fontSize: 14.5,
         fontWeight: 600,
         color: "#DC2626",
-        flex: 1,
-        textAlign: "left",
     },
 
-    // Main content
+    // Main
     main: {
         flex: 1,
         overflowY: "auto",

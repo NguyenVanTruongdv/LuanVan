@@ -7,10 +7,13 @@ import CashierLayout from "../layouts/CashierLayout";
 import StaffLogin from "../pages/auth/Login/StaffLogin";
 import Dashboard from "../pages/cashier/CashierDashboard";
 import Checkin from "../pages/cashier/checkin/Checkin";
+import CheckinHistory from "../pages/cashier/checkin/Checkinhistory";
 import IncidentReportForm from "../pages/cashier/Incident/IncidenReport";
 import IncidentList from "../pages/cashier/Incident/IncidentList";
 import MemberListPage from "../pages/cashier/member/ListMember";
 import GymMemberRegistration from "../pages/cashier/member/RegisterMember";
+import LichSuDangKyGoiTap from "../pages/cashier/packages/History";
+import RenewPage from "../pages/cashier/packages/Renewpage";
 
 function AppRoutes() {
     return (
@@ -34,10 +37,13 @@ function AppRoutes() {
             <Route path="/cashier" element={<CashierLayout />}>
                 <Route index element={<Dashboard />} />
                 <Route path="checkin" element={<Checkin />} />
+                <Route path="checkin-history" element={<CheckinHistory />} />
                 <Route path="member-create" element={<GymMemberRegistration></GymMemberRegistration>} />
                 <Route path="members" element={<MemberListPage></MemberListPage>} />
                 <Route path="incidents-report" element={<IncidentReportForm></IncidentReportForm>} />
                 <Route path="incidents-list" element={<IncidentList></IncidentList>} />
+                <Route path="packages/renew" element={<RenewPage />} />
+                <Route path="packages/history" element={<LichSuDangKyGoiTap />} />
             </Route>
 
             {/* </Route> */}

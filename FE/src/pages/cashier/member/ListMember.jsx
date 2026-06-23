@@ -19,9 +19,9 @@ const C = {
     cardAlt: "#F4FAF9",
     border: "#D7E2E1",
     borderDark: "#A9BFBC",
-    ink: "#10231F",
-    inkSoft: "#5C7572",
-    inkMuted: "#92ABA8",
+    ink: "#0A1A16",          // ← đậm hơn
+    inkSoft: "#1E3530",      // ← đậm hơn (thay vì #5C7572)
+    inkMuted: "#3D5C57",     // ← đậm hơn (thay vì #92ABA8)
     accent: "#6366F1",
     accentDark: "#4F46E5",
     accentRGB: "99,102,241",
@@ -29,13 +29,13 @@ const C = {
     accentSoft: "rgba(99,102,241,0.09)",
     accentGradient: "linear-gradient(135deg, #6366F1 0%, #8B5CF6 55%, #C084FC 100%)",
     accentRing: "rgba(99,102,241,0.2)",
-    green: "#16A34A",
+    green: "#15803D",        // ← đậm hơn
     greenBg: "#F0FDF4",
     greenBorder: "#BBF7D0",
-    amber: "#D97706",
+    amber: "#B45309",        // ← đậm hơn
     amberBg: "#FFFBEB",
     amberBorder: "#FDE68A",
-    red: "#DC2626",
+    red: "#B91C1C",          // ← đậm hơn
     redBg: "#FEF2F2",
     redBorder: "#FECACA",
     shadow: "0 1px 4px rgba(16,35,31,0.06), 0 4px 16px rgba(16,35,31,0.05)",
@@ -54,8 +54,6 @@ const seedMembers = [
     { id: "HV0007", hoTen: "Vũ Thị Thu", sdt: "0967890123", chiNhanh: "Bình Thạnh", ngayDangKy: "2023-10-05", goiTap: "Silver", trangThai: "Đang hoạt động", gioiTinh: "Nữ", ghiChu: "", avatar: "" },
     { id: "HV0008", hoTen: "Bùi Minh Tuấn", sdt: "0978901234", chiNhanh: "Thủ Đức", ngayDangKy: "2022-02-28", goiTap: "Gold", trangThai: "Đang hoạt động", gioiTinh: "Nam", ghiChu: "", avatar: "" },
 ];
-
-const API_BASE_URL = "/api/members";
 
 const memberApi = {
     async list() {
@@ -92,10 +90,10 @@ function avatarPalette(id) {
 }
 
 const GOI_STYLE = {
-    "Basic": { bg: "#F1F5F9", fg: "#64748B", border: "#CBD5E1" },
-    "Silver": { bg: "#F1F5F9", fg: "#475569", border: "#94A3B8" },
-    "Gold": { bg: "#FFFBEB", fg: "#B45309", border: "#FCD34D" },
-    "Platinum": { bg: "#ECFEFF", fg: "#0E7490", border: "#67E8F9" },
+    "Basic": { bg: "#E2E8F0", fg: "#1E293B", border: "#94A3B8" },
+    "Silver": { bg: "#E2E8F0", fg: "#0F172A", border: "#64748B" },
+    "Gold": { bg: "#FEF3C7", fg: "#78350F", border: "#F59E0B" },
+    "Platinum": { bg: "#CFFAFE", fg: "#0C4A6E", border: "#22D3EE" },
 };
 const STATUS_STYLE = {
     "Đang hoạt động": { bg: C.greenBg, fg: C.green, border: C.greenBorder, dot: C.green },
@@ -108,7 +106,7 @@ function StatusBadge({ value }) {
     return (
         <span style={{
             display: "inline-flex", alignItems: "center", gap: 6, padding: "4px 11px", borderRadius: 999,
-            background: s.bg, color: s.fg, fontSize: 12, fontWeight: 700, border: `1px solid ${s.border}`, whiteSpace: "nowrap"
+            background: s.bg, color: s.fg, fontSize: 12, fontWeight: 800, border: `1px solid ${s.border}`, whiteSpace: "nowrap"
         }}>
             <span style={{ width: 6, height: 6, borderRadius: "50%", background: s.dot }} />
             {value}
@@ -149,7 +147,7 @@ const inp = {
     transition: "border-color .15s",
 };
 const btnAccent = { display: "inline-flex", alignItems: "center", gap: 7, fontSize: 13.5, fontWeight: 700, padding: "10px 18px", borderRadius: 10, cursor: "pointer", fontFamily: "inherit", border: "none", background: C.accentGradient, color: "#fff", boxShadow: `0 3px 12px rgba(${C.accentRGB},0.32)` };
-const btnOutline = { display: "inline-flex", alignItems: "center", gap: 7, fontSize: 13.5, fontWeight: 600, padding: "10px 16px", borderRadius: 10, cursor: "pointer", fontFamily: "inherit", background: C.surface, color: C.inkSoft, border: `1.5px solid ${C.border}` };
+const btnOutline = { display: "inline-flex", alignItems: "center", gap: 7, fontSize: 13.5, fontWeight: 700, padding: "10px 16px", borderRadius: 10, cursor: "pointer", fontFamily: "inherit", background: C.surface, color: C.inkSoft, border: `1.5px solid ${C.border}` };
 const btnDanger = { display: "inline-flex", alignItems: "center", gap: 7, fontSize: 13.5, fontWeight: 700, padding: "10px 16px", borderRadius: 10, cursor: "pointer", fontFamily: "inherit", background: C.redBg, color: C.red, border: `1.5px solid ${C.redBorder}` };
 
 function GlobalStyles() {
@@ -159,6 +157,18 @@ function GlobalStyles() {
             .gw-input:hover { border-color: ${C.borderDark}; }
             .gw-photo-col { width: 320px; }
             .gw-grid-2 { display: grid; grid-template-columns: 1fr 1fr; }
+            /* Bảng cuộn: chiều cao tối đa, phần header cố định */
+            .gw-table-scroll {
+                max-height: 480px;
+                overflow-y: auto;
+                overflow-x: auto;
+            }
+            .gw-table-scroll thead th {
+                position: sticky;
+                top: 0;
+                z-index: 2;
+                background: #EDF4F3;
+            }
             @media (max-width: 760px) {
                 .gw-photo-col { width: 100% !important; border-right: none !important; border-bottom: 1px solid ${C.border}; }
                 .gw-grid-2 { grid-template-columns: 1fr !important; }
@@ -166,6 +176,7 @@ function GlobalStyles() {
                 .gw-stack-mobile { flex-wrap: wrap !important; }
                 .gw-actions-mobile { width: 100%; }
                 .gw-actions-mobile button { flex: 1; justify-content: center; }
+                .gw-table-scroll { max-height: 360px; }
             }
             @media (max-width: 480px) {
                 .gw-filter-bar > * { flex: 1 1 100% !important; }
@@ -336,13 +347,13 @@ function Field({ label, required, full, icon: Icon, children }) {
 function ReadField({ label, value, icon: Icon, full }) {
     return (
         <div style={{ gridColumn: full ? "1 / -1" : "span 1", display: "flex", flexDirection: "column", gap: 6 }}>
-            <span style={{ fontSize: 11.5, fontWeight: 700, color: C.inkSoft, letterSpacing: 0.3, display: "flex", alignItems: "center", gap: 6 }}>
+            <span style={{ fontSize: 11.5, fontWeight: 800, color: C.inkSoft, letterSpacing: 0.3, display: "flex", alignItems: "center", gap: 6 }}>
                 {Icon && <Icon size={12} color={C.accent} style={{ flexShrink: 0 }} />}
                 {label}
             </span>
             <div style={{
                 fontSize: 14.5, padding: "10px 13px", borderRadius: 10, border: `1.5px solid ${C.border}`,
-                background: C.cardAlt, color: C.ink, fontWeight: 600, minHeight: 21,
+                background: C.cardAlt, color: C.ink, fontWeight: 700, minHeight: 21,
                 display: "flex", alignItems: "center", lineHeight: 1.5
             }}>
                 {value || "—"}
@@ -362,7 +373,7 @@ function StatCard({ icon: Icon, label, value, color, bgColor }) {
             </div>
             <div>
                 <div style={{ fontSize: 24, fontWeight: 900, color: C.ink, letterSpacing: -0.6 }}>{value}</div>
-                <div style={{ fontSize: 12.5, color: C.inkMuted, marginTop: 1, fontWeight: 500 }}>{label}</div>
+                <div style={{ fontSize: 12.5, color: C.inkMuted, marginTop: 1, fontWeight: 600 }}>{label}</div>
             </div>
         </div>
     );
@@ -387,7 +398,7 @@ function ListPage({ members, onView, onEdit, loading = false }) {
         <div>
             <div style={{ marginBottom: 24 }}>
                 <div style={{ fontSize: 26, fontWeight: 900, color: C.ink, letterSpacing: -0.5 }}>Danh sách hội viên</div>
-                <div style={{ fontSize: 13.5, color: C.inkMuted, marginTop: 4 }}>
+                <div style={{ fontSize: 13.5, color: C.inkMuted, marginTop: 4, fontWeight: 600 }}>
                     {loading ? "Đang tải danh sách hội viên…" : `${filtered.length} / ${members.length} hội viên được hiển thị`}
                 </div>
             </div>
@@ -419,14 +430,15 @@ function ListPage({ members, onView, onEdit, loading = false }) {
                 </button>
             </div>
 
+            {/* ── Bảng có thể cuộn ── */}
             <div style={{ border: `1px solid ${C.border}`, borderRadius: 16, overflow: "hidden", background: C.card, boxShadow: C.shadow }}>
-                <div style={{ overflowX: "auto" }}>
+                <div className="gw-table-scroll">
                     <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
                         <thead>
-                            <tr style={{ background: C.cardAlt }}>
+                            <tr>
                                 {["Hội viên", "Số điện thoại", "Chi nhánh", "Gói tập", "Trạng thái", ""].map((h, i) => (
                                     <th key={i} style={{
-                                        padding: "12px 16px", fontSize: 11, fontWeight: 700, color: C.inkMuted, letterSpacing: 0.7,
+                                        padding: "12px 16px", fontSize: 11, fontWeight: 800, color: C.inkSoft, letterSpacing: 0.7,
                                         textTransform: "uppercase", borderBottom: `1px solid ${C.border}`, textAlign: i === 5 ? "right" : "left", whiteSpace: "nowrap"
                                     }}>{h}</th>
                                 ))}
@@ -435,25 +447,24 @@ function ListPage({ members, onView, onEdit, loading = false }) {
                         <tbody>
                             {filtered.map(m => (
                                 <tr key={m.id} style={{ borderBottom: `1px solid ${C.border}`, transition: "background .1s" }}
-                                    onMouseEnter={e => e.currentTarget.style.background = "#F4FBFA"}
+                                    onMouseEnter={e => e.currentTarget.style.background = "#EDF6F4"}
                                     onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
                                     <td style={{ padding: "13px 16px" }}>
                                         <div style={{ display: "flex", alignItems: "center", gap: 11 }}>
                                             <Avatar name={m.hoTen} src={m.avatar} id={m.id} size={38} />
                                             <div>
-                                                <div style={{ fontWeight: 700, color: C.ink }}>{m.hoTen}</div>
-                                                <div style={{ fontSize: 11.5, color: C.inkMuted, marginTop: 1 }}>{m.id}</div>
+                                                <div style={{ fontWeight: 800, color: C.ink }}>{m.hoTen}</div>
+                                                <div style={{ fontSize: 11.5, color: C.inkMuted, marginTop: 1, fontWeight: 600 }}>{m.id}</div>
                                             </div>
                                         </div>
                                     </td>
-                                    <td style={{ padding: "13px 16px", color: C.inkSoft }}>{m.sdt}</td>
-                                    <td style={{ padding: "13px 16px", color: C.inkSoft }}>{m.chiNhanh}</td>
+                                    <td style={{ padding: "13px 16px", color: C.inkSoft, fontWeight: 700 }}>{m.sdt}</td>
+                                    <td style={{ padding: "13px 16px", color: C.inkSoft, fontWeight: 700 }}>{m.chiNhanh}</td>
                                     <td style={{ padding: "13px 16px" }}><GoiBadge value={m.goiTap} /></td>
                                     <td style={{ padding: "13px 16px" }}><StatusBadge value={m.trangThai} /></td>
                                     <td style={{ padding: "13px 16px" }}>
                                         <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
                                             <button onClick={() => onView(m)} style={{ ...btnOutline, padding: "7px 12px", fontSize: 13 }}><Eye size={13} /> Xem</button>
-                                            {/* ── "Cập nhật" now opens DetailPage with editing mode pre-activated ── */}
                                             <button onClick={() => onEdit(m)} style={{ ...btnAccent, padding: "7px 12px", fontSize: 13 }}><Pencil size={13} /> Cập nhật</button>
                                         </div>
                                     </td>
@@ -473,10 +484,7 @@ function ListPage({ members, onView, onEdit, loading = false }) {
     );
 }
 
-/* ── DETAIL PAGE ──
-   - initialEditingInfo: khi true (từ nút "Cập nhật" ở danh sách), form mở sẵn ở chế độ chỉnh sửa.
-   - khi false (từ nút "Xem"), hiển thị dạng read-only như cũ.
-*/
+/* ── DETAIL PAGE ── */
 function DetailPage({ member, onBack, onSave, initialEditingInfo = false }) {
     const [editingPhoto, setEditingPhoto] = useState(false);
     const [editingInfo, setEditingInfo] = useState(initialEditingInfo);
@@ -486,7 +494,6 @@ function DetailPage({ member, onBack, onSave, initialEditingInfo = false }) {
     const [savingPhoto, setSavingPhoto] = useState(false);
     const [savingInfo, setSavingInfo] = useState(false);
 
-    // Reset khi chuyển sang hội viên khác
     useEffect(() => {
         setDraft(member);
         setEditingPhoto(false);
@@ -542,17 +549,17 @@ function DetailPage({ member, onBack, onSave, initialEditingInfo = false }) {
                 <button onClick={onBack} style={{ ...btnOutline, padding: "9px 11px" }}><ArrowLeft size={16} /></button>
                 <div>
                     <div style={{ fontSize: 22, fontWeight: 800, color: C.ink, letterSpacing: -0.4 }}>Chi tiết hội viên</div>
-                    <div style={{ fontSize: 13, color: C.inkMuted, marginTop: 3 }}>Mã: {member.id}</div>
+                    <div style={{ fontSize: 13, color: C.inkMuted, marginTop: 3, fontWeight: 600 }}>Mã: {member.id}</div>
                 </div>
             </div>
 
             {flash && (
-                <div style={{ marginBottom: 18, padding: "12px 18px", borderRadius: 12, background: C.greenBg, color: C.green, fontSize: 14, fontWeight: 700, display: "flex", alignItems: "center", gap: 9, border: `1px solid ${C.greenBorder}` }}>
+                <div style={{ marginBottom: 18, padding: "12px 18px", borderRadius: 12, background: C.greenBg, color: C.green, fontSize: 14, fontWeight: 800, display: "flex", alignItems: "center", gap: 9, border: `1px solid ${C.greenBorder}` }}>
                     <Check size={16} /> {flash}
                 </div>
             )}
             {error && (
-                <div style={{ marginBottom: 18, padding: "12px 18px", borderRadius: 12, background: C.redBg, color: C.red, fontSize: 14, fontWeight: 700, display: "flex", alignItems: "center", gap: 9, border: `1px solid ${C.redBorder}` }}>
+                <div style={{ marginBottom: 18, padding: "12px 18px", borderRadius: 12, background: C.redBg, color: C.red, fontSize: 14, fontWeight: 800, display: "flex", alignItems: "center", gap: 9, border: `1px solid ${C.redBorder}` }}>
                     <X size={16} /> {error}
                 </div>
             )}
@@ -641,7 +648,7 @@ function DetailPage({ member, onBack, onSave, initialEditingInfo = false }) {
                                             {["Nam", "Nữ", "Khác"].map(g => (
                                                 <label key={g} style={{
                                                     display: "flex", alignItems: "center", gap: 7, fontSize: 14, cursor: "pointer",
-                                                    color: draft.gioiTinh === g ? C.accent : C.inkSoft, fontWeight: draft.gioiTinh === g ? 700 : 400
+                                                    color: draft.gioiTinh === g ? C.accent : C.inkSoft, fontWeight: draft.gioiTinh === g ? 800 : 600
                                                 }}>
                                                     <input type="radio" name="gt-detail" checked={draft.gioiTinh === g} onChange={() => setDraft(d => ({ ...d, gioiTinh: g }))} style={{ accentColor: C.accent, width: 15, height: 15 }} />
                                                     {g}
@@ -700,7 +707,6 @@ export default function MemberManagementApp() {
     const [members, setMembers] = useState(seedMembers);
     const [loadingList, setLoadingList] = useState(false);
     const [listError, setListError] = useState("");
-    // route: { page: "list" | "detail", id?, editMode?: bool }
     const [route, setRoute] = useState({ page: "list" });
 
     useEffect(() => {
@@ -719,9 +725,7 @@ export default function MemberManagementApp() {
     }, [route.id, members]);
 
     const goList = () => setRoute({ page: "list" });
-    // "Xem" → DetailPage read-only
     const goDetail = m => setRoute({ page: "detail", id: m.id, editMode: false });
-    // "Cập nhật" → DetailPage with editing pre-opened
     const goEdit = m => setRoute({ page: "detail", id: m.id, editMode: true });
 
     const handleInlineSave = updated => {
@@ -737,7 +741,7 @@ export default function MemberManagementApp() {
                 {route.page === "list" && (
                     <>
                         {listError && (
-                            <div style={{ marginBottom: 18, padding: "12px 18px", borderRadius: 12, background: C.redBg, color: C.red, fontSize: 14, fontWeight: 700, display: "flex", alignItems: "center", gap: 9, border: `1px solid ${C.redBorder}` }}>
+                            <div style={{ marginBottom: 18, padding: "12px 18px", borderRadius: 12, background: C.redBg, color: C.red, fontSize: 14, fontWeight: 800, display: "flex", alignItems: "center", gap: 9, border: `1px solid ${C.redBorder}` }}>
                                 <X size={16} /> {listError}
                             </div>
                         )}
