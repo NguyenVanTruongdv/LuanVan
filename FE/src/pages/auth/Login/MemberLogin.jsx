@@ -1,19 +1,43 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import authApi from "../../../api/authApi";
 
 export default function MemberLogin() {
     const [phone, setPhone] = useState("");
     const [password, setPassword] = useState("");
     const [showPassword, setShowPassword] = useState(false);
     const [phoneError, setPhoneError] = useState(false);
+    const [error, setError] = useState(""); // lỗi từ server (sai pass, bị khóa,...)
+    const [loading, setLoading] = useState(false);
     const navigate = useNavigate();
 
-    const handleLogin = () => {
+    const handleLogin = async () => {
+        // Reset lỗi cũ
+        setError("");
+
+        // Validate client-side
         if (!phone.trim()) {
             setPhoneError(true);
             return;
         }
-        // TODO: call login API
+
+        setLoading(true);
+        try {
+            // Gọi API — api.js tự lưu token + fullName vào localStorage
+            await authApi.loginMember({ phone: phone.trim(), password });
+
+            // Chuyển sang trang Home, truyền state để Home biết vừa login
+            navigate("/", { replace: true });
+        } catch (err) {
+            setError(err.message || "Đăng nhập thất bại, vui lòng thử lại");
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    // Cho phép nhấn Enter để đăng nhập
+    const handleKeyDown = (e) => {
+        if (e.key === "Enter") handleLogin();
     };
 
     return (
@@ -58,6 +82,16 @@ export default function MemberLogin() {
                     <h1 style={styles.heading}>Đăng nhập</h1>
                     <p style={styles.subheading}>Chào mừng trở lại, vui lòng xác thực để tiếp tục</p>
 
+                    {/* Lỗi từ server */}
+                    {error && (
+                        <div style={styles.errorBanner}>
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                                <circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" />
+                            </svg>
+                            {error}
+                        </div>
+                    )}
+
                     {/* Phone */}
                     <div style={styles.formGroup}>
                         <label style={styles.label}>SỐ ĐIỆN THOẠI THÀNH VIÊN</label>
@@ -72,9 +106,11 @@ export default function MemberLogin() {
                                 type="tel"
                                 placeholder="0901 234 567"
                                 value={phone}
-                                onChange={e => { setPhone(e.target.value); setPhoneError(false); }}
+                                onChange={e => { setPhone(e.target.value); setPhoneError(false); setError(""); }}
+                                onKeyDown={handleKeyDown}
                                 onFocus={e => { if (!phoneError) { e.target.style.borderColor = "#00c2cb"; e.target.style.boxShadow = "0 0 0 3px rgba(0,194,203,0.15)"; e.target.style.background = "#1e2e42"; } }}
                                 onBlur={e => { if (!phoneError) { e.target.style.borderColor = "rgba(255,255,255,0.1)"; e.target.style.boxShadow = "none"; e.target.style.background = "#162030"; } }}
+                                disabled={loading}
                             />
                         </div>
                         {phoneError && <p style={styles.errorText}>Vui lòng nhập số điện thoại</p>}
@@ -82,7 +118,16 @@ export default function MemberLogin() {
 
                     {/* Password */}
                     <div style={styles.formGroup}>
-                        <label style={styles.label}>MẬT KHẨU</label>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+                            <label style={{ ...styles.label, marginBottom: 0 }}>MẬT KHẨU</label>
+                            <button
+                                style={styles.forgotBtn}
+                                onClick={() => navigate("/member/forgot-password")}
+                                tabIndex={-1}
+                            >
+                                Quên mật khẩu?
+                            </button>
+                        </div>
                         <div style={styles.inputWrap}>
                             <span style={styles.inputIcon}>
                                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -95,11 +140,13 @@ export default function MemberLogin() {
                                 type={showPassword ? "text" : "password"}
                                 placeholder="••••••••"
                                 value={password}
-                                onChange={e => setPassword(e.target.value)}
+                                onChange={e => { setPassword(e.target.value); setError(""); }}
+                                onKeyDown={handleKeyDown}
                                 onFocus={e => { e.target.style.borderColor = "#00c2cb"; e.target.style.boxShadow = "0 0 0 3px rgba(0,194,203,0.15)"; e.target.style.background = "#1e2e42"; }}
                                 onBlur={e => { e.target.style.borderColor = "rgba(255,255,255,0.1)"; e.target.style.boxShadow = "none"; e.target.style.background = "#162030"; }}
+                                disabled={loading}
                             />
-                            <button style={styles.eyeBtn} onClick={() => setShowPassword(!showPassword)}>
+                            <button style={styles.eyeBtn} onClick={() => setShowPassword(!showPassword)} tabIndex={-1}>
                                 {showPassword ? (
                                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#5a7a94" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                                         <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94" />
@@ -118,19 +165,24 @@ export default function MemberLogin() {
 
                     {/* Submit */}
                     <button
-                        style={styles.loginBtn}
+                        style={{
+                            ...styles.loginBtn,
+                            opacity: loading ? 0.7 : 1,
+                            cursor: loading ? "not-allowed" : "pointer",
+                        }}
                         onClick={handleLogin}
-                        onMouseEnter={e => { e.currentTarget.style.background = "#00d4de"; e.currentTarget.style.boxShadow = "0 8px 28px rgba(0,194,203,0.5)"; }}
+                        disabled={loading}
+                        onMouseEnter={e => { if (!loading) { e.currentTarget.style.background = "#00d4de"; e.currentTarget.style.boxShadow = "0 8px 28px rgba(0,194,203,0.5)"; } }}
                         onMouseLeave={e => { e.currentTarget.style.background = "#00c2cb"; e.currentTarget.style.boxShadow = "0 4px 18px rgba(0,194,203,0.35)"; }}
                     >
-                        Đăng nhập hệ thống
+                        {loading ? "Đang đăng nhập..." : "Đăng nhập hệ thống"}
                     </button>
 
                     <p style={styles.sslNote}>
                         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ display: "inline", marginRight: "6px", verticalAlign: "middle" }}>
                             <circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" />
                         </svg>
-                        Phiên đăng nhập được mã hóa SSL ·
+                        Phiên đăng nhập được mã hóa SSL
                     </p>
 
                     <div style={styles.bottom}>
@@ -276,6 +328,18 @@ const styles = {
         color: "#5a7a94",
         margin: "0 0 32px",
     },
+    errorBanner: {
+        display: "flex",
+        alignItems: "center",
+        gap: "8px",
+        background: "rgba(240,80,80,0.1)",
+        border: "1px solid rgba(240,80,80,0.3)",
+        borderRadius: "10px",
+        padding: "11px 14px",
+        fontSize: "13.5px",
+        color: "#f05050",
+        marginBottom: "20px",
+    },
     formGroup: {
         marginBottom: "20px",
     },
@@ -286,6 +350,16 @@ const styles = {
         color: "#5a7a94",
         letterSpacing: "0.8px",
         marginBottom: "8px",
+    },
+    forgotBtn: {
+        background: "none",
+        border: "none",
+        color: "#00c2cb",
+        fontSize: "12px",
+        fontWeight: 600,
+        cursor: "pointer",
+        padding: 0,
+        fontFamily: "inherit",
     },
     inputWrap: {
         position: "relative",
@@ -342,7 +416,6 @@ const styles = {
         fontWeight: 800,
         fontFamily: "inherit",
         letterSpacing: "0.5px",
-        cursor: "pointer",
         transition: "all 0.2s",
         boxShadow: "0 4px 18px rgba(0,194,203,0.35)",
         marginTop: "8px",

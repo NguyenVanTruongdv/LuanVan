@@ -14,11 +14,12 @@ import MemberListPage from "../pages/cashier/member/ListMember";
 import GymMemberRegistration from "../pages/cashier/member/RegisterMember";
 import LichSuDangKyGoiTap from "../pages/cashier/packages/History";
 import RenewPage from "../pages/cashier/packages/Renewpage";
-
+//Công khai
+import Home from "../pages/guest/Home";
 function AppRoutes() {
     return (
         <Routes>
-
+            <Route path="/" element={<Home></Home>} />
             <Route
                 path="/member/register"
                 element={<Register />}

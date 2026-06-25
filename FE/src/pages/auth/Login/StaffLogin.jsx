@@ -1,13 +1,38 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
+import authApi from "../../../services/api"; // ⚠️ chỉnh lại đường dẫn cho đúng vị trí file api.js trong project của bạn
 
 export default function StaffLogin() {
+  const navigate = useNavigate();
+
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
-  const [role, setRole] = useState("trainer");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
 
-  const handleLogin = () => {
-    alert(`Đăng nhập staff: ${email} (${role})`);
+  const handleLogin = async () => {
+    setError("");
+
+    if (!phone || !password) {
+      setError("Vui lòng nhập đầy đủ số điện thoại và mật khẩu");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      // ⚠️ Kiểm tra lại tên field backend yêu cầu (phoneNumber/phone/username...)
+      await authApi.loginEmployee({
+        phoneNumber: phone,
+        password: password,
+      });
+
+      navigate("/cashier"); // đăng nhập xong -> vào dashboard
+    } catch (err) {
+      setError(err.message || "Đăng nhập thất bại");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -53,10 +78,7 @@ export default function StaffLogin() {
               <p style={styles.formSubtitle}>Chào mừng trở lại, vui lòng xác thực để tiếp tục</p>
             </div>
 
-            {/* Role selector */}
-
-
-            {/* Email */}
+            {/* Phone */}
             <div style={styles.formGroup}>
               <label style={styles.label}>Số Điện Thoại Nhân Viên</label>
               <div style={styles.inputWrapper}>
@@ -66,10 +88,10 @@ export default function StaffLogin() {
                 </svg>
                 <input
                   style={styles.input}
-                  type="phone"
-                  placeholder="staff@ironzone.vn"
+                  type="text"
+                  placeholder="0901234567"
                   value={phone}
-                  onChange={e => setEmail(e.target.value)}
+                  onChange={(e) => setPhone(e.target.value)}
                   onFocus={e => { e.target.style.borderColor = "#06B6D4"; e.target.style.boxShadow = "0 0 0 3px rgba(6,182,212,0.12)"; }}
                   onBlur={e => { e.target.style.borderColor = "#334155"; e.target.style.boxShadow = "none"; }}
                 />
@@ -89,11 +111,13 @@ export default function StaffLogin() {
                   type={showPassword ? "text" : "password"}
                   placeholder="••••••••"
                   value={password}
-                  onChange={e => setPassword(e.target.value)}
+                  onChange={(e) => setPassword(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter") handleLogin(); }}
                   onFocus={e => { e.target.style.borderColor = "#06B6D4"; e.target.style.boxShadow = "0 0 0 3px rgba(6,182,212,0.12)"; }}
                   onBlur={e => { e.target.style.borderColor = "#334155"; e.target.style.boxShadow = "none"; }}
                 />
                 <button
+                  type="button"
                   style={styles.eyeBtn}
                   onClick={() => setShowPassword(!showPassword)}
                 >
@@ -113,17 +137,22 @@ export default function StaffLogin() {
               </div>
             </div>
 
-
-
+            {/* Error message */}
+            {error && (
+              <div style={{ color: "#F87171", fontSize: "13px", marginBottom: "16px" }}>
+                {error}
+              </div>
+            )}
 
             {/* Login button */}
             <button
-              style={styles.loginBtn}
+              style={{ ...styles.loginBtn, opacity: loading ? 0.7 : 1, cursor: loading ? "not-allowed" : "pointer" }}
               onClick={handleLogin}
-              onMouseEnter={e => { e.target.style.background = "#0891B2"; e.target.style.transform = "translateY(-1px)"; e.target.style.boxShadow = "0 8px 24px rgba(6,182,212,0.35)"; }}
+              disabled={loading}
+              onMouseEnter={e => { if (!loading) { e.target.style.background = "#0891B2"; e.target.style.transform = "translateY(-1px)"; e.target.style.boxShadow = "0 8px 24px rgba(6,182,212,0.35)"; } }}
               onMouseLeave={e => { e.target.style.background = "#06B6D4"; e.target.style.transform = "translateY(0)"; e.target.style.boxShadow = "0 4px 16px rgba(6,182,212,0.2)"; }}
             >
-              Đăng nhập hệ thống
+              {loading ? "Đang đăng nhập..." : "Đăng nhập hệ thống"}
             </button>
 
             {/* Security notice */}
@@ -150,6 +179,10 @@ export default function StaffLogin() {
     </div>
   );
 }
+
+const styles = {
+  // ... giữ nguyên toàn bộ object styles như file gốc
+};
 
 const styles = {
   root: {
