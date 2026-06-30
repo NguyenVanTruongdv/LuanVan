@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import authApi from "../../../services/api"; // ⚠️ chỉnh lại đường dẫn cho đúng vị trí file api.js trong project của bạn
+import authApi from "../../../api/authApi";
 
 export default function StaffLogin() {
   const navigate = useNavigate();
@@ -179,10 +179,6 @@ export default function StaffLogin() {
     </div>
   );
 }
-
-const styles = {
-  // ... giữ nguyên toàn bộ object styles như file gốc
-};
 
 const styles = {
   root: {

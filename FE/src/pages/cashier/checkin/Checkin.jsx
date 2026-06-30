@@ -44,6 +44,7 @@ const SAMPLE_MEMBERS = [
     package: "Gói 12 tháng — Premium",
     expiryDate: "01/12/2026",
     packageStatus: "active",
+    photoUrl: null, // ← Member.PhotoUrl. null = chưa có ảnh, hiển thị chữ viết tắt
   },
   {
     memberId: 2,
@@ -57,6 +58,7 @@ const SAMPLE_MEMBERS = [
     package: "Gói 6 tháng — Standard",
     expiryDate: "05/07/2026",
     packageStatus: "expiring",
+    photoUrl: "https://i.pravatar.cc/300?img=47",
   },
   {
     memberId: 3,
@@ -70,6 +72,7 @@ const SAMPLE_MEMBERS = [
     package: "Gói 1 tháng",
     expiryDate: "10/06/2026",
     packageStatus: "expired",
+    photoUrl: "https://i.pravatar.cc/300?img=12",
   },
   {
     memberId: 4,
@@ -83,6 +86,7 @@ const SAMPLE_MEMBERS = [
     package: "Gói 12 tháng — VIP",
     expiryDate: "20/01/2027",
     packageStatus: "active",
+    photoUrl: "https://i.pravatar.cc/300?img=32",
   },
   {
     memberId: 5,
@@ -96,6 +100,7 @@ const SAMPLE_MEMBERS = [
     package: "Gói 3 tháng",
     expiryDate: "15/08/2026",
     packageStatus: "active",
+    photoUrl: null,
   },
   {
     memberId: 6,
@@ -109,6 +114,7 @@ const SAMPLE_MEMBERS = [
     package: "Gói 6 tháng — Standard",
     expiryDate: "20/06/2026",
     packageStatus: "expiring",
+    photoUrl: "https://i.pravatar.cc/300?img=44",
   },
 ];
 
@@ -146,6 +152,39 @@ function AccountStatusBadge({ status }) {
 
 function initials(name) {
   return name.split(" ").filter(Boolean).slice(-2).map(w => w[0]).join("").toUpperCase();
+}
+
+/* ── Avatar hội viên: hiển thị ảnh thật (Member.PhotoUrl) nếu có, nếu không
+ * thì hiển thị chữ viết tắt như cũ. Bấm vào avatar để xem ảnh phóng to
+ * (chỉ khi có ảnh — onView được truyền từ component cha). ── */
+function MemberAvatar({ member, className = "ck-lc-avatar", onView }) {
+  const hasPhoto = !!member?.photoUrl;
+  return (
+    <div
+      className={`${className}${hasPhoto ? " has-photo" : ""}`}
+      onClick={hasPhoto ? () => onView?.(member) : undefined}
+      role={hasPhoto ? "button" : undefined}
+      title={hasPhoto ? "Bấm để xem ảnh" : undefined}
+    >
+      {hasPhoto
+        ? <img src={member.photoUrl} alt={member.fullName} />
+        : initials(member?.fullName || "")}
+    </div>
+  );
+}
+
+/* ── Phần đầu thẻ thông tin hội viên (".ck-lc-top"): nếu hội viên có ảnh,
+ * hiển thị dạng banner ảnh phủ kín toàn bộ chiều rộng thẻ (tỉ lệ co giãn
+ * theo % chứ không cố định px), tên + trạng thái đè lên ảnh bằng lớp phủ
+ * gradient. Nếu không có ảnh, fallback về avatar chữ viết tắt như cũ. ── */
+function MemberTop({ member, extraTopContent, nameContent, onViewPhoto }) {
+  return (
+    <div className="ck-lc-top">
+      {extraTopContent}
+      <MemberAvatar member={member} onView={onViewPhoto} />
+      <div>{nameContent}</div>
+    </div>
+  );
 }
 
 /* ── Có cho phép check-in hay không, dựa trên accountStatus + packageStatus ── */
@@ -269,6 +308,9 @@ export default function Checkin() {
   };
 
   /* ── Toast ── */
+  /* ── Modal xem ảnh hội viên (bấm vào avatar) ── */
+  const [photoViewMember, setPhotoViewMember] = useState(null);
+
   const [toast, setToast] = useState(null);
   const showToast = (type, text) => {
     setToast({ type, text });
@@ -276,7 +318,7 @@ export default function Checkin() {
   };
 
   /* =====================================================================
-   * THÔNG TIN NGƯỜI CHECK-IN GẦN NHẤT
+   * THÔNG TIN HỘI VIÊN (panel bên phải)
    * Dùng chung cho cả 2 luồng (camera nhận diện & tra cứu SĐT) — chỉ cần
    * gọi setLastCheckin(member, { source, success }) sau khi BE trả kết quả.
    * ===================================================================== */
@@ -284,6 +326,9 @@ export default function Checkin() {
   // lastCheckin = { member, source: "camera" | "phone", result: "success" | "error", reason?, at: Date }
 
   const recordCheckin = (member, source, result, reason) => {
+    // Khi có lượt check-in mới (vd: hội viên khác vừa được nhận diện qua camera),
+    // ẩn kết quả tra cứu SĐT đang hiển thị để thông tin check-in mới được lên trên.
+    setPhoneLookupResult(null);
     setLastCheckin({ member, source, result, reason, at: new Date() });
   };
 
@@ -317,8 +362,9 @@ export default function Checkin() {
     setTimeout(() => setCameraCheckin(null), 3000);
   };
 
-  /* ── Phone lookup — kết quả hiển thị NGAY tại khu vực "người check-in gần
-   * nhất", đẩy thông tin lượt check-in trước đó xuống dưới. ── */
+  /* ── Phone lookup — kết quả tra cứu sẽ hiển thị trực tiếp tại khu vực
+   * "Thông tin hội viên" bên phải, thay thế nội dung check-in gần nhất
+   * cho đến khi đóng lại. ── */
   const [phoneInput, setPhoneInput] = useState("");
   const [phoneError, setPhoneError] = useState("");
   const [lookupLoading, setLookupLoading] = useState(false);
@@ -394,6 +440,11 @@ export default function Checkin() {
     }, 1200);
   };
 
+  /* ── Panel "Thông tin hội viên" bên phải: ưu tiên hiển thị kết quả tra cứu
+   * SĐT đang mở (nếu có), nếu không thì hiển thị lượt check-in gần nhất. ── */
+  const infoMember = phoneLookupResult ? phoneLookupResult.member : lastCheckin?.member;
+  const infoIsLookup = !!phoneLookupResult;
+
   /* ── Render ── */
   return (
     <div className="ck-wrap">
@@ -422,22 +473,34 @@ export default function Checkin() {
         }
 
         .ck-wrap *, .ck-wrap *::before, .ck-wrap *::after { box-sizing: border-box; }
+
+        /* ── Khung tổng: chiếm đúng phần không gian còn lại trong viewport,
+         * không tạo scroll cho cả trang. Điều chỉnh giá trị trừ (96px) theo
+         * chiều cao header/topbar thực tế của layout cha nếu cần. ── */
         .ck-wrap {
           font-family: 'Inter', system-ui, sans-serif;
           color: var(--text);
           width: 100%;
-          padding: 12px;
+          height: calc(100vh - 96px);
+          max-height: calc(100vh - 96px);
+          padding: 8px;
           background: var(--bg);
+          display: flex;
+          flex-direction: column;
+          overflow: hidden;
         }
 
         /* ── Grid ── */
         .ck-grid {
           display: grid;
           grid-template-columns: 1.5fr 1fr;
-          gap: 12px;
-          align-items: start;
+          gap: 8px;
+          align-items: stretch;
+          flex: 1;
+          min-height: 0;
         }
         @media (max-width: 820px) {
+          .ck-wrap { height: auto; max-height: none; overflow: visible; }
           .ck-grid { grid-template-columns: 1fr; }
         }
 
@@ -446,17 +509,22 @@ export default function Checkin() {
           background: var(--surface);
           border: 1px solid var(--border);
           border-radius: var(--radius-lg);
-          padding: 14px;
+          padding: 10px;
+          display: flex;
+          flex-direction: column;
+          min-height: 0;
+          height: 100%;
         }
         .ck-card-title {
           display: flex; align-items: center; justify-content: space-between;
-          margin-bottom: 12px;
+          margin-bottom: 8px;
           gap: 8px;
           flex-wrap: wrap;
+          flex-shrink: 0;
         }
         .ck-card-title h2 {
           font-family: 'Outfit', sans-serif;
-          font-size: 14px; font-weight: 700; margin: 0;
+          font-size: 13px; font-weight: 700; margin: 0;
         }
 
         /* ── Camera status pill ── */
@@ -472,7 +540,7 @@ export default function Checkin() {
         }
 
         /* ── Device selector ── */
-        .ck-device-select-wrap { position: relative; margin-bottom: 10px; }
+        .ck-device-select-wrap { position: relative; margin-bottom: 8px; flex-shrink: 0; }
         .ck-device-select-wrap select {
           appearance: none; width: 100%;
           padding: 7px 32px 7px 10px;
@@ -487,9 +555,13 @@ export default function Checkin() {
           pointer-events: none; color: var(--text-muted);
         }
 
-        /* ── Viewport ── */
+        /* ── Viewport — tự co giãn lấp đầy phần còn lại của card, luôn khớp
+         * chiều cao với card "Thông tin hội viên" bên phải (cả 2 card đều
+         * height:100% trong grid stretch). ── */
         .ck-viewport {
-          position: relative; width: 100%; aspect-ratio: 4/3;
+          position: relative; width: 100%;
+          flex: 1;
+          min-height: 0;
           background: #0f172a; border-radius: var(--radius-md);
           overflow: hidden; border: 2px solid var(--border);
           transition: border-color .2s;
@@ -501,6 +573,7 @@ export default function Checkin() {
           display: flex; flex-direction: column; align-items: center; justify-content: center;
           gap: 6px; color: #94a3b8;
         }
+        .ck-placeholder svg { width: 28px; height: 28px; }
         .ck-placeholder p    { margin: 0; font-weight: 600; font-size: 13px; color: #cbd5e1; }
         .ck-placeholder span { font-size: 11px; }
         .ck-scan {
@@ -534,14 +607,15 @@ export default function Checkin() {
           border-radius: var(--radius-sm);
           background: var(--danger-light); color: var(--danger);
           font-size: 12px; display: flex; align-items: flex-start; gap: 7px;
+          flex-shrink: 0;
         }
 
         /* ── Buttons ── */
-        .ck-btn-row { display: flex; gap: 6px; margin-top: 10px; flex-wrap: wrap; }
+        .ck-btn-row { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; flex-shrink: 0; }
         .ck-btn {
           display: inline-flex; align-items: center; justify-content: center; gap: 5px;
-          padding: 7px 12px; border-radius: var(--radius-sm);
-          font-size: 12.5px; font-weight: 600; cursor: pointer;
+          padding: 6px 10px; border-radius: var(--radius-sm);
+          font-size: 12px; font-weight: 600; cursor: pointer;
           border: 1px solid transparent; transition: all .15s; font-family: 'Inter', sans-serif;
         }
         .ck-btn:disabled { opacity: .4; cursor: not-allowed; }
@@ -552,27 +626,9 @@ export default function Checkin() {
         .ck-btn-indigo  { background: #fff; border-color: #c7d2fe; color: var(--indigo); }
         .ck-btn-indigo:hover:not(:disabled)  { background: var(--indigo-light); }
 
-        /* ── Camera last result bar ── */
-        .ck-cam-result {
-          margin-top: 10px; padding: 9px 12px;
-          border-radius: var(--radius-md);
-          border: 1px solid var(--primary);
-          background: var(--primary-light);
-          display: flex; align-items: center; gap: 10px;
-        }
-        .ck-cam-result-avatar {
-          width: 32px; height: 32px; border-radius: 50%;
-          background: var(--primary-dark); color: #fff;
-          display: flex; align-items: center; justify-content: center;
-          font-family: 'Outfit', sans-serif; font-weight: 700; font-size: 11px;
-          flex-shrink: 0;
-        }
-        .ck-cam-result-name { font-weight: 700; font-size: 13px; }
-        .ck-cam-result-sub  { font-size: 11px; color: var(--primary-dark); margin-top: 1px; }
-
         /* ── Phone panel ── */
-        .ck-phone-panel { display: flex; flex-direction: column; gap: 12px; }
-        .ck-phone-input-block { display: flex; gap: 8px; align-items: stretch; flex-wrap: wrap; }
+        .ck-phone-panel { display: flex; flex-direction: column; gap: 8px; height: 100%; min-height: 0; }
+        .ck-phone-input-block { display: flex; gap: 8px; align-items: stretch; flex-wrap: wrap; flex-shrink: 0; }
         .ck-input-wrap {
           flex: 1; min-width: 160px; display: flex; align-items: center; gap: 7px;
           border: 1px solid var(--border); border-radius: var(--radius-sm);
@@ -588,6 +644,7 @@ export default function Checkin() {
         .ck-phone-error {
           display: flex; align-items: flex-start; gap: 7px;
           font-size: 12px; color: var(--danger); font-weight: 500;
+          flex-shrink: 0;
         }
 
         /* ── Hint label ── */
@@ -596,60 +653,29 @@ export default function Checkin() {
           text-transform: uppercase; letter-spacing: .04em; margin-bottom: 7px;
         }
 
-        /* ── Khối kết quả tra cứu SĐT (hiện ngay khi tìm thấy hội viên) ── */
-        .ck-lookup-block { display: flex; flex-direction: column; gap: 0; }
-        .ck-lookup-head {
+        /* ── Panel: Thông tin hội viên (chiều cao bám theo khung camera) ── */
+        .ck-info-panel-head {
           display: flex; align-items: center; justify-content: space-between;
-          margin-bottom: 7px;
+          flex-shrink: 0;
         }
-        .ck-lookup-head .ck-hint { margin-bottom: 0; }
-        .ck-lookup-close {
+        .ck-info-panel-head .ck-hint { margin-bottom: 0; }
+        .ck-info-close {
           width: 22px; height: 22px; border-radius: 50%;
           display: flex; align-items: center; justify-content: center;
           background: var(--surface-alt); border: none; cursor: pointer;
           color: var(--text-muted); transition: background .15s; flex-shrink: 0;
         }
-        .ck-lookup-close:hover { background: var(--border); }
+        .ck-info-close:hover { background: var(--border); }
 
-        .ck-lookup-card {
-          border-radius: var(--radius-md);
-          border: 1.5px solid var(--border);
-          background: #fff;
-          overflow: hidden;
+        .ck-info-area {
+          flex: 1;
+          min-height: 0;
+          display: flex;
+          flex-direction: column;
         }
-        .ck-lookup-card.ok      { border-color: var(--primary); }
-        .ck-lookup-card.blocked { border-color: var(--danger); }
 
-        .ck-lookup-top {
-          display: flex; align-items: center; gap: 10px;
-          padding: 12px 14px;
-          background: var(--surface-alt);
-        }
-        .ck-lookup-card.ok .ck-lookup-top      { background: var(--primary-light); }
-        .ck-lookup-card.blocked .ck-lookup-top { background: var(--danger-light); }
-
-        .ck-lookup-avatar {
-          width: 38px; height: 38px; border-radius: 50%;
-          background: var(--primary-dark); color: #fff;
-          display: flex; align-items: center; justify-content: center;
-          font-family: 'Outfit', sans-serif; font-weight: 700; font-size: 13px;
-          flex-shrink: 0;
-        }
-        .ck-lookup-card.blocked .ck-lookup-avatar { background: var(--danger); }
-        .ck-lookup-name { font-weight: 700; font-size: 13.5px; margin: 0 0 5px; word-break: break-word; }
-
-        .ck-lookup-body { padding: 4px 14px 14px; }
-        .ck-lookup-reason-blocked {
-          margin-top: 4px; padding: 9px 10px;
-          border-radius: var(--radius-sm);
-          background: var(--danger-light); color: var(--danger);
-          font-size: 12px; font-weight: 600;
-          display: flex; align-items: flex-start; gap: 7px;
-        }
-        .ck-lookup-checkin-btn { width: 100%; margin-top: 10px; padding: 9px 12px; font-size: 13px; }
-
-        /* ── Panel: thông tin người check-in gần nhất ── */
         .ck-lastcheckin-empty {
+          flex: 1;
           display: flex; flex-direction: column; align-items: center; justify-content: center;
           gap: 6px; text-align: center;
           padding: 28px 12px;
@@ -664,47 +690,74 @@ export default function Checkin() {
           border: 1.5px solid var(--border);
           background: #fff;
           overflow: hidden;
+          flex: 1;
+          min-height: 0;
+          display: flex;
+          flex-direction: column;
         }
         .ck-lc-card.success { border-color: var(--primary); }
         .ck-lc-card.error   { border-color: var(--danger); }
+        .ck-lc-card.lookup-ok      { border-color: var(--primary); }
+        .ck-lc-card.lookup-blocked { border-color: var(--danger); }
 
         .ck-lc-top {
-          display: flex; align-items: center; gap: 10px;
-          padding: 12px 14px;
+          position: relative;
+          display: flex; flex-direction: column; align-items: center; gap: 8px;
+          padding: 12px 10px 10px;
           background: var(--surface-alt);
-        }
-        .ck-lc-card.success .ck-lc-top { background: var(--primary-light); }
-        .ck-lc-card.error   .ck-lc-top { background: var(--danger-light); }
-
-        .ck-lc-avatar {
-          width: 38px; height: 38px; border-radius: 50%;
-          background: var(--primary-dark); color: #fff;
-          display: flex; align-items: center; justify-content: center;
-          font-family: 'Outfit', sans-serif; font-weight: 700; font-size: 13px;
+          text-align: center;
           flex-shrink: 0;
         }
-        .ck-lc-card.error .ck-lc-avatar { background: var(--danger); }
+        .ck-lc-card.success .ck-lc-top,
+        .ck-lc-card.lookup-ok .ck-lc-top { background: var(--primary-light); }
+        .ck-lc-card.error .ck-lc-top,
+        .ck-lc-card.lookup-blocked .ck-lc-top { background: var(--danger-light); }
 
-        .ck-lc-name { font-weight: 700; font-size: 13.5px; margin: 0 0 3px; word-break: break-word; }
+        /* Avatar hội viên: hình vuông bo góc, kích thước tính theo % chiều
+         * rộng khung thẻ (không px cố định) để luôn co giãn theo card —
+         * dùng chung cho cả trường hợp có ảnh thật và chữ viết tắt. */
+        .ck-lc-avatar {
+          width: 34%; aspect-ratio: 1 / 1; max-width: 130px; min-width: 64px;
+          border-radius: 20%;
+          background: var(--primary-dark); color: #fff;
+          display: flex; align-items: center; justify-content: center;
+          font-family: 'Outfit', sans-serif; font-weight: 700; font-size: 2em;
+          flex-shrink: 0;
+          overflow: hidden;
+          position: relative;
+        }
+        .ck-lc-avatar.has-photo {
+          cursor: pointer;
+          background: var(--surface-alt);
+        }
+        .ck-lc-avatar.has-photo img {
+          width: 100%; height: 100%; object-fit: cover; display: block;
+          transition: transform .15s;
+        }
+        .ck-lc-avatar.has-photo:hover img { transform: scale(1.06); }
+        .ck-lc-card.error .ck-lc-avatar,
+        .ck-lc-card.lookup-blocked .ck-lc-avatar { background: var(--danger); }
+
+        .ck-lc-name { font-weight: 700; font-size: 13.5px; margin: 0; word-break: break-word; }
         .ck-lc-result-line {
-          display: flex; align-items: center; gap: 5px;
+          display: flex; align-items: center; justify-content: center; gap: 5px;
           font-size: 11.5px; font-weight: 700;
         }
         .ck-lc-result-line.success { color: var(--primary-dark); }
         .ck-lc-result-line.error   { color: var(--danger); }
 
         .ck-lc-source {
-          margin-left: auto; flex-shrink: 0;
-          font-size: 10.5px; font-weight: 600; color: var(--text-muted);
+          position: absolute; top: 10px; right: 10px; flex-shrink: 0;
+          font-size: 10px; font-weight: 600; color: var(--text-muted);
           background: #fff; border: 1px solid var(--border);
-          padding: 3px 8px; border-radius: 999px; white-space: nowrap;
+          padding: 2px 7px; border-radius: 999px; white-space: nowrap;
         }
 
-        .ck-lc-body { padding: 4px 14px 12px; }
+        .ck-lc-body { padding: 6px 12px 10px; flex: 1; overflow-y: auto; min-height: 0; }
         .ck-lc-row {
           display: flex; justify-content: space-between; align-items: baseline; gap: 10px;
-          padding: 7px 0; border-bottom: 1px dashed var(--border);
-          font-size: 12.5px;
+          padding: 5px 0; border-bottom: 1px dashed var(--border);
+          font-size: 12px;
         }
         .ck-lc-row:last-of-type { border-bottom: none; }
         .ck-lc-row-label { color: var(--text-muted); flex-shrink: 0; }
@@ -737,6 +790,8 @@ export default function Checkin() {
           display: flex; align-items: flex-start; gap: 7px;
         }
         .ck-lc-suspend-note svg { flex-shrink: 0; margin-top: 1px; }
+
+        .ck-lc-checkin-btn { width: 100%; margin-top: 10px; padding: 9px 12px; font-size: 13px; }
 
         /* ── Badge ── */
         .ck-badge {
@@ -786,16 +841,41 @@ export default function Checkin() {
           display: flex; align-items: center; gap: 12px; margin-bottom: 14px; flex-wrap: wrap;
         }
         .ck-modal-avatar {
-          width: 44px; height: 44px; border-radius: 50%;
+          width: 64px; height: 64px; border-radius: 18px;
           background: var(--primary-light); color: var(--primary-dark);
           display: flex; align-items: center; justify-content: center;
-          font-family: 'Outfit', sans-serif; font-weight: 700; font-size: 16px;
+          font-family: 'Outfit', sans-serif; font-weight: 700; font-size: 20px;
           flex-shrink: 0;
+          overflow: hidden;
+        }
+        .ck-modal-avatar.has-photo { cursor: pointer; background: var(--surface-alt); }
+        .ck-modal-avatar.has-photo img { width: 100%; height: 100%; object-fit: cover; display: block; }
+        .ck-photo-modal {
+          background: transparent; border-radius: var(--radius-lg);
+          width: auto; max-width: 92vw; box-shadow: none;
+          animation: ck-slide-up .2s ease; overflow: visible;
+          display: flex; flex-direction: column; align-items: center; gap: 10px;
+        }
+        .ck-photo-modal img {
+          max-width: 92vw; max-height: 78vh; border-radius: var(--radius-md);
+          display: block; box-shadow: 0 20px 60px rgba(0,0,0,.35);
+        }
+        .ck-photo-modal-close {
+          align-self: flex-end;
+          width: 32px; height: 32px; border-radius: 50%;
+          display: flex; align-items: center; justify-content: center;
+          background: #fff; border: none; cursor: pointer;
+          color: var(--text); transition: background .15s;
+        }
+        .ck-photo-modal-close:hover { background: var(--surface-alt); }
+        .ck-photo-modal-name {
+          color: #fff; font-weight: 700; font-size: 14px; text-align: center; margin: 0;
         }
         .ck-modal-name {
           font-family: 'Outfit', sans-serif; font-size: 15px; font-weight: 700; margin: 0 0 4px;
         }
         .ck-modal-badges { display: flex; gap: 6px; flex-wrap: wrap; }
+        .ck-lc-badges { display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; margin-top: 4px; }
         .ck-info-row {
           display: flex; justify-content: space-between; gap: 8px;
           padding: 7px 0; border-bottom: 1px dashed var(--border); font-size: 13px;
@@ -896,6 +976,10 @@ export default function Checkin() {
             <ChevronDown size={13} className="ck-chevron" />
           </div>
 
+          {/* Đệm vô hình — khớp chiều cao với nhãn "THÔNG TIN HỘI VIÊN" bên phải,
+           * để khung xanh camera và khung xanh thông tin hội viên bắt đầu cùng 1 hàng. */}
+          <p className="ck-hint" style={{ visibility: "hidden", marginBottom: 0, marginTop: 0, paddingBottom: 8 }}>placeholder</p>
+
           <div className={`ck-viewport ${isCameraOn ? "on" : ""}`}>
             <video
               ref={videoRef}
@@ -905,7 +989,7 @@ export default function Checkin() {
             />
             {!isCameraOn && (
               <div className="ck-placeholder">
-                <CameraOff size={32} />
+                <CameraOff size={28} />
                 <p>Camera đang tắt</p>
                 <span>Nhấn "Bắt đầu" để mở camera</span>
               </div>
@@ -955,23 +1039,9 @@ export default function Checkin() {
               <Sparkles size={13} /> Mở Cửa ( Demo )
             </button>
           </div>
-
-          {/* Last camera result bar (riêng cho camera, hiển thị ngay dưới khung hình) */}
-          {cameraResult && cameraCheckin !== "loading" && (
-            <div className="ck-cam-result">
-              <div className="ck-cam-result-avatar">{initials(cameraResult.fullName)}</div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div className="ck-cam-result-name">{cameraResult.fullName}</div>
-                <div className="ck-cam-result-sub">
-                  {cameraCheckin === "success" ? "✓ Đã check-in" : cameraCheckin === "error" ? "✗ Không thể check-in" : "Lần nhận diện gần nhất"}
-                </div>
-              </div>
-              <StatusBadge status={cameraResult.packageStatus} />
-            </div>
-          )}
         </div>
 
-        {/* ── Right: Phone lookup + kết quả tra cứu + Thông tin check-in gần nhất ── */}
+        {/* ── Right: Phone lookup + Thông tin hội viên ── */}
         <div className="ck-card ck-phone-panel">
           <div className="ck-card-title">
             <h2>Check-in bằng số điện thoại</h2>
@@ -1008,137 +1078,137 @@ export default function Checkin() {
             </div>
           )}
 
-          {/* ── Kết quả tra cứu SĐT — hiện ngay tại đây, đẩy "người check-in gần nhất" xuống dưới ── */}
-          {phoneLookupResult && (
-            <div className="ck-lookup-block">
-              <div className="ck-lookup-head">
-                <p className="ck-hint">Kết quả tra cứu</p>
-                <button className="ck-lookup-close" onClick={dismissLookupResult} title="Đóng">
+          {/* ── Thông tin hội viên: ưu tiên kết quả tra cứu SĐT, nếu không có thì hiển thị lượt check-in gần nhất ── */}
+          <div className="ck-info-area">
+            <div className="ck-info-panel-head">
+              <p className="ck-hint">Thông tin hội viên</p>
+              {infoIsLookup && (
+                <button className="ck-info-close" onClick={dismissLookupResult} title="Đóng">
                   <X size={12} />
                 </button>
+              )}
+            </div>
+
+            {!infoMember ? (
+              <div className="ck-lastcheckin-empty">
+                <UserRound size={22} />
+                <p>Chưa có thông tin hội viên</p>
+                <span>Tra cứu bằng SĐT hoặc nhận diện qua camera để xem tại đây</span>
               </div>
+            ) : infoIsLookup ? (
+              <div className={`ck-lc-card ${canCheckin(infoMember) ? "lookup-ok" : "lookup-blocked"}`}>
+                <MemberTop
+                  member={infoMember}
+                  onViewPhoto={setPhotoViewMember}
+                  nameContent={
+                    <>
+                      <p className="ck-lc-name">{infoMember.fullName}</p>
+                      <div className="ck-lc-badges">
+                        <StatusBadge status={infoMember.packageStatus} />
+                        <AccountStatusBadge status={infoMember.accountStatus} />
+                      </div>
+                    </>
+                  }
+                />
 
-              <div className={`ck-lookup-card ${canCheckin(phoneLookupResult.member) ? "ok" : "blocked"}`}>
-                <div className="ck-lookup-top">
-                  <div className="ck-lookup-avatar">{initials(phoneLookupResult.member.fullName)}</div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <p className="ck-lookup-name">{phoneLookupResult.member.fullName}</p>
-                    <div className="ck-modal-badges">
-                      <StatusBadge status={phoneLookupResult.member.packageStatus} />
-                      <AccountStatusBadge status={phoneLookupResult.member.accountStatus} />
-                    </div>
-                  </div>
-                </div>
-
-                <div className="ck-lookup-body">
+                <div className="ck-lc-body">
                   <div className="ck-lc-row">
                     <span className="ck-lc-row-label">Mã hội viên</span>
-                    <span className="ck-lc-row-value">#{phoneLookupResult.member.memberId}</span>
+                    <span className="ck-lc-row-value">#{infoMember.memberId}</span>
                   </div>
                   <div className="ck-lc-row">
                     <span className="ck-lc-row-label">Số điện thoại</span>
-                    <span className="ck-lc-row-value">{phoneLookupResult.member.phone}</span>
+                    <span className="ck-lc-row-value">{infoMember.phone}</span>
                   </div>
                   <div className="ck-lc-row">
                     <span className="ck-lc-row-label">Chi nhánh</span>
-                    <span className="ck-lc-row-value">{phoneLookupResult.member.branchName}</span>
+                    <span className="ck-lc-row-value">{infoMember.branchName}</span>
                   </div>
                   <div className="ck-lc-row">
                     <span className="ck-lc-row-label">Gói tập</span>
-                    <span className="ck-lc-row-value">{phoneLookupResult.member.package}</span>
+                    <span className="ck-lc-row-value">{infoMember.package}</span>
                   </div>
                   <div className="ck-lc-row">
                     <span className="ck-lc-row-label">Hết hạn gói</span>
-                    <span className="ck-lc-row-value">{phoneLookupResult.member.expiryDate}</span>
+                    <span className="ck-lc-row-value">{infoMember.expiryDate}</span>
                   </div>
 
-                  {/* Ghi chú nội bộ — luôn nổi bật màu đỏ, chỉ nhân viên thấy */}
-                  {phoneLookupResult.member.internalNotes && (
+                  {infoMember.internalNotes && (
                     <div className="ck-lc-internal-note">
                       <AlertCircle size={15} />
                       <div className="ck-lc-internal-note-text">
                         <span className="ck-lc-internal-note-label">Ghi chú nội bộ</span>
-                        {phoneLookupResult.member.internalNotes}
+                        {infoMember.internalNotes}
                       </div>
                     </div>
                   )}
 
-                  {/* Dòng lý do màu đỏ khi không đủ điều kiện check-in */}
-                  {!canCheckin(phoneLookupResult.member) && (
-                    <div className="ck-lookup-reason-blocked">
+                  {!canCheckin(infoMember) && (
+                    <div className="ck-lc-suspend-note">
                       <AlertCircle size={13} style={{ flexShrink: 0, marginTop: 1 }} />
-                      {getIneligibleReason(phoneLookupResult.member)}
+                      {getIneligibleReason(infoMember)}
                     </div>
                   )}
 
                   <button
-                    className="ck-btn ck-btn-primary ck-lookup-checkin-btn"
+                    className="ck-btn ck-btn-primary ck-lc-checkin-btn"
                     onClick={openReasonModal}
-                    disabled={!canCheckin(phoneLookupResult.member)}
+                    disabled={!canCheckin(infoMember)}
                   >
                     <LogIn size={13} /> Check-in cho hội viên này
                   </button>
                 </div>
               </div>
-            </div>
-          )}
-
-          {/* ── Thông tin người check-in gần nhất ── */}
-          <div>
-            <p className="ck-hint">Người check-in gần nhất</p>
-
-            {!lastCheckin ? (
-              <div className="ck-lastcheckin-empty">
-                <UserRound size={22} />
-                <p>Chưa có lượt check-in nào</p>
-                <span>Thông tin hội viên sẽ hiện ra đây sau khi check-in</span>
-              </div>
             ) : (
               <div className={`ck-lc-card ${lastCheckin.result}`}>
-                <div className="ck-lc-top">
-                  <div className="ck-lc-avatar">{initials(lastCheckin.member.fullName)}</div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <p className="ck-lc-name">{lastCheckin.member.fullName}</p>
-                    <div className={`ck-lc-result-line ${lastCheckin.result}`}>
-                      {lastCheckin.result === "success"
-                        ? <><CheckCircle2 size={13} /> Check-in thành công</>
-                        : <><XCircle size={13} /> Không thể check-in</>}
-                    </div>
-                  </div>
-                  <span className="ck-lc-source">
-                    {lastCheckin.source === "camera" ? "📷 Camera" : "📞 SĐT"}
-                  </span>
-                </div>
+                <MemberTop
+                  member={infoMember}
+                  onViewPhoto={setPhotoViewMember}
+                  extraTopContent={
+                    <span className="ck-lc-source">
+                      {lastCheckin.source === "camera" ? "📷 Camera" : "📞 SĐT"}
+                    </span>
+                  }
+                  nameContent={
+                    <>
+                      <p className="ck-lc-name">{infoMember.fullName}</p>
+                      <div className={`ck-lc-result-line ${lastCheckin.result}`}>
+                        {lastCheckin.result === "success"
+                          ? <><CheckCircle2 size={13} /> Check-in thành công</>
+                          : <><XCircle size={13} /> Không thể check-in</>}
+                      </div>
+                    </>
+                  }
+                />
 
                 <div className="ck-lc-body">
                   <div className="ck-lc-row">
                     <span className="ck-lc-row-label">Mã hội viên</span>
-                    <span className="ck-lc-row-value">#{lastCheckin.member.memberId}</span>
+                    <span className="ck-lc-row-value">#{infoMember.memberId}</span>
                   </div>
                   <div className="ck-lc-row">
                     <span className="ck-lc-row-label">Số điện thoại</span>
-                    <span className="ck-lc-row-value">{lastCheckin.member.phone}</span>
+                    <span className="ck-lc-row-value">{infoMember.phone}</span>
                   </div>
                   <div className="ck-lc-row">
                     <span className="ck-lc-row-label">Chi nhánh</span>
-                    <span className="ck-lc-row-value">{lastCheckin.member.branchName}</span>
+                    <span className="ck-lc-row-value">{infoMember.branchName}</span>
                   </div>
                   <div className="ck-lc-row">
                     <span className="ck-lc-row-label">Gói tập</span>
-                    <span className="ck-lc-row-value">{lastCheckin.member.package}</span>
+                    <span className="ck-lc-row-value">{infoMember.package}</span>
                   </div>
                   <div className="ck-lc-row">
                     <span className="ck-lc-row-label">Hết hạn gói</span>
-                    <span className="ck-lc-row-value">{lastCheckin.member.expiryDate}</span>
+                    <span className="ck-lc-row-value">{infoMember.expiryDate}</span>
                   </div>
                   <div className="ck-lc-row">
                     <span className="ck-lc-row-label">Trạng thái tài khoản</span>
                     <span className="ck-lc-row-value">
-                      <AccountStatusBadge status={lastCheckin.member.accountStatus} />
+                      <AccountStatusBadge status={infoMember.accountStatus} />
                     </span>
                   </div>
 
-                  {/* Lý do check-in thủ công — chỉ có khi check-in qua tra cứu SĐT */}
                   {lastCheckin.reason && (
                     <div className="ck-lc-row">
                       <span className="ck-lc-row-label">Lý do check-in thủ công</span>
@@ -1146,26 +1216,34 @@ export default function Checkin() {
                     </div>
                   )}
 
-                  {lastCheckin.member.accountStatus === "Suspended" && lastCheckin.member.suspendReason && (
+                  {infoMember.accountStatus === "Suspended" && infoMember.suspendReason && (
                     <div className="ck-lc-suspend-note">
                       <ShieldAlert size={13} />
-                      <span>Lý do khoá: {lastCheckin.member.suspendReason}</span>
+                      <span>Lý do khoá: {infoMember.suspendReason}</span>
                     </div>
                   )}
 
-                  {/* Ghi chú nội bộ — luôn nổi bật màu đỏ, chỉ nhân viên thấy, hội viên không thấy */}
-                  {lastCheckin.member.internalNotes && (
+                  {infoMember.internalNotes && (
                     <div className="ck-lc-internal-note">
                       <AlertCircle size={15} />
                       <div className="ck-lc-internal-note-text">
                         <span className="ck-lc-internal-note-label">Ghi chú nội bộ</span>
-                        {lastCheckin.member.internalNotes}
+                        {infoMember.internalNotes}
                       </div>
                     </div>
                   )}
                 </div>
               </div>
             )}
+          </div>
+
+          {/* Đệm vô hình — khớp chiều cao với hàng nút "Bắt đầu / Dừng / Mở Cửa"
+           * bên trái, để viền dưới của khung xanh thông tin hội viên và khung
+           * xanh camera kết thúc ở cùng một hàng. */}
+          <div className="ck-btn-row" style={{ visibility: "hidden" }} aria-hidden="true">
+            <button className="ck-btn ck-btn-primary" tabIndex={-1}>
+              <Camera size={13} /> Bắt đầu
+            </button>
           </div>
         </div>
       </div>
@@ -1196,7 +1274,11 @@ export default function Checkin() {
               <>
                 <div className="ck-modal-body">
                   <div className="ck-modal-member-top">
-                    <div className="ck-modal-avatar">{initials(phoneLookupResult.member.fullName)}</div>
+                    <MemberAvatar
+                      member={phoneLookupResult.member}
+                      className="ck-modal-avatar"
+                      onView={setPhotoViewMember}
+                    />
                     <div>
                       <p className="ck-modal-name">{phoneLookupResult.member.fullName}</p>
                       <div className="ck-modal-badges">
@@ -1261,6 +1343,26 @@ export default function Checkin() {
                 </div>
               </>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* ── Modal xem ảnh hội viên (bấm vào avatar) ── */}
+      {photoViewMember && (
+        <div
+          className="ck-overlay"
+          onClick={e => e.target === e.currentTarget && setPhotoViewMember(null)}
+        >
+          <div className="ck-photo-modal">
+            <button
+              className="ck-photo-modal-close"
+              onClick={() => setPhotoViewMember(null)}
+              title="Đóng"
+            >
+              <X size={15} />
+            </button>
+            <img src={photoViewMember.photoUrl} alt={photoViewMember.fullName} />
+            <p className="ck-photo-modal-name">{photoViewMember.fullName}</p>
           </div>
         </div>
       )}

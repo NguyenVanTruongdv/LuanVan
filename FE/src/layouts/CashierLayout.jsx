@@ -262,8 +262,8 @@ export default function CashierLayout({ branchName = "Chi nhánh Quận 1" }) {
                             <span style={S.avatarText}>NA</span>
                         </div>
                         <div style={S.staffInfo}>
-                            <span style={S.staffName}>thuphuongdn2</span>
-                            <span style={S.staffRole}>Đối tác</span>
+                            <span style={S.staffName}>NhanVien TanQuy</span>
+                            <span style={S.staffRole}>Cashier</span>
                         </div>
                     </div>
                 </div>

@@ -15,11 +15,23 @@ import GymMemberRegistration from "../pages/cashier/member/RegisterMember";
 import LichSuDangKyGoiTap from "../pages/cashier/packages/History";
 import RenewPage from "../pages/cashier/packages/Renewpage";
 //Công khai
+import BranchDetail from "../pages/guest/BranchDetail";
+import BranchListt from "../pages/guest/BranchsListHome";
+import MayTapPage from "../pages/guest/EquiptMent";
 import Home from "../pages/guest/Home";
+import MembershipPlansPage from "../pages/guest/PackageList";
+import ThongKe from "../pages/guest/Thongke";
+
+//member
 function AppRoutes() {
     return (
         <Routes>
             <Route path="/" element={<Home></Home>} />
+            <Route path="equiptment" element={<MayTapPage></MayTapPage>} />
+            <Route path="packages" element={<MembershipPlansPage></MembershipPlansPage>} />
+            <Route path="branch" element={<BranchListt></BranchListt>}></Route>
+            <Route path="branch/:id" element={<BranchDetail></BranchDetail>}></Route>
+            <Route path="thong-ke" element={<ThongKe></ThongKe>}></Route>
             <Route
                 path="/member/register"
                 element={<Register />}
@@ -29,6 +41,7 @@ function AppRoutes() {
                 element={<MemberLogin />}
             />
             <Route path="/member/branches" element={<BranchList></BranchList>} />
+
             {/* của nhân viên */}
             <Route
                 path="/staff/login"

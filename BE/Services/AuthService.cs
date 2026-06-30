@@ -6,7 +6,6 @@ using BE.Models;
 using BE.Services.Interfaces;
 using BE.Enums;
 using Microsoft.EntityFrameworkCore;
-using Amazon.Rekognition.Model;
 
 namespace BE.Services;
 
@@ -16,13 +15,16 @@ public class AuthService : IAuthService
     private readonly JwtHelper _jwt;
     private readonly ISmsService _smsService;
 
-
     public AuthService(GymManagementContext db, JwtHelper jwt, ISmsService smsService)
     {
         _db = db;
         _jwt = jwt;
         _smsService = smsService;
     }
+
+    // ───────────────────────────────────────────────
+    // ĐĂNG NHẬP
+    // ───────────────────────────────────────────────
 
     // Đăng nhập nhân viên
     public async Task<LoginResponseDto> LoginEmployeeAsync(LoginRequestDto req)
@@ -39,11 +41,15 @@ public class AuthService : IAuthService
     }
 
     // Đăng nhập hội viên
+    // Chặn Suspended; cho phép PendingActivation đăng nhập để xem trạng thái
     public async Task<LoginResponseDto> LoginMemberAsync(LoginRequestDto req)
     {
         var member = await _db.Members
             .FirstOrDefaultAsync(m => m.Phone == req.Phone)
             ?? throw new UnauthorizedException("Sai tài khoản hoặc mật khẩu");
+
+        if (member.Status == MemberStatus.Suspended.ToString())
+            throw new UnauthorizedException("Tài khoản đã bị tạm khóa");
 
         if (!PasswordHelper.VerifyPassword(req.Password, member.PasswordHash))
             throw new UnauthorizedException("Sai tài khoản hoặc mật khẩu");
@@ -51,21 +57,27 @@ public class AuthService : IAuthService
         return await IssueTokens(member.MemberId, member.FullName, "Member", "Member");
     }
 
+    // ───────────────────────────────────────────────
+    // ĐĂNG KÝ
+    // ───────────────────────────────────────────────
+
     // Gửi OTP đăng ký
     public async Task SendRegisterOtpAsync(string phone)
     {
         // Kiểm tra số điện thoại đã tồn tại chưa
         if (await _db.Members.AnyAsync(m => m.Phone == phone))
-            throw new Exception("Số điện thoại đã được đăng ký");
+            throw new BadRequestException("Số điện thoại đã được đăng ký");
 
-        // Chống spam: chỉ gửi lại sau 60 giây
+        // Chống spam: chỉ gửi lại sau 60 giây (lọc đúng Purpose)
         var lastOtp = await _db.Otps
-            .Where(x => x.Phone == phone && !x.IsUsed)
+            .Where(x => x.Phone == phone
+                && x.Purpose == Auth.DangKy.ToString()
+                && !x.IsUsed)
             .OrderByDescending(x => x.CreatedAt)
             .FirstOrDefaultAsync();
 
         if (lastOtp != null && lastOtp.CreatedAt > DateTime.UtcNow.AddSeconds(-60))
-            throw new Exception("Vui lòng thử lại sau 60 giây");
+            throw new BadRequestException("Vui lòng thử lại sau 60 giây");
 
         var otp = new Otp
         {
@@ -87,16 +99,22 @@ public class AuthService : IAuthService
     public async Task VerifyOtpRegister(VerifyRegisterOtpDto req)
     {
         if (await _db.Members.AnyAsync(m => m.Phone == req.Phone))
-            throw new Exception("Số điện thoại đã tồn tại");
+            throw new BadRequestException("Số điện thoại đã tồn tại");
 
         var otp = await _db.Otps
-            .Where(o => o.Phone == req.Phone && o.Purpose == "DangKy" && !o.IsUsed)
+            .Where(o => o.Phone == req.Phone
+                && o.Purpose == Auth.DangKy.ToString()
+                && !o.IsUsed)
             .OrderByDescending(o => o.CreatedAt)
             .FirstOrDefaultAsync()
-            ?? throw new Exception("Mã OTP không tồn tại hoặc đã được sử dụng");
+            ?? throw new BadRequestException("Mã OTP không tồn tại hoặc đã được sử dụng");
 
         if (otp.ExpiresAt < DateTime.UtcNow)
-            throw new Exception("Mã OTP đã hết hạn");
+            throw new BadRequestException("Mã OTP đã hết hạn");
+
+        // Guard: đề phòng edge case FailedAttempts bị lệch
+        if (otp.FailedAttempts >= 3)
+            throw new BadRequestException("OTP đã bị khóa. Vui lòng yêu cầu OTP mới.");
 
         if (req.Otp != otp.OtpCode)
         {
@@ -106,15 +124,11 @@ public class AuthService : IAuthService
             {
                 otp.IsUsed = true;
                 await _db.SaveChangesAsync();
-
-                throw new BadRequestException(
-                    "Bạn đã nhập sai OTP quá 3 lần. Vui lòng yêu cầu OTP mới.");
+                throw new BadRequestException("Bạn đã nhập sai OTP quá 3 lần. Vui lòng yêu cầu OTP mới.");
             }
 
             await _db.SaveChangesAsync();
-
-            throw new BadRequestException(
-                $"OTP không đúng. Còn {3 - otp.FailedAttempts} lần thử.");
+            throw new BadRequestException($"OTP không đúng. Còn {3 - otp.FailedAttempts} lần thử.");
         }
 
         otp.IsUsed = true;
@@ -125,32 +139,33 @@ public class AuthService : IAuthService
             PasswordHash = BCrypt.Net.BCrypt.HashPassword(req.Password),
             Gender = req.Gender,
             Status = MemberStatus.PendingActivation.ToString(),
-            BranchId=req.BranchId,
+            BranchId = req.BranchId,
         });
 
         await _db.SaveChangesAsync();
     }
-    //Gủi otp quên mật khẩu 
+
+    // ───────────────────────────────────────────────
+    // QUÊN MẬT KHẨU
+    // ───────────────────────────────────────────────
+
+    // Gửi OTP quên mật khẩu
     public async Task SendForgotPasswordOtpAsync(string phone)
     {
         var member = await _db.Members
-            .FirstOrDefaultAsync(x => x.Phone == phone);
+            .FirstOrDefaultAsync(x => x.Phone == phone)
+            ?? throw new BadRequestException("Số điện thoại không tồn tại");
 
-        if (member == null)
-            throw new BadRequestException("Số điện thoại không tồn tại");
-
+        // Chống spam: chỉ gửi lại sau 60 giây (lọc đúng Purpose)
         var lastOtp = await _db.Otps
             .Where(x => x.Phone == phone
-                && x.Purpose == "ForgotPassword"
+                && x.Purpose == Auth.QuenMatKhau.ToString()
                 && !x.IsUsed)
             .OrderByDescending(x => x.CreatedAt)
             .FirstOrDefaultAsync();
 
-        if (lastOtp != null &&
-            lastOtp.CreatedAt > DateTime.UtcNow.AddSeconds(-60))
-        {
+        if (lastOtp != null && lastOtp.CreatedAt > DateTime.UtcNow.AddSeconds(-60))
             throw new BadRequestException("Vui lòng thử lại sau 60 giây");
-        }
 
         var otpCode = Random.Shared.Next(100000, 999999).ToString();
 
@@ -166,10 +181,10 @@ public class AuthService : IAuthService
         });
 
         await _db.SaveChangesAsync();
-
         await _smsService.SendOtpAsync(phone, otpCode);
     }
-    //Xác thục otp và Reset pass
+
+    // Xác thực OTP và reset mật khẩu
     public async Task ResetPasswordAsync(ResetPasswordDto req)
     {
         var member = await _db.Members
@@ -179,7 +194,7 @@ public class AuthService : IAuthService
         var otp = await _db.Otps
             .Where(x =>
                 x.Phone == req.Phone &&
-                x.Purpose == "ForgotPassword" &&
+                x.Purpose == Auth.QuenMatKhau.ToString() &&
                 !x.IsUsed)
             .OrderByDescending(x => x.CreatedAt)
             .FirstOrDefaultAsync()
@@ -187,6 +202,10 @@ public class AuthService : IAuthService
 
         if (otp.ExpiresAt < DateTime.UtcNow)
             throw new BadRequestException("OTP đã hết hạn");
+
+        // Guard: đề phòng edge case FailedAttempts bị lệch
+        if (otp.FailedAttempts >= 3)
+            throw new BadRequestException("OTP đã bị khóa. Vui lòng yêu cầu OTP mới.");
 
         if (req.Otp != otp.OtpCode)
         {
@@ -196,57 +215,51 @@ public class AuthService : IAuthService
             {
                 otp.IsUsed = true;
                 await _db.SaveChangesAsync();
-
-                throw new BadRequestException(
-                    "Bạn đã nhập sai OTP quá 3 lần. Vui lòng yêu cầu OTP mới.");
+                throw new BadRequestException("Bạn đã nhập sai OTP quá 3 lần. Vui lòng yêu cầu OTP mới.");
             }
 
             await _db.SaveChangesAsync();
-
-            throw new BadRequestException(
-                $"OTP không đúng. Còn {3 - otp.FailedAttempts} lần thử.");
+            throw new BadRequestException($"OTP không đúng. Còn {3 - otp.FailedAttempts} lần thử.");
         }
 
+        // Đánh dấu OTP đã dùng + cập nhật mật khẩu — lưu trước
         otp.IsUsed = true;
-
-        member.PasswordHash =
-            BCrypt.Net.BCrypt.HashPassword(req.NewPassword);
-        //đạt lại mật khẩu thì phải đang xuất hết tất cả các thiết bị. 
-        await _db.RefreshTokens
-        .Where(x =>
-            x.EntityId == member.MemberId &&
-            x.EntityType == "Member" &&
-            x.RevokedAt == null)
-        .ExecuteUpdateAsync(x =>
-            x.SetProperty(t => t.RevokedAt, DateTime.UtcNow));
+        member.PasswordHash = BCrypt.Net.BCrypt.HashPassword(req.NewPassword);
         await _db.SaveChangesAsync();
+
+        // Đăng xuất tất cả thiết bị (ExecuteUpdateAsync chạy trực tiếp xuống DB)
+        await _db.RefreshTokens
+            .Where(x =>
+                x.EntityId == member.MemberId &&
+                x.EntityType == "Member" &&
+                x.RevokedAt == null)
+            .ExecuteUpdateAsync(x =>
+                x.SetProperty(t => t.RevokedAt, DateTime.UtcNow));
     }
-    //Thay đổi mật khẩu 
+
+    // ───────────────────────────────────────────────
+    // ĐỔI MẬT KHẨU
+    // ───────────────────────────────────────────────
+
     public async Task ChangePassAsync(ChangePasswordDto req, long userId, string EntityType)
     {
-        if (req.NewPassword != req.ConfirmPass)
-        {
+        if (req.NewPassword != req.ConfirmPassx)
             throw new BadRequestException("Xác nhận mật khẩu không đúng!");
-        }
+
         if (EntityType == "Member")
         {
-            var member = await _db.Members.FirstOrDefaultAsync(m => m.MemberId == userId);
-            if (member == null)
-            {
-                throw new Exception("Vui lòng đang nhập lại!");
-            }
+            var member = await _db.Members
+                .FirstOrDefaultAsync(m => m.MemberId == userId)
+                ?? throw new NotFoundException("Vui lòng đăng nhập lại!");
+
             if (!PasswordHelper.VerifyPassword(req.CurrentPassword, member.PasswordHash))
-            {
                 throw new BadRequestException("Mật khẩu hiện tại không đúng");
-            }
+
             if (PasswordHelper.VerifyPassword(req.NewPassword, member.PasswordHash))
-            {
-                throw new BadRequestException("Mật khẩu mói phải khác mật khẩu cũ");
-            }
+                throw new BadRequestException("Mật khẩu mới phải khác mật khẩu cũ");
+
             member.PasswordHash = BCrypt.Net.BCrypt.HashPassword(req.NewPassword);
             await _db.SaveChangesAsync();
-
-
         }
         else
         {
@@ -254,38 +267,30 @@ public class AuthService : IAuthService
                 .FirstOrDefaultAsync(x => x.EmployeeId == userId)
                 ?? throw new NotFoundException("Không tìm thấy tài khoản");
 
-            if (!PasswordHelper.VerifyPassword(
-                    req.CurrentPassword,
-                    employee.PasswordHash))
-            {
+            if (!PasswordHelper.VerifyPassword(req.CurrentPassword, employee.PasswordHash))
                 throw new BadRequestException("Mật khẩu hiện tại không đúng");
-            }
 
-            if (PasswordHelper.VerifyPassword(
-                    req.NewPassword,
-                    employee.PasswordHash))
-            {
-                throw new BadRequestException(
-                    "Mật khẩu mới phải khác mật khẩu cũ");
-            }
+            if (PasswordHelper.VerifyPassword(req.NewPassword, employee.PasswordHash))
+                throw new BadRequestException("Mật khẩu mới phải khác mật khẩu cũ");
 
-            employee.PasswordHash =
-                BCrypt.Net.BCrypt.HashPassword(req.NewPassword);
+            employee.PasswordHash = BCrypt.Net.BCrypt.HashPassword(req.NewPassword);
+            await _db.SaveChangesAsync();
         }
 
-        // Đăng xuất tất cả thiết bị
+        // Đăng xuất tất cả thiết bị (ExecuteUpdateAsync chạy trực tiếp xuống DB)
         await _db.RefreshTokens
             .Where(x =>
                 x.EntityId == userId &&
                 x.EntityType == EntityType &&
                 x.RevokedAt == null)
             .ExecuteUpdateAsync(x =>
-                x.SetProperty(
-                    t => t.RevokedAt,
-                    DateTime.UtcNow));
-
-        await _db.SaveChangesAsync();
+                x.SetProperty(t => t.RevokedAt, DateTime.UtcNow));
     }
+
+    // ───────────────────────────────────────────────
+    // TOKEN
+    // ───────────────────────────────────────────────
+
     // Làm mới token (Rotation)
     public async Task<LoginResponseDto> RefreshAsync(RefreshRequestDto req)
     {
@@ -298,7 +303,7 @@ public class AuthService : IAuthService
         if (stored.RevokedAt != null || stored.ExpiresAt < DateTime.UtcNow)
             throw new UnauthorizedAccessException("Phiên đã hết hạn, vui lòng đăng nhập lại");
 
-        // Thu hồi token cũ
+        // Thu hồi token cũ ngay lập tức (chống Replay Attack)
         stored.RevokedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync();
 
@@ -317,8 +322,11 @@ public class AuthService : IAuthService
         }
         else
         {
+            // Cho phép PendingActivation refresh, chặn Suspended
             var member = await _db.Members
-                .FirstOrDefaultAsync(m => m.MemberId == stored.EntityId && m.Status == "Active")
+                .FirstOrDefaultAsync(m =>
+                    m.MemberId == stored.EntityId &&
+                    m.Status != MemberStatus.Suspended.ToString())
                 ?? throw new UnauthorizedAccessException("Tài khoản không còn hoạt động");
 
             fullName = member.FullName;
