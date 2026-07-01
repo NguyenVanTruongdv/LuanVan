@@ -7,6 +7,7 @@ const NAV_LINKS = [
     { label: "Máy tập", href: "/equiptment" },
     { label: "Chi nhánh", href: "/branch" },
     { label: "Thống kê", href: "/thong-ke" },
+    { label: "Cộng Đồng", href: "/comunity" },
 ];
 
 const BRANCHES = [

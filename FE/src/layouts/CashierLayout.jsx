@@ -22,8 +22,17 @@ const Icons = {
             <polyline points="3.27 6.96 12 12.01 20.73 6.96" /><line x1="12" y1="22.08" x2="12" y2="12" />
         </svg>
     ),
-    checkin: (
+    // "Nhận diện" (face recognition) parent icon — scan/face frame
+    recognition: (
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M4 7V5a2 2 0 0 1 2-2h2" /><path d="M4 17v2a2 2 0 0 0 2 2h2" />
+            <path d="M20 7V5a2 2 0 0 0-2-2h-2" /><path d="M20 17v2a2 2 0 0 1-2 2h-2" />
+            <circle cx="12" cy="11" r="3" /><path d="M8 17c.7-1.6 2.2-2.5 4-2.5s3.3.9 4 2.5" />
+        </svg>
+    ),
+    // Camera icon — opens the face-recognition camera page in a new tab
+    camera: (
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
             <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
             <circle cx="12" cy="13" r="4" />
         </svg>
@@ -107,13 +116,14 @@ const NAV_ITEMS = [
         ],
     },
     {
-        id: "checkin",
-        icon: Icons.checkin,
-        label: "Check-in",
+        id: "recognition",
+        icon: Icons.recognition,
+        label: "Nhận diện",
         matchPrefix: "/cashier/checkin",
         children: [
-            { id: "checkin-action", icon: Icons.checkin, label: "Check-in", path: "/cashier/checkin" },
-            { id: "checkin-history", icon: Icons.history, label: "Lịch sử check-in", path: "/cashier/checkin-history" },
+            // Mở trang camera nhận diện (route "/indentify" -> <CameraRecognition />) ở tab mới
+            { id: "camera-recognition", icon: Icons.camera, label: "Camera nhận diện", path: "/indentify", newTab: true },
+            { id: "checkin-history", icon: Icons.history, label: "Lịch sử", path: "/cashier/checkin-history" },
         ],
     },
     {
@@ -169,8 +179,13 @@ export default function CashierLayout({ branchName = "Chi nhánh Quận 1" }) {
         }
     };
 
-    const handleChildClick = (path) => {
-        navigate(path);
+    const handleChildClick = (child) => {
+        if (child.newTab) {
+            window.open(child.path, "_blank");
+            setSidebarOpen(false);
+            return;
+        }
+        navigate(child.path);
         setSidebarOpen(false);
     };
 
@@ -312,7 +327,7 @@ export default function CashierLayout({ branchName = "Chi nhánh Quận 1" }) {
                                         {item.children && isOpen && (
                                             <div style={S.submenu}>
                                                 {item.children.map((child) => {
-                                                    const childActive = location.pathname === child.path;
+                                                    const childActive = !child.newTab && location.pathname === child.path;
                                                     return (
                                                         <button
                                                             key={child.id}
@@ -321,12 +336,20 @@ export default function CashierLayout({ branchName = "Chi nhánh Quận 1" }) {
                                                                 ...S.subItem,
                                                                 ...(childActive ? S.subItemActive : S.subItemInactive),
                                                             }}
-                                                            onClick={() => handleChildClick(child.path)}
+                                                            onClick={() => handleChildClick(child)}
+                                                            title={child.newTab ? "Mở ở tab mới" : undefined}
                                                         >
                                                             <span style={{ color: childActive ? GREEN.primary : "#94A3B8", flexShrink: 0 }}>
                                                                 {child.icon}
                                                             </span>
                                                             <span style={S.subLabel}>{child.label}</span>
+                                                            {child.newTab && (
+                                                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                                                                    <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                                                                    <polyline points="15 3 21 3 21 9" />
+                                                                    <line x1="10" y1="14" x2="21" y2="3" />
+                                                                </svg>
+                                                            )}
                                                         </button>
                                                     );
                                                 })}
