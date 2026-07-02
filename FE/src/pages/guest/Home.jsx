@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Footer from "../../component/Footer";
 import Header from "../../component/Header";
 
@@ -29,6 +29,14 @@ const MOCK_PACKAGES = [
 
 // Dữ liệu giả lập — sau này thay bằng API thật trong hàm fetchTraffic() bên dưới
 const MOCK_TRAFFIC = { q1: [28, 41, 55, 62, 48], q7: [18, 30, 44, 50, 37], bth: [22, 35, 49, 58, 43], td: [12, 24, 38, 45, 30] };
+
+// Dữ liệu giả lập — sau này thay bằng API thật trong hàm fetchAnnouncements() bên dưới
+const MOCK_ANNOUNCEMENTS = [
+  { id: "a1", type: "warning", branch: "VTGym Quận 7", text: "Bảo trì máy lạnh khu cardio, dự kiến xong 18:00 hôm nay." },
+  { id: "a2", type: "info", branch: "VTGym Bình Thạnh", text: "Khai trương khu Functional Training mới từ tuần sau." },
+  { id: "a3", type: "alert", branch: "VTGym Thủ Đức", text: "Cúp điện khu vực 14:00–16:00, tạm ngưng nhận khách." },
+  { id: "a4", type: "alert", branch: "VTGym Thủ Đức", text: "Cúp điện khu vực 14:00–16:00, tạm ngưng nhận khách." },
+];
 
 const HERO_IMAGES = [
   "https://images.unsplash.com/photo-1534438327276-14e5300c3a48?w=1600&q=80",
@@ -78,6 +86,24 @@ async function fetchTraffic(branchId) {
   return { values, labels };
 }
 
+/**
+ * Hàm lấy thông báo cho hội viên (bảo trì, cúp điện, tin tức chi nhánh...).
+ * Hiện tại đang trả về dữ liệu mock (giả lập độ trễ mạng).
+ * Khi có API thật, chỉ cần thay phần bên trong bằng:
+ *
+ *   const res = await fetch("/api/announcements");
+ *   if (!res.ok) throw new Error("Không lấy được thông báo");
+ *   const json = await res.json();
+ *   return json.announcements;
+ *
+ * miễn là trả về mảng có shape: { id, type, branch, text }[]
+ * type: "info" | "warning" | "alert"
+ */
+async function fetchAnnouncements() {
+  await new Promise((r) => setTimeout(r, 300)); // giả lập độ trễ network
+  return MOCK_ANNOUNCEMENTS;
+}
+
 function TrafficChart({ values, labels, loading, error }) {
   if (loading) {
     return <div className="h-chart h-chart--state">Đang tải dữ liệu...</div>;
@@ -105,6 +131,146 @@ function TrafficChart({ values, labels, loading, error }) {
   );
 }
 
+const ANNC_ICON = { info: "ℹ️", warning: "🛠️", alert: "⚡" };
+
+function AnnouncementPill({ a }) {
+  return (
+    <div className={`h-annc h-annc--${a.type}`}>
+      <span className="h-annc__icon">{ANNC_ICON[a.type] || "ℹ️"}</span>
+      <div className="h-annc__body">
+        <span className="h-annc__branch">{a.branch}</span>
+        <span className="h-annc__text">{a.text}</span>
+      </div>
+    </div>
+  );
+}
+
+const ANNC_INTERVAL = 4500;
+
+function AnnouncementRail({ items, loading, error }) {
+  if (loading) {
+    return (
+      <>
+        <div className="h-annc-rail h-annc-rail--desktop">
+          <div className="h-annc-scroll">
+            <div className="h-annc h-annc--skeleton" />
+            <div className="h-annc h-annc--skeleton" />
+          </div>
+        </div>
+        <div className="h-annc-rail h-annc-rail--mobile">
+          <div className="h-annc h-annc--skeleton" />
+        </div>
+      </>
+    );
+  }
+  if (error || !items.length) return null;
+
+  return (
+    <>
+      <AnnouncementListDesktop items={items} />
+      <AnnouncementCarouselMobile items={items} />
+    </>
+  );
+}
+
+// PC: danh sách xếp chồng, tối đa hiển thị ~3 thẻ trong khung, còn lại cuộn dọc (không thấy thanh cuộn)
+// Tự cuộn xuống mỗi vài giây, hết thì quay lại đầu; vẫn cuộn tay được, tạm dừng tự cuộn khi người dùng thao tác.
+function AnnouncementListDesktop({ items }) {
+  const scrollRef = useRef(null);
+  const pauseTimer = useRef(null);
+  const [paused, setPaused] = useState(false);
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el || items.length <= 1 || paused) return;
+    const t = setInterval(() => {
+      const atBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 4;
+      if (atBottom) {
+        el.scrollTo({ top: 0, behavior: "smooth" });
+      } else {
+        const card = el.querySelector(".h-annc");
+        const step = card ? card.offsetHeight + 12 : 80;
+        el.scrollBy({ top: step, behavior: "smooth" });
+      }
+    }, ANNC_INTERVAL);
+    return () => clearInterval(t);
+  }, [items.length, paused]);
+
+  const handleUserScroll = () => {
+    setPaused(true);
+    if (pauseTimer.current) clearTimeout(pauseTimer.current);
+    pauseTimer.current = setTimeout(() => setPaused(false), 6000);
+  };
+
+  return (
+    <div className="h-annc-rail h-annc-rail--desktop">
+      <div
+        className="h-annc-scroll"
+        ref={scrollRef}
+        onWheel={handleUserScroll}
+        onTouchStart={handleUserScroll}
+        onMouseDown={handleUserScroll}
+      >
+        {items.map((a) => (
+          <AnnouncementPill key={a.id} a={a} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// Mobile: carousel 1 thẻ/lần, tự chạy, vuốt được
+function AnnouncementCarouselMobile({ items }) {
+  const [idx, setIdx] = useState(0);
+  const [paused, setPaused] = useState(false);
+  const touchX = useRef(null);
+
+  useEffect(() => {
+    if (items.length <= 1 || paused) return;
+    const t = setInterval(() => setIdx((i) => (i + 1) % items.length), ANNC_INTERVAL);
+    return () => clearInterval(t);
+  }, [items.length, paused]);
+
+  const goTo = (i) => setIdx(((i % items.length) + items.length) % items.length);
+  const resumeSoon = () => setTimeout(() => setPaused(false), 5000);
+
+  const onTouchStart = (e) => { touchX.current = e.touches[0].clientX; setPaused(true); };
+  const onTouchEnd = (e) => {
+    if (touchX.current == null) return;
+    const dx = e.changedTouches[0].clientX - touchX.current;
+    if (Math.abs(dx) > 40) goTo(idx + (dx < 0 ? 1 : -1));
+    touchX.current = null;
+    resumeSoon();
+  };
+
+  return (
+    <div className="h-annc-rail h-annc-rail--mobile" onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
+      <div className="h-annc-viewport">
+        <div className="h-annc-track" style={{ transform: `translateX(-${idx * 100}%)` }}>
+          {items.map((a) => (
+            <div className="h-annc-slide" key={a.id}>
+              <AnnouncementPill a={a} />
+            </div>
+          ))}
+        </div>
+      </div>
+      {items.length > 1 && (
+        <div className="h-annc-dots">
+          {items.map((_, i) => (
+            <button
+              key={i}
+              type="button"
+              aria-label={`Thông báo ${i + 1}`}
+              className={`h-annc-dotbtn${i === idx ? " h-annc-dotbtn--on" : ""}`}
+              onClick={() => { goTo(i); setPaused(true); resumeSoon(); }}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function Home() {
   const [heroIdx, setHeroIdx] = useState(0);
   const [activeBranch] = useState(BRANCHES[0]);
@@ -112,6 +278,10 @@ export default function Home() {
   const [traffic, setTraffic] = useState({ values: [], labels: [] });
   const [trafficLoading, setTrafficLoading] = useState(true);
   const [trafficError, setTrafficError] = useState(null);
+
+  const [announcements, setAnnouncements] = useState([]);
+  const [anncLoading, setAnncLoading] = useState(true);
+  const [anncError, setAnncError] = useState(null);
 
   const loadTraffic = useCallback(async (branchId) => {
     setTrafficLoading(true);
@@ -131,6 +301,23 @@ export default function Home() {
   }, [activeBranch.id, loadTraffic]);
 
   useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setAnncLoading(true);
+      setAnncError(null);
+      try {
+        const data = await fetchAnnouncements();
+        if (!cancelled) setAnnouncements(data);
+      } catch (err) {
+        if (!cancelled) setAnncError(err);
+      } finally {
+        if (!cancelled) setAnncLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
     const t = setInterval(() => setHeroIdx(i => (i + 1) % HERO_IMAGES.length), 5000);
     return () => clearInterval(t);
   }, []);
@@ -147,6 +334,7 @@ export default function Home() {
               style={{ backgroundImage: `url(${src})`, opacity: i === heroIdx ? 1 : 0, transition: "opacity 1.2s ease" }} />
           ))}
           <div className="h-hero__overlay" />
+          <AnnouncementRail items={announcements} loading={anncLoading} error={anncError} />
           <div className="h-hero__inner">
             <p className="h-eyebrow">Không gói PT bắt buộc &middot; Tập theo cách của bạn</p>
             <h1 className="h-hero__title">Tự tập.<br /><span className="h-red">Tự do.</span><br />Tự vượt giới hạn.</h1>
@@ -338,6 +526,37 @@ export default function Home() {
         .h-dot      { width:7px; height:7px; border-radius:50%; background:rgba(255,255,255,.2); border:none; cursor:pointer; transition:background .2s,transform .2s; }
         .h-dot--on  { background:var(--accent); transform:scale(1.4); }
 
+        /* hero announcements */
+        .h-annc-rail--mobile  { display:none; }
+        .h-annc-rail--desktop { position:absolute; top:110px; right:5vw; z-index:3; width:320px; }
+
+        /* PC: xếp chồng, tối đa ~3 thẻ trong khung, cuộn dọc mượt nếu nhiều hơn — không hiện thanh cuộn */
+        .h-annc-scroll   { display:flex; flex-direction:column; gap:12px; max-height:272px; overflow-y:auto; padding-right:2px; scrollbar-width:none; -ms-overflow-style:none; scroll-behavior:smooth; -webkit-overflow-scrolling:touch; scroll-snap-type:y proximity; scroll-padding-block:4px; }
+        .h-annc-scroll::-webkit-scrollbar { width:0; height:0; display:none; }
+        .h-annc-scroll .h-annc { scroll-snap-align:start; }
+
+        /* Mobile: carousel 1 thẻ/lần, tự chạy, vuốt được, trượt bằng transform (không có thanh cuộn) */
+        .h-annc-viewport { overflow:hidden; border-radius:16px; }
+        .h-annc-track    { display:flex; transition:transform .5s cubic-bezier(.4,0,.2,1); }
+        .h-annc-slide    { flex:0 0 100%; width:100%; box-sizing:border-box; }
+
+        .h-annc          { display:flex; align-items:flex-start; gap:10px; padding:12px 18px; border-radius:16px; background:rgba(20,21,24,.72); backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px); border:1px solid rgba(255,255,255,.1); box-shadow:0 6px 24px rgba(0,0,0,.35); box-sizing:border-box; width:100%; min-height:64px; flex-shrink:0; }
+        .h-annc__icon    { flex-shrink:0; font-size:15px; line-height:1; margin-top:1px; }
+        .h-annc--warning { border-color:rgba(245,166,35,.28); }
+        .h-annc--alert   { border-color:rgba(255,79,43,.35); box-shadow:0 6px 24px rgba(255,79,43,.18); animation:h-annc-glow 2.4s ease-in-out infinite; }
+        @keyframes h-annc-glow {
+          0%,100% { box-shadow:0 6px 24px rgba(255,79,43,.16); }
+          50%     { box-shadow:0 6px 26px rgba(255,79,43,.4); }
+        }
+        .h-annc__body    { display:flex; flex-direction:column; gap:2px; min-width:0; }
+        .h-annc__branch  { font-size:11.5px; font-weight:700; text-transform:uppercase; letter-spacing:.3px; color:var(--text-dim); }
+        .h-annc__text    { font-size:12.5px; line-height:1.45; color:var(--text); display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+        .h-annc--skeleton{ min-height:64px; background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.08); border-radius:16px; animation:h-annc-shimmer 1.4s ease infinite; }
+        @keyframes h-annc-shimmer { 0%,100%{opacity:.5;} 50%{opacity:1;} }
+        .h-annc-dots     { display:flex; gap:6px; justify-content:flex-end; padding-right:2px; margin-top:10px; }
+        .h-annc-dotbtn   { width:6px; height:6px; padding:0; border:none; border-radius:50%; background:rgba(255,255,255,.25); cursor:pointer; transition:background .2s,transform .2s; }
+        .h-annc-dotbtn--on { background:var(--accent); transform:scale(1.4); }
+
         /* stats */
         .h-stats    { display:grid; grid-template-columns:repeat(4,1fr); background:var(--bg-soft); border-bottom:1px solid var(--line); }
         .h-stats__item { display:flex; flex-direction:column; align-items:center; gap:4px; padding:22px 10px; border-right:1px solid var(--line); }
@@ -425,6 +644,7 @@ export default function Home() {
           .h-equip__grid  { grid-template-columns:repeat(2,1fr); }
           .h-plans__grid  { grid-template-columns:1fr 1fr; }
           .h-plan--hi     { grid-column:1/3; }
+          .h-annc-rail--desktop { width:280px; right:24px; top:90px; }
         }
         @media (max-width:900px) {
           .h-feat__grid   { grid-template-columns:1fr 1fr; }
@@ -435,7 +655,12 @@ export default function Home() {
           .h-stats        { grid-template-columns:repeat(2,1fr); }
           .h-stats__item:nth-child(2) { border-right:none; }
           .h-stats__item:nth-child(1),.h-stats__item:nth-child(2) { border-bottom:1px solid var(--line); }
-          .h-hero__inner  { padding:80px 20px 60px; }
+          .h-hero        { flex-direction:column; align-items:stretch; padding-top:88px; min-height:0; }
+          .h-hero__inner  { order:1; padding:24px 20px 32px; max-width:none; }
+          .h-annc-rail--desktop { display:none; }
+          .h-annc-rail--mobile  { display:flex; flex-direction:column; gap:10px; order:2; position:static; z-index:1; width:auto; margin:0 20px 24px; }
+          .h-annc-dots    { justify-content:center; }
+          .h-annc         { padding:10px 14px; }
           .h-gallery,.h-plans,.h-equip,.h-traffic,.h-feat,.h-bstrip { padding-left:18px; padding-right:18px; }
           .h-plans__grid  { grid-template-columns:1fr; }
           .h-plan--hi     { grid-column:auto; }

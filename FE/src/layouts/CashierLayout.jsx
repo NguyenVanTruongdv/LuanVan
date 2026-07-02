@@ -149,6 +149,8 @@ const GREEN = {
 };
 
 export default function CashierLayout({ branchName = "Chi nhánh Quận 1" }) {
+    document.title = "VT Gym Cashier";
+
     const navigate = useNavigate();
     const location = useLocation();
     const [sidebarOpen, setSidebarOpen] = useState(false);

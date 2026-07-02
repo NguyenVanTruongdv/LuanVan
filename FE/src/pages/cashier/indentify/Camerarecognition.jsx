@@ -16,13 +16,15 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 /* =========================================================================
  * TRANG GỘP CHECK-IN + CHECK-OUT
- * - 2 khung camera độc lập (Check-in: xanh lá / Check-out: xanh dương)
+ * - 2 khung camera độc lập (Check-in: xanh lá / Check-out: đỏ)
+ * - Bố cục 2 HÀNG (không phải 2 cột): hàng 1 = Check-in (camera | thông
+ *   tin), hàng 2 = Check-out (camera | thông tin).
  * - Mỗi khung có: chọn camera, Bắt đầu, Dừng, Mở Cửa (demo)
- * - Camera đang được khung KIA sử dụng sẽ bị disable trong danh sách chọn
- *   (loại trừ lẫn nhau ngay trong cùng 1 trang, không cần registry module
- *   nữa vì giờ cả 2 khung nằm chung 1 component).
- * - Check-in: giữ tra cứu theo SĐT + thông tin hội viên kèm avatar.
- * - Check-out: chỉ hiển thị thông tin người vừa check-out.
+ * - Camera đang được khung KIA sử dụng sẽ bị disable trong danh sách chọn.
+ * - Check-in: giữ tra cứu theo SĐT + thông tin hội viên đầy đủ kèm avatar.
+ * - Check-out: chỉ hiển thị avatar + tên người vừa check-out (tối giản).
+ * - Toàn bộ lời gọi dữ liệu được tách ra object `api` bên dưới — sau này
+ *   chỉ cần thay thân từng hàm bằng fetch() thật, KHÔNG cần sửa UI.
  * ======================================================================= */
 
 /* ── Dữ liệu mẫu — thay bằng dữ liệu thật khi gắn API ── */
@@ -132,6 +134,49 @@ const ACCOUNT_STATUS_MAP = {
     Suspended: { label: "Đã bị khoá", cls: "badge-danger" },
 };
 
+/* =========================================================================
+ * API SERVICE LAYER
+ * Toàn bộ thao tác cần dữ liệu (nhận diện khuôn mặt, tra cứu SĐT, ghi
+ * check-in/out) đi qua đây. Hiện tại là mock (setTimeout + dữ liệu mẫu).
+ * Khi có backend thật, chỉ cần thay THÂN của từng hàm bằng fetch(...) —
+ * chữ ký hàm (tham số / Promise trả về) giữ nguyên nên UI phía dưới
+ * KHÔNG cần sửa gì thêm.
+ * ======================================================================= */
+const api = {
+    // POST /api/face-recognize  { image, type: "checkin" | "checkout" }
+    // -> { member }  (member = null nếu không nhận diện được ai)
+    async recognizeFace(imageBase64, type) {
+        await new Promise(r => setTimeout(r, 500));
+        const member = SAMPLE_MEMBERS[Math.floor(Math.random() * SAMPLE_MEMBERS.length)];
+        return { member };
+    },
+
+    // GET /api/members/lookup?phone={phone}  -> { member }  (null nếu không thấy)
+    async lookupMemberByPhone(phone) {
+        await new Promise(r => setTimeout(r, 400));
+        const member = SAMPLE_MEMBERS.find(m => m.phone === phone) || null;
+        return { member };
+    },
+
+    // POST /api/checkins  { memberId, method: "camera" }
+    async checkinByCamera(memberId) {
+        await new Promise(r => setTimeout(r, 300));
+        return { success: true };
+    },
+
+    // POST /api/checkins  { memberId, method: "phone", manualReason }
+    async checkinManual(memberId, manualReason) {
+        await new Promise(r => setTimeout(r, 600));
+        return { success: true };
+    },
+
+    // POST /api/checkouts  { memberId, method: "camera" }
+    async checkoutByCamera(memberId) {
+        await new Promise(r => setTimeout(r, 300));
+        return { success: true };
+    },
+};
+
 function StatusBadge({ status }) {
     const s = PACKAGE_STATUS_MAP[status] || PACKAGE_STATUS_MAP.active;
     return <span className={`rec-badge ${s.cls}`}>{s.label}</span>;
@@ -193,6 +238,13 @@ function canCheckout(member) {
 }
 
 export default function CameraRecognition() {
+    /* Tiêu đề tab trình duyệt. Đây chỉ đổi title lúc component mount — nếu
+     * muốn tiêu đề đúng ngay từ lần tải trang đầu tiên (trước khi React
+     * chạy), hãy sửa luôn thẻ <title> trong index.html của dự án. */
+    useEffect(() => {
+        document.title = "Nhận diện Camera — Check-in / Check-out";
+    }, []);
+
     /* ============================ DÙNG CHUNG ============================ */
     const [devices, setDevices] = useState([]);
     const [toast, setToast] = useState(null);
@@ -353,20 +405,19 @@ export default function CameraRecognition() {
 
     const handleCkRecognize = async () => {
         if (!ckCameraOn) return;
-        ckCaptureFrame();
-        // TODO API: gửi base64 lên POST /api/face-recognize
+        const frame = ckCaptureFrame();
         setCkRecognizeResult(null);
         setCkRecognizeStatus("loading");
-        await new Promise(r => setTimeout(r, 500));
-        const member = SAMPLE_MEMBERS[Math.floor(Math.random() * SAMPLE_MEMBERS.length)];
+
+        const { member } = await api.recognizeFace(frame, "checkin");
         setCkRecognizeResult(member);
+
         if (!canCheckin(member)) {
             setCkRecognizeStatus("error");
             showToast("error", `${member.fullName} — không thể check-in`);
             recordCheckin(member, "camera", "error");
         } else {
-            // TODO API: POST /api/checkins { memberId, method: "camera" }
-            await new Promise(r => setTimeout(r, 300));
+            await api.checkinByCamera(member.memberId);
             setCkRecognizeStatus("success");
             showToast("success", `Check-in thành công — ${member.fullName}`);
             recordCheckin(member, "camera", "success");
@@ -389,10 +440,10 @@ export default function CameraRecognition() {
         }
         setLookupLoading(true);
         setPhoneLookupResult(null);
-        // TODO API: GET /api/members/lookup?phone={phone}
-        await new Promise(r => setTimeout(r, 400));
-        const member = SAMPLE_MEMBERS.find(m => m.phone === phone) || null;
+
+        const { member } = await api.lookupMemberByPhone(phone);
         setLookupLoading(false);
+
         if (member) setPhoneLookupResult({ member });
         else setPhoneError("Không tìm thấy hội viên với số điện thoại này.");
     };
@@ -432,8 +483,7 @@ export default function CameraRecognition() {
             : MANUAL_REASON_OPTIONS.find(r => r.value === reasonType)?.label;
 
         setManualCheckinState("loading");
-        // TODO API: POST /api/checkins { memberId, method: "phone", manualReason }
-        await new Promise(r => setTimeout(r, 600));
+        await api.checkinManual(member.memberId, reasonLabel);
         setManualCheckinState("success");
         recordCheckin(member, "phone", "success", reasonLabel);
         showToast("success", `Check-in thành công — ${member.fullName}`);
@@ -454,20 +504,19 @@ export default function CameraRecognition() {
 
     const handleCoRecognize = async () => {
         if (!coCameraOn) return;
-        coCaptureFrame();
-        // TODO API: gửi base64 lên POST /api/face-recognize
+        const frame = coCaptureFrame();
         setCoRecognizeResult(null);
         setCoRecognizeStatus("loading");
-        await new Promise(r => setTimeout(r, 500));
-        const member = SAMPLE_MEMBERS[Math.floor(Math.random() * SAMPLE_MEMBERS.length)];
+
+        const { member } = await api.recognizeFace(frame, "checkout");
         setCoRecognizeResult(member);
+
         if (!canCheckout(member)) {
             setCoRecognizeStatus("error");
             showToast("error", `${member.fullName} — không thể check-out`);
             setLastCheckout({ member, result: "error", at: new Date() });
         } else {
-            // TODO API: POST /api/checkouts { memberId, method: "camera" }
-            await new Promise(r => setTimeout(r, 300));
+            await api.checkoutByCamera(member.memberId);
             setCoRecognizeStatus("success");
             showToast("success", `Check-out thành công — ${member.fullName}`);
             setLastCheckout({ member, result: "success", at: new Date() });
@@ -490,7 +539,7 @@ export default function CameraRecognition() {
           --warning: #d97706; --warning-light: #fef3c7;
           --danger: #dc2626; --danger-light: #fee2e2;
           --indigo: #6366f1; --indigo-light: #eef2ff;
-          --cko-primary: #2563eb; --cko-primary-dark: #1d4ed8; --cko-primary-light: #e8f0fe;
+          --cko-primary: #dc2626; --cko-primary-dark: #b91c1c; --cko-primary-light: #fee2e2;
           --radius-lg: 14px; --radius-md: 10px; --radius-sm: 7px;
         }
         .rec-wrap *, .rec-wrap *::before, .rec-wrap *::after { box-sizing: border-box; }
@@ -527,15 +576,23 @@ export default function CameraRecognition() {
         .rec-section-head.checkout h2 { color: var(--cko-primary-dark); }
         .rec-section-head .rec-section-sub { font-size: 11.5px; color: var(--text-muted); font-weight: 500; }
 
-        /* ── Grid dùng chung cho cả 2 khu vực ── */
+        /* ── Grid dùng chung cho cả 2 khu vực (mỗi khu vực là 1 hàng: camera | thông tin) ── */
         .rec-grid {
-          display: grid; grid-template-columns: 1.5fr 1fr; gap: 8px;
-          align-items: stretch; height: 560px;
+          display: grid; grid-template-columns: 1.3fr 1fr; gap: 8px;
+          align-items: stretch; height: 700px;
         }
         @media (max-width: 820px) {
           .rec-grid { grid-template-columns: 1fr; height: auto; }
         }
+        /* Hàng Check-out cao tương đương để camera vuông hơn */
+        .rec-grid.checkout-row { height: 620px; }
+        @media (max-width: 820px) {
+          .rec-grid.checkout-row { height: auto; }
+        }
 
+        /* Khung camera + khung thông tin trong cùng 1 hàng cao bằng nhau
+         * (grid align-items: stretch). Viền màu chỉ nằm ở khung camera bên
+         * trong (rec-viewport), không phải viền ngoài của cả card. */
         .rec-card {
           background: var(--surface); border: 1px solid var(--border);
           border-radius: var(--radius-lg); padding: 10px;
@@ -547,12 +604,24 @@ export default function CameraRecognition() {
         }
         .rec-card-title h3 { font-family: 'Outfit', sans-serif; font-size: 13px; font-weight: 700; margin: 0; }
 
+        /* Khối tiêu đề phía trên khung màu (camera / thẻ thông tin) — có
+         * chiều cao cố định theo từng hàng để 2 khung màu xanh (hoặc đỏ)
+         * bên dưới luôn bắt đầu ngang hàng nhau, bất kể bên nào có nhiều
+         * nội dung hơn (vd bên info có thêm ô tra cứu SĐT). */
+        .rec-panel-header { display: flex; flex-direction: column; gap: 8px; flex-shrink: 0; }
+        .rec-panel-header .rec-card-title,
+        .rec-panel-header .rec-select-wrap,
+        .rec-panel-header .rec-phone-input-block,
+        .rec-panel-header .rec-info-panel-head { margin-bottom: 0; }
+        .rec-panel-header.row-in  { min-height: 108px; }
+        .rec-panel-header.row-out { min-height: 74px; }
+
         .rec-status-pill { display: flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 600; color: var(--text-muted); }
         .rec-dot { width: 7px; height: 7px; border-radius: 50%; background: #94a3b8; }
         .rec-dot.on.checkin  { background: var(--primary); animation: rec-pulse-g 1.6s infinite; }
-        .rec-dot.on.checkout { background: var(--cko-primary); animation: rec-pulse-b 1.6s infinite; }
+        .rec-dot.on.checkout { background: var(--cko-primary); animation: rec-pulse-r 1.6s infinite; }
         @keyframes rec-pulse-g { 0%,100% { box-shadow: 0 0 0 0 rgba(14,169,117,.45);} 50% { box-shadow: 0 0 0 5px rgba(14,169,117,0);} }
-        @keyframes rec-pulse-b { 0%,100% { box-shadow: 0 0 0 0 rgba(37,99,235,.45);} 50% { box-shadow: 0 0 0 5px rgba(37,99,235,0);} }
+        @keyframes rec-pulse-r { 0%,100% { box-shadow: 0 0 0 0 rgba(220,38,38,.45);} 50% { box-shadow: 0 0 0 5px rgba(220,38,38,0);} }
 
         .rec-select-wrap { position: relative; margin-bottom: 8px; flex-shrink: 0; }
         .rec-select-wrap select {
@@ -565,12 +634,16 @@ export default function CameraRecognition() {
         .rec-select-wrap .rec-chevron { position: absolute; right: 9px; top: 50%; transform: translateY(-50%); pointer-events: none; color: var(--text-muted); }
 
         .rec-viewport {
-          position: relative; width: 100%; flex: 1; min-height: 0;
+          position: relative; aspect-ratio: 1 / 1; width: auto; height: 100%;
+          max-width: 100%; margin: 0 auto; flex-shrink: 1; min-height: 0;
           background: #0f172a; border-radius: var(--radius-md); overflow: hidden;
           border: 2px solid var(--border); transition: border-color .2s;
         }
-        .rec-viewport.on.checkin  { border-color: var(--primary); }
-        .rec-viewport.on.checkout { border-color: var(--cko-primary); }
+        @media (max-width: 820px) {
+          .rec-viewport { width: 100%; height: auto; }
+        }
+        .rec-viewport.checkin  { border-color: var(--primary); }
+        .rec-viewport.checkout { border-color: var(--cko-primary); }
         .rec-video { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
         .rec-placeholder {
           position: absolute; inset: 0; display: flex; flex-direction: column;
@@ -593,7 +666,7 @@ export default function CameraRecognition() {
         }
         .rec-viewport-overlay.loading { background: rgba(15,23,42,.5); }
         .rec-viewport-overlay.success.checkin  { background: rgba(6,122,86,.7); }
-        .rec-viewport-overlay.success.checkout { background: rgba(29,78,216,.7); }
+        .rec-viewport-overlay.success.checkout { background: rgba(185,28,28,.7); }
         .rec-viewport-overlay.error   { background: rgba(220,38,38,.7); }
         .rec-viewport-overlay p { margin: 0; color: #fff; font-weight: 700; font-size: 13px; text-align: center; padding: 0 12px; }
 
@@ -619,7 +692,7 @@ export default function CameraRecognition() {
         .rec-btn-indigo { background: #fff; border-color: #c7d2fe; color: var(--indigo); }
         .rec-btn-indigo:hover:not(:disabled) { background: var(--indigo-light); }
 
-        /* ── Panel phải: check-in (SĐT + info) / check-out (info) ── */
+        /* ── Panel phải: check-in (SĐT + info) / check-out (chỉ tên) ── */
         .rec-side-panel { display: flex; flex-direction: column; gap: 8px; height: 100%; min-height: 0; }
         .rec-phone-input-block { display: flex; gap: 8px; align-items: stretch; flex-wrap: wrap; flex-shrink: 0; }
         .rec-input-wrap {
@@ -644,9 +717,16 @@ export default function CameraRecognition() {
         }
         .rec-info-close:hover { background: var(--border); }
 
-        .rec-info-area { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+        .rec-info-area {
+          flex: 1 1 0% !important; min-height: 0 !important; height: 100% !important;
+          display: flex !important; flex-direction: column !important;
+        }
+        /* Khung camera có hàng nút Bắt đầu/Dừng/Mở cửa bên dưới, khung info
+         * thì không -> thêm 1 khoảng đệm vô hình cao bằng hàng nút đó, để
+         * điểm KẾT THÚC của khung màu bên info bằng với khung màu camera. */
+        .rec-footer-spacer { flex-shrink: 0; height: 33px; }
         .rec-lastcheckin-empty {
-          flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
+          flex: 1 1 0% !important; display: flex; flex-direction: column; align-items: center; justify-content: center;
           gap: 6px; text-align: center; padding: 28px 12px;
           border: 1.5px dashed var(--border); border-radius: var(--radius-md); color: var(--text-muted);
         }
@@ -654,14 +734,18 @@ export default function CameraRecognition() {
         .rec-lastcheckin-empty span { font-size: 11px; }
 
         .rec-lc-card {
+          flex: 1 1 0% !important; min-height: 0 !important; height: 100% !important;
           border-radius: var(--radius-md); border: 1.5px solid var(--border); background: #fff;
-          overflow: hidden; flex: 1; min-height: 0; display: flex; flex-direction: column;
+          overflow: hidden; display: flex; flex-direction: column;
         }
         .rec-lc-card.success.checkin        { border-color: var(--primary); }
         .rec-lc-card.success.checkout       { border-color: var(--cko-primary); }
         .rec-lc-card.error                  { border-color: var(--danger); }
         .rec-lc-card.lookup-ok              { border-color: var(--primary); }
         .rec-lc-card.lookup-blocked         { border-color: var(--danger); }
+
+        /* Thẻ check-out tối giản: căn giữa toàn bộ nội dung theo chiều dọc */
+        .rec-lc-card.checkout-minimal { align-items: stretch; justify-content: center; }
 
         .rec-lc-top {
           position: relative; display: flex; flex-direction: column; align-items: center; gap: 8px;
@@ -672,6 +756,7 @@ export default function CameraRecognition() {
         .rec-lc-card.success.checkout .rec-lc-top { background: var(--cko-primary-light); }
         .rec-lc-card.error .rec-lc-top,
         .rec-lc-card.lookup-blocked .rec-lc-top { background: var(--danger-light); }
+        .rec-lc-card.checkout-minimal .rec-lc-top { flex: 1; justify-content: center; padding: 16px 10px; }
 
         .rec-lc-avatar {
           width: 34%; aspect-ratio: 1 / 1; max-width: 130px; min-width: 64px; border-radius: 20%;
@@ -686,10 +771,12 @@ export default function CameraRecognition() {
         .rec-lc-card.success.checkout .rec-lc-avatar { background: var(--cko-primary-dark); }
 
         .rec-lc-name { font-weight: 700; font-size: 13.5px; margin: 0; word-break: break-word; }
+        .rec-lc-card.checkout-minimal .rec-lc-name { font-size: 16px; margin-bottom: 2px; }
         .rec-lc-result-line { display: flex; align-items: center; justify-content: center; gap: 5px; font-size: 11.5px; font-weight: 700; }
         .rec-lc-result-line.success.checkin  { color: var(--primary-dark); }
         .rec-lc-result-line.success.checkout { color: var(--cko-primary-dark); }
         .rec-lc-result-line.error   { color: var(--danger); }
+        .rec-lc-checkout-time { margin: 6px 0 0; font-size: 11px; color: var(--text-muted); font-weight: 600; }
 
         .rec-lc-source {
           position: absolute; top: 10px; right: 10px; flex-shrink: 0;
@@ -812,12 +899,9 @@ export default function CameraRecognition() {
         }
       `}</style>
 
-            <div className="rec-page-head">
-                <h1>Nhận diện Camera</h1>
-                <span>Check-in và Check-out cho hội viên</span>
-            </div>
 
-            {/* ============================ SECTION: CHECK-IN ============================ */}
+
+            {/* ============================ HÀNG 1: CHECK-IN ============================ */}
             <div>
                 <div className="rec-section-head checkin">
                     <span className="rec-section-dot" />
@@ -827,29 +911,31 @@ export default function CameraRecognition() {
 
                 <div className="rec-grid">
                     {/* Camera check-in */}
-                    <div className="rec-card">
+                    <div className="rec-card checkin">
                         <canvas ref={ckCanvasRef} style={{ display: "none" }} />
-                        <div className="rec-card-title">
-                            <h3>Camera Check-in</h3>
-                            <span className="rec-status-pill">
-                                <span className={`rec-dot checkin ${ckCameraOn ? "on" : ""}`} />
-                                {ckCameraOn ? "Đang hoạt động" : "Đã tắt"}
-                            </span>
-                        </div>
+                        <div className="rec-panel-header row-in">
+                            <div className="rec-card-title">
+                                <h3>Camera Check-in</h3>
+                                <span className="rec-status-pill">
+                                    <span className={`rec-dot checkin ${ckCameraOn ? "on" : ""}`} />
+                                    {ckCameraOn ? "Đang hoạt động" : "Đã tắt"}
+                                </span>
+                            </div>
 
-                        <div className="rec-select-wrap">
-                            <select value={ckSelectedDevId} onChange={handleCkDeviceChange} disabled={devices.length === 0}>
-                                {devices.length === 0 && <option>Chưa phát hiện camera</option>}
-                                {devices.map(d => {
-                                    const usedByOther = d.deviceId === coActiveDevId;
-                                    return (
-                                        <option key={d.deviceId} value={d.deviceId} disabled={usedByOther}>
-                                            {(d.label || `Camera ${d.deviceId.slice(0, 8)}…`)}{usedByOther ? " (đang dùng ở Check-out)" : ""}
-                                        </option>
-                                    );
-                                })}
-                            </select>
-                            <ChevronDown size={13} className="rec-chevron" />
+                            <div className="rec-select-wrap">
+                                <select value={ckSelectedDevId} onChange={handleCkDeviceChange} disabled={devices.length === 0}>
+                                    {devices.length === 0 && <option>Chưa phát hiện camera</option>}
+                                    {devices.map(d => {
+                                        const usedByOther = d.deviceId === coActiveDevId;
+                                        return (
+                                            <option key={d.deviceId} value={d.deviceId} disabled={usedByOther}>
+                                                {(d.label || `Camera ${d.deviceId.slice(0, 8)}…`)}{usedByOther ? " (đang dùng ở Check-out)" : ""}
+                                            </option>
+                                        );
+                                    })}
+                                </select>
+                                <ChevronDown size={13} className="rec-chevron" />
+                            </div>
                         </div>
 
                         <div className={`rec-viewport checkin ${ckCameraOn ? "on" : ""}`}>
@@ -899,39 +985,41 @@ export default function CameraRecognition() {
                         </div>
                     </div>
 
-                    {/* Tra cứu SĐT + thông tin hội viên */}
-                    <div className="rec-card rec-side-panel">
-                        <div className="rec-card-title"><h3>Tra cứu &amp; thông tin hội viên</h3></div>
+                    {/* Tra cứu SĐT + thông tin hội viên đầy đủ */}
+                    <div className="rec-card checkin rec-side-panel">
+                        <div className="rec-panel-header row-in">
+                            <div className="rec-card-title"><h3>Tra cứu &amp; thông tin hội viên</h3></div>
 
-                        <div className="rec-phone-input-block">
-                            <div className="rec-input-wrap">
-                                <Phone size={13} />
-                                <input
-                                    type="tel"
-                                    placeholder="Nhập SĐT, ví dụ: 0901234567"
-                                    value={phoneInput}
-                                    onChange={e => { setPhoneInput(e.target.value); setPhoneError(""); }}
-                                    onKeyDown={e => e.key === "Enter" && handlePhoneLookup()}
-                                />
+                            <div className="rec-phone-input-block">
+                                <div className="rec-input-wrap">
+                                    <Phone size={13} />
+                                    <input
+                                        type="tel"
+                                        placeholder="Nhập SĐT, ví dụ: 0901234567"
+                                        value={phoneInput}
+                                        onChange={e => { setPhoneInput(e.target.value); setPhoneError(""); }}
+                                        onKeyDown={e => e.key === "Enter" && handlePhoneLookup()}
+                                    />
+                                </div>
+                                <button className="rec-btn rec-btn-primary checkin" onClick={handlePhoneLookup} disabled={lookupLoading} style={{ whiteSpace: "nowrap" }}>
+                                    {lookupLoading ? <span className="rec-spinner" style={{ width: 14, height: 14, borderWidth: 2 }} /> : <UserRound size={13} />}
+                                    Tra cứu
+                                </button>
                             </div>
-                            <button className="rec-btn rec-btn-primary checkin" onClick={handlePhoneLookup} disabled={lookupLoading} style={{ whiteSpace: "nowrap" }}>
-                                {lookupLoading ? <span className="rec-spinner" style={{ width: 14, height: 14, borderWidth: 2 }} /> : <UserRound size={13} />}
-                                Tra cứu
-                            </button>
-                        </div>
 
-                        {phoneError && (
-                            <div className="rec-phone-error"><XCircle size={13} style={{ flexShrink: 0, marginTop: 1 }} />{phoneError}</div>
-                        )}
+                            {phoneError && (
+                                <div className="rec-phone-error"><XCircle size={13} style={{ flexShrink: 0, marginTop: 1 }} />{phoneError}</div>
+                            )}
 
-                        <div className="rec-info-area">
                             <div className="rec-info-panel-head">
                                 <p className="rec-hint">Thông tin hội viên</p>
                                 {ckInfoIsLookup && (
                                     <button className="rec-info-close" onClick={dismissLookupResult} title="Đóng"><X size={12} /></button>
                                 )}
                             </div>
+                        </div>
 
+                        <div className="rec-info-area">
                             {!ckInfoMember ? (
                                 <div className="rec-lastcheckin-empty">
                                     <UserRound size={22} />
@@ -1022,43 +1110,46 @@ export default function CameraRecognition() {
                                 </div>
                             )}
                         </div>
+                        <div className="rec-footer-spacer" aria-hidden="true" />
                     </div>
                 </div>
             </div>
 
-            {/* ============================ SECTION: CHECK-OUT ============================ */}
+            {/* ============================ HÀNG 2: CHECK-OUT ============================ */}
             <div>
                 <div className="rec-section-head checkout">
                     <span className="rec-section-dot" />
                     <h2>CHECK-OUT</h2>
-                    <span className="rec-section-sub">Nhận diện qua camera — chỉ hiển thị thông tin, không tra cứu SĐT</span>
+                    <span className="rec-section-sub">Nhận diện qua camera — chỉ hiển thị tên người vừa check-out</span>
                 </div>
 
-                <div className="rec-grid">
+                <div className="rec-grid checkout-row">
                     {/* Camera check-out */}
-                    <div className="rec-card">
+                    <div className="rec-card checkout">
                         <canvas ref={coCanvasRef} style={{ display: "none" }} />
-                        <div className="rec-card-title">
-                            <h3>Camera Check-out</h3>
-                            <span className="rec-status-pill">
-                                <span className={`rec-dot checkout ${coCameraOn ? "on" : ""}`} />
-                                {coCameraOn ? "Đang hoạt động" : "Đã tắt"}
-                            </span>
-                        </div>
+                        <div className="rec-panel-header row-out">
+                            <div className="rec-card-title">
+                                <h3>Camera Check-out</h3>
+                                <span className="rec-status-pill">
+                                    <span className={`rec-dot checkout ${coCameraOn ? "on" : ""}`} />
+                                    {coCameraOn ? "Đang hoạt động" : "Đã tắt"}
+                                </span>
+                            </div>
 
-                        <div className="rec-select-wrap">
-                            <select value={coSelectedDevId} onChange={handleCoDeviceChange} disabled={devices.length === 0}>
-                                {devices.length === 0 && <option>Chưa phát hiện camera</option>}
-                                {devices.map(d => {
-                                    const usedByOther = d.deviceId === ckActiveDevId;
-                                    return (
-                                        <option key={d.deviceId} value={d.deviceId} disabled={usedByOther}>
-                                            {(d.label || `Camera ${d.deviceId.slice(0, 8)}…`)}{usedByOther ? " (đang dùng ở Check-in)" : ""}
-                                        </option>
-                                    );
-                                })}
-                            </select>
-                            <ChevronDown size={13} className="rec-chevron" />
+                            <div className="rec-select-wrap">
+                                <select value={coSelectedDevId} onChange={handleCoDeviceChange} disabled={devices.length === 0}>
+                                    {devices.length === 0 && <option>Chưa phát hiện camera</option>}
+                                    {devices.map(d => {
+                                        const usedByOther = d.deviceId === ckActiveDevId;
+                                        return (
+                                            <option key={d.deviceId} value={d.deviceId} disabled={usedByOther}>
+                                                {(d.label || `Camera ${d.deviceId.slice(0, 8)}…`)}{usedByOther ? " (đang dùng ở Check-in)" : ""}
+                                            </option>
+                                        );
+                                    })}
+                                </select>
+                                <ChevronDown size={13} className="rec-chevron" />
+                            </div>
                         </div>
 
                         <div className={`rec-viewport checkout ${coCameraOn ? "on" : ""}`}>
@@ -1108,19 +1199,21 @@ export default function CameraRecognition() {
                         </div>
                     </div>
 
-                    {/* Thông tin người vừa check-out */}
-                    <div className="rec-card rec-side-panel">
-                        <div className="rec-card-title"><h3>Thông tin người check-out</h3></div>
+                    {/* Chỉ tên người vừa check-out — tối giản */}
+                    <div className="rec-card checkout rec-side-panel">
+                        <div className="rec-panel-header row-out">
+                            <div className="rec-card-title"><h3>Người vừa check-out</h3></div>
+                        </div>
 
                         <div className="rec-info-area">
                             {!coInfoMember ? (
                                 <div className="rec-lastcheckin-empty">
                                     <UserRound size={22} />
                                     <p>Chưa có lượt check-out nào</p>
-                                    <span>Dùng camera nhận diện để check-out — thông tin hội viên sẽ hiện tại đây</span>
+                                    <span>Dùng camera nhận diện để check-out — tên hội viên sẽ hiện tại đây</span>
                                 </div>
                             ) : (
-                                <div className={`rec-lc-card ${lastCheckout.result} checkout`}>
+                                <div className={`rec-lc-card ${lastCheckout.result} checkout checkout-minimal`}>
                                     <MemberTop
                                         member={coInfoMember}
                                         onViewPhoto={setPhotoViewMember}
@@ -1130,36 +1223,16 @@ export default function CameraRecognition() {
                                                 <div className={`rec-lc-result-line checkout ${lastCheckout.result}`}>
                                                     {lastCheckout.result === "success" ? <><CheckCircle2 size={13} /> Check-out thành công</> : <><XCircle size={13} /> Không thể check-out</>}
                                                 </div>
-                                                <div className="rec-lc-badges">
-                                                    <StatusBadge status={coInfoMember.packageStatus} />
-                                                    <AccountStatusBadge status={coInfoMember.accountStatus} />
-                                                </div>
+                                                <p className="rec-lc-checkout-time">
+                                                    {lastCheckout.at.toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" })}
+                                                </p>
                                             </>
                                         }
                                     />
-                                    <div className="rec-lc-body">
-                                        <div className="rec-lc-row"><span className="rec-lc-row-label">Mã hội viên</span><span className="rec-lc-row-value">#{coInfoMember.memberId}</span></div>
-                                        <div className="rec-lc-row"><span className="rec-lc-row-label">Số điện thoại</span><span className="rec-lc-row-value">{coInfoMember.phone}</span></div>
-                                        <div className="rec-lc-row"><span className="rec-lc-row-label">Chi nhánh</span><span className="rec-lc-row-value">{coInfoMember.branchName}</span></div>
-                                        <div className="rec-lc-row"><span className="rec-lc-row-label">Gói tập</span><span className="rec-lc-row-value">{coInfoMember.package}</span></div>
-                                        <div className="rec-lc-row"><span className="rec-lc-row-label">Hết hạn gói</span><span className="rec-lc-row-value">{coInfoMember.expiryDate}</span></div>
-
-                                        {coInfoMember.accountStatus === "Suspended" && coInfoMember.suspendReason && (
-                                            <div className="rec-lc-suspend-note"><ShieldAlert size={13} /><span>Lý do khoá: {coInfoMember.suspendReason}</span></div>
-                                        )}
-                                        {coInfoMember.internalNotes && (
-                                            <div className="rec-lc-internal-note">
-                                                <AlertCircle size={15} />
-                                                <div className="rec-lc-internal-note-text">
-                                                    <span className="rec-lc-internal-note-label">Ghi chú nội bộ</span>
-                                                    {coInfoMember.internalNotes}
-                                                </div>
-                                            </div>
-                                        )}
-                                    </div>
                                 </div>
                             )}
                         </div>
+                        <div className="rec-footer-spacer" aria-hidden="true" />
                     </div>
                 </div>
             </div>

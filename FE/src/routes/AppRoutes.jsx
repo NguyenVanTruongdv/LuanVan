@@ -24,6 +24,7 @@ import Home from "../pages/guest/Home";
 import MembershipPlansPage from "../pages/guest/PackageList";
 import ThongKe from "../pages/guest/Thongke";
 //member
+import IssueReportForm from "../pages/guest/Issuereportform";
 function AppRoutes() {
     return (
         <Routes>
@@ -34,6 +35,7 @@ function AppRoutes() {
             <Route path="branch/:id" element={<BranchDetail></BranchDetail>}></Route>
             <Route path="thong-ke" element={<ThongKe></ThongKe>}></Route>
             <Route path="comunity" element={<ForumFeed></ForumFeed>}></Route>
+            <Route path="/issue" element={<IssueReportForm></IssueReportForm>}></Route>
             <Route path="/member/register" element={<Register />} />
             <Route path="/member/login" element={<MemberLogin />} />
             <Route path="/member/branches" element={<BranchList></BranchList>} />

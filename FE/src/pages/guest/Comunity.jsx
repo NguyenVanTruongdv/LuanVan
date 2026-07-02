@@ -7,7 +7,6 @@ import {
     MoreHorizontal,
     Plus,
     Repeat2,
-    Search,
     Send,
     Smile,
     X,
@@ -30,16 +29,27 @@ import { useEffect, useRef, useState } from "react";
  * mobile dù màn hình rộng (đúng lỗi bạn gặp trong ảnh chụp).
  * Bản này đổi sang @media (dựa theo kích thước MÀN HÌNH thật) để
  * chắc chắn hoạt động đúng bất kể Header/Footer bọc kiểu gì.
+ *
+ * BẢN CẬP NHẬT TÔNG MÀU (theo ảnh Header/Hero bạn gửi):
+ * - Nền đen tuyền giữ nguyên, đổi màu nhấn chính (nút, viền active,
+ *   badge HLV...) sang cam-đỏ giống chữ "TỰ DO" / nút "Xem gói tập".
+ * - Trái tim (thích) dùng riêng một màu đỏ thuần để luôn nổi bật,
+ *   tách biệt với màu cam-đỏ dùng cho các hành động khác.
+ * - Đã bỏ ô tìm kiếm trên thanh desktop và icon kính lúp trên thanh
+ *   mobile theo yêu cầu.
+ * - Icon "Hoạt động" trên thanh mobile đổi từ trái tim sang chuông
+ *   thông báo, đồng bộ với chuông ở thanh desktop.
  */
 import Footer from "../../component/Footer";
 import Header from "../../component/Header";
 
 // ---- Design tokens -------------------------------------------------------
-const ACCENT = "#3B82F6"; // xanh dương — hành động chính (thích, đăng, gửi)
-const ACCENT_TEAL = "#14B8A6"; // xanh ngọc — huấn luyện viên / ảnh
+const ACCENT = "#FF4620"; // cam-đỏ — hành động chính (đăng, nút, viền active), khớp tông ảnh
+const ACCENT_TEAL = "#14B8A6"; // xanh ngọc — huấn luyện viên
+const LIKE_RED = "#EF4444"; // đỏ riêng cho trái tim (thích)
 const CURRENT_USER = "Quang"; // TODO: thay bằng user thật khi có auth
 
-const AVATAR_COLORS = ["#3B82F6", "#5B8C5A", "#A64AC9", "#D4A017", "#4A5FC1", "#14B8A6"];
+const AVATAR_COLORS = ["#FF4620", "#5B8C5A", "#A64AC9", "#D4A017", "#4A5FC1", "#14B8A6"];
 const EMOJI_QUICK = ["💪", "🔥", "🏋️", "🎯", "👏", "😅"];
 
 function avatarColor(name) {
@@ -167,7 +177,31 @@ const seedNotifications = [
 ];
 
 // ---- Nav bars ---------------------------------------------------------------
-// Desktop: thanh trên kiểu Facebook (logo + tìm kiếm + Home + avatar)
+// Nội dung danh sách thông báo dùng chung cho cả chuông desktop và chuông mobile
+function NotificationList({ notifications }) {
+    return (
+        <>
+            <div className="notif-dropdown-title">Thông báo</div>
+            {notifications.length === 0 ? (
+                <div className="notif-empty">Chưa có thông báo nào</div>
+            ) : (
+                notifications.map((n) => (
+                    <div key={n.id} className={`notif-row ${n.read ? "" : "unread"}`}>
+                        <Avatar name={n.user} size={32} />
+                        <div className="notif-text-col">
+                            <span className="notif-text">
+                                <strong>{n.user}</strong> {n.text}
+                            </span>
+                            <span className="notif-time">{n.time}</span>
+                        </div>
+                    </div>
+                ))
+            )}
+        </>
+    );
+}
+
+// Desktop: thanh trên kiểu Facebook (logo + Home + avatar + chuông), đã bỏ ô tìm kiếm
 function NotificationBell({ notifications, onMarkAllRead }) {
     const [open, setOpen] = useState(false);
     const unreadCount = notifications.filter((n) => !n.read).length;
@@ -189,22 +223,7 @@ function NotificationBell({ notifications, onMarkAllRead }) {
 
             {open && (
                 <div className="notif-dropdown">
-                    <div className="notif-dropdown-title">Thông báo</div>
-                    {notifications.length === 0 ? (
-                        <div className="notif-empty">Chưa có thông báo nào</div>
-                    ) : (
-                        notifications.map((n) => (
-                            <div key={n.id} className={`notif-row ${n.read ? "" : "unread"}`}>
-                                <Avatar name={n.user} size={32} />
-                                <div className="notif-text-col">
-                                    <span className="notif-text">
-                                        <strong>{n.user}</strong> {n.text}
-                                    </span>
-                                    <span className="notif-time">{n.time}</span>
-                                </div>
-                            </div>
-                        ))
-                    )}
+                    <NotificationList notifications={notifications} />
                 </div>
             )}
         </div>
@@ -226,14 +245,9 @@ function TopNavBar({ onOpenProfile, onGoHome, notifications, onMarkAllRead }) {
                     </button>
                 </div>
 
-                <div className="topnav-search">
-                    <Search size={16} color="#7d8290" />
-                    <input type="text" placeholder="Tìm kiếm" />
-                </div>
-
                 {/* Đẩy chuông sát mép phải, đối xứng với cụm avatar/Quang bên
                     trái (topnav-inner có padding trái/phải bằng nhau nên 2 bên
-                    sẽ cân đối tự động, không cần chỉnh số % theo màn hình nữa). */}
+                    sẽ cân đối tự động). Ô tìm kiếm đã được bỏ theo yêu cầu. */}
                 <div className="topnav-bell-slot">
                     <NotificationBell notifications={notifications} onMarkAllRead={onMarkAllRead} />
                 </div>
@@ -242,30 +256,48 @@ function TopNavBar({ onOpenProfile, onGoHome, notifications, onMarkAllRead }) {
     );
 }
 
-// Mobile: thanh dưới cố định kiểu Threads (Home / Tìm kiếm / Đăng / Hoạt động / Cá nhân)
-function BottomNavBar({ onOpenProfile, onCompose }) {
+// Mobile: thanh dưới cố định kiểu Threads (Home / Đăng / Thông báo / Cá nhân)
+// Đã bỏ icon kính lúp và đổi icon trái tim thành chuông thông báo.
+function BottomNavBar({ onOpenProfile, onCompose, notifications, onMarkAllRead }) {
+    const [notifOpen, setNotifOpen] = useState(false);
+    const unreadCount = notifications.filter((n) => !n.read).length;
+
+    function toggleNotif() {
+        setNotifOpen((v) => {
+            const next = !v;
+            if (next) onMarkAllRead();
+            return next;
+        });
+    }
+
     return (
-        <div className="bottomnav">
-            <button
-                className="bottomnav-btn active"
-                onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
-                aria-label="Trang chủ"
-            >
-                <Home size={24} />
-            </button>
-            <button className="bottomnav-btn" aria-label="Tìm kiếm">
-                <Search size={24} />
-            </button>
-            <button className="bottomnav-btn" onClick={onCompose} aria-label="Đăng bài">
-                <Plus size={24} />
-            </button>
-            <button className="bottomnav-btn" aria-label="Hoạt động">
-                <Heart size={24} />
-            </button>
-            <button className="bottomnav-btn bottomnav-avatar" onClick={onOpenProfile} aria-label="Trang cá nhân">
-                <Avatar name={CURRENT_USER} size={26} />
-            </button>
-        </div>
+        <>
+            {notifOpen && (
+                <div className="mobile-notif-sheet">
+                    <NotificationList notifications={notifications} />
+                </div>
+            )}
+
+            <div className="bottomnav">
+                <button
+                    className="bottomnav-btn active"
+                    onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
+                    aria-label="Trang chủ"
+                >
+                    <Home size={24} />
+                </button>
+                <button className="bottomnav-btn" onClick={onCompose} aria-label="Đăng bài">
+                    <Plus size={24} />
+                </button>
+                <button className="bottomnav-btn bottomnav-notif-wrap" onClick={toggleNotif} aria-label="Thông báo">
+                    <Bell size={24} />
+                    {unreadCount > 0 && <span className="notif-dot bottomnav-notif-dot">{unreadCount}</span>}
+                </button>
+                <button className="bottomnav-btn bottomnav-avatar" onClick={onOpenProfile} aria-label="Trang cá nhân">
+                    <Avatar name={CURRENT_USER} size={26} />
+                </button>
+            </div>
+        </>
     );
 }
 
@@ -298,8 +330,8 @@ function Post({ post, onToggleLike, replyOpen, onOpenReply, replyDraft, onReplyD
 
                     <div className="action-row">
                         <button className="action-btn" onClick={() => onToggleLike(post.id)} aria-label="Thích">
-                            <Heart size={18} fill={post.liked ? ACCENT : "none"} color={post.liked ? ACCENT : "#9297a3"} />
-                            <span style={{ color: post.liked ? ACCENT : "#9297a3" }}>{post.likes}</span>
+                            <Heart size={18} fill={post.liked ? LIKE_RED : "none"} color={post.liked ? LIKE_RED : "#9297a3"} />
+                            <span style={{ color: post.liked ? LIKE_RED : "#9297a3" }}>{post.likes}</span>
                         </button>
                         <button className={`action-btn ${replyOpen ? "active" : ""}`} onClick={() => onOpenReply(post.id)} aria-label="Bình luận">
                             <MessageCircle size={18} color={replyOpen ? ACCENT : "#9297a3"} />
@@ -575,9 +607,8 @@ export default function ForumFeed() {
             box-shadow: 0 10px 28px rgba(0,0,0,0.45), 0 1px 0 rgba(255,255,255,0.03) inset;
           }
           .topnav-identity { display: flex; align-items: center; gap: 6px; }
-          /* Canh chuông ngay dưới chữ "Cộng Đồng" của Header thật. Đổi số % ở
-             --bell-align-left cho khớp với vị trí thật trên site của bạn
-             (giá trị dưới đây canh theo ảnh chụp Header đầy đủ bạn gửi). */
+          /* Ô tìm kiếm đã bỏ, chuông đẩy sát mép phải để cân đối với cụm
+             avatar/Quang bên trái. */
           .topnav-bell-slot {
             margin-left: auto;
             display: flex; align-items: center;
@@ -608,21 +639,11 @@ export default function ForumFeed() {
           .notif-empty { padding: 20px 16px; color: #6c7280; font-size: 13px; text-align: center; }
           .notif-row { display: flex; gap: 10px; padding: 12px 16px; border-bottom: 1px solid #16181e; }
           .notif-row:last-child { border-bottom: none; }
-          .notif-row.unread { background: rgba(59,130,246,0.06); }
+          .notif-row.unread { background: rgba(255,70,32,0.07); }
           .notif-text-col { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
           .notif-text { font-size: 13px; color: #d0d2d9; line-height: 1.4; }
           .notif-text strong { color: #f5f6f8; font-weight: 700; }
           .notif-time { font-size: 11.5px; color: #6c7280; }
-          .topnav-search {
-            display: flex; align-items: center; gap: 8px; background: #16181e;
-            border: 1px solid #23262e; border-radius: 999px; padding: 8px 14px;
-            width: 260px; transition: border-color .15s, background .15s;
-          }
-          .topnav-search:focus-within { border-color: ${ACCENT}; background: #14161b; }
-          .topnav-search input {
-            background: transparent; border: none; color: #f5f6f8; font-size: 13.5px; width: 100%;
-          }
-          .topnav-search input::placeholder { color: #6c7280; }
 
           /* ============== MOBILE BOTTOM NAV (kiểu Threads) ============== */
           .bottomnav {
@@ -640,6 +661,14 @@ export default function ForumFeed() {
           .bottomnav-btn:hover { background: #14161b; }
           .bottomnav-btn.active { color: #f5f6f8; }
           .bottomnav-avatar { padding: 4px 14px; }
+          .bottomnav-notif-wrap { position: relative; }
+          .bottomnav-notif-dot { top: 2px; right: 8px; }
+
+          .mobile-notif-sheet {
+            position: fixed; left: 10px; right: 10px; bottom: 74px; z-index: 35;
+            background: #111318; border: 1px solid #23262e; border-radius: 16px;
+            box-shadow: 0 12px 32px rgba(0,0,0,0.55); overflow: hidden; max-height: 60vh; overflow-y: auto;
+          }
 
           /* ============== LAYOUT ============== */
           /* Không còn sidebar trái/phải nên chỉ còn 1 cột nội dung, nới
@@ -651,6 +680,7 @@ export default function ForumFeed() {
             .forum-root { padding-bottom: 0; }
             .topnav { display: block; }
             .bottomnav { display: none; }
+            .mobile-notif-sheet { display: none; }
             .layout { padding-top: 24px; padding-left: 24px; padding-right: 24px; }
           }
 
@@ -754,7 +784,12 @@ export default function ForumFeed() {
                     </div>
                 </div>
 
-                <BottomNavBar onOpenProfile={() => console.log("Mở trang cá nhân")} onCompose={handleCompose} />
+                <BottomNavBar
+                    onOpenProfile={() => console.log("Mở trang cá nhân")}
+                    onCompose={handleCompose}
+                    notifications={notifications}
+                    onMarkAllRead={markAllNotificationsRead}
+                />
             </div>
 
             <Footer />

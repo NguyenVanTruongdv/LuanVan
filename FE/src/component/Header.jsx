@@ -7,15 +7,11 @@ const NAV_LINKS = [
     { label: "Máy tập", href: "/equiptment" },
     { label: "Chi nhánh", href: "/branch" },
     { label: "Thống kê", href: "/thong-ke" },
-    { label: "Cộng Đồng", href: "/comunity" },
+    { label: "Báo cáo vấn đề", href: "/issue" },
+    { label: "Cộng Đồng", href: "/comunity" }
+
 ];
 
-const BRANCHES = [
-    { id: "q1", name: "VTGym Quận 1", href: "/chi-nhanh/q1" },
-    { id: "q7", name: "VTGym Quận 7", href: "/chi-nhanh/q7" },
-    { id: "bth", name: "VTGym Bình Thạnh", href: "/chi-nhanh/binh-thanh" },
-    { id: "td", name: "VTGym Thủ Đức", href: "/chi-nhanh/thu-duc" },
-];
 
 const CURRENT_USER = { name: "Nguyễn Văn A", plan: "Hội viên Tự Do" };
 
@@ -40,6 +36,8 @@ function IconPin() {
 }
 
 export default function Header() {
+    document.title = "VT Gym"
+
     const [menuOpen, setMenuOpen] = useState(false);
     const [userOpen, setUserOpen] = useState(false);
     const [activePath, setActivePath] = useState(
@@ -321,7 +319,7 @@ export default function Header() {
                                         </div>
                                     </div>
                                     <hr className="vt-usr__hr" />
-                                    <a href="/lich-su" className="vt-usr__item">Lịch sử tập</a>
+                                    <a href="/my-info" className="vt-usr__item">Thông tin cá nhân</a>
                                     <a href="/thong-ke" className="vt-usr__item">Thống kê</a>
                                     <button className="vt-usr__out">Đăng xuất</button>
                                 </div>
@@ -380,14 +378,6 @@ export default function Header() {
                                 ))}
                             </nav>
 
-                            <div className="vt-drawer__section">
-                                <p className="vt-drawer__label">Chi nhánh</p>
-                                {BRANCHES.map(b => (
-                                    <a key={b.id} href={b.href} className="vt-drawer__branch" onClick={close}>
-                                        <IconPin />{b.name}
-                                    </a>
-                                ))}
-                            </div>
 
                             <div className="vt-drawer__foot">
                                 <button className="vt-usr__out" style={{ width: "100%" }}>Đăng xuất</button>
