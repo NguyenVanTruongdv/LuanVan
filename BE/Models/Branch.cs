@@ -57,7 +57,5 @@ public partial class Branch
 
     public virtual ICollection<Member> Members { get; set; } = new List<Member>();
 
-    public virtual ICollection<Notification> Notifications { get; set; } = new List<Notification>();
-
     public virtual ICollection<Transaction> Transactions { get; set; } = new List<Transaction>();
 }

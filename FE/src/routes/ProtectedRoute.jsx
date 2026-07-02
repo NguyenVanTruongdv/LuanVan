@@ -1,19 +1,19 @@
 import { Navigate, Outlet } from "react-router-dom";
 
-function ProtectedRoute({ allowedRoles }) {
+function ProtectedRoute({
+    allowedRoles,
+    loginPath = "/login",
+}) {
     const token = localStorage.getItem("accessToken");
     const role = localStorage.getItem("role");
 
     // Chưa đăng nhập
     if (!token) {
-        return <Navigate to="/staff/login" replace />;
+        return <Navigate to={loginPath} replace />;
     }
 
-    // Có role yêu cầu nhưng không đúng quyền
-    if (
-        allowedRoles &&
-        !allowedRoles.includes(role)
-    ) {
+    // Có yêu cầu role nhưng không đúng quyền
+    if (allowedRoles && !allowedRoles.includes(role)) {
         return <Navigate to="/unauthorized" replace />;
     }
 

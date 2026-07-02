@@ -2,7 +2,6 @@ using System.Text;
 using BE.Data;
 using BE.Helpers;
 using BE.Services;
-using BE.Services.Interfaces;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
@@ -30,8 +29,11 @@ builder.Services.AddDbContext<GymManagementContext>(options =>
 builder.Services.AddHttpClient();
 
 // Dependency Injection
-builder.Services.AddScoped<IAuthService, AuthService>();
-builder.Services.AddScoped<ISmsService, SmsService>();
+builder.Services.AddScoped<AuthService>();
+builder.Services.AddScoped<SmsService>();
+builder.Services.AddScoped<NewsService>();
+builder.Services.AddScoped<PackageService>();
+builder.Services.AddScoped<EquipmentCategoryService>();
 builder.Services.AddScoped<JwtHelper>();
 
 // JWT Authentication

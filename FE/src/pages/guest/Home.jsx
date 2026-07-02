@@ -1,8 +1,17 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import Footer from "../../component/Footer";
 import Header from "../../component/Header";
+// ⚠️ Chỉnh lại đường dẫn import bên dưới cho đúng với vị trí thực tế của memberApi trong project
+import memberApi from "../../api/memberApi";
 
-const BRANCHES = [
+/* =========================================================================
+ * MOCK DATA
+ * Toàn bộ phần dữ liệu bên dưới đang là mock. Mỗi phần đều có 1 hàm fetchXxx()
+ * tương ứng (xem phần "DATA FETCHERS" ở dưới) — sau này chỉ cần sửa bên trong
+ * hàm fetch để gọi API thật, phần UI/component không cần đổi gì thêm.
+ * ========================================================================= */
+
+const MOCK_BRANCHES = [
   { id: "q1", name: "VTGym Quận 1", address: "123 Nguyễn Huệ, Q.1, TP.HCM", href: "/chi-nhanh/q1" },
   { id: "q7", name: "VTGym Quận 7", address: "456 Nguyễn Thị Thập, Q.7, TP.HCM", href: "/chi-nhanh/q7" },
   { id: "bth", name: "VTGym Bình Thạnh", address: "78 Xô Viết Nghệ Tĩnh, Q.BT, TP.HCM", href: "/chi-nhanh/binh-thanh" },
@@ -27,16 +36,7 @@ const MOCK_PACKAGES = [
   },
 ];
 
-// Dữ liệu giả lập — sau này thay bằng API thật trong hàm fetchTraffic() bên dưới
 const MOCK_TRAFFIC = { q1: [28, 41, 55, 62, 48], q7: [18, 30, 44, 50, 37], bth: [22, 35, 49, 58, 43], td: [12, 24, 38, 45, 30] };
-
-// Dữ liệu giả lập — sau này thay bằng API thật trong hàm fetchAnnouncements() bên dưới
-const MOCK_ANNOUNCEMENTS = [
-  { id: "a1", type: "warning", branch: "VTGym Quận 7", text: "Bảo trì máy lạnh khu cardio, dự kiến xong 18:00 hôm nay." },
-  { id: "a2", type: "info", branch: "VTGym Bình Thạnh", text: "Khai trương khu Functional Training mới từ tuần sau." },
-  { id: "a3", type: "alert", branch: "VTGym Thủ Đức", text: "Cúp điện khu vực 14:00–16:00, tạm ngưng nhận khách." },
-  { id: "a4", type: "alert", branch: "VTGym Thủ Đức", text: "Cúp điện khu vực 14:00–16:00, tạm ngưng nhận khách." },
-];
 
 const HERO_IMAGES = [
   "https://images.unsplash.com/photo-1534438327276-14e5300c3a48?w=1600&q=80",
@@ -44,7 +44,7 @@ const HERO_IMAGES = [
   "https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?w=1600&q=80",
 ];
 
-const GALLERY_IMAGES = [
+const MOCK_GALLERY = [
   { src: "https://images.unsplash.com/photo-1638536532686-d610adfc8e5c?w=900&q=80", label: "Khu tạ tự do" },
   { src: "https://images.unsplash.com/photo-1581009146145-b5ef050c2e1e?w=900&q=80", label: "Máy cardio hiện đại" },
   { src: "https://images.unsplash.com/photo-1526506118085-60ce8714f8c5?w=900&q=80", label: "Không gian rộng rãi" },
@@ -53,7 +53,7 @@ const GALLERY_IMAGES = [
   { src: "https://images.unsplash.com/photo-1567598508481-65985588e295?w=900&q=80", label: "Máy lạnh toàn khu" },
 ];
 
-const EQUIPMENT_CATEGORIES = [
+const MOCK_EQUIPMENT = [
   { icon: "🏋️", name: "Tạ tự do", desc: "Dumbbells 2–60kg, barbell, EZ bar, hex bar", href: "/may-tap#ta-tu-do" },
   { icon: "🚴", name: "Cardio", desc: "Treadmill, bike, elliptical, rowing machine", href: "/may-tap#cardio" },
   { icon: "⚙️", name: "Máy kháng lực", desc: "Cable crossover, smith machine, leg press", href: "/may-tap#may-khang-luc" },
@@ -61,6 +61,66 @@ const EQUIPMENT_CATEGORIES = [
 ];
 
 const fmt = (n) => n.toLocaleString("vi-VN") + "đ";
+
+/* =========================================================================
+ * DATA FETCHERS
+ * Mỗi hàm trả về đúng shape mà UI đang dùng. Hiện tại đa số đang mock
+ * (giả lập độ trễ mạng), riêng fetchAnnouncements() đã gọi API thật.
+ * Khi có API cho phần nào, chỉ cần thay nội dung bên trong hàm tương ứng.
+ * ========================================================================= */
+
+async function fetchBranches() {
+  await new Promise((r) => setTimeout(r, 250)); // giả lập độ trễ network
+  return MOCK_BRANCHES;
+  // Khi có API thật:
+  // const res = await fetch("/api/branches");
+  // if (!res.ok) throw new Error("Không lấy được danh sách chi nhánh");
+  // const json = await res.json();
+  // return json.branches; // shape: { id, name, address, href }[]
+}
+
+async function fetchPackages() {
+  await new Promise((r) => setTimeout(r, 250)); // giả lập độ trễ network
+  return MOCK_PACKAGES;
+  // Khi có API thật:
+  // const res = await fetch("/api/packages");
+  // if (!res.ok) throw new Error("Không lấy được danh sách gói tập");
+  // const json = await res.json();
+  // return json.packages; // shape: { id, name, price, period, highlighted, href, desc, features[] }[]
+}
+
+async function fetchGallery() {
+  await new Promise((r) => setTimeout(r, 250)); // giả lập độ trễ network
+  return MOCK_GALLERY;
+  // Khi có API thật:
+  // const res = await fetch("/api/gallery");
+  // if (!res.ok) throw new Error("Không lấy được hình ảnh phòng tập");
+  // const json = await res.json();
+  // return json.images; // shape: { src, label }[]
+}
+
+async function fetchEquipment() {
+  await new Promise((r) => setTimeout(r, 250)); // giả lập độ trễ network
+  // Khi có API thật:
+  const data = await memberApi.getAllEquipmentCategory();
+  const icons = [  //icon 
+    "🚴", // Cardio
+    "🏋️", // Tạ tự do
+    "⚙️", // Máy kháng lực
+    "🤸", // Functional
+    "🧘", // Core & Stretching
+    "🎒", // Phụ kiện
+  ];
+    return data.map((item, index) => ({
+    categoryId: item.categoryId,
+    categoryName: item.categoryName,
+    description: item.description,
+    equipment: item.equipment,
+
+    // Lấy icon theo vị trí, nếu nhiều hơn 6 danh mục thì lặp lại
+    icon: icons[index % icons.length],
+  }));
+}
 
 /**
  * Hàm lấy dữ liệu lượng người tập theo chi nhánh.
@@ -87,22 +147,29 @@ async function fetchTraffic(branchId) {
 }
 
 /**
- * Hàm lấy thông báo cho hội viên (bảo trì, cúp điện, tin tức chi nhánh...).
- * Hiện tại đang trả về dữ liệu mock (giả lập độ trễ mạng).
- * Khi có API thật, chỉ cần thay phần bên trong bằng:
- *
- *   const res = await fetch("/api/announcements");
- *   if (!res.ok) throw new Error("Không lấy được thông báo");
- *   const json = await res.json();
- *   return json.announcements;
- *
- * miễn là trả về mảng có shape: { id, type, branch, text }[]
- * type: "info" | "warning" | "alert"
+ * Hàm lấy tin tức hiển thị trên trang chủ.
+ * Gọi API thật qua memberApi.getListNews() -> GET /api/news
+ * Response từ backend có các trường: Title, Summary, Content (PascalCase).
+ * Hàm này chuẩn hoá lại thành { id, title, summary, content } để UI dùng.
  */
 async function fetchAnnouncements() {
-  await new Promise((r) => setTimeout(r, 300)); // giả lập độ trễ network
-  return MOCK_ANNOUNCEMENTS;
+  const res = await memberApi.getListNews();
+
+  // Tuỳ theo cách authApi trả về (axios response .data, hoặc trả thẳng mảng),
+  // xử lý linh hoạt cả 2 trường hợp cho chắc.
+  const raw = Array.isArray(res?.data) ? res.data : Array.isArray(res) ? res : [];
+
+  return raw.map((n, i) => ({
+    id: n.Id ?? n.id ?? i,
+    title: n.Title ?? n.title ?? "",
+    summary: n.Summary ?? n.summary ?? "",
+    content: n.Content ?? n.content ?? "",
+  }));
 }
+
+/* =========================================================================
+ * UI COMPONENTS
+ * ========================================================================= */
 
 function TrafficChart({ values, labels, loading, error }) {
   if (loading) {
@@ -131,21 +198,23 @@ function TrafficChart({ values, labels, loading, error }) {
   );
 }
 
-const ANNC_ICON = { info: "ℹ️", warning: "🛠️", alert: "⚡" };
-
+// Thẻ hiển thị 1 tin tức: dùng Title làm tiêu đề, Summary (fallback Content) làm mô tả ngắn.
 function AnnouncementPill({ a }) {
   return (
-    <div className={`h-annc h-annc--${a.type}`}>
-      <span className="h-annc__icon">{ANNC_ICON[a.type] || "ℹ️"}</span>
+    <div className="h-annc">
+      <span className="h-annc__icon">📰</span>
       <div className="h-annc__body">
-        <span className="h-annc__branch">{a.branch}</span>
-        <span className="h-annc__text">{a.text}</span>
+        <span className="h-annc__branch">{a.title}</span>
+        <span className="h-annc__text">{a.summary || a.content}</span>
       </div>
     </div>
   );
 }
 
 const ANNC_INTERVAL = 4500;
+const ANNC_MAX_CARDS = 3; // số thẻ tối đa hiển thị cùng lúc trên desktop
+const ANNC_MAX_HEIGHT = 260; // chiều cao tối đa của khung tin tức (px) — không thẻ nào được vượt quá phần này
+const ANNC_GAP = 12; // phải khớp với gap trong CSS .h-annc-scroll
 
 function AnnouncementRail({ items, loading, error }) {
   if (loading) {
@@ -173,25 +242,55 @@ function AnnouncementRail({ items, loading, error }) {
   );
 }
 
-// PC: danh sách xếp chồng, tối đa hiển thị ~3 thẻ trong khung, còn lại cuộn dọc (không thấy thanh cuộn)
-// Tự cuộn xuống mỗi vài giây, hết thì quay lại đầu; vẫn cuộn tay được, tạm dừng tự cuộn khi người dùng thao tác.
+// PC: danh sách xếp chồng, cuộn được (tự động + cuộn tay), tối đa hiển thị ~3 thẻ trong khung.
+// Khác với bản cũ: chiều cao khung được TÍNH ĐỘNG dựa trên chiều cao thật của thẻ đang ở trên
+// cùng, nên khung luôn vừa khít trọn vẹn các thẻ (2-3 thẻ, ít hơn nếu tin dài) — không còn cảnh
+// thẻ cuối bị cắt/đè ngang như trước. Tự cuộn xuống mỗi vài giây, hết thì quay lại đầu; vẫn
+// cuộn tay được, tạm dừng tự cuộn khi người dùng thao tác rồi tiếp tục đúng vị trí đang xem.
 function AnnouncementListDesktop({ items }) {
   const scrollRef = useRef(null);
+  const itemRefs = useRef([]);
   const pauseTimer = useRef(null);
   const [paused, setPaused] = useState(false);
+  const [heights, setHeights] = useState([]); // chiều cao thật của từng thẻ, song song với items
+  const [topIndex, setTopIndex] = useState(0); // index thẻ đang ở trên cùng khung nhìn
+  const [containerHeight, setContainerHeight] = useState(null);
 
+  // Đo chiều cao thật của từng thẻ (đã render sẵn trong danh sách cuộn)
+  useLayoutEffect(() => {
+    itemRefs.current = itemRefs.current.slice(0, items.length);
+    setHeights(items.map((_, i) => itemRefs.current[i]?.offsetHeight || 0));
+  }, [items]);
+
+  // Từ thẻ đang ở trên cùng, gộp tối đa ANNC_MAX_CARDS thẻ liên tiếp sao cho tổng chiều cao
+  // <= ANNC_MAX_HEIGHT, rồi lấy đúng tổng đó làm chiều cao khung (không dư, không thiếu).
   useEffect(() => {
-    const el = scrollRef.current;
-    if (!el || items.length <= 1 || paused) return;
+    if (heights.length !== items.length || items.length === 0) return;
+    let total = 0;
+    let count = 0;
+    for (let i = 0; i < Math.min(ANNC_MAX_CARDS, items.length); i++) {
+      const h = heights[(topIndex + i) % items.length];
+      const next = total + (i > 0 ? ANNC_GAP : 0) + h;
+      if (next > ANNC_MAX_HEIGHT && count > 0) break;
+      total = next;
+      count++;
+    }
+    setContainerHeight(Math.max(total - 1, heights[topIndex] || 0));
+  }, [heights, topIndex, items.length]);
+
+  // Tự động cuộn xuống thẻ kế tiếp mỗi vài giây, hết danh sách thì quay lại đầu
+  useEffect(() => {
+    if (items.length <= 1 || paused) return;
     const t = setInterval(() => {
-      const atBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 4;
-      if (atBottom) {
-        el.scrollTo({ top: 0, behavior: "smooth" });
-      } else {
-        const card = el.querySelector(".h-annc");
-        const step = card ? card.offsetHeight + 12 : 80;
-        el.scrollBy({ top: step, behavior: "smooth" });
-      }
+      setTopIndex((i) => {
+        const next = (i + 1) % items.length;
+        const el = scrollRef.current;
+        const target = itemRefs.current[next];
+        if (el) {
+          el.scrollTo({ top: next === 0 ? 0 : (target?.offsetTop ?? 0), behavior: "smooth" });
+        }
+        return next;
+      });
     }, ANNC_INTERVAL);
     return () => clearInterval(t);
   }, [items.length, paused]);
@@ -199,7 +298,21 @@ function AnnouncementListDesktop({ items }) {
   const handleUserScroll = () => {
     setPaused(true);
     if (pauseTimer.current) clearTimeout(pauseTimer.current);
-    pauseTimer.current = setTimeout(() => setPaused(false), 6000);
+    pauseTimer.current = setTimeout(() => {
+      // Xác định lại thẻ đang ở trên cùng theo vị trí cuộn thực tế, để khi tự cuộn tiếp tục
+      // sẽ đúng chỗ người dùng vừa xem thay vì nhảy ngược về đầu danh sách.
+      const el = scrollRef.current;
+      if (el && heights.length === items.length && items.length > 0) {
+        let acc = 0;
+        let idx = items.length - 1;
+        for (let i = 0; i < items.length; i++) {
+          if (acc >= el.scrollTop - 4) { idx = i; break; }
+          acc += heights[i] + ANNC_GAP;
+        }
+        setTopIndex(idx);
+      }
+      setPaused(false);
+    }, 6000);
   };
 
   return (
@@ -207,12 +320,15 @@ function AnnouncementListDesktop({ items }) {
       <div
         className="h-annc-scroll"
         ref={scrollRef}
+        style={containerHeight ? { maxHeight: containerHeight } : undefined}
         onWheel={handleUserScroll}
         onTouchStart={handleUserScroll}
         onMouseDown={handleUserScroll}
       >
-        {items.map((a) => (
-          <AnnouncementPill key={a.id} a={a} />
+        {items.map((a, i) => (
+          <div className="h-annc-item" ref={(el) => (itemRefs.current[i] = el)} key={a.id}>
+            <AnnouncementPill a={a} />
+          </div>
         ))}
       </div>
     </div>
@@ -273,12 +389,34 @@ function AnnouncementCarouselMobile({ items }) {
 
 export default function Home() {
   const [heroIdx, setHeroIdx] = useState(0);
-  const [activeBranch] = useState(BRANCHES[0]);
 
+  // Chi nhánh
+  const [branches, setBranches] = useState([]);
+  const [branchesLoading, setBranchesLoading] = useState(true);
+  const [branchesError, setBranchesError] = useState(null);
+  const [activeBranch, setActiveBranch] = useState(null);
+
+  // Gói tập
+  const [packages, setPackages] = useState([]);
+  const [packagesLoading, setPackagesLoading] = useState(true);
+  const [packagesError, setPackagesError] = useState(null);
+
+  // Thư viện ảnh
+  const [gallery, setGallery] = useState([]);
+  const [galleryLoading, setGalleryLoading] = useState(true);
+  const [galleryError, setGalleryError] = useState(null);
+
+  // Danh mục máy tập
+  const [equipment, setEquipment] = useState([]);
+  const [equipmentLoading, setEquipmentLoading] = useState(true);
+  const [equipmentError, setEquipmentError] = useState(null);
+
+  // Lượng người tập
   const [traffic, setTraffic] = useState({ values: [], labels: [] });
   const [trafficLoading, setTrafficLoading] = useState(true);
   const [trafficError, setTrafficError] = useState(null);
 
+  // Tin tức / thông báo
   const [announcements, setAnnouncements] = useState([]);
   const [anncLoading, setAnncLoading] = useState(true);
   const [anncError, setAnncError] = useState(null);
@@ -296,12 +434,65 @@ export default function Home() {
     }
   }, []);
 
-  useEffect(() => {
-    loadTraffic(activeBranch.id);
-  }, [activeBranch.id, loadTraffic]);
-
+  // Tải chi nhánh, gói tập, gallery, máy tập ngay khi vào trang
   useEffect(() => {
     let cancelled = false;
+
+    (async () => {
+      setBranchesLoading(true);
+      setBranchesError(null);
+      try {
+        const data = await fetchBranches();
+        if (!cancelled) {
+          setBranches(data);
+          setActiveBranch(data[0] || null);
+        }
+      } catch (err) {
+        if (!cancelled) setBranchesError(err);
+      } finally {
+        if (!cancelled) setBranchesLoading(false);
+      }
+    })();
+
+    (async () => {
+      setPackagesLoading(true);
+      setPackagesError(null);
+      try {
+        const data = await fetchPackages();
+        if (!cancelled) setPackages(data);
+      } catch (err) {
+        if (!cancelled) setPackagesError(err);
+      } finally {
+        if (!cancelled) setPackagesLoading(false);
+      }
+    })();
+
+    (async () => {
+      setGalleryLoading(true);
+      setGalleryError(null);
+      try {
+        const data = await fetchGallery();
+        if (!cancelled) setGallery(data);
+      } catch (err) {
+        if (!cancelled) setGalleryError(err);
+      } finally {
+        if (!cancelled) setGalleryLoading(false);
+      }
+    })();
+
+    (async () => {
+      setEquipmentLoading(true);
+      setEquipmentError(null);
+      try {
+        const data = await fetchEquipment();
+        if (!cancelled) setEquipment(data);
+      } catch (err) {
+        if (!cancelled) setEquipmentError(err);
+      } finally {
+        if (!cancelled) setEquipmentLoading(false);
+      }
+    })();
+
     (async () => {
       setAnncLoading(true);
       setAnncError(null);
@@ -314,8 +505,14 @@ export default function Home() {
         if (!cancelled) setAnncLoading(false);
       }
     })();
+
     return () => { cancelled = true; };
   }, []);
+
+  // Tải lại lượng người tập mỗi khi chi nhánh đang chọn đổi
+  useEffect(() => {
+    if (activeBranch?.id) loadTraffic(activeBranch.id);
+  }, [activeBranch?.id, loadTraffic]);
 
   useEffect(() => {
     const t = setInterval(() => setHeroIdx(i => (i + 1) % HERO_IMAGES.length), 5000);
@@ -339,7 +536,7 @@ export default function Home() {
             <p className="h-eyebrow">Không gói PT bắt buộc &middot; Tập theo cách của bạn</p>
             <h1 className="h-hero__title">Tự tập.<br /><span className="h-red">Tự do.</span><br />Tự vượt giới hạn.</h1>
             <p className="h-hero__desc">Không ép lớp, không ép PT — chỉ có bạn, mục tiêu của bạn, và không gian tập đủ chuẩn để bứt phá.</p>
-            <a href="/goi-tap" className="h-btn h-btn--primary">Xem gói tập</a>
+            <a href="/packages" className="h-btn h-btn--primary">Xem gói tập</a>
             <div className="h-hero__dots">
               {HERO_IMAGES.map((_, i) => (
                 <button key={i} className={`h-dot${i === heroIdx ? " h-dot--on" : ""}`} onClick={() => setHeroIdx(i)} />
@@ -350,7 +547,7 @@ export default function Home() {
 
         {/* ── STATS ── */}
         <section className="h-stats">
-          {[{ n: "24/7", l: "Giờ hoạt động" }, { n: "4", l: "Chi nhánh" }, { n: "200+", l: "Máy tập" }, { n: "0", l: "Lớp bắt buộc" }].map((s, i) => (
+          {[{ n: "24/7", l: "Giờ hoạt động" }, { n: String(branches.length || 4), l: "Chi nhánh" }, { n: "200+", l: "Máy tập" }, { n: "0", l: "Lớp bắt buộc" }].map((s, i) => (
             <div className="h-stats__item" key={i}>
               <span className="h-stats__num">{s.n}</span>
               <span className="h-stats__lbl">{s.l}</span>
@@ -358,13 +555,13 @@ export default function Home() {
           ))}
         </section>
 
-        {/* ── TRAFFIC (đã chuyển lên trên Gói tập) ── */}
+        {/* ── TRAFFIC ── */}
         <section className="h-traffic">
           <div className="h-inner" style={{ maxWidth: 900 }}>
             <div className="h-traffic__hd">
               <div>
                 <h2 className="h-title">Lượng người tập theo giờ</h2>
-                <p className="h-sub">Dữ liệu thực tế — cập nhật mỗi 15 phút</p>
+                <p className="h-sub">{activeBranch ? activeBranch.name : "Đang chọn chi nhánh..."} · cập nhật mỗi 15 phút</p>
               </div>
               <div className="h-live"><span className="h-pulse" />Live</div>
             </div>
@@ -384,23 +581,37 @@ export default function Home() {
               <h2 className="h-title">Gói tập</h2>
               <p className="h-sub">Chọn gói phù hợp — không phụ phí ẩn, không ràng buộc dài hạn.</p>
             </div>
-            <div className="h-plans__grid">
-              {MOCK_PACKAGES.map(p => (
-                <div className={`h-plan${p.highlighted ? " h-plan--hi" : ""}`} key={p.id}>
-                  {p.highlighted && <span className="h-plan__badge">Phổ biến nhất</span>}
-                  <h3 className="h-plan__name">{p.name}</h3>
-                  <div className="h-plan__price">
-                    <span className="h-plan__amt">{fmt(p.price)}</span>
-                    <span className="h-plan__per">{p.period}</span>
+
+            {packagesLoading && (
+              <div className="h-plans__grid">
+                {[0, 1, 2].map((i) => <div className="h-plan h-skel" key={i} style={{ minHeight: 300 }} />)}
+              </div>
+            )}
+
+            {!packagesLoading && packagesError && (
+              <p className="h-empty">Không tải được danh sách gói tập. Vui lòng thử lại sau.</p>
+            )}
+
+            {!packagesLoading && !packagesError && (
+              <div className="h-plans__grid">
+                {packages.map(p => (
+                  <div className={`h-plan${p.highlighted ? " h-plan--hi" : ""}`} key={p.id}>
+                    {p.highlighted && <span className="h-plan__badge">Phổ biến nhất</span>}
+                    <h3 className="h-plan__name">{p.name}</h3>
+                    <div className="h-plan__price">
+                      <span className="h-plan__amt">{fmt(p.price)}</span>
+                      <span className="h-plan__per">{p.period}</span>
+                    </div>
+                    <p className="h-plan__desc">{p.desc}</p>
+                    <ul className="h-plan__list">
+                      {p.features.map((f, i) => <li key={i}>{f}</li>)}
+                    </ul>
+                    <a href={p.href} className={`h-btn ${p.highlighted ? "h-btn--primary" : "h-btn--ghost"} h-plan__cta`}>Chọn gói này</a>
                   </div>
-                  <p className="h-plan__desc">{p.desc}</p>
-                  <ul className="h-plan__list">
-                    {p.features.map((f, i) => <li key={i}>{f}</li>)}
-                  </ul>
-                  <a href={p.href} className={`h-btn ${p.highlighted ? "h-btn--primary" : "h-btn--ghost"} h-plan__cta`}>Chọn gói này</a>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
+
             <div style={{ display: "flex", justifyContent: "center", marginTop: 28 }}>
               <a href="/goi-tap" className="h-btn h-btn--ghost">Xem tất cả gói tập →</a>
             </div>
@@ -414,14 +625,29 @@ export default function Home() {
               <h2 className="h-title">Không gian tập luyện</h2>
               <a href="/chi-nhanh" className="h-arrow">Xem tất cả chi nhánh →</a>
             </div>
-            <div className="h-gallery__grid">
-              {GALLERY_IMAGES.map((img, i) => (
-                <div className={`h-gallery__item${i === 0 ? " h-gallery__item--wide" : ""}`} key={i}>
-                  <img src={img.src} alt={img.label} loading="lazy" />
-                  <div className="h-gallery__cap">{img.label}</div>
-                </div>
-              ))}
-            </div>
+
+            {galleryLoading && (
+              <div className="h-gallery__grid">
+                {[0, 1, 2, 3, 4].map((i) => (
+                  <div className={`h-gallery__item h-skel${i === 0 ? " h-gallery__item--wide" : ""}`} key={i} />
+                ))}
+              </div>
+            )}
+
+            {!galleryLoading && galleryError && (
+              <p className="h-empty">Không tải được hình ảnh phòng tập.</p>
+            )}
+
+            {!galleryLoading && !galleryError && (
+              <div className="h-gallery__grid">
+                {gallery.map((img, i) => (
+                  <div className={`h-gallery__item${i === 0 ? " h-gallery__item--wide" : ""}`} key={i}>
+                    <img src={img.src} alt={img.label} loading="lazy" />
+                    <div className="h-gallery__cap">{img.label}</div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </section>
 
@@ -435,16 +661,36 @@ export default function Home() {
               </div>
               <a href="/may-tap" className="h-btn h-btn--ghost" style={{ whiteSpace: "nowrap" }}>Xem toàn bộ →</a>
             </div>
-            <div className="h-equip__grid">
-              {EQUIPMENT_CATEGORIES.map((eq, i) => (
-                <a href={eq.href} className="h-eq" key={i}>
-                  <span className="h-eq__icon">{eq.icon}</span>
-                  <strong className="h-eq__name">{eq.name}</strong>
-                  <p className="h-eq__desc">{eq.desc}</p>
-                  <span className="h-eq__arr">→</span>
-                </a>
-              ))}
-            </div>
+
+            {equipmentLoading && (
+              <div className="h-equip__grid">
+                {[0, 1, 2, 3].map((i) => <div className="h-eq h-skel" key={i} style={{ minHeight: 120 }} />)}
+              </div>
+            )}
+
+            {!equipmentLoading && equipmentError && (
+              <p className="h-empty">Không tải được danh mục máy tập.</p>
+            )}
+
+            {!equipmentLoading && !equipmentError && (
+              <div className="h-equip__grid">
+                {equipment.slice(0, 4).map(eq => (
+                  <div className="h-eq" key={eq.categoryId}>
+                    <span className="h-eq__icon">{eq.icon}</span>
+
+                    <strong className="h-eq__name">
+                      {eq.categoryName}
+                    </strong>
+
+                    <p className="h-eq__desc">
+                      {eq.description}
+                    </p>
+
+                    <span className="h-eq__arr">→</span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </section>
 
@@ -476,17 +722,36 @@ export default function Home() {
         <section className="h-bstrip">
           <div className="h-inner">
             <div className="h-bstrip__box">
-              <h2 className="h-title">4 chi nhánh trải khắp TP.HCM</h2>
+              <h2 className="h-title">{branches.length || 4} chi nhánh trải khắp TP.HCM</h2>
               <p className="h-sub">Một thẻ hội viên — tập được ở tất cả cơ sở, không phụ phí đổi chi nhánh.</p>
-              <div className="h-bstrip__pills">
-                {BRANCHES.map(b => (
-                  <a href={b.href} key={b.id} className="h-pill">
-                    <span className="h-pill__dot" />
-                    <span>{b.name}</span>
-                    <span className="h-pill__arr">→</span>
-                  </a>
-                ))}
-              </div>
+
+              {branchesLoading && (
+                <div className="h-bstrip__pills">
+                  {[0, 1, 2, 3].map((i) => <div className="h-pill h-skel" key={i} style={{ width: 140, height: 34 }} />)}
+                </div>
+              )}
+
+              {!branchesLoading && branchesError && (
+                <p className="h-empty">Không tải được danh sách chi nhánh.</p>
+              )}
+
+              {!branchesLoading && !branchesError && (
+                <div className="h-bstrip__pills">
+                  {branches.map(b => (
+                    <a
+                      href={b.href}
+                      key={b.id}
+                      className={`h-pill${activeBranch?.id === b.id ? " h-pill--active" : ""}`}
+                      onClick={(e) => { e.preventDefault(); setActiveBranch(b); }}
+                    >
+                      <span className="h-pill__dot" />
+                      <span>{b.name}</span>
+                      <span className="h-pill__arr">→</span>
+                    </a>
+                  ))}
+                </div>
+              )}
+
               <a href="/chi-nhanh" className="h-btn h-btn--primary" style={{ alignSelf: "flex-start" }}>Xem tất cả chi nhánh</a>
             </div>
           </div>
@@ -513,6 +778,11 @@ export default function Home() {
         .h-btn--ghost:hover { transform:translateY(-2px); border-color:var(--steel); color:var(--steel); }
         .h-head     { margin-bottom:28px; text-align:center; }
         .h-head .h-sub { max-width:480px; margin:8px auto 0; }
+        .h-empty    { font-size:13.5px; color:var(--text-dim); text-align:center; padding:24px 0; }
+
+        /* generic loading skeleton */
+        .h-skel     { background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.08); animation:h-skel-shimmer 1.4s ease infinite; }
+        @keyframes h-skel-shimmer { 0%,100%{opacity:.5;} 50%{opacity:1;} }
 
         /* hero */
         .h-hero     { position:relative; min-height:90vh; display:flex; align-items:center; overflow:hidden; }
@@ -528,12 +798,12 @@ export default function Home() {
 
         /* hero announcements */
         .h-annc-rail--mobile  { display:none; }
-        .h-annc-rail--desktop { position:absolute; top:110px; right:5vw; z-index:3; width:320px; }
+        .h-annc-rail--desktop { position:absolute; top:110px; right:5vw; z-index:3; width:320px; overflow:hidden; border-radius:16px; }
 
-        /* PC: xếp chồng, tối đa ~3 thẻ trong khung, cuộn dọc mượt nếu nhiều hơn — không hiện thanh cuộn */
-        .h-annc-scroll   { display:flex; flex-direction:column; gap:12px; max-height:272px; overflow-y:auto; padding-right:2px; scrollbar-width:none; -ms-overflow-style:none; scroll-behavior:smooth; -webkit-overflow-scrolling:touch; scroll-snap-type:y proximity; scroll-padding-block:4px; }
+        /* PC: xếp chồng, cuộn dọc mượt (chiều cao khung được set động qua JS, không cắt thẻ) */
+        .h-annc-scroll   { display:flex; flex-direction:column; gap:12px; overflow-y:auto; padding-right:2px; scrollbar-width:none; -ms-overflow-style:none; scroll-behavior:smooth; -webkit-overflow-scrolling:touch; scroll-snap-type:y proximity; scroll-padding-block:4px; }
         .h-annc-scroll::-webkit-scrollbar { width:0; height:0; display:none; }
-        .h-annc-scroll .h-annc { scroll-snap-align:start; }
+        .h-annc-item     { scroll-snap-align:start; }
 
         /* Mobile: carousel 1 thẻ/lần, tự chạy, vuốt được, trượt bằng transform (không có thanh cuộn) */
         .h-annc-viewport { overflow:hidden; border-radius:16px; }
@@ -542,12 +812,6 @@ export default function Home() {
 
         .h-annc          { display:flex; align-items:flex-start; gap:10px; padding:12px 18px; border-radius:16px; background:rgba(20,21,24,.72); backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px); border:1px solid rgba(255,255,255,.1); box-shadow:0 6px 24px rgba(0,0,0,.35); box-sizing:border-box; width:100%; min-height:64px; flex-shrink:0; }
         .h-annc__icon    { flex-shrink:0; font-size:15px; line-height:1; margin-top:1px; }
-        .h-annc--warning { border-color:rgba(245,166,35,.28); }
-        .h-annc--alert   { border-color:rgba(255,79,43,.35); box-shadow:0 6px 24px rgba(255,79,43,.18); animation:h-annc-glow 2.4s ease-in-out infinite; }
-        @keyframes h-annc-glow {
-          0%,100% { box-shadow:0 6px 24px rgba(255,79,43,.16); }
-          50%     { box-shadow:0 6px 26px rgba(255,79,43,.4); }
-        }
         .h-annc__body    { display:flex; flex-direction:column; gap:2px; min-width:0; }
         .h-annc__branch  { font-size:11.5px; font-weight:700; text-transform:uppercase; letter-spacing:.3px; color:var(--text-dim); }
         .h-annc__text    { font-size:12.5px; line-height:1.45; color:var(--text); display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
@@ -636,6 +900,7 @@ export default function Home() {
         .h-bstrip__pills { display:flex; flex-wrap:wrap; gap:10px; }
         .h-pill     { display:inline-flex; align-items:center; gap:8px; padding:9px 16px; border-radius:9px; background:var(--bg-elevated); border:1px solid var(--line); font-size:13.5px; font-weight:500; color:var(--text-dim); transition:border-color .2s,color .2s; }
         .h-pill:hover { border-color:var(--steel); color:var(--text); }
+        .h-pill--active { border-color:var(--accent); color:var(--text); }
         .h-pill__dot { width:8px; height:8px; border-radius:50%; background:var(--steel); flex-shrink:0; }
         .h-pill__arr { color:var(--text-dim); margin-left:4px; font-size:14px; }
 

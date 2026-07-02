@@ -22,8 +22,8 @@ const C = {
 
 /* ─── Mock branches (sẽ thay bằng API sau) ─── */
 export const BRANCHES = [
-    { id: "4", name: "VTGYM Quận 1", address: "12 Nguyễn Huệ, Bến Nghé, Quận 1, TP.HCM" },
-    { id: "5", name: "VTGYM Quận 7", address: "88 Nguyễn Thị Thập, Tân Phú, Quận 7, TP.HCM" },
+    { id: "6", name: "VTGYM Quận 1", address: "12 Nguyễn Huệ, Bến Nghé, Quận 1, TP.HCM" },
+    { id: "7", name: "VTGYM Quận 7", address: "88 Nguyễn Thị Thập, Tân Phú, Quận 7, TP.HCM" },
     { id: "binh-thanh", name: "VTGYM Bình Thạnh", address: "245 Điện Biên Phủ, Bình Thạnh, TP.HCM" },
     { id: "tan-binh", name: "VTGYM Tân Bình", address: "56 Cộng Hòa, Tân Bình, TP.HCM" },
     { id: "thu-duc", name: "VTGYM Thủ Đức", address: "120 Võ Văn Ngân, Thủ Đức, TP.HCM" },

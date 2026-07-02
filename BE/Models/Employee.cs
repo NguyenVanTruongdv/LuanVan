@@ -24,6 +24,11 @@ public partial class Employee
     public string Phone { get; set; } = null!;
 
     /// <summary>
+    /// Địa chỉ email của nhân viên, dùng để nhận thông báo/khôi phục mật khẩu, có thể NULL nhưng phải duy nhất nếu có
+    /// </summary>
+    public string? Email { get; set; }
+
+    /// <summary>
     /// Mật khẩu đã mã hóa bcrypt, không lưu bản rõ
     /// </summary>
     public string PasswordHash { get; set; } = null!;
@@ -69,7 +74,9 @@ public partial class Employee
 
     public virtual ICollection<Branch> Branches { get; set; } = new List<Branch>();
 
-    public virtual ICollection<CheckIn> CheckIns { get; set; } = new List<CheckIn>();
+    public virtual ICollection<CheckIn> CheckInCheckOutStaffs { get; set; } = new List<CheckIn>();
+
+    public virtual ICollection<CheckIn> CheckInStaffs { get; set; } = new List<CheckIn>();
 
     public virtual Employee? CreatedByNavigation { get; set; }
 
@@ -77,23 +84,25 @@ public partial class Employee
 
     public virtual ICollection<FaceUpdateHistory> FaceUpdateHistories { get; set; } = new List<FaceUpdateHistory>();
 
-    public virtual ICollection<IncidentAssignment> IncidentAssignmentManagers { get; set; } = new List<IncidentAssignment>();
+    public virtual ICollection<HomeImage> HomeImages { get; set; } = new List<HomeImage>();
 
-    public virtual ICollection<IncidentAssignment> IncidentAssignmentTechnicians { get; set; } = new List<IncidentAssignment>();
+    public virtual ICollection<Incident> IncidentApprovedByNavigations { get; set; } = new List<Incident>();
 
-    public virtual ICollection<Incident> Incidents { get; set; } = new List<Incident>();
+    public virtual ICollection<Incident> IncidentAssignedToNavigations { get; set; } = new List<Incident>();
+
+    public virtual ICollection<Incident> IncidentReportedByEmployees { get; set; } = new List<Incident>();
 
     public virtual ICollection<Employee> InverseCreatedByNavigation { get; set; } = new List<Employee>();
-
-    public virtual ICollection<MemberGroup> MemberGroups { get; set; } = new List<MemberGroup>();
 
     public virtual ICollection<MemberUpdateLog> MemberUpdateLogs { get; set; } = new List<MemberUpdateLog>();
 
     public virtual ICollection<Member> Members { get; set; } = new List<Member>();
 
-    public virtual ICollection<Notification> Notifications { get; set; } = new List<Notification>();
+    public virtual ICollection<News> News { get; set; } = new List<News>();
 
     public virtual ICollection<Promotion> Promotions { get; set; } = new List<Promotion>();
 
     public virtual Role Role { get; set; } = null!;
+
+    public virtual ICollection<Transaction> Transactions { get; set; } = new List<Transaction>();
 }

@@ -3,19 +3,20 @@ using BE.DTOs.Auth;
 using BE.Exceptions;
 using BE.Helpers;
 using BE.Models;
-using BE.Services.Interfaces;
+using BE.Services;
+
 using BE.Enums;
 using Microsoft.EntityFrameworkCore;
 
 namespace BE.Services;
 
-public class AuthService : IAuthService
+public class AuthService
 {
     private readonly GymManagementContext _db;
     private readonly JwtHelper _jwt;
-    private readonly ISmsService _smsService;
+    private readonly SmsService _smsService;
 
-    public AuthService(GymManagementContext db, JwtHelper jwt, ISmsService smsService)
+    public AuthService(GymManagementContext db, JwtHelper jwt, SmsService  smsService)
     {
         _db = db;
         _jwt = jwt;

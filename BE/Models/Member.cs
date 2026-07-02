@@ -80,13 +80,25 @@ public partial class Member
 
     public virtual ICollection<FaceUpdateHistory> FaceUpdateHistories { get; set; } = new List<FaceUpdateHistory>();
 
-    public virtual ICollection<MemberGroupMember> MemberGroupMembers { get; set; } = new List<MemberGroupMember>();
+    public virtual ICollection<ForumComment> ForumCommentMembers { get; set; } = new List<ForumComment>();
+
+    public virtual ICollection<ForumComment> ForumCommentReplyToMembers { get; set; } = new List<ForumComment>();
+
+    public virtual ICollection<ForumLike> ForumLikes { get; set; } = new List<ForumLike>();
+
+    public virtual ICollection<ForumNotification> ForumNotificationActorMembers { get; set; } = new List<ForumNotification>();
+
+    public virtual ICollection<ForumNotification> ForumNotificationRecipientMembers { get; set; } = new List<ForumNotification>();
+
+    public virtual ICollection<ForumPost> ForumPosts { get; set; } = new List<ForumPost>();
+
+    public virtual ICollection<Incident> Incidents { get; set; } = new List<Incident>();
 
     public virtual ICollection<MemberPackage> MemberPackages { get; set; } = new List<MemberPackage>();
 
     public virtual ICollection<MemberUpdateLog> MemberUpdateLogs { get; set; } = new List<MemberUpdateLog>();
 
-    public virtual ICollection<NotificationRecipient> NotificationRecipients { get; set; } = new List<NotificationRecipient>();
+    public virtual ICollection<Notification> Notifications { get; set; } = new List<Notification>();
 
     public virtual ICollection<PromotionUsage> PromotionUsages { get; set; } = new List<PromotionUsage>();
 

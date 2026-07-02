@@ -43,6 +43,8 @@ public partial class MembershipPlan
     /// </summary>
     public DateTime CreatedAt { get; set; }
 
+    public bool IsPopular { get; set; }
+
     public virtual ICollection<MemberPackage> MemberPackages { get; set; } = new List<MemberPackage>();
 
     public virtual ICollection<PromotionPlan> PromotionPlans { get; set; } = new List<PromotionPlan>();

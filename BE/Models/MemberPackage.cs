@@ -77,6 +77,8 @@ public partial class MemberPackage
 
     public virtual Member Member { get; set; } = null!;
 
+    public virtual ICollection<Notification> Notifications { get; set; } = new List<Notification>();
+
     public virtual MembershipPlan Plan { get; set; } = null!;
 
     public virtual Promotion? Promotion { get; set; }

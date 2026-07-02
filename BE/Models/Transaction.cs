@@ -68,7 +68,14 @@ public partial class Transaction
     /// </summary>
     public DateTime UpdatedAt { get; set; }
 
+    /// <summary>
+    /// Nhân viên tạo giao dịch, NULL nếu khách tự mua
+    /// </summary>
+    public long? EmployeeId { get; set; }
+
     public virtual Branch Branch { get; set; } = null!;
+
+    public virtual Employee? Employee { get; set; }
 
     public virtual Member Member { get; set; } = null!;
 

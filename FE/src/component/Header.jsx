@@ -1,19 +1,23 @@
 import { useEffect, useRef, useState } from "react";
+import authApi, { isLoggedIn as checkIsLoggedIn, getCurrentUser } from "../api/authApi";
 import logo from "../assets/logo.png";
+// Lưu ý: chỉnh lại đường dẫn "../api/authApi" cho khớp vị trí thực tế của Header.jsx trong dự án.
 
+const ROLE_LABEL = {
+    Member: "Hội viên",
+    Employee: "Nhân viên",
+};
+
+/* requireAuth: true -> chỉ hiện khi đã đăng nhập */
 const NAV_LINKS = [
     { label: "Trang Chủ", href: "/" },
     { label: "Gói tập", href: "/packages" },
     { label: "Máy tập", href: "/equiptment" },
     { label: "Chi nhánh", href: "/branch" },
-    { label: "Thống kê", href: "/thong-ke" },
-    { label: "Báo cáo vấn đề", href: "/issue" },
-    { label: "Cộng Đồng", href: "/comunity" }
-
+    { label: "Thống kê", href: "/thong-ke", requireAuth: true },
+    { label: "Báo cáo vấn đề", href: "/issue", requireAuth: true },
+    { label: "Cộng Đồng", href: "/comunity" },
 ];
-
-
-const CURRENT_USER = { name: "Nguyễn Văn A", plan: "Hội viên Tự Do" };
 
 /* ─── icons ─── */
 function IconUser() {
@@ -44,6 +48,41 @@ export default function Header() {
         typeof window !== "undefined" ? window.location.pathname : "/"
     );
     const userRef = useRef(null);
+
+    /* ── auth state: lấy từ authApi (accessToken/fullName/role trong localStorage) ── */
+    const [authed, setAuthed] = useState(false);
+    const [userName, setUserName] = useState("");
+    const [userRole, setUserRole] = useState("");
+
+    useEffect(() => {
+        if (checkIsLoggedIn()) {
+            const { fullName, role } = getCurrentUser();
+            setAuthed(true);
+            setUserName(fullName || "Thành viên");
+            setUserRole(role || "");
+        } else {
+            setAuthed(false);
+            setUserName("");
+            setUserRole("");
+        }
+    }, []);
+
+    const handleLogout = async () => {
+        try {
+            await authApi.logout(); // gọi API + tự clearTokens() bên trong
+        } catch {
+            // vẫn tiếp tục đăng xuất phía client dù API lỗi
+        }
+        setAuthed(false);
+        setUserName("");
+        setUserRole("");
+        setUserOpen(false);
+        setMenuOpen(false);
+        window.location.href = "/member/login";
+    };
+
+    /* danh sách nav hiển thị theo trạng thái đăng nhập */
+    const visibleNavLinks = NAV_LINKS.filter(link => !link.requireAuth || authed);
 
     /* close user dropdown on outside click */
     useEffect(() => {
@@ -142,6 +181,20 @@ export default function Header() {
           margin-left: auto;
         }
 
+        /* login link (chưa đăng nhập, desktop) */
+        .vt-login-btn {
+          display: flex; align-items: center; gap: 6px;
+          font-family: var(--font-body);
+          font-size: 13px; font-weight: 600;
+          color: var(--text-dim);
+          border: 1px solid var(--line);
+          border-radius: 8px;
+          padding: 7px 14px;
+          background: var(--bg-elevated);
+          transition: color .15s, border-color .15s;
+        }
+        .vt-login-btn:hover { color: var(--accent); border-color: var(--accent); }
+
         /* ── user button + dropdown ── */
         .vt-usr { position: relative; }
         .vt-usr__btn {
@@ -231,6 +284,14 @@ export default function Header() {
           display: flex; align-items: center; gap: 10px;
           padding: 16px 20px; border-bottom: 1px solid var(--line);
         }
+        .vt-drawer__login {
+          display: flex; align-items: center; justify-content: center;
+          gap: 8px; margin: 16px 20px;
+          padding: 11px; border-radius: 10px;
+          border: 1px solid var(--line);
+          color: var(--text); font-size: 14px; font-weight: 600;
+          background: var(--bg-elevated);
+        }
         .vt-drawer__nav { display: flex; flex-direction: column; padding: 8px 0; }
         .vt-drawer__nav .vt-hdr__link {
           padding: 13px 20px; border-radius: 0;
@@ -270,6 +331,7 @@ export default function Header() {
         @media (max-width: 900px) {
           .vt-hdr__nav { display: none; }
           .vt-usr      { display: none; }
+          .vt-login-btn { display: none; }
           .vt-burger   { display: flex; }
         }
         @media (min-width: 901px) {
@@ -290,7 +352,7 @@ export default function Header() {
 
                     {/* DESKTOP NAV */}
                     <nav className="vt-hdr__nav">
-                        {NAV_LINKS.map(({ label, href }) => (
+                        {visibleNavLinks.map(({ label, href }) => (
                             <a
                                 key={href}
                                 href={href}
@@ -304,27 +366,35 @@ export default function Header() {
 
                     {/* ACTIONS */}
                     <div className="vt-hdr__actions">
-                        {/* user dropdown — desktop */}
-                        <div className="vt-usr" ref={userRef}>
-                            <button className="vt-usr__btn" onClick={() => setUserOpen(v => !v)} aria-label="Tài khoản">
-                                <IconUser />
-                            </button>
-                            {userOpen && (
-                                <div className="vt-usr__drop">
-                                    <div className="vt-usr__info">
-                                        <span className="vt-usr__avatar"><IconUser /></span>
-                                        <div>
-                                            <p className="vt-usr__name">{CURRENT_USER.name}</p>
-                                            <p className="vt-usr__plan">{CURRENT_USER.plan}</p>
+                        {authed ? (
+                            /* user dropdown — desktop, chỉ hiện khi đã đăng nhập */
+                            <div className="vt-usr" ref={userRef}>
+                                <button className="vt-usr__btn" onClick={() => setUserOpen(v => !v)} aria-label="Tài khoản">
+                                    <IconUser />
+                                </button>
+                                {userOpen && (
+                                    <div className="vt-usr__drop">
+                                        <div className="vt-usr__info">
+                                            <span className="vt-usr__avatar"><IconUser /></span>
+                                            <div>
+                                                <p className="vt-usr__name">{userName}</p>
+                                                <p className="vt-usr__plan">{ROLE_LABEL[userRole] || userRole || "Hội viên"}</p>
+                                            </div>
                                         </div>
+                                        <hr className="vt-usr__hr" />
+                                        <a href="/my-info" className="vt-usr__item">Thông tin cá nhân</a>
+                                        <a href="/thong-ke" className="vt-usr__item">Thống kê</a>
+                                        <button className="vt-usr__out" onClick={handleLogout}>Đăng xuất</button>
                                     </div>
-                                    <hr className="vt-usr__hr" />
-                                    <a href="/my-info" className="vt-usr__item">Thông tin cá nhân</a>
-                                    <a href="/thong-ke" className="vt-usr__item">Thống kê</a>
-                                    <button className="vt-usr__out">Đăng xuất</button>
-                                </div>
-                            )}
-                        </div>
+                                )}
+                            </div>
+                        ) : (
+                            /* chưa đăng nhập — nút đăng nhập thay cho avatar */
+                            <a href="/member/login" className="vt-login-btn">
+                                <IconUser />
+                                Đăng nhập
+                            </a>
+                        )}
 
                         {/* hamburger — mobile */}
                         <button
@@ -357,16 +427,23 @@ export default function Header() {
                                 </button>
                             </div>
 
-                            <div className="vt-drawer__user">
-                                <span className="vt-usr__avatar"><IconUser /></span>
-                                <div>
-                                    <p className="vt-usr__name">{CURRENT_USER.name}</p>
-                                    <p className="vt-usr__plan">{CURRENT_USER.plan}</p>
+                            {authed ? (
+                                <div className="vt-drawer__user">
+                                    <span className="vt-usr__avatar"><IconUser /></span>
+                                    <div>
+                                        <p className="vt-usr__name">{userName}</p>
+                                        <p className="vt-usr__plan">{ROLE_LABEL[userRole] || userRole || "Hội viên"}</p>
+                                    </div>
                                 </div>
-                            </div>
+                            ) : (
+                                <a href="/member/login" className="vt-drawer__login" onClick={close}>
+                                    <IconUser />
+                                    Đăng nhập
+                                </a>
+                            )}
 
                             <nav className="vt-drawer__nav">
-                                {NAV_LINKS.map(({ label, href }) => (
+                                {visibleNavLinks.map(({ label, href }) => (
                                     <a
                                         key={href}
                                         href={href}
@@ -378,10 +455,13 @@ export default function Header() {
                                 ))}
                             </nav>
 
-
-                            <div className="vt-drawer__foot">
-                                <button className="vt-usr__out" style={{ width: "100%" }}>Đăng xuất</button>
-                            </div>
+                            {authed && (
+                                <div className="vt-drawer__foot">
+                                    <button className="vt-usr__out" style={{ width: "100%" }} onClick={handleLogout}>
+                                        Đăng xuất
+                                    </button>
+                                </div>
+                            )}
                         </div>
                     </>
                 )}

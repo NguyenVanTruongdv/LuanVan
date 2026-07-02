@@ -1,6 +1,6 @@
 -- ============================================================
 --  CƠ SỞ DỮ LIỆU: gym_management
---  Phiên bản đã sửa lỗi đầy đủ
+--  Phiên bản đã chỉnh sửa theo yêu cầu mới
 --  Toàn bộ chú thích bằng tiếng Việt
 -- ============================================================
 
@@ -30,11 +30,13 @@ INSERT INTO roles (role_name) VALUES
 
 -- ============================================================
 --  BẢNG 2: employees  (Nhân viên)
+--  ĐÃ SỬA: thêm trường email
 -- ============================================================
 CREATE TABLE employees (
   employee_id    BIGINT       NOT NULL AUTO_INCREMENT  COMMENT 'Mã nhân viên — khóa chính tự tăng',
   full_name      VARCHAR(100) NOT NULL                 COMMENT 'Họ và tên đầy đủ của nhân viên',
   phone          VARCHAR(15)  NOT NULL                 COMMENT 'Số điện thoại — dùng làm tên đăng nhập, phải duy nhất',
+  email          VARCHAR(150) NULL                     COMMENT 'Địa chỉ email của nhân viên, dùng để nhận thông báo/khôi phục mật khẩu, có thể NULL nhưng phải duy nhất nếu có',
   password_hash  VARCHAR(255) NOT NULL                 COMMENT 'Mật khẩu đã mã hóa bcrypt, không lưu bản rõ',
   gender         ENUM('Male','Female','Other') NOT NULL COMMENT 'Giới tính của nhân viên',
   role_id        TINYINT      NOT NULL                 COMMENT 'Vai trò của nhân viên — FK tới roles.role_id',
@@ -45,6 +47,7 @@ CREATE TABLE employees (
   updated_at     DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT 'Thời điểm cập nhật gần nhất',
   PRIMARY KEY (employee_id),
   UNIQUE KEY uq_employee_phone (phone),
+  UNIQUE KEY uq_employee_email (email),
   CONSTRAINT fk_employee_role
     FOREIGN KEY (role_id)    REFERENCES roles     (role_id),
   CONSTRAINT fk_employee_creator
@@ -350,27 +353,30 @@ CREATE TABLE promotion_usages (
 -- ============================================================
 --  BẢNG 13: check_ins  (Lịch sử check-in / check-out)
 --
---  check_out_time cho phép NULL vì không có cơ chế tự động
---  xác định thời điểm hội viên rời khỏi phòng tập.
---  gym_density sẽ do job ngoài tính toán riêng.
---  method = Auto → nhận diện khuôn mặt.
---  method = Manual → nhân viên check in thủ công, bắt buộc
---                    có staff_id và manual_reason.
+--  ĐÃ SỬA: gộp lại check-in và check-out vào chung 1 bảng
+--  (không tách bảng riêng nữa). Mỗi bản ghi = 1 lượt vào tập,
+--  check_out_* để NULL cho tới khi hội viên check out.
+--  method / staff_id / manual_reason áp dụng cho lượt CHECK IN.
+--  check_out_method / check_out_staff_id / check_out_manual_reason
+--  áp dụng riêng cho lượt CHECK OUT (có thể khác người/khác cách
+--  với check in, nên tách cột riêng thay vì dùng chung).
 -- ============================================================
 CREATE TABLE check_ins (
-  check_in_id       BIGINT    NOT NULL AUTO_INCREMENT  COMMENT 'Mã lần check-in — khóa chính tự tăng',
+  check_in_id             BIGINT    NOT NULL AUTO_INCREMENT  COMMENT 'Mã lần check-in — khóa chính tự tăng',
 
-  member_id         BIGINT    NOT NULL                 COMMENT 'Hội viên check in — FK tới members.member_id',
-  member_package_id BIGINT    NOT NULL                 COMMENT 'Gói tập đang còn hiệu lực tại thời điểm check in — FK tới member_packages.member_package_id',
-  branch_id         INT       NOT NULL                 COMMENT 'Chi nhánh hội viên vào tập — FK tới branches.branch_id',
+  member_id               BIGINT    NOT NULL                 COMMENT 'Hội viên check in — FK tới members.member_id',
+  member_package_id       BIGINT    NOT NULL                 COMMENT 'Gói tập đang còn hiệu lực tại thời điểm check in — FK tới member_packages.member_package_id',
+  branch_id               INT       NOT NULL                 COMMENT 'Chi nhánh hội viên vào tập — FK tới branches.branch_id',
 
-  check_in_time     DATETIME  NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'Thời điểm hội viên vào tập',
-  check_out_time    DATETIME  NULL                     COMMENT 'Thời điểm hội viên ra về. NULL = chưa check out hoặc không xác định được',
+  check_in_time            DATETIME  NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'Thời điểm hội viên vào tập',
+  method                   ENUM('Auto','Manual') NOT NULL     COMMENT 'Phương thức check in: Auto = nhận diện khuôn mặt tự động, Manual = nhân viên thực hiện thủ công',
+  staff_id                 BIGINT    NULL                     COMMENT 'Nhân viên thực hiện check in thủ công — FK tới employees.employee_id. NULL nếu method = Auto',
+  manual_reason            TEXT      NULL                     COMMENT 'Lý do check in thủ công, VD: camera lỗi, hội viên chưa đăng ký khuôn mặt. Bắt buộc khi method = Manual',
 
-  method            ENUM('Auto','Manual') NOT NULL     COMMENT 'Phương thức check in: Auto = nhận diện khuôn mặt tự động, Manual = nhân viên thực hiện thủ công',
-
-  staff_id          BIGINT    NULL                     COMMENT 'Nhân viên thực hiện check in thủ công — FK tới employees.employee_id. NULL nếu method = Auto',
-  manual_reason     TEXT      NULL                     COMMENT 'Lý do check in thủ công, VD: camera lỗi, hội viên chưa đăng ký khuôn mặt. Bắt buộc khi method = Manual',
+  check_out_time           DATETIME  NULL                     COMMENT 'Thời điểm hội viên ra về. NULL = chưa check out',
+  check_out_method          ENUM('Auto','Manual') NULL        COMMENT 'Phương thức check out: Auto = nhận diện khuôn mặt tự động, Manual = nhân viên thực hiện thủ công. NULL nếu chưa check out',
+  check_out_staff_id        BIGINT    NULL                     COMMENT 'Nhân viên thực hiện check out thủ công — FK tới employees.employee_id. NULL nếu check_out_method = Auto hoặc chưa check out',
+  check_out_manual_reason   TEXT      NULL                     COMMENT 'Lý do check out thủ công. Bắt buộc khi check_out_method = Manual',
 
   PRIMARY KEY (check_in_id),
 
@@ -381,7 +387,9 @@ CREATE TABLE check_ins (
   CONSTRAINT fk_checkin_cn
     FOREIGN KEY (branch_id)         REFERENCES branches        (branch_id),
   CONSTRAINT fk_checkin_nv
-    FOREIGN KEY (staff_id)          REFERENCES employees       (employee_id)
+    FOREIGN KEY (staff_id)          REFERENCES employees       (employee_id),
+  CONSTRAINT fk_checkout_nv
+    FOREIGN KEY (check_out_staff_id) REFERENCES employees      (employee_id)
 ) ENGINE=InnoDB COMMENT='Lịch sử check-in và check-out của hội viên tại các chi nhánh';
 
 
@@ -420,143 +428,121 @@ CREATE TABLE equipment (
 
 
 -- ============================================================
---  BẢNG 16: incidents  (Báo cáo sự cố)
+--  BẢNG 16: equipment_images  (Hình ảnh thiết bị)  -- BẢNG MỚI
+-- ============================================================
+CREATE TABLE equipment_images (
+  image_id     INT          NOT NULL AUTO_INCREMENT  COMMENT 'Mã ảnh — khóa chính tự tăng',
+  equipment_id INT          NOT NULL                 COMMENT 'Thiết bị sở hữu ảnh — FK tới equipment.equipment_id',
+  image_url    VARCHAR(500) NOT NULL                 COMMENT 'URL ảnh lưu trên S3',
+  sort_order   TINYINT      NOT NULL DEFAULT 0       COMMENT 'Thứ tự hiển thị, số nhỏ hiển thị trước',
+  uploaded_at  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'Thời điểm tải ảnh lên',
+  PRIMARY KEY (image_id),
+  INDEX idx_anh_tb (equipment_id),
+  CONSTRAINT fk_anh_tb
+    FOREIGN KEY (equipment_id) REFERENCES equipment (equipment_id)
+) ENGINE=InnoDB COMMENT='Album ảnh của từng thiết bị';
+
+
+-- ============================================================
+--  BẢNG 17: incidents  (Báo cáo sự cố)  -- ĐÃ SỬA
 --
---  Vòng đời: PendingApproval → Assigned → Resolved | Rejected
---  Khi incident_assignments.work_status = Completed,
---  ứng dụng phải đồng thời cập nhật incidents.status = Resolved
---  và điền resolved_at để đảm bảo nhất quán.
+--  ĐÃ SỬA:
+--   - Cho phép cả hội viên (khách hàng) và nhân viên tạo
+--     báo cáo sự cố → tách 2 cột reported_by_member_id /
+--     reported_by_employee_id, ràng buộc CHECK chỉ 1 trong 2.
+--   - Bỏ workflow kỹ thuật viên (không còn incident_assignments).
+--   - Vòng đời rút gọn còn 3 trạng thái:
+--       PendingApproval = chờ duyệt
+--       Assigned        = đã phân công (điền assigned_to)
+--       Rejected        = bị từ chối (điền reject_reason)
 -- ============================================================
 CREATE TABLE incidents (
-  incident_id  INT          NOT NULL AUTO_INCREMENT  COMMENT 'Mã sự cố — khóa chính tự tăng',
-  title        VARCHAR(255) NOT NULL                 COMMENT 'Tiêu đề ngắn gọn mô tả sự cố',
-  description  TEXT         NOT NULL                 COMMENT 'Mô tả chi tiết hiện trạng sự cố',
-  image_url    TEXT         NULL                     COMMENT 'URL ảnh minh chứng sự cố lưu trên S3, có thể NULL',
-  branch_id    INT          NOT NULL                 COMMENT 'Chi nhánh xảy ra sự cố — FK tới branches.branch_id',
-  equipment_id INT          NULL                     COMMENT 'Thiết bị liên quan — FK tới equipment.equipment_id. NULL nếu sự cố không liên quan thiết bị cụ thể',
-  status       ENUM('PendingApproval','Assigned','Resolved','Rejected')
-               NOT NULL DEFAULT 'PendingApproval'   COMMENT 'Trạng thái xử lý: PendingApproval=chờ duyệt, Assigned=đã phân công, Resolved=đã xử lý xong, Rejected=bị từ chối. Phải đồng bộ với incident_assignments.work_status',
-  reported_by  BIGINT       NOT NULL                 COMMENT 'Nhân viên báo cáo sự cố — FK tới employees.employee_id',
-  created_at   DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'Thời điểm tạo báo cáo sự cố',
-  resolved_at  DATETIME     NULL                     COMMENT 'Thời điểm sự cố được xử lý hoàn tất — điền khi status = Resolved',
+  incident_id              INT          NOT NULL AUTO_INCREMENT  COMMENT 'Mã sự cố — khóa chính tự tăng',
+  title                    VARCHAR(255) NOT NULL                 COMMENT 'Tiêu đề ngắn gọn mô tả sự cố',
+  description              TEXT         NOT NULL                 COMMENT 'Mô tả chi tiết hiện trạng sự cố',
+  image_url                TEXT         NULL                     COMMENT 'URL ảnh minh chứng sự cố lưu trên S3, có thể NULL',
+  branch_id                INT          NOT NULL                 COMMENT 'Chi nhánh xảy ra sự cố — FK tới branches.branch_id',
+  equipment_id             INT          NULL                     COMMENT 'Thiết bị liên quan — FK tới equipment.equipment_id. NULL nếu sự cố không liên quan thiết bị cụ thể',
+
+  reported_by_member_id    BIGINT       NULL                     COMMENT 'Hội viên báo cáo sự cố — FK tới members.member_id. Điền khi người báo cáo là hội viên',
+  reported_by_employee_id  BIGINT       NULL                     COMMENT 'Nhân viên báo cáo sự cố — FK tới employees.employee_id. Điền khi người báo cáo là nhân viên',
+
+  status                   ENUM('PendingApproval','Assigned','Rejected')
+                           NOT NULL DEFAULT 'PendingApproval'   COMMENT 'Trạng thái: PendingApproval=chờ duyệt, Assigned=đã phân công, Rejected=bị từ chối',
+
+  assigned_to              BIGINT       NULL                     COMMENT 'Nhân viên/kỹ thuật được phân công xử lý — FK tới employees.employee_id. Bắt buộc điền khi status = Assigned',
+  reject_reason            TEXT         NULL                     COMMENT 'Lý do từ chối sự cố — bắt buộc điền khi status = Rejected',
+  approved_by              BIGINT       NULL                     COMMENT 'Nhân viên (Manager/Admin) duyệt hoặc từ chối sự cố — FK tới employees.employee_id',
+
+  created_at                DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP      COMMENT 'Thời điểm tạo báo cáo sự cố',
+  updated_at                DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT 'Thời điểm cập nhật trạng thái gần nhất',
+
   PRIMARY KEY (incident_id),
+
+  CONSTRAINT chk_incident_reporter
+    CHECK (
+      (reported_by_member_id IS NOT NULL AND reported_by_employee_id IS NULL) OR
+      (reported_by_member_id IS NULL AND reported_by_employee_id IS NOT NULL)
+    ),
+
   CONSTRAINT fk_su_co_cn
-    FOREIGN KEY (branch_id)    REFERENCES branches   (branch_id),
+    FOREIGN KEY (branch_id)               REFERENCES branches   (branch_id),
   CONSTRAINT fk_su_co_tb
-    FOREIGN KEY (equipment_id) REFERENCES equipment  (equipment_id),
+    FOREIGN KEY (equipment_id)            REFERENCES equipment  (equipment_id),
+  CONSTRAINT fk_su_co_hv
+    FOREIGN KEY (reported_by_member_id)   REFERENCES members    (member_id),
   CONSTRAINT fk_su_co_nv
-    FOREIGN KEY (reported_by)  REFERENCES employees  (employee_id)
-) ENGINE=InnoDB COMMENT='Báo cáo sự cố thiết bị và cơ sở vật chất tại các chi nhánh';
+    FOREIGN KEY (reported_by_employee_id) REFERENCES employees  (employee_id),
+  CONSTRAINT fk_su_co_assigned
+    FOREIGN KEY (assigned_to)             REFERENCES employees  (employee_id),
+  CONSTRAINT fk_su_co_approved
+    FOREIGN KEY (approved_by)             REFERENCES employees  (employee_id)
+) ENGINE=InnoDB COMMENT='Báo cáo sự cố thiết bị/cơ sở vật chất — hội viên hoặc nhân viên đều có thể tạo';
 
 
 -- ============================================================
---  BẢNG 17: incident_assignments  (Phân công xử lý sự cố)
+--  BẢNG 18: notifications  (Thông báo hết hạn gói tập)  -- ĐÃ SỬA
 --
---  Mỗi sự cố chỉ có đúng một phân công (UNIQUE incident_id).
---  Khi work_status chuyển thành Completed, ứng dụng phải
---  cập nhật incidents.status = Resolved và incidents.resolved_at
---  đồng thời để đảm bảo nhất quán giữa hai bảng.
--- ============================================================
-CREATE TABLE incident_assignments (
-  assignment_id   INT      NOT NULL AUTO_INCREMENT  COMMENT 'Mã phân công — khóa chính tự tăng',
-  incident_id     INT      NOT NULL                 COMMENT 'Sự cố cần xử lý — FK tới incidents.incident_id, mỗi sự cố chỉ có 1 phân công',
-  technician_id   BIGINT   NOT NULL                 COMMENT 'Kỹ thuật viên được giao việc — FK tới employees.employee_id',
-  manager_id      BIGINT   NOT NULL                 COMMENT 'Quản lý thực hiện phân công — FK tới employees.employee_id',
-  work_status     ENUM('NotStarted','InProgress','WaitingForParts','Completed')
-                  NOT NULL DEFAULT 'NotStarted'     COMMENT 'Tiến độ công việc: NotStarted=chưa bắt đầu, InProgress=đang sửa, WaitingForParts=chờ linh kiện, Completed=hoàn thành. Khi Completed phải cập nhật incidents.status=Resolved',
-  work_notes      TEXT     NULL                     COMMENT 'Ghi chú tiến độ do kỹ thuật viên cập nhật',
-  after_image     TEXT     NULL                     COMMENT 'URL ảnh sau khi sửa xong, dùng để xác nhận hoàn tất',
-  assigned_at     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'Thời điểm quản lý thực hiện phân công',
-  completed_at    DATETIME NULL                     COMMENT 'Thời điểm kỹ thuật viên hoàn thành — điền khi work_status = Completed',
-  PRIMARY KEY (assignment_id),
-  UNIQUE KEY uq_phan_cong_su_co (incident_id),
-  CONSTRAINT fk_pc_su_co
-    FOREIGN KEY (incident_id)   REFERENCES incidents (incident_id),
-  CONSTRAINT fk_pc_ktv
-    FOREIGN KEY (technician_id) REFERENCES employees (employee_id),
-  CONSTRAINT fk_pc_ql
-    FOREIGN KEY (manager_id)    REFERENCES employees (employee_id)
-) ENGINE=InnoDB COMMENT='Phân công kỹ thuật viên xử lý sự cố. Khi Completed phải đồng bộ incidents.status';
-
-
--- ============================================================
---  BẢNG 18: member_groups  (Nhóm hội viên)
---
---  Hỗ trợ tính năng send_type = ByGroup của notifications.
---  Quản lý tạo nhóm và thêm hội viên vào nhóm để gửi
---  thông báo có chọn lọc.
--- ============================================================
-CREATE TABLE member_groups (
-  group_id    INT          NOT NULL AUTO_INCREMENT  COMMENT 'Mã nhóm — khóa chính tự tăng',
-  group_name  VARCHAR(150) NOT NULL                 COMMENT 'Tên nhóm hội viên, VD: Khách VIP, Học sinh sinh viên',
-  description TEXT         NULL                     COMMENT 'Mô tả mục đích hoặc tiêu chí của nhóm',
-  created_by  BIGINT       NOT NULL                 COMMENT 'Nhân viên tạo nhóm — FK tới employees.employee_id',
-  created_at  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'Thời điểm tạo nhóm',
-  PRIMARY KEY (group_id),
-  CONSTRAINT fk_nhom_nguoi_tao
-    FOREIGN KEY (created_by) REFERENCES employees (employee_id)
-) ENGINE=InnoDB COMMENT='Nhóm hội viên dùng để gửi thông báo theo nhóm (ByGroup)';
-
-
--- ============================================================
---  BẢNG 19: member_group_members  (Thành viên trong nhóm)
--- ============================================================
-CREATE TABLE member_group_members (
-  id        BIGINT  NOT NULL AUTO_INCREMENT  COMMENT 'Mã bản ghi — khóa chính tự tăng',
-  group_id  INT     NOT NULL                 COMMENT 'Nhóm hội viên — FK tới member_groups.group_id',
-  member_id BIGINT  NOT NULL                 COMMENT 'Hội viên thuộc nhóm — FK tới members.member_id',
-  PRIMARY KEY (id),
-  UNIQUE KEY uq_nhom_hv (group_id, member_id),
-  CONSTRAINT fk_nhom_tv_nhom
-    FOREIGN KEY (group_id)  REFERENCES member_groups (group_id) ON DELETE CASCADE,
-  CONSTRAINT fk_nhom_tv_hv
-    FOREIGN KEY (member_id) REFERENCES members       (member_id)
-) ENGINE=InnoDB COMMENT='Bảng trung gian liên kết hội viên với nhóm';
-
-
--- ============================================================
---  BẢNG 20: notifications  (Thông báo)
+--  ĐÃ SỬA: notifications giờ chỉ dùng cho MỘT mục đích duy
+--  nhất — nhắc hội viên khi gói tập sắp hết hạn. Bỏ hoàn
+--  toàn send_type/branch_id/group_id (đa đối tượng) và bỏ
+--  luôn notification_recipients vì mỗi thông báo giờ gắn
+--  trực tiếp với 1 hội viên + 1 gói tập.
+--  Thường do background job tự sinh dựa trên member_packages.expiry_date
+--  (VD: nhắc trước 7, 3, 1 ngày).
 -- ============================================================
 CREATE TABLE notifications (
-  notification_id BIGINT       NOT NULL AUTO_INCREMENT  COMMENT 'Mã thông báo — khóa chính tự tăng',
-  title           VARCHAR(255) NOT NULL                 COMMENT 'Tiêu đề ngắn gọn của thông báo',
-  content         TEXT         NOT NULL                 COMMENT 'Nội dung đầy đủ của thông báo',
-  send_type       ENUM('All','ByBranch','ByGroup') NOT NULL COMMENT 'Đối tượng nhận: All=toàn bộ hội viên, ByBranch=theo chi nhánh, ByGroup=theo nhóm',
-  branch_id       INT          NULL                     COMMENT 'Chi nhánh nhận thông báo — FK tới branches.branch_id. Bắt buộc khi send_type = ByBranch, NULL trong trường hợp khác',
-  group_id        INT          NULL                     COMMENT 'Nhóm nhận thông báo — FK tới member_groups.group_id. Bắt buộc khi send_type = ByGroup, NULL trong trường hợp khác',
-  created_by      BIGINT       NOT NULL                 COMMENT 'Quản lý tạo thông báo — FK tới employees.employee_id',
-  scheduled_at    DATETIME     NOT NULL                 COMMENT 'Thời điểm hẹn gửi thông báo',
-  is_sent         TINYINT(1)   NOT NULL DEFAULT 0       COMMENT '0 = chưa gửi, 1 = đã gửi — cập nhật bởi background job',
-  created_at      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'Thời điểm tạo thông báo',
+  notification_id     BIGINT       NOT NULL AUTO_INCREMENT  COMMENT 'Mã thông báo — khóa chính tự tăng',
+
+  member_id           BIGINT       NOT NULL                 COMMENT 'Hội viên nhận thông báo — FK tới members.member_id',
+  member_package_id   BIGINT       NOT NULL                 COMMENT 'Gói tập sắp hết hạn tương ứng — FK tới member_packages.member_package_id',
+
+  days_before_expiry  SMALLINT     NOT NULL                 COMMENT 'Số ngày còn lại trước khi hết hạn tại thời điểm gửi, VD: 7, 3, 1, 0',
+
+  title                VARCHAR(255) NOT NULL                COMMENT 'Tiêu đề thông báo, VD: Gói tập của bạn sắp hết hạn',
+  content               TEXT        NOT NULL                COMMENT 'Nội dung chi tiết thông báo',
+
+  scheduled_at          DATETIME    NOT NULL                COMMENT 'Thời điểm hẹn gửi thông báo',
+  is_sent                TINYINT(1) NOT NULL DEFAULT 0      COMMENT '0 = chưa gửi, 1 = đã gửi — cập nhật bởi background job',
+  sent_at                DATETIME   NULL                    COMMENT 'Thời điểm thực tế đã gửi',
+  is_read                TINYINT(1) NOT NULL DEFAULT 0      COMMENT '0 = chưa đọc, 1 = đã đọc — cập nhật khi hội viên mở thông báo',
+
+  created_at             DATETIME   NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'Thời điểm tạo thông báo',
+
   PRIMARY KEY (notification_id),
-  CONSTRAINT fk_tb_cn
-    FOREIGN KEY (branch_id)  REFERENCES branches      (branch_id),
-  CONSTRAINT fk_tb_nhom
-    FOREIGN KEY (group_id)   REFERENCES member_groups (group_id),
-  CONSTRAINT fk_tb_nguoi_tao
-    FOREIGN KEY (created_by) REFERENCES employees     (employee_id)
-) ENGINE=InnoDB COMMENT='Thông báo đẩy gửi đến hội viên theo đối tượng';
+  UNIQUE KEY uq_notif_goi_nguong (member_package_id, days_before_expiry)
+    COMMENT 'Mỗi gói hội viên chỉ nhận 1 thông báo cho mỗi mốc số-ngày-còn-lại, tránh gửi trùng',
+  INDEX idx_notif_hv (member_id, is_read),
+
+  CONSTRAINT fk_tb_hv
+    FOREIGN KEY (member_id)         REFERENCES members        (member_id),
+  CONSTRAINT fk_tb_goi_hv
+    FOREIGN KEY (member_package_id) REFERENCES member_packages (member_package_id)
+) ENGINE=InnoDB COMMENT='Thông báo nhắc hội viên khi gói tập sắp hết hạn — do background job tự sinh';
 
 
 -- ============================================================
---  BẢNG 21: notification_recipients  (Danh sách nhận thông báo)
--- ============================================================
-CREATE TABLE notification_recipients (
-  id              BIGINT     NOT NULL AUTO_INCREMENT  COMMENT 'Mã bản ghi — khóa chính tự tăng',
-  notification_id BIGINT     NOT NULL                 COMMENT 'Thông báo được gửi — FK tới notifications.notification_id',
-  member_id       BIGINT     NOT NULL                 COMMENT 'Hội viên nhận thông báo — FK tới members.member_id',
-  is_read         TINYINT(1) NOT NULL DEFAULT 0       COMMENT '0 = chưa đọc, 1 = đã đọc — cập nhật khi hội viên mở thông báo',
-  PRIMARY KEY (id),
-  UNIQUE KEY uq_tb_hv (notification_id, member_id),
-  CONSTRAINT fk_nr_tb
-    FOREIGN KEY (notification_id) REFERENCES notifications (notification_id),
-  CONSTRAINT fk_nr_hv
-    FOREIGN KEY (member_id)       REFERENCES members       (member_id)
-) ENGINE=InnoDB COMMENT='Danh sách hội viên nhận từng thông báo và trạng thái đã đọc';
-
-
--- ============================================================
---  BẢNG 22: account_lock_log  (Lịch sử khóa/mở tài khoản)
+--  BẢNG 19: account_lock_log  (Lịch sử khóa/mở tài khoản)
 --
 --  Tách thành hai cột riêng biệt thay vì dùng polymorphic
 --  entity_id + entity_type để đảm bảo ràng buộc FK.
@@ -588,13 +574,8 @@ CREATE TABLE account_lock_log (
 
 
 -- ============================================================
---  BẢNG 23: phone_change_log  (Lịch sử đổi số điện thoại)
--- ============================================================
--- ============================================================
---  BẢNG 23: member_update_logs  (Lịch sử cập nhật thông tin hội viên)
+--  BẢNG 20: member_update_logs  (Lịch sử cập nhật thông tin hội viên)
 --
---  Thay thế cho phone_change_log cũ — tổng quát hóa để ghi
---  được nhiều loại field thay đổi (không chỉ số điện thoại).
 --  update_session_id dùng để gộp các field_name cùng thay đổi
 --  trong 1 lần cập nhật (ứng dụng tự sinh UUID cho mỗi lần lưu).
 --  Bảng này chỉ ghi thêm, không sửa, không xóa.
@@ -619,7 +600,7 @@ CREATE TABLE member_update_logs (
 
 
 -- ============================================================
---  BẢNG 24: otp  (Mã xác thực một lần)
+--  BẢNG 21: otp  (Mã xác thực một lần)
 -- ============================================================
 CREATE TABLE otp (
   otp_id          BIGINT      NOT NULL AUTO_INCREMENT  COMMENT 'Mã bản ghi — khóa chính tự tăng',
@@ -637,11 +618,10 @@ CREATE TABLE otp (
 
 
 -- ============================================================
---  BẢNG 25: gym_density  (Mật độ người tập)
+--  BẢNG 22: gym_density  (Mật độ người tập)
 --
 --  Snapshot số người đang có mặt được ghi bởi job ngoài
---  (cảm biến, camera đếm người, hoặc logic nghiệp vụ riêng)
---  vì check_ins không có check_out_time đáng tin cậy.
+--  (cảm biến, camera đếm người, hoặc logic nghiệp vụ riêng).
 -- ============================================================
 CREATE TABLE gym_density (
   density_id   BIGINT   NOT NULL AUTO_INCREMENT  COMMENT 'Mã bản ghi — khóa chính tự tăng',
@@ -656,7 +636,7 @@ CREATE TABLE gym_density (
 
 
 -- ============================================================
---  BẢNG 26: branch_images  (Hình ảnh chi nhánh)
+--  BẢNG 23: branch_images  (Hình ảnh chi nhánh)
 -- ============================================================
 CREATE TABLE branch_images (
   image_id    INT          NOT NULL AUTO_INCREMENT  COMMENT 'Mã ảnh — khóa chính tự tăng',
@@ -673,7 +653,50 @@ CREATE TABLE branch_images (
 
 
 -- ============================================================
---  BẢNG 27: refresh_tokens  (Token xác thực)
+--  BẢNG 24: home_images  (Hình ảnh trang chủ)  -- BẢNG MỚI
+--
+--  Chỉ dùng để lưu ảnh hiển thị cho trang home (banner,
+--  slideshow...), không gắn với chi nhánh/thiết bị cụ thể.
+-- ============================================================
+CREATE TABLE home_images (
+  image_id    INT          NOT NULL AUTO_INCREMENT  COMMENT 'Mã ảnh — khóa chính tự tăng',
+  image_url   VARCHAR(500) NOT NULL                 COMMENT 'URL ảnh lưu trên S3',
+  title       VARCHAR(255) NULL                     COMMENT 'Tiêu đề/chú thích hiển thị kèm ảnh, có thể NULL',
+  link_url    VARCHAR(500) NULL                     COMMENT 'Đường dẫn khi người dùng bấm vào ảnh (VD: liên kết tới gói tập, khuyến mãi), có thể NULL',
+  sort_order  TINYINT      NOT NULL DEFAULT 0       COMMENT 'Thứ tự hiển thị trên trang home, số nhỏ hiển thị trước',
+  status      ENUM('Active','Inactive') NOT NULL DEFAULT 'Active' COMMENT 'Trạng thái hiển thị: Active = đang hiện, Inactive = đang ẩn',
+  uploaded_by BIGINT       NOT NULL                 COMMENT 'Nhân viên (Admin) tải ảnh lên — FK tới employees.employee_id',
+  uploaded_at DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'Thời điểm tải ảnh lên',
+  PRIMARY KEY (image_id),
+  CONSTRAINT fk_home_img_nv
+    FOREIGN KEY (uploaded_by) REFERENCES employees (employee_id)
+) ENGINE=InnoDB COMMENT='Ảnh hiển thị trên trang chủ (banner/slideshow) — chỉ Admin quản lý';
+
+
+-- ============================================================
+--  BẢNG 25: news  (Tin tức)  -- BẢNG MỚI
+-- ============================================================
+CREATE TABLE news (
+  news_id        INT          NOT NULL AUTO_INCREMENT  COMMENT 'Mã tin tức — khóa chính tự tăng',
+  title          VARCHAR(255) NOT NULL                 COMMENT 'Tiêu đề tin tức',
+  summary        VARCHAR(500) NULL                     COMMENT 'Tóm tắt ngắn hiển thị ở danh sách tin tức',
+  content        TEXT         NOT NULL                 COMMENT 'Nội dung đầy đủ của bài tin tức',
+  thumbnail_url  VARCHAR(500) NULL                     COMMENT 'URL ảnh đại diện bài viết lưu trên S3',
+  status         ENUM('Draft','Published','Hidden') NOT NULL DEFAULT 'Draft'
+                 COMMENT 'Trạng thái: Draft=đang soạn, Published=đã đăng, Hidden=đã ẩn',
+  created_by     BIGINT       NOT NULL                 COMMENT 'Nhân viên soạn bài — FK tới employees.employee_id',
+  published_at   DATETIME     NULL                     COMMENT 'Thời điểm bài viết được đăng — điền khi status = Published',
+  created_at     DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP      COMMENT 'Thời điểm tạo bài viết',
+  updated_at     DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT 'Thời điểm cập nhật gần nhất',
+  PRIMARY KEY (news_id),
+  INDEX idx_news_status (status, published_at),
+  CONSTRAINT fk_news_nv
+    FOREIGN KEY (created_by) REFERENCES employees (employee_id)
+) ENGINE=InnoDB COMMENT='Tin tức / bài viết hiển thị cho hội viên';
+
+
+-- ============================================================
+--  BẢNG 26: refresh_tokens  (Token xác thực)
 --
 --  Tách thành hai cột riêng biệt thay vì dùng polymorphic
 --  entity_id + entity_type để đảm bảo ràng buộc FK.
@@ -710,6 +733,197 @@ CREATE TABLE refresh_tokens (
 
 ) ENGINE=InnoDB
 COMMENT='Refresh token cho hội viên và nhân viên';
+
+
+-- ============================================================
+--  BẢNG 27: forum_posts  (Bài đăng forum)
+--
+--  Hỗ trợ cả bài gốc và "đăng lại" (repost/share):
+--    post_type = Original → bài viết gốc, original_post_id = NULL
+--    post_type = Repost   → bài chia sẻ lại 1 bài khác, bắt buộc
+--                            điền original_post_id, content có thể
+--                            NULL nếu chỉ chia sẻ không kèm lời bình
+--  like_count / comment_count / repost_count là số đếm được đồng
+--  bộ bởi ứng dụng (hoặc trigger) mỗi khi có like/comment/repost
+--  mới — tránh phải COUNT(*) mỗi lần hiển thị danh sách bài viết.
+-- ============================================================
+CREATE TABLE forum_posts (
+  post_id           BIGINT   NOT NULL AUTO_INCREMENT  COMMENT 'Mã bài đăng — khóa chính tự tăng',
+  member_id         BIGINT   NOT NULL                 COMMENT 'Hội viên tạo bài đăng — FK tới members.member_id',
+
+  content           TEXT     NULL                     COMMENT 'Nội dung bài viết. Có thể NULL nếu là Repost không kèm lời bình',
+
+  post_type         ENUM('Original','Repost') NOT NULL DEFAULT 'Original'
+                     COMMENT 'Loại bài: Original = bài gốc, Repost = đăng lại bài của người khác',
+  original_post_id  BIGINT   NULL                     COMMENT 'Bài viết gốc được đăng lại — FK tự tham chiếu tới forum_posts.post_id. Bắt buộc khi post_type = Repost, NULL khi Original',
+
+  like_count        INT      NOT NULL DEFAULT 0       COMMENT 'Số lượt tym — đồng bộ mỗi khi forum_likes thay đổi',
+  comment_count     INT      NOT NULL DEFAULT 0       COMMENT 'Số lượt bình luận — đồng bộ mỗi khi forum_comments thay đổi',
+  repost_count      INT      NOT NULL DEFAULT 0       COMMENT 'Số lượt được đăng lại — đồng bộ mỗi khi có bài Repost mới trỏ tới bài này',
+
+  status            ENUM('Active','Hidden','Deleted') NOT NULL DEFAULT 'Active'
+                     COMMENT 'Trạng thái: Active=đang hiển thị, Hidden=bị Admin ẩn do vi phạm, Deleted=hội viên tự xóa (soft delete)',
+
+  created_at        DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP      COMMENT 'Thời điểm đăng bài',
+  updated_at        DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT 'Thời điểm chỉnh sửa gần nhất',
+
+  PRIMARY KEY (post_id),
+  INDEX idx_post_member (member_id, status, created_at)  COMMENT 'Phục vụ truy vấn trang cá nhân: bài của 1 hội viên, mới nhất trước',
+  INDEX idx_post_original (original_post_id),
+
+  CONSTRAINT chk_post_repost
+    CHECK (
+      (post_type = 'Repost'   AND original_post_id IS NOT NULL) OR
+      (post_type = 'Original' AND original_post_id IS NULL)
+    ),
+
+  CONSTRAINT fk_post_member
+    FOREIGN KEY (member_id)        REFERENCES members     (member_id),
+  CONSTRAINT fk_post_original
+    FOREIGN KEY (original_post_id) REFERENCES forum_posts (post_id)
+) ENGINE=InnoDB COMMENT='Bài đăng trên forum của hội viên, gồm cả bài gốc và bài đăng lại';
+
+
+-- ============================================================
+--  BẢNG 28: forum_post_images  (Hình ảnh bài đăng)
+-- ============================================================
+CREATE TABLE forum_post_images (
+  image_id    BIGINT       NOT NULL AUTO_INCREMENT  COMMENT 'Mã ảnh — khóa chính tự tăng',
+  post_id     BIGINT       NOT NULL                 COMMENT 'Bài đăng sở hữu ảnh — FK tới forum_posts.post_id',
+  image_url   VARCHAR(500) NOT NULL                 COMMENT 'URL ảnh lưu trên S3',
+  sort_order  TINYINT      NOT NULL DEFAULT 0       COMMENT 'Thứ tự hiển thị trong bài (ảnh 1, ảnh 2...), số nhỏ hiển thị trước',
+  uploaded_at DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'Thời điểm tải ảnh lên',
+  PRIMARY KEY (image_id),
+  INDEX idx_postimg_post (post_id),
+  CONSTRAINT fk_postimg_post
+    FOREIGN KEY (post_id) REFERENCES forum_posts (post_id)
+    ON DELETE CASCADE
+) ENGINE=InnoDB COMMENT='Ảnh đính kèm trong bài đăng forum, 1 bài có thể có nhiều ảnh';
+
+
+-- ============================================================
+--  BẢNG 29: forum_likes  (Lượt tym bài đăng)
+--
+--  Mỗi hội viên chỉ được tym 1 lần / 1 bài viết (UNIQUE).
+--  Bỏ tym = xóa bản ghi (không dùng cột trạng thái) vì đây
+--  là dữ liệu có thể xóa/thêm lại tự do, không cần lưu lịch sử.
+-- ============================================================
+CREATE TABLE forum_likes (
+  like_id     BIGINT   NOT NULL AUTO_INCREMENT  COMMENT 'Mã lượt tym — khóa chính tự tăng',
+  post_id     BIGINT   NOT NULL                 COMMENT 'Bài đăng được tym — FK tới forum_posts.post_id',
+  member_id   BIGINT   NOT NULL                 COMMENT 'Hội viên thực hiện tym — FK tới members.member_id',
+  created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'Thời điểm tym',
+  PRIMARY KEY (like_id),
+  UNIQUE KEY uq_like_post_member (post_id, member_id) COMMENT 'Mỗi hội viên chỉ tym 1 lần cho mỗi bài viết',
+  INDEX idx_like_member (member_id),
+  CONSTRAINT fk_like_post
+    FOREIGN KEY (post_id)   REFERENCES forum_posts (post_id)
+    ON DELETE CASCADE,
+  CONSTRAINT fk_like_member
+    FOREIGN KEY (member_id) REFERENCES members     (member_id)
+) ENGINE=InnoDB COMMENT='Lượt tym (yêu thích) bài đăng forum của hội viên';
+
+
+-- ============================================================
+--  BẢNG 30: forum_comments  (Bình luận bài đăng)
+--
+--  parent_comment_id  : bình luận GỐC của cả nhánh — dùng để gom
+--                        nhóm hiển thị (cây 1 cấp, mọi reply trong
+--                        cùng nhánh đều trỏ thẳng về bình luận gốc,
+--                        không lồng nhiều cấp). NULL nếu bản thân
+--                        nó là bình luận gốc.
+--  reply_to_member_id : hội viên ĐANG ĐƯỢC TRẢ LỜI đích danh — dùng
+--                        để hiển thị "Trả lời @Tên" và để biết gửi
+--                        thông báo Reply cho ai. Khác với
+--                        parent_comment_id vì khi trả lời 1 reply
+--                        (không phải bình luận gốc), parent_comment_id
+--                        vẫn trỏ về gốc nhưng reply_to_member_id phải
+--                        trỏ đúng người vừa được trả lời (không phải
+--                        chủ bình luận gốc). NULL nếu đây là bình
+--                        luận gốc (không trả lời ai).
+-- ============================================================
+CREATE TABLE forum_comments (
+  comment_id          BIGINT   NOT NULL AUTO_INCREMENT  COMMENT 'Mã bình luận — khóa chính tự tăng',
+  post_id              BIGINT   NOT NULL                 COMMENT 'Bài đăng được bình luận — FK tới forum_posts.post_id',
+  member_id            BIGINT   NOT NULL                 COMMENT 'Hội viên bình luận — FK tới members.member_id',
+  parent_comment_id    BIGINT   NULL                     COMMENT 'Bình luận gốc của nhánh — FK tự tham chiếu tới forum_comments.comment_id, NULL nếu bản thân là bình luận gốc',
+  reply_to_member_id   BIGINT   NULL                     COMMENT 'Hội viên đang được trả lời đích danh — FK tới members.member_id. Bắt buộc điền khi là reply, NULL nếu là bình luận gốc',
+
+  content              TEXT     NOT NULL                 COMMENT 'Nội dung bình luận',
+  status               ENUM('Active','Deleted') NOT NULL DEFAULT 'Active' COMMENT 'Trạng thái: Active=đang hiển thị, Deleted=đã xóa (soft delete)',
+
+  created_at           DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP      COMMENT 'Thời điểm bình luận',
+  updated_at           DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT 'Thời điểm chỉnh sửa gần nhất',
+
+  PRIMARY KEY (comment_id),
+  INDEX idx_comment_post (post_id, created_at),
+  INDEX idx_comment_parent (parent_comment_id),
+
+  CONSTRAINT chk_comment_reply
+    CHECK (
+      (parent_comment_id IS NULL AND reply_to_member_id IS NULL) OR
+      (parent_comment_id IS NOT NULL AND reply_to_member_id IS NOT NULL)
+    ),
+
+  CONSTRAINT fk_comment_post
+    FOREIGN KEY (post_id)             REFERENCES forum_posts    (post_id)
+    ON DELETE CASCADE,
+  CONSTRAINT fk_comment_member
+    FOREIGN KEY (member_id)           REFERENCES members        (member_id),
+  CONSTRAINT fk_comment_parent
+    FOREIGN KEY (parent_comment_id)   REFERENCES forum_comments (comment_id),
+  CONSTRAINT fk_comment_reply_to
+    FOREIGN KEY (reply_to_member_id)  REFERENCES members        (member_id)
+) ENGINE=InnoDB COMMENT='Bình luận trong bài đăng forum, hỗ trợ trả lời 1 cấp và @ đích danh người được trả lời';
+
+
+-- ============================================================
+--  BẢNG 31: forum_notifications  (Thông báo forum)
+--
+--  Sinh ra khi có người khác tym, bình luận, hoặc trả lời đích
+--  danh bình luận của hội viên. recipient_member_id = người NHẬN
+--  thông báo, actor_member_id = người vừa thực hiện hành động.
+--  Không tạo thông báo khi actor_member_id = recipient_member_id
+--  (tự tym/cmt/trả lời chính mình).
+--
+--  Quy tắc xác định recipient_member_id theo notify_type:
+--    Like    → chủ bài viết (forum_posts.member_id)
+--    Comment → chủ bài viết (forum_posts.member_id) — dùng cho
+--              bình luận GỐC (parent_comment_id NULL)
+--    Reply   → forum_comments.reply_to_member_id — dùng cho lượt
+--              trả lời đích danh 1 bình luận cụ thể. Nếu người
+--              được trả lời cũng chính là chủ bài viết thì CHỈ
+--              tạo 1 thông báo Reply, không tạo thêm Comment,
+--              tránh trùng lặp.
+-- ============================================================
+CREATE TABLE forum_notifications (
+  notification_id     BIGINT     NOT NULL AUTO_INCREMENT  COMMENT 'Mã thông báo — khóa chính tự tăng',
+
+  recipient_member_id BIGINT     NOT NULL                 COMMENT 'Hội viên nhận thông báo — FK tới members.member_id',
+  actor_member_id     BIGINT     NOT NULL                 COMMENT 'Hội viên thực hiện hành động (người tym/bình luận/trả lời) — FK tới members.member_id',
+
+  notify_type          ENUM('Like','Comment','Reply') NOT NULL COMMENT 'Loại thông báo: Like=có người tym bài, Comment=có người bình luận bài, Reply=có người trả lời đích danh bình luận của mình',
+
+  post_id               BIGINT    NOT NULL                COMMENT 'Bài đăng liên quan — FK tới forum_posts.post_id',
+  comment_id            BIGINT    NULL                     COMMENT 'Bình luận liên quan — FK tới forum_comments.comment_id. Bắt buộc điền khi notify_type = Comment, NULL khi notify_type = Like',
+
+  is_read                TINYINT(1) NOT NULL DEFAULT 0    COMMENT '0 = chưa đọc, 1 = đã đọc',
+  created_at              DATETIME  NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'Thời điểm phát sinh thông báo',
+
+  PRIMARY KEY (notification_id),
+  INDEX idx_forumnotif_recipient (recipient_member_id, is_read, created_at),
+
+  CONSTRAINT fk_forumnotif_recipient
+    FOREIGN KEY (recipient_member_id) REFERENCES members        (member_id),
+  CONSTRAINT fk_forumnotif_actor
+    FOREIGN KEY (actor_member_id)     REFERENCES members        (member_id),
+  CONSTRAINT fk_forumnotif_post
+    FOREIGN KEY (post_id)             REFERENCES forum_posts    (post_id)
+    ON DELETE CASCADE,
+  CONSTRAINT fk_forumnotif_comment
+    FOREIGN KEY (comment_id)          REFERENCES forum_comments (comment_id)
+) ENGINE=InnoDB COMMENT='Thông báo cho hội viên khi bài viết của họ được tym hoặc bình luận';
+
 
 -- ============================================================
 --  STORED PROCEDURE: sp_gan_khuyen_mai_vao_goi

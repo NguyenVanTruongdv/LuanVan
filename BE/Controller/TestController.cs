@@ -1,200 +1,200 @@
-using Amazon;
-using Amazon.Rekognition;
-using Amazon.Rekognition.Model;
-using Amazon.Runtime;
-using Amazon.S3;
-using Amazon.S3.Transfer;
-using Microsoft.AspNetCore.Mvc;
+// using Amazon;
+// using Amazon.Rekognition;
+// using Amazon.Rekognition.Model;
+// using Amazon.Runtime;
+// using Amazon.S3;
+// using Amazon.S3.Transfer;
+// using Microsoft.AspNetCore.Mvc;
 
-namespace BE.Controllers
-{
-    [ApiController]
-    [Route("api/test")]
-    public class TestController : ControllerBase
-    {
-        private readonly IConfiguration _config;
+// namespace BE.Controllers
+// {
+//     [ApiController]
+//     [Route("api/test")]
+//     public class TestController : ControllerBase
+//     {
+//         private readonly IConfiguration _config;
 
-        private readonly AmazonRekognitionClient _rekognitionClient;
+//         private readonly AmazonRekognitionClient _rekognitionClient;
 
-        private readonly AmazonS3Client _s3Client;
+//         private readonly AmazonS3Client _s3Client;
 
-        public TestController(IConfiguration config)
-        {
-            _config = config;
+//         public TestController(IConfiguration config)
+//         {
+//             _config = config;
 
-            var credentials = new BasicAWSCredentials(
-                _config["AWS:AccessKey"],
-                _config["AWS:SecretKey"]
-            );
+//             var credentials = new BasicAWSCredentials(
+//                 _config["AWS:AccessKey"],
+//                 _config["AWS:SecretKey"]
+//             );
 
-            _rekognitionClient = new AmazonRekognitionClient(
-                credentials,
-                RegionEndpoint.APSoutheast1
-            );
+//             _rekognitionClient = new AmazonRekognitionClient(
+//                 credentials,
+//                 RegionEndpoint.APSoutheast1
+//             );
 
-            _s3Client = new AmazonS3Client(
-                credentials,
-                RegionEndpoint.APSoutheast1
-            );
-        }
+//             _s3Client = new AmazonS3Client(
+//                 credentials,
+//                 RegionEndpoint.APSoutheast1
+//             );
+//         }
 
-        // =========================================
-        // CREATE COLLECTION
-        // =========================================
+//         // =========================================
+//         // CREATE COLLECTION
+//         // =========================================
 
-        [HttpPost("create-collection")]
-        public async Task<IActionResult> CreateCollection()
-        {
-            var request = new CreateCollectionRequest
-            {
-                CollectionId = "gym-members"
-            };
+//         [HttpPost("create-collection")]
+//         public async Task<IActionResult> CreateCollection()
+//         {
+//             var request = new CreateCollectionRequest
+//             {
+//                 CollectionId = "gym-members"
+//             };
 
-            var response =
-                await _rekognitionClient.CreateCollectionAsync(request);
+//             var response =
+//                 await _rekognitionClient.CreateCollectionAsync(request);
 
-            return Ok(new
-            {
-                response.StatusCode,
-                response.CollectionArn
-            });
-        }
+//             return Ok(new
+//             {
+//                 response.StatusCode,
+//                 response.CollectionArn
+//             });
+//         }
 
-        // =========================================
-        // ADD MEMBER
-        // Upload S3 + Index Face
-        // =========================================
+//         // =========================================
+//         // ADD MEMBER
+//         // Upload S3 + Index Face
+//         // =========================================
 
-        [HttpPost("add-member")]
-        public async Task<IActionResult> AddMember(
-            IFormFile file,
-            string memberId
-        )
-        {
-            var bucketName = _config["AWS:BucketName"];
+//         [HttpPost("add-member")]
+//         public async Task<IActionResult> AddMember(
+//             IFormFile file,
+//             string memberId
+//         )
+//         {
+//             var bucketName = _config["AWS:BucketName"];
 
-            // =========================
-            // UPLOAD TO S3
-            // =========================
+//             // =========================
+//             // UPLOAD TO S3
+//             // =========================
 
-            var fileName =
-                $"{Guid.NewGuid()}_{file.FileName}";
+//             var fileName =
+//                 $"{Guid.NewGuid()}_{file.FileName}";
 
-            using var uploadStream = file.OpenReadStream();
+//             using var uploadStream = file.OpenReadStream();
 
-            var uploadRequest = new TransferUtilityUploadRequest
-            {
-                InputStream = uploadStream,
-                Key = fileName,
-                BucketName = bucketName,
-                ContentType = file.ContentType
-            };
+//             var uploadRequest = new TransferUtilityUploadRequest
+//             {
+//                 InputStream = uploadStream,
+//                 Key = fileName,
+//                 BucketName = bucketName,
+//                 ContentType = file.ContentType
+//             };
 
-            var transferUtility =
-                new TransferUtility(_s3Client);
+//             var transferUtility =
+//                 new TransferUtility(_s3Client);
 
-            await transferUtility.UploadAsync(uploadRequest);
+//             await transferUtility.UploadAsync(uploadRequest);
 
-            var imageUrl =
-                $"https://{bucketName}.s3.amazonaws.com/{fileName}";
+//             var imageUrl =
+//                 $"https://{bucketName}.s3.amazonaws.com/{fileName}";
 
-            // =========================
-            // INDEX FACE
-            // =========================
+//             // =========================
+//             // INDEX FACE
+//             // =========================
 
-            using var ms = new MemoryStream();
-            await file.CopyToAsync(ms);
+//             using var ms = new MemoryStream();
+//             await file.CopyToAsync(ms);
 
-            var indexRequest = new IndexFacesRequest
-            {
-                CollectionId = "gym-members",
+//             var indexRequest = new IndexFacesRequest
+//             {
+//                 CollectionId = "gym-members",
 
-                Image = new Image
-                {
-                    Bytes = ms
-                },
+//                 Image = new Image
+//                 {
+//                     Bytes = ms
+//                 },
 
-                ExternalImageId = memberId,
+//                 ExternalImageId = memberId,
 
-                DetectionAttributes = new List<string>()
-            };
+//                 DetectionAttributes = new List<string>()
+//             };
 
-            var indexResponse =
-                await _rekognitionClient.IndexFacesAsync(indexRequest);
+//             var indexResponse =
+//                 await _rekognitionClient.IndexFacesAsync(indexRequest);
 
-            var faceId =
-                indexResponse
-                    .FaceRecords
-                    .FirstOrDefault()
-                    ?.Face
-                    .FaceId;
+//             var faceId =
+//                 indexResponse
+//                     .FaceRecords
+//                     .FirstOrDefault()
+//                     ?.Face
+//                     .FaceId;
 
-            // =========================
-            // RESPONSE
-            // =========================
+//             // =========================
+//             // RESPONSE
+//             // =========================
 
-            return Ok(new
-            {
-                success = true,
+//             return Ok(new
+//             {
+//                 success = true,
 
-                memberId,
+//                 memberId,
 
-                imageUrl,
+//                 imageUrl,
 
-                faceId
-            });
-        }
+//                 faceId
+//             });
+//         }
 
-        // =========================================
-        // SEARCH FACE
-        // =========================================
+//         // =========================================
+//         // SEARCH FACE
+//         // =========================================
 
-        [HttpPost("search-face")]
-        public async Task<IActionResult> SearchFace(
-            IFormFile file
-        )
-        {
-            using var ms = new MemoryStream();
-            await file.CopyToAsync(ms);
+//         [HttpPost("search-face")]
+//         public async Task<IActionResult> SearchFace(
+//             IFormFile file
+//         )
+//         {
+//             using var ms = new MemoryStream();
+//             await file.CopyToAsync(ms);
 
-            var request = new SearchFacesByImageRequest
-            {
-                CollectionId = "gym-members",
+//             var request = new SearchFacesByImageRequest
+//             {
+//                 CollectionId = "gym-members",
 
-                Image = new Image
-                {
-                    Bytes = ms
-                },
+//                 Image = new Image
+//                 {
+//                     Bytes = ms
+//                 },
 
-                FaceMatchThreshold = 90,
+//                 FaceMatchThreshold = 90,
 
-                MaxFaces = 1
-            };
+//                 MaxFaces = 1
+//             };
 
-            var response =
-                await _rekognitionClient.SearchFacesByImageAsync(request);
+//             var response =
+//                 await _rekognitionClient.SearchFacesByImageAsync(request);
 
-            var match =
-                response.FaceMatches.FirstOrDefault();
+//             var match =
+//                 response.FaceMatches.FirstOrDefault();
 
-            if (match == null)
-            {
-                return Ok(new
-                {
-                    matched = false
-                });
-            }
+//             if (match == null)
+//             {
+//                 return Ok(new
+//                 {
+//                     matched = false
+//                 });
+//             }
 
-            return Ok(new
-            {
-                matched = true,
+//             return Ok(new
+//             {
+//                 matched = true,
 
-                similarity = match.Similarity,
+//                 similarity = match.Similarity,
 
-                memberId = match.Face.ExternalImageId,
+//                 memberId = match.Face.ExternalImageId,
 
-                faceId = match.Face.FaceId
-            });
-        }
-    }
-}
+//                 faceId = match.Face.FaceId
+//             });
+//         }
+//     }
+// }

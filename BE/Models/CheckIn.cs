@@ -34,11 +34,6 @@ public partial class CheckIn
     public DateTime CheckInTime { get; set; }
 
     /// <summary>
-    /// Thời điểm hội viên ra về. NULL = chưa check out hoặc không xác định được
-    /// </summary>
-    public DateTime? CheckOutTime { get; set; }
-
-    /// <summary>
     /// Phương thức check in: Auto = nhận diện khuôn mặt tự động, Manual = nhân viên thực hiện thủ công
     /// </summary>
     public string Method { get; set; } = null!;
@@ -53,7 +48,29 @@ public partial class CheckIn
     /// </summary>
     public string? ManualReason { get; set; }
 
+    /// <summary>
+    /// Thời điểm hội viên ra về. NULL = chưa check out
+    /// </summary>
+    public DateTime? CheckOutTime { get; set; }
+
+    /// <summary>
+    /// Phương thức check out: Auto = nhận diện khuôn mặt tự động, Manual = nhân viên thực hiện thủ công. NULL nếu chưa check out
+    /// </summary>
+    public string? CheckOutMethod { get; set; }
+
+    /// <summary>
+    /// Nhân viên thực hiện check out thủ công — FK tới employees.employee_id. NULL nếu check_out_method = Auto hoặc chưa check out
+    /// </summary>
+    public long? CheckOutStaffId { get; set; }
+
+    /// <summary>
+    /// Lý do check out thủ công. Bắt buộc khi check_out_method = Manual
+    /// </summary>
+    public string? CheckOutManualReason { get; set; }
+
     public virtual Branch Branch { get; set; } = null!;
+
+    public virtual Employee? CheckOutStaff { get; set; }
 
     public virtual Member Member { get; set; } = null!;
 

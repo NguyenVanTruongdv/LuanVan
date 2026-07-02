@@ -4,7 +4,7 @@ using System.Collections.Generic;
 namespace BE.Models;
 
 /// <summary>
-/// Thông báo đẩy gửi đến hội viên theo đối tượng
+/// Thông báo nhắc hội viên khi gói tập sắp hết hạn — do background job tự sinh
 /// </summary>
 public partial class Notification
 {
@@ -14,34 +14,29 @@ public partial class Notification
     public long NotificationId { get; set; }
 
     /// <summary>
-    /// Tiêu đề ngắn gọn của thông báo
+    /// Hội viên nhận thông báo — FK tới members.member_id
+    /// </summary>
+    public long MemberId { get; set; }
+
+    /// <summary>
+    /// Gói tập sắp hết hạn tương ứng — FK tới member_packages.member_package_id
+    /// </summary>
+    public long MemberPackageId { get; set; }
+
+    /// <summary>
+    /// Số ngày còn lại trước khi hết hạn tại thời điểm gửi, VD: 7, 3, 1, 0
+    /// </summary>
+    public short DaysBeforeExpiry { get; set; }
+
+    /// <summary>
+    /// Tiêu đề thông báo, VD: Gói tập của bạn sắp hết hạn
     /// </summary>
     public string Title { get; set; } = null!;
 
     /// <summary>
-    /// Nội dung đầy đủ của thông báo
+    /// Nội dung chi tiết thông báo
     /// </summary>
     public string Content { get; set; } = null!;
-
-    /// <summary>
-    /// Đối tượng nhận: All=toàn bộ hội viên, ByBranch=theo chi nhánh, ByGroup=theo nhóm
-    /// </summary>
-    public string SendType { get; set; } = null!;
-
-    /// <summary>
-    /// Chi nhánh nhận thông báo — FK tới branches.branch_id. Bắt buộc khi send_type = ByBranch, NULL trong trường hợp khác
-    /// </summary>
-    public int? BranchId { get; set; }
-
-    /// <summary>
-    /// Nhóm nhận thông báo — FK tới member_groups.group_id. Bắt buộc khi send_type = ByGroup, NULL trong trường hợp khác
-    /// </summary>
-    public int? GroupId { get; set; }
-
-    /// <summary>
-    /// Quản lý tạo thông báo — FK tới employees.employee_id
-    /// </summary>
-    public long CreatedBy { get; set; }
 
     /// <summary>
     /// Thời điểm hẹn gửi thông báo
@@ -54,15 +49,21 @@ public partial class Notification
     public bool IsSent { get; set; }
 
     /// <summary>
+    /// Thời điểm thực tế đã gửi
+    /// </summary>
+    public DateTime? SentAt { get; set; }
+
+    /// <summary>
+    /// 0 = chưa đọc, 1 = đã đọc — cập nhật khi hội viên mở thông báo
+    /// </summary>
+    public bool IsRead { get; set; }
+
+    /// <summary>
     /// Thời điểm tạo thông báo
     /// </summary>
     public DateTime CreatedAt { get; set; }
 
-    public virtual Branch? Branch { get; set; }
+    public virtual Member Member { get; set; } = null!;
 
-    public virtual Employee CreatedByNavigation { get; set; } = null!;
-
-    public virtual MemberGroup? Group { get; set; }
-
-    public virtual ICollection<NotificationRecipient> NotificationRecipients { get; set; } = new List<NotificationRecipient>();
+    public virtual MemberPackage MemberPackage { get; set; } = null!;
 }

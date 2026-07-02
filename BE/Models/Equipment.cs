@@ -47,5 +47,7 @@ public partial class Equipment
 
     public virtual EquipmentCategory Category { get; set; } = null!;
 
+    public virtual ICollection<EquipmentImage> EquipmentImages { get; set; } = new List<EquipmentImage>();
+
     public virtual ICollection<Incident> Incidents { get; set; } = new List<Incident>();
 }

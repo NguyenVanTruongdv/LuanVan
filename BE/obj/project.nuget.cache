@@ -1,8 +1,8 @@
 {
   "version": 2,
-  "dgSpecHash": "1BgJwRQL2uA=",
+  "dgSpecHash": "1Cam/dLOx9Q=",
   "success": true,
-  "projectFilePath": "E:\\HK2_2025_2026\\Luận Van Tốt Nghiệp\\BE\\BE.csproj",
+  "projectFilePath": "E:\\HK2_2025_2026\\Luận Van Tốt Nghiệp\\be\\BE.csproj",
   "expectedPackageFiles": [
     "C:\\Users\\truon\\.nuget\\packages\\awssdk.core\\4.0.7.1\\awssdk.core.4.0.7.1.nupkg.sha512",
     "C:\\Users\\truon\\.nuget\\packages\\awssdk.rekognition\\4.0.3.30\\awssdk.rekognition.4.0.3.30.nupkg.sha512",

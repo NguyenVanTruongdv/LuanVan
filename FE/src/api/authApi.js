@@ -189,39 +189,39 @@ async logout() {
 
 // ===== AUTH FETCH =====
 
-get(path) {
+get(path, auth = true) {
     return request(
         "GET",
         path,
         null,
-        true
+        auth
     );
 },
 
-post(path, body) {
+post(path, body, auth = true) {
     return request(
         "POST",
         path,
         body,
-        true
+        auth
     );
 },
 
-put(path, body) {
+put(path, body, auth = true) {
     return request(
         "PUT",
         path,
         body,
-        true
+        auth
     );
 },
 
-delete(path) {
+delete(path, auth = true) {
     return request(
         "DELETE",
         path,
         null,
-        true
+        auth
     );
 },
 

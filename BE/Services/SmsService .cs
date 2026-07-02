@@ -1,6 +1,7 @@
 using System.Net.Http.Json;
+namespace BE.Services;
 
-public class SmsService : ISmsService
+public class SmsService
 {
     private readonly HttpClient _httpClient;
     private readonly IConfiguration _config;
