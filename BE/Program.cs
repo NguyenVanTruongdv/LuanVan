@@ -14,15 +14,15 @@ builder.Services.AddControllers();
 // Swagger
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
+var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
 
+Console.WriteLine($"ConnectionString: {connectionString}");
+Console.WriteLine($"Jwt Key: {builder.Configuration["Jwt:Key"]}");
 // Database
 builder.Services.AddDbContext<GymManagementContext>(options =>
 {
-    var connectionString =
-        builder.Configuration.GetConnectionString("DefaultConnection");
-
     options.UseMySql(
-        connectionString,
+        connectionString!,
         ServerVersion.AutoDetect(connectionString)
     );
 });
@@ -81,13 +81,15 @@ app.UseMiddleware<BE.Middleware.ExceptionMiddleware>();
 app.UseCors("AllowAll"); // ← thêm dòng này
 
 // Swagger
-if (app.Environment.IsDevelopment())
-{
-    app.UseSwagger();
-    app.UseSwaggerUI();
-}
 
-app.UseHttpsRedirection();
+app.UseSwagger();
+app.UseSwaggerUI();
+
+
+if (!app.Environment.IsProduction())
+{
+    app.UseHttpsRedirection();
+}
 
 // JWT Middleware
 app.UseAuthentication();
