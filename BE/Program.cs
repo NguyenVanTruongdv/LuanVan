@@ -78,8 +78,9 @@ builder.Services.AddCors(options =>
               .AllowAnyHeader();
     });
 });
+builder.Services.AddResponseCompression();
 var app = builder.Build();
-
+app.UseResponseCompression();
 // Global Exception Middleware
 app.UseMiddleware<BE.Middleware.ExceptionMiddleware>();
 app.UseCors("AllowAll"); // ← thêm dòng này
