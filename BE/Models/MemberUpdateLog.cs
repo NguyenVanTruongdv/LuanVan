@@ -41,7 +41,7 @@ public partial class MemberUpdateLog
     /// <summary>
     /// Nhân viên thực hiện cập nhật — FK tới employees.employee_id
     /// </summary>
-    public long UpdatedByEmployeeId { get; set; }
+    public long UpdatedByEmployeeId { get; set; } 
 
     /// <summary>
     /// Thời điểm thực hiện cập nhật

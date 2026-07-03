@@ -4,6 +4,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import memberApi from "../../api/memberApi"; // chỉnh lại đường dẫn cho đúng project của bạn
 import Footer from "../../component/Footer";
 import Header from "../../component/Header";
+
 const styles = `
   .co-root{
     --bg:#0a0a0d; --bg-soft:#101013; --card:#16161a; --border:#26262d; --border-hi:#35353d;
@@ -48,8 +49,13 @@ const styles = `
   .co-title{ font-size:25px; font-weight:700; margin:0 0 4px; letter-spacing:-.3px; text-align:center; }
   .co-sub{ color:var(--text-dim); font-size:14px; margin:0 0 26px; text-align:center; }
 
-  .co-grid{ display:grid; grid-template-columns:1.35fr 1fr; gap:18px; align-items:start; }
+  .co-grid{ display:grid; grid-template-columns:1.35fr 1fr; gap:18px; align-items:stretch; }
   @media (max-width:860px){ .co-grid{ grid-template-columns:1fr; } }
+
+  .co-left{ display:flex; flex-direction:column; height:100%; min-height:0; }
+  .co-right{ display:flex; flex-direction:column; height:100%; min-height:0; }
+  .co-card.co-grow{ flex:1; display:flex; flex-direction:column; margin-bottom:0; min-height:0; }
+  .co-spacer{ flex:1; }
 
   .co-card{ background:var(--card); border:1px solid var(--border); border-radius:16px; padding:20px; margin-bottom:16px; }
   .co-card-title{ font-size:13px; font-weight:700; text-transform:uppercase; letter-spacing:.6px; color:var(--text-dim); margin:0 0 16px; display:flex; align-items:center; gap:8px; }
@@ -94,20 +100,43 @@ const styles = `
   .co-info-line span:first-child{ flex-shrink:0; }
   .co-info-line span:last-child{ color:var(--text); font-weight:500; text-align:right; }
 
+  .co-plan-picker{ display:flex; flex-direction:column; gap:8px; margin-top:2px; }
+  .co-plan-opt{
+    display:flex; align-items:center; justify-content:space-between; gap:10px;
+    border:1px solid var(--border); border-radius:10px; padding:10px 13px; cursor:pointer;
+    background:var(--bg-soft); transition:border-color .15s, background .15s;
+  }
+  .co-plan-opt:hover{ border-color:var(--border-hi); }
+  .co-plan-opt.selected{ border-color:var(--accent); background:rgba(255,90,46,0.08); }
+  .co-plan-opt-name{ font-size:13px; font-weight:700; }
+  .co-plan-opt-meta{ font-size:11.5px; color:var(--text-dim); margin-top:2px; }
+  .co-plan-opt-price{ font-size:13px; font-weight:700; color:var(--accent-2); white-space:nowrap; }
+  .co-plan-badge{ font-size:9.5px; font-weight:700; text-transform:uppercase; letter-spacing:.4px; color:var(--accent-2); background:rgba(255,90,46,0.12); border-radius:5px; padding:2px 6px; margin-left:6px; }
+
   .co-btn{ width:100%; border:none; border-radius:12px; padding:14px 16px; font-weight:700; font-size:14.5px; cursor:pointer; transition:transform .15s, box-shadow .15s; display:flex; align-items:center; justify-content:center; gap:8px; }
   .co-btn-primary{ background:linear-gradient(135deg, var(--accent), #e64a1f); color:#fff; box-shadow:0 8px 22px -8px rgba(255,90,46,0.55); }
   .co-btn-primary:hover{ transform:translateY(-1px); }
   .co-btn-primary:disabled{ opacity:.6; cursor:not-allowed; transform:none; }
   .co-btn-ghost{ background:transparent; border:1px solid var(--border-hi); color:var(--text-dim); }
   .co-btn-ghost:hover{ color:var(--text); border-color:var(--text-faint); }
+  .co-btn-ghost:disabled{ opacity:.6; cursor:not-allowed; }
+  .co-btn-danger{ background:transparent; border:1px solid rgba(255,90,46,0.4); color:var(--accent-2); }
+  .co-btn-danger:hover{ background:rgba(255,90,46,0.08); border-color:var(--accent); }
+  .co-btn-danger:disabled{ opacity:.6; cursor:not-allowed; }
 
   .co-fine{ font-size:11px; color:var(--text-faint); text-align:center; margin-top:11px; line-height:1.5; }
   .co-fine b{ color:var(--text-dim); }
 
-  .co-qr-wrap{ display:flex; justify-content:center; }
-  .co-qr-card{ max-width:440px; width:100%; text-align:center; }
-  .co-qr-amount{ font-size:28px; font-weight:700; color:var(--accent-2); margin:2px 0; }
-  .co-qr-box{ width:200px; height:200px; margin:16px auto 12px; background:#fff; border-radius:14px; padding:10px; }
+  .co-checkout-grid{ display:grid; grid-template-columns:1fr 1fr; gap:18px; align-items:stretch; max-width:820px; margin:0 auto; }
+  @media (max-width:700px){ .co-checkout-grid{ grid-template-columns:1fr; } }
+  .co-checkout-grid .co-card{ display:flex; flex-direction:column; margin-bottom:0; min-height:0; }
+  .co-qr-card{ text-align:center; }
+  .co-qr-amount{ font-size:26px; font-weight:700; color:var(--accent-2); margin:2px 0; }
+  .co-qr-box{
+    width:100%; max-width:220px; aspect-ratio:1/1; margin:16px auto 12px; background:#fff; border-radius:14px; padding:10px;
+    display:flex; align-items:center; justify-content:center;
+  }
+  .co-qr-empty{ width:100%; height:100%; border:1.5px dashed #cfcfcf; border-radius:10px; display:flex; align-items:center; justify-content:center; color:#9a9aa4; font-size:12px; padding:10px; text-align:center; }
   .co-order{ font-size:12px; color:var(--text-dim); }
   .co-order b{ color:var(--text); letter-spacing:.4px; }
   .co-status-pill{ display:inline-flex; align-items:center; gap:8px; padding:8px 15px; border-radius:999px; background:rgba(255,90,46,0.1); border:1px solid rgba(255,90,46,0.3); font-size:12.5px; font-weight:600; color:var(--accent-2); margin-top:16px; }
@@ -131,6 +160,17 @@ const styles = `
   .co-skel{ display:inline-block; height:12px; width:90px; border-radius:4px; background:var(--border-hi); position:relative; overflow:hidden; }
   .co-skel::after{ content:''; position:absolute; inset:0; background:linear-gradient(90deg, transparent, rgba(255,255,255,0.08), transparent); animation:coSkel 1.2s infinite; }
   @keyframes coSkel{ 0%{ transform:translateX(-100%);} 100%{ transform:translateX(100%);} }
+
+  .co-modal-overlay{
+    position:fixed; inset:0; background:rgba(0,0,0,0.6); backdrop-filter:blur(2px);
+    display:flex; align-items:center; justify-content:center; z-index:50; padding:16px;
+  }
+  .co-modal{
+    background:var(--card); border:1px solid var(--border-hi); border-radius:16px;
+    padding:22px; width:100%; max-width:380px; animation:coFade .2s ease;
+  }
+  .co-modal-actions{ display:flex; gap:10px; margin-top:18px; }
+  .co-modal-actions .co-btn{ flex:1; }
 `;
 
 function formatVnd(n) {
@@ -139,7 +179,9 @@ function formatVnd(n) {
 
 function formatDate(d) {
     if (!d) return "";
+    // Hỗ trợ cả DateOnly (BE trả về dạng "2026-07-03") lẫn DateTime/Date object
     const dt = d instanceof Date ? d : new Date(d);
+    if (Number.isNaN(dt.getTime())) return "";
     return dt.toLocaleDateString("vi-VN");
 }
 
@@ -155,136 +197,132 @@ function getInitials(name) {
     return parts[parts.length - 1]?.charAt(0)?.toUpperCase() || "?";
 }
 
-// Deterministic pseudo-QR pattern dùng làm fallback khi chưa có ảnh QR thật từ cổng thanh toán
-function FakeQR({ seed = "GYM" }) {
-    const size = 21;
-    let s = 0;
-    for (let i = 0; i < seed.length; i++) s += seed.charCodeAt(i) * (i + 7);
-    const rand = () => {
-        s = (s * 1103515245 + 12345) & 0x7fffffff;
-        return s / 0x7fffffff;
-    };
-    const cell = 8;
-    const finder = (x, y) => (
-        <g key={`f-${x}-${y}`}>
-            <rect x={x} y={y} width={cell * 7} height={cell * 7} fill="#0a0a0d" />
-            <rect x={x + cell} y={y + cell} width={cell * 5} height={cell * 5} fill="#fff" />
-            <rect x={x + cell * 2} y={y + cell * 2} width={cell * 3} height={cell * 3} fill="#0a0a0d" />
-        </g>
-    );
-    const modules = [];
-    for (let r = 0; r < size; r++) {
-        for (let c = 0; c < size; c++) {
-            const inFinder =
-                (r < 7 && c < 7) || (r < 7 && c > size - 8) || (r > size - 8 && c < 7);
-            if (inFinder) continue;
-            if (rand() > 0.56) {
-                modules.push(<rect key={`${r}-${c}`} x={c * cell} y={r * cell} width={cell} height={cell} fill="#0a0a0d" />);
-            }
+// Tách bank/account/holder/nội dung CK từ query string của link ảnh QR (VietQR)
+// dùng chung cho cả trường hợp tạo đơn mới và trường hợp resume đơn Pending có sẵn.
+function parseQrInfo(qrImageUrl, fallbackOrderCode) {
+    let bankName = "";
+    let accountNumber = "";
+    let accountName = "";
+    let transferContent = fallbackOrderCode ?? "";
+
+    if (qrImageUrl) {
+        try {
+            const qrUrl = new URL(qrImageUrl);
+            bankName = qrUrl.searchParams.get("bank") ?? "";
+            accountNumber = qrUrl.searchParams.get("acc") ?? "";
+            accountName = qrUrl.searchParams.get("holder") ?? "";
+            transferContent = qrUrl.searchParams.get("des") ?? transferContent;
+        } catch (e) {
+            // qrImage không đúng định dạng URL -> bỏ qua, vẫn hiển thị ảnh QR bình thường
         }
     }
-    const px = size * cell;
-    return (
-        <svg viewBox={`0 0 ${px} ${px}`} width="100%" height="100%">
-            <rect width={px} height={px} fill="#fff" />
-            {modules}
-            {finder(0, 0)}
-            {finder(px - cell * 7, 0)}
-            {finder(0, px - cell * 7)}
-        </svg>
-    );
+
+    return { bankName, accountNumber, accountName, transferContent };
 }
 
 export default function Payment() {
     const location = useLocation();
     const navigate = useNavigate();
 
-    // Gói vừa chọn từ trang MembershipPlansPage: navigate("/payment", { state: { plan } })
-    const selectedPlan = location.state?.plan ?? null;
+    // Gói được chọn từ trang MembershipPlansPage (nếu có): navigate("/payment", { state: { plan } })
+    // Nếu không có, người dùng có thể chọn ngay tại trang này từ danh sách availablePlans lấy từ API.
+    const [selectedPlan, setSelectedPlan] = useState(location.state?.plan ?? null);
 
     const [step, setStep] = useState(1);
 
-    // Gói hiện tại của hội viên (nếu có), lấy từ API
-    const [currentPackage, setCurrentPackage] = useState(null);
-    const [loadingCurrent, setLoadingCurrent] = useState(true);
-
-    // Thông tin cá nhân người mua (tên, sdt, chi nhánh đăng ký ban đầu...)
-    // TODO: thay bằng gọi API thật memberApi.getMyInfo() -> GET /api/member/me
-    // (id lấy từ token phía BE, FE không cần truyền id).
+    // Thông tin cá nhân + gói hiện tại: memberApi.getMyinfoToPayment() -> GET /api/payment/my-info
+    // Response: { fullName, phone, branchName, currentPackage: { planName, expiryDate } | null }
+    // Danh sách gói đang mở bán: memberApi.getAllPackage() -> GET /api/packages
     const [myInfo, setMyInfo] = useState(null);
-    const [loadingMyInfo, setLoadingMyInfo] = useState(true);
+    const [currentPackage, setCurrentPackage] = useState(null); // { planName, expiryDate } | null
+    const [availablePlans, setAvailablePlans] = useState([]);
+    const [loadingInfo, setLoadingInfo] = useState(true);
+    const [infoError, setInfoError] = useState(null);
 
-    // Đơn hàng tạo ra sau khi bấm "Xác nhận & Thanh toán"
-    const [order, setOrder] = useState(null); // { orderId, amount, qrImageUrl, bankInfo, expiresAt }
+    // Đơn thanh toán tạo ra sau khi bấm "Xác nhận & Thanh toán", hoặc được khôi phục lại
+    // từ transaction Pending có sẵn khi vừa vào trang.
+    const [order, setOrder] = useState(null); // { orderId, amount, qrImageUrl, checkoutUrl, bankName, accountName, accountNumber, transferContent, expiresInSeconds }
     const [creatingOrder, setCreatingOrder] = useState(false);
     const [orderError, setOrderError] = useState(null);
 
-    const [seconds, setSeconds] = useState(0);
-    const countdownRef = useRef(null);
+    // Modal xác nhận hủy đơn ở màn QR
+    const [showCancelConfirm, setShowCancelConfirm] = useState(false);
+    const [cancelling, setCancelling] = useState(false);
+
     const pollRef = useRef(null);
 
-    // Chưa có gói nào được chọn (ví dụ user vào thẳng /payment) -> quay lại trang gói tập
-    useEffect(() => {
-        if (!selectedPlan) return;
-    }, [selectedPlan]);
-
-    // Lấy gói tập hiện tại của hội viên để hiển thị block "chuyển đổi gói"
+    // Lấy thông tin cá nhân + gói hiện tại, danh sách gói đang mở bán, và kiểm tra transaction Pending
+    // của member này (nếu có -> nhảy thẳng tới màn QR thay vì màn chọn gói).
     useEffect(() => {
         let mounted = true;
         (async () => {
             try {
-                setLoadingCurrent(true);
-                // TODO: đổi tên method này cho khớp API thật, ví dụ:
-                // memberApi.getCurrentPackage() -> GET /api/member/current-package
-                const res = await memberApi.getCurrentPackage?.();
-                const raw = Array.isArray(res) ? res[0] : res?.data ?? res ?? null;
-                if (mounted) setCurrentPackage(raw || null);
-            } catch (err) {
-                // Không có gói hiện tại (hội viên mới) hoặc API chưa sẵn sàng -> bỏ qua, không chặn luồng thanh toán
-                console.warn("Không lấy được gói hiện tại:", err);
-                if (mounted) setCurrentPackage(null);
-            } finally {
-                if (mounted) setLoadingCurrent(false);
-            }
-        })();
-        return () => {
-            mounted = false;
-        };
-    }, []);
+                setLoadingInfo(true);
+                setInfoError(null);
 
-    // Lấy thông tin cá nhân hội viên (tên, sdt, chi nhánh đăng ký ban đầu)
-    useEffect(() => {
-        let mounted = true;
-        (async () => {
-            try {
-                setLoadingMyInfo(true);
+                const [infoRes, plansRes, pendingRes] = await Promise.all([
+                    memberApi.getMyinfoToPayment(),
+                    memberApi.getAllPackage(),
+                    memberApi.getPendingPayment(),
+                ]);
 
-                // ── Khi có API thật, bỏ mock bên dưới và dùng đoạn này ──
-                // memberApi.getMyInfo() -> GET /api/member/me (BE tự lấy id từ token trong header Authorization)
-                // const res = await memberApi.getMyInfo?.();
-                // const raw = res?.data ?? res ?? null;
-                // if (mounted && raw) {
-                //     setMyInfo({
-                //         fullName: raw.fullName,
-                //         phone: raw.phone,
-                //         initialBranchName: raw.initialBranchName ?? raw.branchName ?? raw.registeredBranch,
-                //     });
-                // }
+                if (!mounted) return;
 
-                // ── Mock tạm thời ──
-                await new Promise((r) => setTimeout(r, 300));
-                if (mounted) {
+                const info = infoRes?.data ?? infoRes ?? null;
+                if (info) {
                     setMyInfo({
-                        fullName: "Nguyễn Văn A",
-                        phone: "0901 234 567",
-                        initialBranchName: "Chi nhánh Quận 1",
+                        fullName: info.fullName,
+                        phone: info.phone,
+                        initialBranchName: info.branchName,
                     });
+
+                    setCurrentPackage(
+                        info.currentPackage
+                            ? {
+                                planName: info.currentPackage.planName,
+                                expiryDate: info.currentPackage.expiryDate,
+                            }
+                            : null
+                    );
+                }
+
+                const rawPlans = plansRes?.data ?? plansRes ?? [];
+                const plans = Array.isArray(rawPlans) ? rawPlans : [];
+                setAvailablePlans(plans);
+
+                const pending = pendingRes?.data ?? pendingRes ?? null;
+
+                if (pending?.hasPending) {
+                    // Đã có đơn đang chờ thanh toán -> khôi phục lại state và vào thẳng màn QR,
+                    // không tạo transaction mới, không quay lại màn chọn gói.
+                    setSelectedPlan({
+                        planId: pending.planId,
+                        planName: pending.planName,
+                        durationDays: pending.durationDays,
+                        price: pending.planPrice,
+                    });
+
+                    const parsed = parseQrInfo(pending.qrImage, pending.orderCode);
+                    setOrder({
+                        orderId: pending.orderCode,
+                        amount: pending.amount,
+                        qrImageUrl: pending.qrImage ?? null,
+                        checkoutUrl: null,
+                        ...parsed,
+                        expiresInSeconds: 299,
+                    });
+                    setStep(2);
+                } else {
+                    // Không có đơn nào đang chờ -> vào bình thường ở màn chọn gói.
+                    // Nếu vào thẳng /payment mà chưa có gói được chọn từ trang trước,
+                    // tự chọn gói đầu tiên trong danh sách để không bị kẹt màn hình lỗi.
+                    setSelectedPlan((prev) => prev ?? plans[0] ?? null);
                 }
             } catch (err) {
-                console.warn("Không lấy được thông tin cá nhân:", err);
-                if (mounted) setMyInfo(null);
+                console.warn("Không lấy được thông tin thanh toán:", err);
+                if (mounted) setInfoError("Không thể tải thông tin. Vui lòng thử lại.");
             } finally {
-                if (mounted) setLoadingMyInfo(false);
+                if (mounted) setLoadingInfo(false);
             }
         })();
         return () => {
@@ -292,81 +330,114 @@ export default function Payment() {
         };
     }, []);
 
-    // Tạo đơn hàng khi bước sang màn hình QR
+    // Tạo đơn thanh toán khi bước sang màn hình QR
+    // API thật: memberApi.createPayment(planId) -> POST /api/payment/create { planId }
     const handleConfirmPayment = async () => {
         if (!selectedPlan) return;
         try {
             setCreatingOrder(true);
             setOrderError(null);
 
-            // TODO: đổi tên method + payload cho khớp API thật, ví dụ:
-            // memberApi.createOrder({ planId }) -> POST /api/orders { planId }
-            const res = await memberApi.createOrder?.({ planId: selectedPlan.planId });
+            const res = await memberApi.createPayment(selectedPlan.planId);
             const raw = res?.data ?? res;
 
-            if (!raw) throw new Error("Không nhận được dữ liệu đơn hàng từ server");
+            if (!raw) throw new Error("Không nhận được dữ liệu thanh toán từ server");
+
+            // Response thật từ BE: { orderCode, amount, qrImage }
+            // qrImage là link ảnh VietQR trực tiếp, dạng:
+            // https://vietqr.app/img?bank=MBBank&acc=...&amount=...&des=...&holder=...
+            // BE không trả riêng bankName/accountNumber/holder nên tách từ query string của qrImage để hiển thị.
+            const parsed = parseQrInfo(raw.qrImage, raw.orderCode);
 
             setOrder({
-                orderId: raw.orderId ?? raw.id ?? `GYM${selectedPlan.planId}${Date.now()}`,
+                orderId: raw.orderCode,
                 amount: raw.amount ?? selectedPlan.price,
-                qrImageUrl: raw.qrImageUrl ?? null, // nếu BE trả sẵn ảnh QR thì dùng, không thì fallback FakeQR
-                bankName: raw.bankName ?? "",
-                accountName: raw.accountName ?? "",
-                accountNumber: raw.accountNumber ?? "",
-                transferContent: raw.transferContent ?? raw.orderId ?? "",
+                qrImageUrl: raw.qrImage ?? null, // null -> UI sẽ hiển thị ô trống "Chưa có mã QR" để dễ nhận biết khi test
+                checkoutUrl: null,
+                ...parsed,
                 expiresInSeconds: raw.expiresInSeconds ?? 299,
             });
 
             setStep(2);
         } catch (err) {
-            console.error("Lỗi khi tạo đơn hàng:", err);
-            setOrderError("Không thể tạo đơn hàng. Vui lòng thử lại.");
+            console.error("Lỗi khi tạo thanh toán:", err);
+            setOrderError("Không thể tạo thanh toán. Vui lòng thử lại.");
         } finally {
             setCreatingOrder(false);
         }
     };
 
-    // Đếm ngược thời gian hết hạn QR
-    useEffect(() => {
-        if (step === 2 && order) {
-            setSeconds(order.expiresInSeconds ?? 299);
-            countdownRef.current = setInterval(() => {
-                setSeconds((s) => (s > 0 ? s - 1 : 0));
-            }, 1000);
-        }
-        return () => clearInterval(countdownRef.current);
-    }, [step, order]);
+    // Hủy đơn đang chờ thanh toán. API thật: memberApi.cancelPayment(orderCode) -> POST /api/payment/cancel/{orderCode}
+    const handleCancelPayment = async () => {
+        if (!order) return;
+        try {
+            setCancelling(true);
+            await memberApi.cancelPayment(order.orderId);
 
-    // Poll trạng thái đơn hàng để tự động chuyển sang bước 3 khi thanh toán thành công
+            clearInterval(pollRef.current);
+            setShowCancelConfirm(false);
+            setOrder(null);
+            setOrderError(null);
+            // Hủy xong -> quay thẳng về trang gói tập để chọn lại từ đầu,
+            // không ở lại trang payment nữa.
+            navigate("/packages", { replace: true });
+            return;
+        } catch (err) {
+            console.error("Lỗi khi hủy đơn hàng:", err);
+            setShowCancelConfirm(false);
+            setOrderError("Không thể hủy đơn hàng. Vui lòng thử lại.");
+        } finally {
+            setCancelling(false);
+        }
+    };
+
+    // Poll trạng thái thanh toán mỗi 3s để tự động chuyển sang bước 3 khi thanh toán thành công
+    // API thật: memberApi.getPaymentStatus(orderCode) -> GET /api/payment/status/{orderCode}
     useEffect(() => {
-        if (step === 2 && order) {
-            pollRef.current = setInterval(async () => {
-                try {
-                    // TODO: đổi tên method cho khớp API thật, ví dụ:
-                    // memberApi.getOrderStatus(orderId) -> GET /api/orders/{orderId}/status
-                    const res = await memberApi.getOrderStatus?.(order.orderId);
-                    const status = res?.data?.status ?? res?.status;
-                    if (status === "Paid" || status === "Success") {
-                        clearInterval(pollRef.current);
-                        setStep(3);
-                    }
-                } catch (err) {
-                    console.warn("Lỗi khi kiểm tra trạng thái đơn hàng:", err);
+        if (step !== 2 || !order) return;
+
+        let cancelled = false;
+
+        const checkStatus = async () => {
+            try {
+                const res = await memberApi.getPaymentStatus(order.orderId);
+                const raw = res?.data ?? res;
+                const status = String(raw?.status ?? raw?.paymentStatus ?? "")
+                    .trim()
+                    .toLowerCase();
+
+                if (!cancelled && status === "paid") {
+                    clearInterval(pollRef.current);
+                    setStep(3);
                 }
-            }, 3000);
-        }
-        return () => clearInterval(pollRef.current);
-    }, [step, order]);
+            } catch (err) {
+                console.warn("Lỗi khi kiểm tra trạng thái thanh toán:", err);
+            }
+        };
 
-    const mm = String(Math.floor(seconds / 60)).padStart(2, "0");
-    const ss = String(seconds % 60).padStart(2, "0");
+        // Check ngay lần đầu, không chờ 3s
+        checkStatus();
+        pollRef.current = setInterval(checkStatus, 3000);
+
+        return () => {
+            cancelled = true;
+            clearInterval(pollRef.current);
+        };
+    }, [step, order]);
 
     // Tính mốc thời gian hiệu lực gói mới
+    // Nếu hội viên đang có gói active -> gói mới bắt đầu tính từ ngày hết hạn gói cũ (nối tiếp)
+    // Nếu chưa có gói nào -> bắt đầu từ hôm nay
     const today = new Date();
-    const newStart = currentPackage?.endDate ? new Date(currentPackage.endDate) : today;
+    const newStart = currentPackage?.expiryDate ? new Date(currentPackage.expiryDate) : today;
     const newEnd = selectedPlan ? addDays(newStart, selectedPlan.durationDays) : null;
 
     const goToPackages = () => navigate("/packages");
+
+    const handleSelectPlan = (plan) => {
+        setSelectedPlan(plan);
+        setOrderError(null);
+    };
 
     return (
         <>
@@ -398,8 +469,29 @@ export default function Payment() {
                         </div>
                     </div>
 
-                    {/* Chưa có gói nào được chọn */}
-                    {!selectedPlan && (
+                    {/* Đang tải thông tin ban đầu */}
+                    {loadingInfo && (
+                        <div className="co-state">Đang tải thông tin...</div>
+                    )}
+
+                    {/* Lỗi khi tải thông tin trang */}
+                    {!loadingInfo && infoError && (
+                        <div className="co-state co-state--error">
+                            {infoError}
+                            <div style={{ marginTop: 16 }}>
+                                <button
+                                    className="co-btn co-btn-primary"
+                                    style={{ width: "auto", padding: "10px 20px" }}
+                                    onClick={() => window.location.reload()}
+                                >
+                                    Thử lại
+                                </button>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Không có gói nào để mua (không truyền từ trang trước và BE cũng không trả gói nào đang mở bán) */}
+                    {!loadingInfo && !infoError && !selectedPlan && (
                         <div className="co-state co-state--error">
                             Không tìm thấy thông tin gói tập bạn muốn mua.
                             <div style={{ marginTop: 16 }}>
@@ -411,7 +503,7 @@ export default function Payment() {
                     )}
 
                     {/* SCREEN 1 */}
-                    {selectedPlan && step === 1 && (
+                    {!loadingInfo && !infoError && selectedPlan && step === 1 && (
                         <div className="co-fade">
                             <button className="co-back" onClick={goToPackages}>
                                 <ArrowLeft size={15} /> Quay lại chọn gói
@@ -421,18 +513,16 @@ export default function Payment() {
                             <p className="co-sub">Kiểm tra lại thông tin gói tập trước khi thanh toán</p>
 
                             <div className="co-grid">
-                                <div>
-                                    <div className="co-card">
+                                <div className="co-left">
+                                    <div className="co-card co-grow">
                                         <div className="co-card-title"><span className="co-bar" />Chuyển đổi gói tập</div>
                                         <div className="co-pkg-row">
                                             <div className="co-pkg-box">
                                                 <div className="co-pkg-tag">Gói hiện tại</div>
-                                                {loadingCurrent ? (
-                                                    <div className="co-pkg-meta">Đang tải...</div>
-                                                ) : currentPackage ? (
+                                                {currentPackage ? (
                                                     <>
                                                         <div className="co-pkg-name co-disp">{currentPackage.planName}</div>
-                                                        <div className="co-pkg-meta">Kết thúc {formatDate(currentPackage.endDate)}</div>
+                                                        <div className="co-pkg-meta">Kết thúc {formatDate(currentPackage.expiryDate)}</div>
                                                     </>
                                                 ) : (
                                                     <div className="co-pkg-meta">Chưa có gói nào</div>
@@ -458,6 +548,35 @@ export default function Payment() {
                                             </div>
                                         </div>
 
+                                        {/* Danh sách gói đang mở bán để đổi lựa chọn ngay tại trang này */}
+                                        {availablePlans.length > 1 && (
+                                            <div style={{ marginTop: 18 }}>
+                                                <div className="co-card-title" style={{ marginBottom: 10 }}>
+                                                    <span className="co-bar" />Chọn gói khác
+                                                </div>
+                                                <div className="co-plan-picker">
+                                                    {availablePlans.map((plan) => (
+                                                        <div
+                                                            key={plan.planId}
+                                                            className={`co-plan-opt ${selectedPlan.planId === plan.planId ? "selected" : ""}`}
+                                                            onClick={() => handleSelectPlan(plan)}
+                                                        >
+                                                            <div>
+                                                                <span className="co-plan-opt-name">
+                                                                    {plan.planName}
+                                                                    {plan.isPopular && <span className="co-plan-badge">Phổ biến</span>}
+                                                                </span>
+                                                                <div className="co-plan-opt-meta">Thời hạn {plan.durationDays} ngày</div>
+                                                            </div>
+                                                            <div className="co-plan-opt-price co-disp">{formatVnd(plan.price)}</div>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        <div className="co-spacer" />
+
                                         <div className="co-price-list">
                                             <div className="co-price-row"><span>Giá {selectedPlan.planName}</span><span>{formatVnd(selectedPlan.price)}</span></div>
                                             <div className="co-price-row total"><span>Thành tiền</span><span className="val co-disp">{formatVnd(selectedPlan.price)}</span></div>
@@ -465,35 +584,31 @@ export default function Payment() {
                                     </div>
                                 </div>
 
-                                <div>
-                                    {/* Thông tin cá nhân — mock tạm thời, sau này lấy từ memberApi.getMyInfo() (id theo token) */}
+                                <div className="co-right">
+                                    {/* Thông tin cá nhân */}
                                     <div className="co-card">
                                         <div className="co-card-title"><span className="co-bar" />Thông tin cá nhân</div>
                                         <div className="co-user">
-                                            <div className="co-avatar co-disp">{loadingMyInfo ? "" : getInitials(myInfo?.fullName)}</div>
+                                            <div className="co-avatar co-disp">{getInitials(myInfo?.fullName)}</div>
                                             <div>
-                                                <div className="co-user-name">
-                                                    {loadingMyInfo ? <span className="co-skel" /> : (myInfo?.fullName || "—")}
-                                                </div>
-                                                <div className="co-user-sub">
-                                                    {loadingMyInfo ? <span className="co-skel" style={{ width: 70 }} /> : (myInfo?.phone || "—")}
-                                                </div>
+                                                <div className="co-user-name">{myInfo?.fullName || "—"}</div>
+                                                <div className="co-user-sub">{myInfo?.phone || "—"}</div>
                                             </div>
                                         </div>
 
                                         <div style={{ marginTop: 14 }}>
                                             <div className="co-info-line">
                                                 <span>Số điện thoại</span>
-                                                <span>{loadingMyInfo ? <span className="co-skel" /> : (myInfo?.phone || "—")}</span>
+                                                <span>{myInfo?.phone || "—"}</span>
                                             </div>
                                             <div className="co-info-line">
-                                                <span>Chi nhánh đăng ký ban đầu</span>
-                                                <span>{loadingMyInfo ? <span className="co-skel" /> : (myInfo?.initialBranchName || "—")}</span>
+                                                <span>Chi nhánh</span>
+                                                <span>{myInfo?.initialBranchName || "—"}</span>
                                             </div>
                                         </div>
                                     </div>
 
-                                    <div className="co-card">
+                                    <div className="co-card co-grow">
                                         <div className="co-card-title"><span className="co-bar" />Thanh toán</div>
                                         <div className="co-info-line">
                                             <span>Tổng cộng</span>
@@ -503,6 +618,8 @@ export default function Payment() {
                                         {orderError && (
                                             <div className="co-fine" style={{ color: "var(--accent-2)", marginTop: 10 }}>{orderError}</div>
                                         )}
+
+                                        <div className="co-spacer" />
 
                                         <button
                                             className="co-btn co-btn-primary"
@@ -522,12 +639,13 @@ export default function Payment() {
                     )}
 
                     {/* SCREEN 2 */}
-                    {selectedPlan && step === 2 && order && (
+                    {!loadingInfo && !infoError && selectedPlan && step === 2 && order && (
                         <div className="co-fade">
                             <h1 className="co-title co-disp">Quét mã để thanh toán</h1>
                             <p className="co-sub">Mở app ngân hàng hoặc ví điện tử và quét mã QR bên dưới</p>
 
-                            <div className="co-qr-wrap">
+                            <div className="co-checkout-grid">
+                                {/* Cột QR */}
                                 <div className="co-card co-qr-card">
                                     <div className="co-qr-amount co-disp">{formatVnd(order.amount)}</div>
                                     <div style={{ fontSize: 12, color: "#64646d" }}>Số tiền cần thanh toán</div>
@@ -536,32 +654,59 @@ export default function Payment() {
                                         {order.qrImageUrl ? (
                                             <img src={order.qrImageUrl} alt="QR thanh toán" style={{ width: "100%", height: "100%", objectFit: "contain" }} />
                                         ) : (
-                                            <FakeQR seed={order.orderId} />
+                                            // Chưa lấy được QR thật từ BE -> để trống có viền đứt để dễ nhận biết khi test
+                                            <div className="co-qr-empty">Chưa có mã QR</div>
                                         )}
                                     </div>
 
-                                    <div className="co-order">Mã đơn hàng <b>#{order.orderId}</b></div>
+                                    {order.checkoutUrl && (
+                                        <a
+                                            href={order.checkoutUrl}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="co-btn co-btn-ghost"
+                                            style={{ marginTop: 6, textDecoration: "none" }}
+                                        >
+                                            Mở trang thanh toán
+                                        </a>
+                                    )}
 
-                                    <div style={{ textAlign: "left", marginTop: 18 }}>
-                                        {order.bankName && <div className="co-info-line"><span>Ngân hàng</span><span>{order.bankName}</span></div>}
-                                        {order.accountName && <div className="co-info-line"><span>Chủ tài khoản</span><span>{order.accountName}</span></div>}
-                                        {order.accountNumber && <div className="co-info-line"><span>Số tài khoản</span><span>{order.accountNumber}</span></div>}
-                                        <div className="co-info-line"><span>Nội dung CK</span><span>{order.transferContent}</span></div>
-                                    </div>
+                                    <div className="co-spacer" />
 
                                     <div className="co-status-pill"><span className="co-pulse" />Đang chờ thanh toán...</div>
-                                    <div className="co-countdown co-disp">Mã QR hết hạn sau {mm}:{ss}</div>
 
-                                    <button className="co-btn co-btn-ghost" style={{ marginTop: 18 }} onClick={() => setStep(1)}>
-                                        <ArrowLeft size={15} /> Quay lại đơn hàng
+                                    <button
+                                        className="co-btn co-btn-danger"
+                                        style={{ marginTop: 14 }}
+                                        onClick={() => setShowCancelConfirm(true)}
+                                    >
+                                        Hủy đơn hàng
                                     </button>
+                                </div>
+
+                                {/* Cột thông tin đơn hàng */}
+                                <div className="co-card">
+                                    <div className="co-card-title"><span className="co-bar" />Thông tin đơn hàng</div>
+                                    <div className="co-info-line"><span>Mã đơn hàng</span><span>#{order.orderId}</span></div>
+                                    <div className="co-info-line"><span>Gói tập</span><span>{selectedPlan.planName}</span></div>
+                                    {order.bankName && <div className="co-info-line"><span>Ngân hàng</span><span>{order.bankName}</span></div>}
+                                    {order.accountName && <div className="co-info-line"><span>Chủ tài khoản</span><span>{order.accountName}</span></div>}
+                                    {order.accountNumber && <div className="co-info-line"><span>Số tài khoản</span><span>{order.accountNumber}</span></div>}
+                                    <div className="co-info-line"><span>Nội dung CK</span><span>{order.transferContent}</span></div>
+                                    <div className="co-info-line"><span>Số tiền</span><span style={{ color: "var(--accent-2)", fontWeight: 700 }}>{formatVnd(order.amount)}</span></div>
+
+                                    {orderError && (
+                                        <div className="co-fine" style={{ color: "var(--accent-2)", marginTop: 10 }}>{orderError}</div>
+                                    )}
+
+                                    <div className="co-spacer" />
                                 </div>
                             </div>
                         </div>
                     )}
 
                     {/* SCREEN 3 */}
-                    {selectedPlan && step === 3 && (
+                    {!loadingInfo && !infoError && selectedPlan && step === 3 && (
                         <div className="co-fade co-success">
                             <div className="co-check-circle">
                                 <Check size={34} color="#33c47e" strokeWidth={3} />
@@ -583,6 +728,37 @@ export default function Payment() {
                         </div>
                     )}
                 </div>
+
+                {/* Modal xác nhận hủy đơn hàng */}
+                {showCancelConfirm && (
+                    <div
+                        className="co-modal-overlay"
+                        onClick={() => !cancelling && setShowCancelConfirm(false)}
+                    >
+                        <div className="co-modal co-fade" onClick={(e) => e.stopPropagation()}>
+                            <h3 className="co-disp" style={{ marginTop: 0, marginBottom: 8 }}>Hủy đơn hàng?</h3>
+                            <p style={{ color: "var(--text-dim)", fontSize: 13.5, lineHeight: 1.5, margin: 0 }}>
+                                Đơn hàng <b style={{ color: "var(--text)" }}>#{order?.orderId}</b> sẽ bị hủy và bạn có thể chọn lại gói tập khác. Hành động này không thể hoàn tác.
+                            </p>
+                            <div className="co-modal-actions">
+                                <button
+                                    className="co-btn co-btn-ghost"
+                                    disabled={cancelling}
+                                    onClick={() => setShowCancelConfirm(false)}
+                                >
+                                    Không, giữ lại
+                                </button>
+                                <button
+                                    className="co-btn co-btn-primary"
+                                    disabled={cancelling}
+                                    onClick={handleCancelPayment}
+                                >
+                                    {cancelling ? "Đang hủy..." : "Xác nhận hủy"}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )}
             </div>
             <Footer />
         </>

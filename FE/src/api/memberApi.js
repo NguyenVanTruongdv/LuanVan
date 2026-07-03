@@ -10,8 +10,29 @@ const memberApi = {
         return authApi.get("/api/EquipmentCategory", false);
     },
     getAllPackage() {
-        return authApi.get("/api/packages",false)
+        return authApi.get("/api/packages", false)
+    },
+    getHomeImages() {
+        return authApi.get("/api/home-images/all", false)
+    },
+    createPayment(planId) {
+        return authApi.post("/api/payment/create", {
+            planId,
+        });
+    },
+    getPaymentStatus(orderCode) {
+        return authApi.get(`/api/payment/status/${orderCode}`);
+    },
+    getMyinfoToPayment() {
+        return authApi.get("/api/payment/my-info")
+    },
+    getPendingPayment() {
+        return authApi.get("/api/payment/pending")
+    },
+    cancelPayment(orderCode) {
+        return authApi.post(`/api/payment/cancel/${orderCode}`);
     }
+
     // Ví dụ sau này
     // getProfile() {
     //     return authApi.get("/api/member/profile");

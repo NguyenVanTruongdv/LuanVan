@@ -14,13 +14,19 @@ builder.Services.AddControllers();
 // Swagger
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
-var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
 
-Console.WriteLine($"ConnectionString: {connectionString}");
-Console.WriteLine($"Jwt Key: {builder.Configuration["Jwt:Key"]}");
-// Database
+// builder.Services.AddDbContext<GymManagementContext>(options =>
+// {
+//     options.UseMySql(
+//         connectionString!,
+//         ServerVersion.AutoDetect(connectionString)
+//     );
+// });
 builder.Services.AddDbContext<GymManagementContext>(options =>
 {
+    var connectionString =
+        builder.Configuration.GetConnectionString("DefaultConnection");
+
     options.UseMySql(
         connectionString!,
         ServerVersion.AutoDetect(connectionString)
@@ -33,6 +39,8 @@ builder.Services.AddScoped<AuthService>();
 builder.Services.AddScoped<SmsService>();
 builder.Services.AddScoped<NewsService>();
 builder.Services.AddScoped<PackageService>();
+builder.Services.AddScoped<PaymentService>();
+builder.Services.AddScoped<HomeImageService>();
 builder.Services.AddScoped<EquipmentCategoryService>();
 builder.Services.AddScoped<JwtHelper>();
 

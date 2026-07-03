@@ -58,9 +58,6 @@ public partial class MemberPackage
     /// </summary>
     public DateOnly ExpiryDate { get; set; }
 
-    /// <summary>
-    /// Trạng thái gói: Pending=chờ thanh toán, Active=đang hiệu lực, Expired=hết hạn, Cancelled=đã hủy
-    /// </summary>
     public string PackageStatus { get; set; } = null!;
 
     /// <summary>

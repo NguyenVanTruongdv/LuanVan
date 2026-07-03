@@ -20,7 +20,9 @@ public class ExceptionMiddleware
         }
         catch (Exception ex)
         {
-            await HandleExceptionAsync(context, ex);
+            await HandleExceptionAsync(
+                context,
+                ex);
         }
     }
 
@@ -28,21 +30,28 @@ public class ExceptionMiddleware
         HttpContext context,
         Exception exception)
     {
-        context.Response.ContentType = "application/json";
+        context.Response.ContentType =
+            "application/json";
 
-        context.Response.StatusCode = exception switch
-        {
-            BadRequestException => StatusCodes.Status400BadRequest,
-            UnauthorizedException => StatusCodes.Status401Unauthorized,
-            NotFoundException => StatusCodes.Status404NotFound,
-            _ => StatusCodes.Status500InternalServerError
-        };
+        context.Response.StatusCode =
+            exception switch
+            {
+                BadRequestException =>
+                    StatusCodes.Status400BadRequest,
+
+                UnauthorizedException =>
+                    StatusCodes.Status401Unauthorized,
+
+                NotFoundException =>
+                    StatusCodes.Status404NotFound,
+
+                _ =>
+                    StatusCodes.Status500InternalServerError
+            };
 
         var response = new
         {
-            message = exception.Message,
-            exception = exception.GetType().FullName,
-            stackTrace = exception.ToString()
+            message = exception.Message
         };
 
         await context.Response.WriteAsync(

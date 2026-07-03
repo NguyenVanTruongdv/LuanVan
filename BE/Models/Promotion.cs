@@ -100,4 +100,6 @@ public partial class Promotion
     public virtual ICollection<PromotionPlan> PromotionPlans { get; set; } = new List<PromotionPlan>();
 
     public virtual ICollection<PromotionUsage> PromotionUsages { get; set; } = new List<PromotionUsage>();
+
+    public virtual ICollection<Transaction> Transactions { get; set; } = new List<Transaction>();
 }

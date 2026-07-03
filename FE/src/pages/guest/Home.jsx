@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import Footer from "../../component/Footer";
 import Header from "../../component/Header";
 // ⚠️ Chỉnh lại đường dẫn import bên dưới cho đúng với vị trí thực tế của memberApi trong project
@@ -18,24 +19,6 @@ const MOCK_BRANCHES = [
   { id: "td", name: "VTGym Thủ Đức", address: "321 Võ Văn Ngân, TP.Thủ Đức", href: "/chi-nhanh/thu-duc" },
 ];
 
-const MOCK_PACKAGES = [
-  {
-    id: "1-thang", name: "1 Tháng", price: 350000, period: "/tháng", highlighted: false, href: "/goi-tap/1-thang",
-    desc: "Phù hợp để trải nghiệm trước khi gắn bó lâu dài.",
-    features: ["Tự do giờ tập 24/7", "Sử dụng tại tất cả chi nhánh", "Không ràng buộc hợp đồng"]
-  },
-  {
-    id: "6-thang", name: "6 Tháng", price: 1800000, period: "/6 tháng", highlighted: true, href: "/goi-tap/6-thang",
-    desc: "Lựa chọn được chọn nhiều nhất — tiết kiệm hơn gói tháng.",
-    features: ["Tự do giờ tập 24/7", "Sử dụng tại cả chi nhánh", "Phòng tắm miễn phí"]
-  },
-  {
-    id: "12-thang", name: "12 Tháng", price: 3200000, period: "/năm", highlighted: false, href: "/goi-tap/12-thang",
-    desc: "Tiết kiệm tối đa cho người tập luyện lâu dài.",
-    features: ["Tự do giờ tập 24/7", "Sử dụng tại cả chi nhánh", "Tủ khóa gửi đồ miễn phí"]
-  },
-];
-
 const MOCK_TRAFFIC = { q1: [28, 41, 55, 62, 48], q7: [18, 30, 44, 50, 37], bth: [22, 35, 49, 58, 43], td: [12, 24, 38, 45, 30] };
 
 const HERO_IMAGES = [
@@ -44,28 +27,23 @@ const HERO_IMAGES = [
   "https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?w=1600&q=80",
 ];
 
-const MOCK_GALLERY = [
-  { src: "https://images.unsplash.com/photo-1638536532686-d610adfc8e5c?w=900&q=80", label: "Khu tạ tự do" },
-  { src: "https://images.unsplash.com/photo-1581009146145-b5ef050c2e1e?w=900&q=80", label: "Máy cardio hiện đại" },
-  { src: "https://images.unsplash.com/photo-1526506118085-60ce8714f8c5?w=900&q=80", label: "Không gian rộng rãi" },
-  { src: "https://images.unsplash.com/photo-1605296867304-46d5465a13f1?w=900&q=80", label: "Khu Functional Training" },
-  { src: "https://images.unsplash.com/photo-1574680178050-55c6a6a96e0a?w=900&q=80", label: "Phòng tập sạch sẽ" },
-  { src: "https://images.unsplash.com/photo-1567598508481-65985588e295?w=900&q=80", label: "Máy lạnh toàn khu" },
-];
 
-const MOCK_EQUIPMENT = [
-  { icon: "🏋️", name: "Tạ tự do", desc: "Dumbbells 2–60kg, barbell, EZ bar, hex bar", href: "/may-tap#ta-tu-do" },
-  { icon: "🚴", name: "Cardio", desc: "Treadmill, bike, elliptical, rowing machine", href: "/may-tap#cardio" },
-  { icon: "⚙️", name: "Máy kháng lực", desc: "Cable crossover, smith machine, leg press", href: "/may-tap#may-khang-luc" },
-  { icon: "🤸", name: "Functional", desc: "TRX, battle rope, kettlebell, plyo box", href: "/may-tap#functional" },
-];
 
 const fmt = (n) => n.toLocaleString("vi-VN") + "đ";
 
+// Số ngày -> nhãn chu kỳ hiển thị cạnh giá (vd: 30 -> "/tháng", 90 -> "/3 tháng", 365 -> "/năm")
+function formatPeriod(days) {
+  if (!days) return "";
+  if (days === 365) return "/năm";
+  if (days === 30) return "/tháng";
+  if (days % 30 === 0) return `/${days / 30} tháng`;
+  return `/${days} ngày`;
+}
+
 /* =========================================================================
  * DATA FETCHERS
- * Mỗi hàm trả về đúng shape mà UI đang dùng. Hiện tại đa số đang mock
- * (giả lập độ trễ mạng), riêng fetchAnnouncements() đã gọi API thật.
+ * Mỗi hàm trả về đúng shape mà UI đang dùng. fetchAnnouncements(), fetchGallery()
+ * và fetchPackages() đã gọi API thật, các phần còn lại vẫn đang mock.
  * Khi có API cho phần nào, chỉ cần thay nội dung bên trong hàm tương ứng.
  * ========================================================================= */
 
@@ -79,24 +57,73 @@ async function fetchBranches() {
   // return json.branches; // shape: { id, name, address, href }[]
 }
 
+
 async function fetchPackages() {
-  await new Promise((r) => setTimeout(r, 250)); // giả lập độ trễ network
-  return MOCK_PACKAGES;
-  // Khi có API thật:
-  // const res = await fetch("/api/packages");
-  // if (!res.ok) throw new Error("Không lấy được danh sách gói tập");
-  // const json = await res.json();
-  // return json.packages; // shape: { id, name, price, period, highlighted, href, desc, features[] }[]
+  const res = await memberApi.getAllPackage();
+
+  // Tuỳ theo cách memberApi trả về (axios response .data, hoặc trả thẳng mảng),
+  // xử lý linh hoạt cả 2 trường hợp cho chắc.
+  const raw = Array.isArray(res?.data) ? res.data : Array.isArray(res) ? res : [];
+
+  const normalize = (p, i) => {
+    const description = p.description ?? p.Description ?? "";
+    // Tách mô tả theo dấu "," hoặc "." thành các cụm ngắn, bỏ khoảng trắng thừa và cụm rỗng
+    const parts = description
+      .split(/[.,]/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+
+    const durationDays = p.durationDays ?? p.DurationDays ?? 30;
+    const planId = p.planId ?? p.PlanId ?? i;
+
+    return {
+      id: planId,
+      name: p.planName ?? p.PlanName ?? "",
+      price: p.price ?? p.Price ?? 0,
+      period: formatPeriod(durationDays),
+      highlighted: !!(p.isPopular ?? p.IsPopular),
+      href: `/goi-tap/${planId}`,
+      desc: parts[0] || description,
+      features: parts.length > 1 ? parts.slice(1) : parts,
+      status: p.status ?? p.Status ?? "OnSale",
+      // Giữ nguyên bản gốc để mang đủ dữ liệu sang trang /payment (giống MembershipPlansPage)
+      durationDays,
+      rawDescription: description,
+    };
+  };
+
+  const active = raw
+    .filter((p) => (p.status ?? p.Status ?? "OnSale") === "OnSale")
+    .map(normalize);
+
+  // Đảm bảo gói phổ biến (isPopular) luôn có mặt trong danh sách hiển thị,
+  // sau đó bù thêm các gói khác cho đủ tối đa 3 gói.
+  const popular = active.filter((p) => p.highlighted);
+  const others = active.filter((p) => !p.highlighted);
+  const top3 = [...popular, ...others].slice(0, 3);
+
+  // Hiển thị theo giá tăng dần cho tự nhiên
+  return top3.sort((a, b) => a.price - b.price);
+  // (Nếu API sau này tự trả về đúng 3 gói kèm cờ isPopular, có thể bỏ bớt bước lọc/cắt ở trên.)
 }
 
+
 async function fetchGallery() {
-  await new Promise((r) => setTimeout(r, 250)); // giả lập độ trễ network
-  return MOCK_GALLERY;
-  // Khi có API thật:
-  // const res = await fetch("/api/gallery");
-  // if (!res.ok) throw new Error("Không lấy được hình ảnh phòng tập");
-  // const json = await res.json();
-  // return json.images; // shape: { src, label }[]
+  const res = await memberApi.getHomeImages();
+
+  // Tuỳ theo cách memberApi trả về (axios response .data, hoặc trả thẳng mảng),
+  // xử lý linh hoạt cả 2 trường hợp cho chắc.
+  const raw = Array.isArray(res?.data) ? res.data : Array.isArray(res) ? res : [];
+
+  return raw
+    .filter((img) => (img.status ?? img.Status ?? "Active") === "Active")
+    .sort((a, b) => (a.sortOrder ?? a.SortOrder ?? 0) - (b.sortOrder ?? b.SortOrder ?? 0))
+    .map((img, i) => ({
+      id: img.imageId ?? img.ImageId ?? i,
+      src: img.imageUrl ?? img.ImageUrl ?? "",
+      label: img.title ?? img.Title ?? "",
+      href: img.linkUrl ?? img.LinkUrl ?? null,
+    }));
 }
 
 async function fetchEquipment() {
@@ -111,7 +138,7 @@ async function fetchEquipment() {
     "🧘", // Core & Stretching
     "🎒", // Phụ kiện
   ];
-    return data.map((item, index) => ({
+  return data.map((item, index) => ({
     categoryId: item.categoryId,
     categoryName: item.categoryName,
     description: item.description,
@@ -388,6 +415,7 @@ function AnnouncementCarouselMobile({ items }) {
 }
 
 export default function Home() {
+  const navigate = useNavigate();
   const [heroIdx, setHeroIdx] = useState(0);
 
   // Chi nhánh
@@ -519,6 +547,24 @@ export default function Home() {
     return () => clearInterval(t);
   }, []);
 
+  // Bấm "Chọn gói này" -> chuyển sang trang /payment kèm state.plan,
+  // giống hệt cách MembershipPlansPage đang làm (handleBuy).
+  const handleBuyPackage = (p) => {
+    navigate("/payment", {
+      state: {
+        plan: {
+          planId: p.id,
+          planName: p.name,
+          price: p.price,
+          durationDays: p.durationDays,
+          description: p.rawDescription,
+          status: p.status,
+          featured: p.highlighted,
+        },
+      },
+    });
+  };
+
   return (
     <div className="h-page">
       <Header />
@@ -606,14 +652,20 @@ export default function Home() {
                     <ul className="h-plan__list">
                       {p.features.map((f, i) => <li key={i}>{f}</li>)}
                     </ul>
-                    <a href={p.href} className={`h-btn ${p.highlighted ? "h-btn--primary" : "h-btn--ghost"} h-plan__cta`}>Chọn gói này</a>
+                    <button
+                      type="button"
+                      className={`h-btn ${p.highlighted ? "h-btn--primary" : "h-btn--ghost"} h-plan__cta`}
+                      onClick={() => handleBuyPackage(p)}
+                    >
+                      Chọn gói này
+                    </button>
                   </div>
                 ))}
               </div>
             )}
 
             <div style={{ display: "flex", justifyContent: "center", marginTop: 28 }}>
-              <a href="/goi-tap" className="h-btn h-btn--ghost">Xem tất cả gói tập →</a>
+              <a href="/packages" className="h-btn h-btn--ghost">Xem tất cả gói tập →</a>
             </div>
           </div>
         </section>
@@ -641,7 +693,7 @@ export default function Home() {
             {!galleryLoading && !galleryError && (
               <div className="h-gallery__grid">
                 {gallery.map((img, i) => (
-                  <div className={`h-gallery__item${i === 0 ? " h-gallery__item--wide" : ""}`} key={i}>
+                  <div className={`h-gallery__item${i === 0 ? " h-gallery__item--wide" : ""}`} key={img.id ?? i}>
                     <img src={img.src} alt={img.label} loading="lazy" />
                     <div className="h-gallery__cap">{img.label}</div>
                   </div>
@@ -738,12 +790,12 @@ export default function Home() {
               {!branchesLoading && !branchesError && (
                 <div className="h-bstrip__pills">
                   {branches.map(b => (
-                    <a
+                    <a>
                       href={b.href}
                       key={b.id}
                       className={`h-pill${activeBranch?.id === b.id ? " h-pill--active" : ""}`}
                       onClick={(e) => { e.preventDefault(); setActiveBranch(b); }}
-                    >
+
                       <span className="h-pill__dot" />
                       <span>{b.name}</span>
                       <span className="h-pill__arr">→</span>
@@ -771,7 +823,7 @@ export default function Home() {
         .h-red      { color:var(--accent); }
         .h-arrow    { font-size:13px; font-weight:600; color:var(--steel); transition:color .15s; }
         .h-arrow:hover { color:var(--text); }
-        .h-btn      { display:inline-block; padding:13px 26px; border-radius:9px; font-size:14px; font-weight:600; font-family:var(--font-body); transition:transform .15s, box-shadow .15s; }
+        .h-btn      { display:inline-block; padding:13px 26px; border-radius:9px; font-size:14px; font-weight:600; font-family:var(--font-body); border:none; cursor:pointer; transition:transform .15s, box-shadow .15s; }
         .h-btn--primary { background:var(--accent); color:#fff; box-shadow:0 4px 20px rgba(255,79,43,.3); }
         .h-btn--primary:hover { transform:translateY(-2px); box-shadow:0 8px 28px rgba(255,79,43,.45); }
         .h-btn--ghost   { background:rgba(255,255,255,.07); border:1px solid rgba(255,255,255,.15); color:var(--text); }
@@ -938,6 +990,6 @@ export default function Home() {
           .h-chart__bars  { gap:8px; }
         }
       `}</style>
-    </div>
+    </div >
   );
 }

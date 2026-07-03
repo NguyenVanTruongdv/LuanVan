@@ -19,6 +19,19 @@ const NAV_LINKS = [
     { label: "Cộng Đồng", href: "/comunity" },
 ];
 
+/* Cho phép các trang không nằm trong NAV_LINKS (vd: /payment, /checkout...) vẫn
+   ép highlight đúng mục nav liên quan bằng cách truyền prop `active` (key ngắn gọn),
+   ví dụ: <Header active="packages" /> -> ép sáng mục "Gói tập". */
+const ACTIVE_KEY_TO_HREF = {
+    home: "/",
+    packages: "/packages",
+    equipment: "/equiptment",
+    branch: "/branch",
+    stats: "/thong-ke",
+    issue: "/issue",
+    community: "/comunity",
+};
+
 /* ─── icons ─── */
 function IconUser() {
     return (
@@ -39,7 +52,9 @@ function IconPin() {
     );
 }
 
-export default function Header() {
+// `active`: key tuỳ chọn (vd "packages") để ép highlight 1 mục nav cụ thể,
+// dùng cho các trang con không có link riêng trong NAV_LINKS (vd trang thanh toán).
+export default function Header({ active } = {}) {
     document.title = "VT Gym"
 
     const [menuOpen, setMenuOpen] = useState(false);
@@ -48,6 +63,10 @@ export default function Header() {
         typeof window !== "undefined" ? window.location.pathname : "/"
     );
     const userRef = useRef(null);
+
+    // Nếu trang cha ép active bằng prop (vd <Header active="packages" />) thì ưu tiên dùng
+    // href tương ứng thay vì so theo window.location.pathname thực tế.
+    const effectiveActivePath = active ? (ACTIVE_KEY_TO_HREF[active] || active) : activePath;
 
     /* ── auth state: lấy từ authApi (accessToken/fullName/role trong localStorage) ── */
     const [authed, setAuthed] = useState(false);
@@ -356,7 +375,7 @@ export default function Header() {
                             <a
                                 key={href}
                                 href={href}
-                                className={`vt-hdr__link${activePath === href ? " vt-hdr__link--active" : ""}`}
+                                className={`vt-hdr__link${effectiveActivePath === href ? " vt-hdr__link--active" : ""}`}
                                 onClick={() => setActivePath(href)}
                             >
                                 {label}
@@ -447,7 +466,7 @@ export default function Header() {
                                     <a
                                         key={href}
                                         href={href}
-                                        className={`vt-hdr__link${activePath === href ? " vt-hdr__link--active" : ""}`}
+                                        className={`vt-hdr__link${effectiveActivePath === href ? " vt-hdr__link--active" : ""}`}
                                         onClick={() => { setActivePath(href); close(); }}
                                     >
                                         {label}

@@ -13,25 +13,21 @@ public partial class Transaction
     /// </summary>
     public long TransactionId { get; set; }
 
+    public string OrderCode { get; set; } = null!;
+
+    public string? BankReferenceCode { get; set; }
+
     /// <summary>
     /// Hội viên thực hiện giao dịch — FK tới members.member_id
     /// </summary>
     public long MemberId { get; set; }
 
     /// <summary>
-    /// Chi nhánh xử lý giao dịch — FK tới branches.branch_id
-    /// </summary>
-    public int BranchId { get; set; }
-
-    /// <summary>
     /// Gói tập được mua trong giao dịch này — FK tới membership_plans.plan_id
     /// </summary>
     public int PlanId { get; set; }
 
-    /// <summary>
-    /// Loại giao dịch: NewPurchase = mua mới, Renewal = gia hạn
-    /// </summary>
-    public string TransactionType { get; set; } = null!;
+    public int? PromotionId { get; set; }
 
     /// <summary>
     /// Phương thức thanh toán: Cash = tiền mặt, BankTransfer = chuyển khoản
@@ -73,8 +69,6 @@ public partial class Transaction
     /// </summary>
     public long? EmployeeId { get; set; }
 
-    public virtual Branch Branch { get; set; } = null!;
-
     public virtual Employee? Employee { get; set; }
 
     public virtual Member Member { get; set; } = null!;
@@ -82,4 +76,6 @@ public partial class Transaction
     public virtual ICollection<MemberPackage> MemberPackages { get; set; } = new List<MemberPackage>();
 
     public virtual MembershipPlan Plan { get; set; } = null!;
+
+    public virtual Promotion? Promotion { get; set; }
 }
