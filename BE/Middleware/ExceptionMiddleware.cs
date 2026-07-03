@@ -1,4 +1,3 @@
-using System.Text.Json;
 using BE.Exceptions;
 
 namespace BE.Middleware;
@@ -20,9 +19,7 @@ public class ExceptionMiddleware
         }
         catch (Exception ex)
         {
-            await HandleExceptionAsync(
-                context,
-                ex);
+            await HandleExceptionAsync(context, ex);
         }
     }
 
@@ -30,31 +27,21 @@ public class ExceptionMiddleware
         HttpContext context,
         Exception exception)
     {
-        context.Response.ContentType =
-            "application/json";
+        context.Response.ContentType = "application/json";
 
-        context.Response.StatusCode =
-            exception switch
-            {
-                BadRequestException =>
-                    StatusCodes.Status400BadRequest,
-
-                UnauthorizedException =>
-                    StatusCodes.Status401Unauthorized,
-
-                NotFoundException =>
-                    StatusCodes.Status404NotFound,
-
-                _ =>
-                    StatusCodes.Status500InternalServerError
-            };
-
-        var response = new
+        context.Response.StatusCode = exception switch
         {
-            message = exception.Message
+            BadRequestException => StatusCodes.Status400BadRequest,
+            UnauthorizedException => StatusCodes.Status401Unauthorized,
+            NotFoundException => StatusCodes.Status404NotFound,
+            _ => StatusCodes.Status500InternalServerError
         };
 
-        await context.Response.WriteAsync(
-            JsonSerializer.Serialize(response));
+        await context.Response.WriteAsJsonAsync(new
+        {
+            message = exception.Message,
+            detail = exception.ToString(),
+            inner = exception.InnerException?.ToString()
+        });
     }
 }

@@ -15,22 +15,18 @@ builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
-// builder.Services.AddDbContext<GymManagementContext>(options =>
-// {
-//     options.UseMySql(
-//         connectionString!,
-//         ServerVersion.AutoDetect(connectionString)
-//     );
-// });
 builder.Services.AddDbContext<GymManagementContext>(options =>
 {
     var connectionString =
         builder.Configuration.GetConnectionString("DefaultConnection");
 
     options.UseMySql(
-        connectionString!,
-        ServerVersion.AutoDetect(connectionString)
-    );
+        connectionString,
+        new MySqlServerVersion(new Version(8, 4, 0)),
+        mysqlOptions =>
+        {
+            mysqlOptions.EnableRetryOnFailure();
+        });
 });
 builder.Services.AddHttpClient();
 
