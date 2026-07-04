@@ -15,7 +15,6 @@ import {
     Newspaper,
     Plus,
     RotateCcw,
-    Search,
     Trophy,
     Users
 } from "lucide-react";
@@ -277,9 +276,7 @@ function Header({ onLogoClick }) {
 
             <div className="header-spacer" />
 
-            <button className="icon-btn search-btn">
-                <Search size={18} />
-            </button>
+
 
             <button className="icon-btn notif-btn">
                 <Bell size={18} />
@@ -597,8 +594,9 @@ function RightSidebar({ members, memberRange, onMemberRangeChange, membersLoadin
 function BottomNav({ onHomeClick }) {
     const items = [
         { key: "home", icon: Home, label: "Trang chủ", onClick: onHomeClick },
-        { key: "notif", icon: Bell, label: "Thông báo" },
         { key: "create", icon: Plus, label: null, isCta: true },
+        { key: "notif", icon: Bell, label: "Thông báo" },
+
     ];
     return (
         <nav className="bottom-nav">

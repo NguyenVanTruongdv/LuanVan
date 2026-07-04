@@ -254,6 +254,18 @@ export default function Payment() {
 
     const pollRef = useRef(null);
 
+    // Fix: khi vào trang / chuyển bước, trình duyệt (đặc biệt trên mobile) đôi khi giữ
+    // nguyên vị trí scroll của trang trước đó khiến trang này bị mở ra ở giữa chừng
+    // thay vì từ đầu trang. Luôn cuộn về đầu trang mỗi khi trang được mount và mỗi khi
+    // chuyển sang step khác (1 -> 2 -> 3).
+    useEffect(() => {
+        window.scrollTo(0, 0);
+    }, []);
+
+    useEffect(() => {
+        window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+    }, [step]);
+
     // Lấy thông tin cá nhân + gói hiện tại, danh sách gói đang mở bán.
     // Không tự kiểm tra transaction Pending ở đây nữa -- việc đó do trang Gói tập làm
     // trước khi điều hướng qua trang này (đã hỏi khách và truyền sẵn state phù hợp).
