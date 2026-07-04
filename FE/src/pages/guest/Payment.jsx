@@ -224,8 +224,11 @@ export default function Payment() {
     const location = useLocation();
     const navigate = useNavigate();
 
-    // Gói được chọn từ trang MembershipPlansPage (nếu có): navigate("/payment", { state: { plan } })
-    // Nếu không có, người dùng có thể chọn ngay tại trang này từ danh sách availablePlans lấy từ API.
+    // Trang này chỉ được điều hướng tới từ trang Gói tập (MembershipPlansPage), với 2 dạng state:
+    // 1) { plan } -> khách mua gói mới bình thường, bắt đầu từ màn xác nhận đơn hàng (step 1).
+    // 2) { resumePending: true, pending } -> khách chọn "Tiếp tục thanh toán" một giao dịch Pending
+    //    có sẵn (trang Gói tập đã kiểm tra và hỏi khách trước khi điều hướng qua đây),
+    //    vào thẳng màn QR (step 2), không tạo transaction mới.
     const [selectedPlan, setSelectedPlan] = useState(location.state?.plan ?? null);
 
     const [step, setStep] = useState(1);
@@ -240,7 +243,7 @@ export default function Payment() {
     const [infoError, setInfoError] = useState(null);
 
     // Đơn thanh toán tạo ra sau khi bấm "Xác nhận & Thanh toán", hoặc được khôi phục lại
-    // từ transaction Pending có sẵn khi vừa vào trang.
+    // từ transaction Pending có sẵn khi trang Gói tập điều hướng qua với resumePending.
     const [order, setOrder] = useState(null); // { orderId, amount, qrImageUrl, checkoutUrl, bankName, accountName, accountNumber, transferContent, expiresInSeconds }
     const [creatingOrder, setCreatingOrder] = useState(false);
     const [orderError, setOrderError] = useState(null);
@@ -251,8 +254,9 @@ export default function Payment() {
 
     const pollRef = useRef(null);
 
-    // Lấy thông tin cá nhân + gói hiện tại, danh sách gói đang mở bán, và kiểm tra transaction Pending
-    // của member này (nếu có -> nhảy thẳng tới màn QR thay vì màn chọn gói).
+    // Lấy thông tin cá nhân + gói hiện tại, danh sách gói đang mở bán.
+    // Không tự kiểm tra transaction Pending ở đây nữa -- việc đó do trang Gói tập làm
+    // trước khi điều hướng qua trang này (đã hỏi khách và truyền sẵn state phù hợp).
     useEffect(() => {
         let mounted = true;
         (async () => {
@@ -260,10 +264,9 @@ export default function Payment() {
                 setLoadingInfo(true);
                 setInfoError(null);
 
-                const [infoRes, plansRes, pendingRes] = await Promise.all([
+                const [infoRes, plansRes] = await Promise.all([
                     memberApi.getMyinfoToPayment(),
                     memberApi.getAllPackage(),
-                    memberApi.getPendingPayment(),
                 ]);
 
                 if (!mounted) return;
@@ -290,11 +293,12 @@ export default function Payment() {
                 const plans = Array.isArray(rawPlans) ? rawPlans : [];
                 setAvailablePlans(plans);
 
-                const pending = pendingRes?.data ?? pendingRes ?? null;
+                const state = location.state;
 
-                if (pending?.hasPending) {
-                    // Đã có đơn đang chờ thanh toán -> khôi phục lại state và vào thẳng màn QR,
-                    // không tạo transaction mới, không quay lại màn chọn gói.
+                if (state?.resumePending && state?.pending) {
+                    // Khách chọn tiếp tục giao dịch Pending có sẵn -> khôi phục state và vào thẳng
+                    // màn QR, không gọi createPayment.
+                    const pending = state.pending;
                     setSelectedPlan({
                         planId: pending.planId,
                         planName: pending.planName,
@@ -313,10 +317,9 @@ export default function Payment() {
                     });
                     setStep(2);
                 } else {
-                    // Không có đơn nào đang chờ -> vào bình thường ở màn chọn gói.
-                    // Nếu vào thẳng /payment mà chưa có gói được chọn từ trang trước,
-                    // tự chọn gói đầu tiên trong danh sách để không bị kẹt màn hình lỗi.
-                    setSelectedPlan((prev) => prev ?? plans[0] ?? null);
+                    // Mua gói mới bình thường. Nếu vào thẳng /payment mà chưa có gói được chọn
+                    // từ trang trước, tự chọn gói đầu tiên trong danh sách để không bị kẹt màn hình lỗi.
+                    setSelectedPlan((prev) => prev ?? state?.plan ?? plans[0] ?? null);
                 }
             } catch (err) {
                 console.warn("Không lấy được thông tin thanh toán:", err);
@@ -328,6 +331,7 @@ export default function Payment() {
         return () => {
             mounted = false;
         };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     // Tạo đơn thanh toán khi bước sang màn hình QR
@@ -684,22 +688,50 @@ export default function Payment() {
                                     </button>
                                 </div>
 
-                                {/* Cột thông tin đơn hàng */}
-                                <div className="co-card">
-                                    <div className="co-card-title"><span className="co-bar" />Thông tin đơn hàng</div>
-                                    <div className="co-info-line"><span>Mã đơn hàng</span><span>#{order.orderId}</span></div>
-                                    <div className="co-info-line"><span>Gói tập</span><span>{selectedPlan.planName}</span></div>
-                                    {order.bankName && <div className="co-info-line"><span>Ngân hàng</span><span>{order.bankName}</span></div>}
-                                    {order.accountName && <div className="co-info-line"><span>Chủ tài khoản</span><span>{order.accountName}</span></div>}
-                                    {order.accountNumber && <div className="co-info-line"><span>Số tài khoản</span><span>{order.accountNumber}</span></div>}
-                                    <div className="co-info-line"><span>Nội dung CK</span><span>{order.transferContent}</span></div>
-                                    <div className="co-info-line"><span>Số tiền</span><span style={{ color: "var(--accent-2)", fontWeight: 700 }}>{formatVnd(order.amount)}</span></div>
+                                {/* Cột thông tin: đơn hàng + cá nhân, để khách xem đầy đủ trước khi quyết định thanh toán */}
+                                <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+                                    <div className="co-card">
+                                        <div className="co-card-title"><span className="co-bar" />Thông tin đơn hàng</div>
+                                        <div className="co-info-line"><span>Mã đơn hàng</span><span>#{order.orderId}</span></div>
+                                        <div className="co-info-line"><span>Gói tập</span><span>{selectedPlan.planName}</span></div>
+                                        <div className="co-info-line"><span>Thời hạn</span><span>{selectedPlan.durationDays} ngày</span></div>
+                                        {order.bankName && <div className="co-info-line"><span>Ngân hàng</span><span>{order.bankName}</span></div>}
+                                        {order.accountName && <div className="co-info-line"><span>Chủ tài khoản</span><span>{order.accountName}</span></div>}
+                                        {order.accountNumber && <div className="co-info-line"><span>Số tài khoản</span><span>{order.accountNumber}</span></div>}
+                                        <div className="co-info-line"><span>Nội dung CK</span><span>{order.transferContent}</span></div>
+                                        <div className="co-info-line"><span>Số tiền</span><span style={{ color: "var(--accent-2)", fontWeight: 700 }}>{formatVnd(order.amount)}</span></div>
 
-                                    {orderError && (
-                                        <div className="co-fine" style={{ color: "var(--accent-2)", marginTop: 10 }}>{orderError}</div>
-                                    )}
+                                        {orderError && (
+                                            <div className="co-fine" style={{ color: "var(--accent-2)", marginTop: 10 }}>{orderError}</div>
+                                        )}
+                                    </div>
 
-                                    <div className="co-spacer" />
+                                    <div className="co-card">
+                                        <div className="co-card-title"><span className="co-bar" />Thông tin cá nhân</div>
+                                        <div className="co-user">
+                                            <div className="co-avatar co-disp">{getInitials(myInfo?.fullName)}</div>
+                                            <div>
+                                                <div className="co-user-name">{myInfo?.fullName || "—"}</div>
+                                                <div className="co-user-sub">{myInfo?.phone || "—"}</div>
+                                            </div>
+                                        </div>
+                                        <div style={{ marginTop: 14 }}>
+                                            <div className="co-info-line">
+                                                <span>Số điện thoại</span>
+                                                <span>{myInfo?.phone || "—"}</span>
+                                            </div>
+                                            <div className="co-info-line">
+                                                <span>Chi nhánh</span>
+                                                <span>{myInfo?.initialBranchName || "—"}</span>
+                                            </div>
+                                            {currentPackage && (
+                                                <div className="co-info-line">
+                                                    <span>Gói hiện tại</span>
+                                                    <span>{currentPackage.planName} (hết hạn {formatDate(currentPackage.expiryDate)})</span>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                         </div>

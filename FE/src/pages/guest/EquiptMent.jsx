@@ -1,49 +1,130 @@
 import { ChevronDown, Dumbbell, MapPin, Search, SlidersHorizontal, X } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import equipmentApi from "../../api/memberApi"; // TODO: sửa lại đường dẫn import cho đúng project của bạn
 import Footer from "../../component/Footer";
 import Header from "../../component/Header";
 
-const CHI_NHANH = [
-  { id: "all", ten: "Tất cả chi nhánh" },
-  { id: "q1", ten: "Quận 1" },
-  { id: "q7", ten: "Quận 7" },
-  { id: "binh-thanh", ten: "Bình Thạnh" },
-  { id: "thu-duc", ten: "Thủ Đức" },
-];
-const NHOM_MAY = [
-  { id: "all", ten: "Tất cả nhóm" },
-  { id: "suc-manh", ten: "Sức mạnh" },
-  { id: "cardio", ten: "Cardio" },
-  { id: "ta-tu-do", ten: "Tạ tự do" },
-  { id: "may-day", ten: "Máy dây cáp" },
-];
-const DANH_SACH_MAY = [
-  { id: 1, ten: "Smith Machine", nhom: "suc-manh", chiNhanh: ["q1", "binh-thanh"], soLuong: 2, trangThai: "Hoạt động", moTa: "Khung tạ cố định theo đường trượt thẳng, phù hợp tập squat, bench press an toàn.", anh: "https://images.unsplash.com/photo-1534438327276-14e5300c3a48?q=80&w=900&auto=format&fit=crop" },
-  { id: 2, ten: "Máy chạy bộ Life Fitness", nhom: "cardio", chiNhanh: ["q1", "q7", "thu-duc"], soLuong: 6, trangThai: "Hoạt động", moTa: "Băng tải giảm chấn, màn hình cảm ứng theo dõi nhịp tim và quãng đường.", anh: "https://images.unsplash.com/photo-1576678927484-cc907957088c?q=80&w=900&auto=format&fit=crop" },
-  { id: 3, ten: "Cáp ròng rọc đa năng", nhom: "may-day", chiNhanh: ["q1", "binh-thanh", "thu-duc"], soLuong: 3, trangThai: "Hoạt động", moTa: "Hệ thống cáp hai bên, hỗ trợ hơn 50 bài tập từ ngực, lưng đến tay.", anh: "https://images.unsplash.com/photo-1581009146145-b5ef050c2e1e?q=80&w=900&auto=format&fit=crop" },
-  { id: 4, ten: "Bộ tạ đơn 2.5–50kg", nhom: "ta-tu-do", chiNhanh: ["q1", "q7", "binh-thanh", "thu-duc"], soLuong: 1, trangThai: "Hoạt động", moTa: "Bộ tạ đơn lục giác đầy đủ trọng lượng, kèm giá đỡ sắp xếp theo thứ tự.", anh: "https://images.unsplash.com/photo-1638536532686-d610adfc8e5c?q=80&w=900&auto=format&fit=crop" },
-  { id: 5, ten: "Xe đạp Assault Bike", nhom: "cardio", chiNhanh: ["q7", "thu-duc"], soLuong: 4, trangThai: "Bảo trì", moTa: "Cường độ tăng theo lực đạp, lý tưởng cho bài tập HIIT ngắn và mạnh.", anh: "https://images.unsplash.com/photo-1591291621164-2c6367723315?q=80&w=900&auto=format&fit=crop" },
-  { id: 6, ten: "Ghế đẩy ngực Hammer", nhom: "suc-manh", chiNhanh: ["q1", "q7"], soLuong: 2, trangThai: "Hoạt động", moTa: "Cơ chế bản lề mô phỏng chuyển động tự nhiên, tải trọng độc lập hai bên.", anh: "https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?q=80&w=900&auto=format&fit=crop" },
-  { id: 7, ten: "Thanh xà đa năng", nhom: "ta-tu-do", chiNhanh: ["q1", "binh-thanh", "thu-duc"], soLuong: 3, trangThai: "Hoạt động", moTa: "Khung kéo xà, đẩy tay sau, treo bụng — một trạm nhiều bài tập.", anh: "https://images.unsplash.com/photo-1517344884509-a0c97ec11bcc?q=80&w=900&auto=format&fit=crop" },
-  { id: 8, ten: "Máy chèo thuyền Concept2", nhom: "cardio", chiNhanh: ["q1", "thu-duc"], soLuong: 3, trangThai: "Hoạt động", moTa: "Bài tập toàn thân ít chấn động, đo công suất theo thời gian thực.", anh: "https://images.unsplash.com/photo-1620188467120-5042ed1eb5da?q=80&w=900&auto=format&fit=crop" },
-];
+const TAT_CA_CHI_NHANH = { id: "all", ten: "Tất cả chi nhánh" };
+const TAT_CA_NHOM = { id: "all", ten: "Tất cả nhóm" };
 
-const tenCN = (id) => CHI_NHANH.find(c => c.id === id)?.ten ?? id;
-const tenNhom = (id) => NHOM_MAY.find(n => n.id === id)?.ten ?? id;
+// Một số project cấu hình interceptor cho axios tự bóc response.data trước rồi,
+// nên hàm này chấp nhận cả 2 trường hợp: res là { data: [...] } hoặc res đã là mảng luôn.
+const layMangTuResponse = (res) => {
+  if (Array.isArray(res)) return res;
+  if (Array.isArray(res?.data)) return res.data;
+  if (Array.isArray(res?.data?.data)) return res.data.data;
+  return [];
+};
+
+const trangThaiHienThi = (status) => {
+  if (status === "Active") return "Hoạt động";
+  if (status === "Deleted") return "Đã xóa";
+  return status;
+};
+
+// Tách "Máy chạy bộ (Treadmill)" -> { chinh: "Máy chạy bộ", phu: "Treadmill" }
+// Nếu không có ngoặc thì phu rỗng.
+const tachTenMay = (ten) => {
+  const m = /^(.*?)\s*\(([^)]+)\)\s*$/.exec(ten || "");
+  if (m) return { chinh: m[1].trim(), phu: m[2].trim() };
+  return { chinh: (ten || "").trim(), phu: "" };
+};
+
+const soThuTu = (i) => String(i + 1).padStart(2, "0");
 
 export default function MayTapPage() {
   const [chiNhanh, setChiNhanh] = useState("all");
   const [nhom, setNhom] = useState("all");
   const [tuKhoa, setTuKhoa] = useState("");
+  const [tuKhoaDeBounce, setTuKhoaDeBounce] = useState("");
   const [drawerOpen, setDrawerOpen] = useState(false);
 
-  const ketQua = useMemo(() => DANH_SACH_MAY.filter(m =>
-    (chiNhanh === "all" || m.chiNhanh.includes(chiNhanh)) &&
-    (nhom === "all" || m.nhom === nhom) &&
-    (tuKhoa.trim() === "" || m.ten.toLowerCase().includes(tuKhoa.trim().toLowerCase()))
-  ), [chiNhanh, nhom, tuKhoa]);
+  const [dsChiNhanh, setDsChiNhanh] = useState([TAT_CA_CHI_NHANH]);
+  const [dsNhom, setDsNhom] = useState([TAT_CA_NHOM]);
+  const [ketQua, setKetQua] = useState([]);
+  const [dangTai, setDangTai] = useState(true);
+  const [loi, setLoi] = useState(null);
 
-  const reset = () => { setChiNhanh("all"); setNhom("all"); setTuKhoa(""); };
+  // Debounce ô tìm kiếm để tránh gọi API liên tục theo từng ký tự gõ
+  useEffect(() => {
+    const timer = setTimeout(() => setTuKhoaDeBounce(tuKhoa.trim()), 400);
+    return () => clearTimeout(timer);
+  }, [tuKhoa]);
+
+  // Lấy danh mục thiết bị (nhóm máy) từ API riêng để đổ vào bộ lọc
+  useEffect(() => {
+    equipmentApi
+      .getAllEquipmentCategory()
+      .then((res) => {
+        const data = layMangTuResponse(res);
+        setDsNhom([
+          TAT_CA_NHOM,
+          ...data.map((c) => ({ id: String(c.categoryId), ten: c.categoryName })),
+        ]);
+      })
+      .catch((err) => {
+        console.error("Lỗi lấy danh mục thiết bị:", err);
+      });
+  }, []);
+
+  // Lấy 1 lần danh sách chi nhánh thực tế đang có thiết bị, để đổ vào bộ lọc
+  useEffect(() => {
+    equipmentApi
+      .getAll({})
+      .then((res) => {
+        const data = layMangTuResponse(res);
+
+        const chiNhanhMap = new Map();
+        data.forEach((item) => {
+          if (!chiNhanhMap.has(item.branchId)) chiNhanhMap.set(String(item.branchId), item.branchName);
+        });
+
+        setDsChiNhanh([
+          TAT_CA_CHI_NHANH,
+          ...[...chiNhanhMap].map(([id, ten]) => ({ id, ten })),
+        ]);
+      })
+      .catch((err) => {
+        console.error("Lỗi lấy danh sách chi nhánh:", err);
+      });
+  }, []);
+
+  // Gọi API lấy danh sách máy mỗi khi filter thay đổi
+  useEffect(() => {
+    let huy = false;
+    setDangTai(true);
+    setLoi(null);
+
+    equipmentApi
+      .getAll({
+        name: tuKhoaDeBounce || undefined,
+        branchId: chiNhanh !== "all" ? chiNhanh : undefined,
+        categoryId: nhom !== "all" ? nhom : undefined,
+      })
+      .then((res) => {
+        if (!huy) setKetQua(layMangTuResponse(res));
+      })
+      .catch((err) => {
+        console.error("Lỗi lấy danh sách thiết bị:", err);
+        if (!huy) setLoi("Không tải được danh sách thiết bị. Vui lòng thử lại.");
+      })
+      .finally(() => {
+        if (!huy) setDangTai(false);
+      });
+
+    return () => {
+      huy = true;
+    };
+  }, [chiNhanh, nhom, tuKhoaDeBounce]);
+
+  const reset = () => {
+    setChiNhanh("all");
+    setNhom("all");
+    setTuKhoa("");
+  };
+
+  const tenCN = (id) => dsChiNhanh.find((c) => c.id === id)?.ten ?? id;
+  const tenNhom = (id) => dsNhom.find((n) => n.id === id)?.ten ?? id;
 
   return (
     <div className="mtp-page">
@@ -67,13 +148,13 @@ export default function MayTapPage() {
               <input className="mtp-sinput" placeholder="Tìm theo tên máy…" value={tuKhoa} onChange={e => setTuKhoa(e.target.value)} />
             </div>
             <button className="mtp-fbtn" onClick={() => setDrawerOpen(true)}><SlidersHorizontal size={14} />Lọc</button>
-            <Sel icon={<MapPin size={13} />} value={chiNhanh} onChange={setChiNhanh} options={CHI_NHANH} />
-            <Sel icon={<Dumbbell size={13} />} value={nhom} onChange={setNhom} options={NHOM_MAY} />
+            <Dropdown icon={<MapPin size={13} />} value={chiNhanh} onChange={setChiNhanh} options={dsChiNhanh} />
+            <Dropdown icon={<Dumbbell size={13} />} value={nhom} onChange={setNhom} options={dsNhom} />
           </div>
 
           {/* chips */}
           <div className="mtp-chips">
-            {CHI_NHANH.map(c => (
+            {dsChiNhanh.map(c => (
               <button key={c.id} onClick={() => setChiNhanh(c.id)}
                 className={`mtp-chip${chiNhanh === c.id ? " mtp-chip--on" : ""}`}>
                 {c.ten}
@@ -87,10 +168,27 @@ export default function MayTapPage() {
             {nhom !== "all" && <> · <strong>{tenNhom(nhom)}</strong></>}
           </p>
 
-          {ketQua.length === 0
-            ? <Empty onReset={reset} />
-            : <div className="mtp-list">{ketQua.map(m => <Card key={m.id} may={m} />)}</div>
-          }
+          {dangTai ? (
+            <SkeletonGrid />
+          ) : loi ? (
+            <div className="mtp-empty">
+              <p className="mtp-empty__ttl">{loi}</p>
+              <button className="mtp-empty__btn" onClick={() => setTuKhoaDeBounce((v) => v)}>Thử lại</button>
+            </div>
+          ) : ketQua.length === 0 ? (
+            <Empty onReset={reset} />
+          ) : (
+            <div className="mtp-panel">
+              <div className="mtp-panel__hd">
+                <span className="mtp-panel__bar" />
+                <h2 className="mtp-panel__ttl">Thiết bị trong phòng gym</h2>
+                <span className="mtp-panel__bar" />
+              </div>
+              <div className="mtp-grid">
+                {ketQua.map((m, i) => <Card key={m.equipmentId} may={m} index={i} />)}
+              </div>
+            </div>
+          )}
         </div>
       </main>
 
@@ -107,14 +205,14 @@ export default function MayTapPage() {
             </div>
             <p className="mtp-drawer__lbl">Chi nhánh</p>
             <div className="mtp-dchips">
-              {CHI_NHANH.map(c => (
+              {dsChiNhanh.map(c => (
                 <button key={c.id} onClick={() => setChiNhanh(c.id)}
                   className={`mtp-dchip${chiNhanh === c.id ? " mtp-dchip--on" : ""}`}>{c.ten}</button>
               ))}
             </div>
             <p className="mtp-drawer__lbl">Nhóm máy</p>
             <div className="mtp-dchips">
-              {NHOM_MAY.map(n => (
+              {dsNhom.map(n => (
                 <button key={n.id} onClick={() => setNhom(n.id)}
                   className={`mtp-dchip${nhom === n.id ? " mtp-dchip--on" : ""}`}>{n.ten}</button>
               ))}
@@ -130,13 +228,13 @@ export default function MayTapPage() {
 
         /* page header */
         .mtp-ph        { border-bottom:1px solid var(--line); padding:36px 20px 28px; }
-        .mtp-ph__inner { max-width:860px; margin:0 auto; }
+        .mtp-ph__inner { max-width:1180px; margin:0 auto; }
         .mtp-eyebrow   { display:inline-flex; align-items:center; gap:7px; border:1px solid rgba(255,79,43,.28); background:var(--accent-soft); color:var(--accent); padding:4px 13px; border-radius:999px; font-size:10.5px; font-weight:700; text-transform:uppercase; letter-spacing:.07em; margin-bottom:14px; }
         .mtp-title     { font-family:var(--font-display); font-size:clamp(24px,5vw,34px); font-weight:900; letter-spacing:-.025em; line-height:1.1; margin:0 0 8px; text-transform:uppercase; }
         .mtp-sub       { font-size:14px; line-height:1.65; color:var(--text-dim); max-width:460px; margin:0; }
 
         /* content */
-        .mtp-content { max-width:860px; margin:0 auto; padding:24px 20px 64px; }
+        .mtp-content { max-width:1180px; margin:0 auto; padding:24px 20px 64px; }
 
         /* toolbar */
         .mtp-toolbar { display:flex; gap:8px; align-items:stretch; margin-bottom:12px; }
@@ -147,14 +245,20 @@ export default function MayTapPage() {
         .mtp-sinput:focus { border-color:rgba(255,79,43,.5); }
         .mtp-fbtn    { display:none; align-items:center; justify-content:center; gap:6px; border:1px solid var(--line); background:var(--bg-soft); border-radius:11px; padding:10px 14px; font-size:13px; font-weight:500; color:var(--text); cursor:pointer; flex-shrink:0; font-family:var(--font-body); }
 
-        /* select */
-        .mtp-sel-w   { position:relative; flex-shrink:0; }
-        .mtp-sel-il  { position:absolute; left:11px; top:50%; transform:translateY(-50%); color:var(--text-dim); pointer-events:none; display:flex; }
-        .mtp-sel-ir  { position:absolute; right:10px; top:50%; transform:translateY(-50%); color:var(--text-dim); pointer-events:none; display:flex; }
-        .mtp-sel     { appearance:none; border:1px solid var(--line); background:var(--bg-soft); border-radius:11px; padding:10px 30px 10px 32px; font-size:13px; color:var(--text); outline:none; cursor:pointer; font-family:var(--font-body); transition:border-color .15s; }
-        .mtp-sel:hover { border-color:rgba(255,255,255,.2); }
-        .mtp-sel:focus { border-color:rgba(255,79,43,.5); }
-        .mtp-sel option { background:var(--bg-soft); color:var(--text); }
+        /* dropdown filter (chi nhánh / nhóm máy) */
+        .mtp-dd        { position:relative; flex-shrink:0; }
+        .mtp-dd__btn   { display:flex; align-items:center; gap:8px; border:1px solid var(--line); background:var(--bg-soft); border-radius:11px; padding:10px 14px; font-size:13px; color:var(--text); cursor:pointer; font-family:var(--font-body); white-space:nowrap; transition:border-color .15s,background .15s; }
+        .mtp-dd__btn:hover  { border-color:rgba(255,255,255,.22); background:var(--bg-elevated); }
+        .mtp-dd__ic    { display:flex; color:var(--text-dim); }
+        .mtp-dd__lbl   { max-width:150px; overflow:hidden; text-overflow:ellipsis; }
+        .mtp-dd__chev  { color:var(--text-dim); transition:transform .18s; flex-shrink:0; }
+        .mtp-dd__chev--up { transform:rotate(180deg); }
+        .mtp-dd__panel { position:absolute; top:calc(100% + 6px); left:0; min-width:190px; max-height:280px; overflow-y:auto; background:var(--bg-elevated); border:1px solid var(--line); border-radius:12px; padding:6px; box-shadow:0 16px 40px rgba(0,0,0,.5); z-index:60; list-style:none; margin:0; }
+        .mtp-dd__panel::-webkit-scrollbar { width:6px; }
+        .mtp-dd__panel::-webkit-scrollbar-thumb { background:rgba(255,255,255,.12); border-radius:999px; }
+        .mtp-dd__item  { display:block; width:100%; text-align:left; border:none; background:transparent; color:var(--text); padding:9px 12px; border-radius:8px; font-size:13px; cursor:pointer; font-family:var(--font-body); transition:background .12s; }
+        .mtp-dd__item:hover  { background:rgba(255,255,255,.06); }
+        .mtp-dd__item--on    { background:var(--accent-soft); color:var(--accent); font-weight:700; }
 
         /* chips */
         .mtp-chips  { display:flex; gap:7px; overflow-x:auto; scrollbar-width:none; padding-bottom:2px; margin-bottom:18px; }
@@ -166,30 +270,43 @@ export default function MayTapPage() {
         .mtp-summary { font-size:12.5px; color:var(--text-dim); margin-bottom:12px; }
         .mtp-summary strong { color:rgba(255,255,255,.6); font-weight:600; }
 
-        /* list */
-        .mtp-list   { display:flex; flex-direction:column; gap:10px; }
+        /* skeleton loading */
+        .mtp-skeleton-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:14px; }
+        .mtp-skel     { border:1px solid var(--line); background:var(--bg-soft); border-radius:14px; overflow:hidden; }
+        .mtp-skel__img{ aspect-ratio:4/3; background:linear-gradient(100deg,var(--bg-elevated) 30%,rgba(255,255,255,.06) 50%,var(--bg-elevated) 70%); background-size:200% 100%; animation:mtp-shimmer 1.3s infinite; }
+        .mtp-skel__ln { height:11px; margin:12px 12px 8px; border-radius:4px; background:var(--bg-elevated); }
+        .mtp-skel__ln--sm { width:55%; margin-bottom:12px; }
+        @keyframes mtp-shimmer { 0%{background-position:200% 0;} 100%{background-position:-200% 0;} }
+
+        /* panel wrapping the whole equipment grid, styled like the reference board */
+        .mtp-panel     { border:1px solid var(--line); background:var(--bg-soft); border-radius:20px; padding:26px 22px 30px; }
+        .mtp-panel__hd { display:flex; align-items:center; justify-content:center; gap:16px; margin-bottom:22px; }
+        .mtp-panel__bar{ flex:1; max-width:60px; height:2px; background:linear-gradient(90deg,transparent,var(--accent)); }
+        .mtp-panel__hd .mtp-panel__bar:last-child { background:linear-gradient(90deg,var(--accent),transparent); }
+        .mtp-panel__ttl{ font-family:var(--font-display); font-size:clamp(16px,2.6vw,21px); font-weight:900; letter-spacing:.04em; text-transform:uppercase; margin:0; white-space:nowrap; }
+
+        /* grid of equipment cards */
+        .mtp-grid   { display:grid; grid-template-columns:repeat(4,1fr); gap:14px; }
 
         /* card */
-        .mtp-card   { display:grid; grid-template-columns:96px 1fr; border:1px solid var(--line); background:var(--bg-soft); border-radius:16px; overflow:hidden; transition:border-color .2s,background .2s; }
-        .mtp-card:hover { border-color:rgba(255,255,255,.15); background:var(--bg-elevated); }
-        .mtp-thumb  { position:relative; background:var(--bg-elevated); }
-        .mtp-thumb img { width:100%; height:100%; object-fit:cover; display:block; transition:transform .4s ease; }
-        .mtp-card:hover .mtp-thumb img { transform:scale(1.06); }
-        .mtp-dot    { position:absolute; right:7px; bottom:7px; width:10px; height:10px; border-radius:50%; border:2px solid var(--bg-soft); }
+        .mtp-card   { border:1px solid var(--line); background:var(--bg-elevated); border-radius:14px; overflow:hidden; transition:border-color .2s,transform .2s; }
+        .mtp-card:hover { border-color:rgba(255,255,255,.2); transform:translateY(-2px); }
+        .mtp-thumb  { position:relative; aspect-ratio:4/3; background:#000; overflow:hidden; }
+        .mtp-thumb img { width:100%; height:100%; object-fit:cover; display:block; transition:transform .5s ease; }
+        .mtp-card:hover .mtp-thumb img { transform:scale(1.08); }
+        .mtp-thumb-empty { width:100%; height:100%; display:flex; align-items:center; justify-content:center; background:var(--bg-elevated); color:var(--text-dim); }
+        .mtp-dot    { position:absolute; right:8px; top:8px; width:9px; height:9px; border-radius:50%; border:2px solid rgba(0,0,0,.6); }
         .mtp-dot--on  { background:#10b981; }
         .mtp-dot--off { background:#eab308; }
-        .mtp-body   { padding:14px 16px; display:flex; flex-direction:column; gap:5px; min-width:0; }
-        .mtp-row    { display:flex; align-items:flex-start; justify-content:space-between; gap:8px; }
-        .mtp-name   { font-size:15px; font-weight:700; line-height:1.3; }
-        .mtp-meta   { display:flex; align-items:center; gap:6px; flex-shrink:0; }
-        .mtp-qty    { background:var(--bg-elevated); color:var(--text-dim); border-radius:6px; padding:2px 8px; font-size:11px; font-weight:700; }
-        .mtp-status { font-size:11px; font-weight:700; }
+        .mtp-body   { padding:12px 13px 14px; display:flex; align-items:flex-start; gap:10px; }
+        .mtp-num    { flex-shrink:0; font-family:var(--font-display); font-size:13px; font-weight:900; color:var(--accent); line-height:1.3; }
+        .mtp-sep    { flex-shrink:0; width:1.5px; align-self:stretch; background:var(--line); margin-top:2px; }
+        .mtp-txt    { min-width:0; }
+        .mtp-name   { font-size:13.5px; font-weight:700; line-height:1.3; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        .mtp-name-en{ font-size:11.5px; color:var(--text-dim); margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        .mtp-status { display:inline-block; font-size:10px; font-weight:700; margin-top:5px; }
         .mtp-status--on  { color:#10b981; }
         .mtp-status--off { color:#eab308; }
-        .mtp-desc   { font-size:13px; line-height:1.55; color:var(--text-dim); }
-        .mtp-tags   { display:flex; flex-wrap:wrap; gap:5px; margin-top:2px; }
-        .mtp-tag    { display:inline-flex; align-items:center; gap:4px; border:1px solid var(--line); background:var(--bg); color:var(--text-dim); padding:2px 9px; border-radius:999px; font-size:11px; }
-        .mtp-tag--g { border-color:rgba(255,79,43,.25); background:var(--accent-soft); color:var(--accent); }
 
         /* empty */
         .mtp-empty  { display:flex; flex-direction:column; align-items:center; border:1px solid var(--line); background:var(--bg-soft); border-radius:16px; padding:72px 20px; text-align:center; }
@@ -212,52 +329,102 @@ export default function MayTapPage() {
         .mtp-drawer__apply { width:100%; border:none; background:var(--accent); color:#000; padding:13px; border-radius:11px; font-size:14px; font-weight:700; cursor:pointer; font-family:var(--font-body); }
 
         /* responsive */
+        @media (max-width:900px) {
+          .mtp-grid, .mtp-skeleton-grid { grid-template-columns:repeat(3,1fr); }
+        }
         @media (max-width:600px) {
-          .mtp-sel-w  { display:none; }
+          .mtp-dd     { display:none; }
           .mtp-fbtn   { display:flex; }
-          .mtp-card   { grid-template-columns:80px 1fr; }
-          .mtp-desc,.mtp-tags,.mtp-status { display:none; }
-          .mtp-body   { padding:12px; }
+          .mtp-grid, .mtp-skeleton-grid { grid-template-columns:repeat(2,1fr); gap:10px; }
+          .mtp-panel  { padding:20px 14px 24px; border-radius:16px; }
+          .mtp-name, .mtp-name-en { white-space:normal; }
         }
       `}</style>
     </div>
   );
 }
 
-function Sel({ icon, value, onChange, options }) {
+function Dropdown({ icon, value, onChange, options }) {
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef(null);
+
+  useEffect(() => {
+    const onClickOutside = (e) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onClickOutside);
+    return () => document.removeEventListener("mousedown", onClickOutside);
+  }, []);
+
+  const dangChon = options.find((o) => o.id === value) ?? options[0];
+
   return (
-    <div className="mtp-sel-w">
-      <span className="mtp-sel-il">{icon}</span>
-      <select className="mtp-sel" value={value} onChange={e => onChange(e.target.value)}>
-        {options.map(o => <option key={o.id} value={o.id}>{o.ten}</option>)}
-      </select>
-      <span className="mtp-sel-ir"><ChevronDown size={12} /></span>
+    <div className="mtp-dd" ref={wrapRef}>
+      <button type="button" className="mtp-dd__btn" onClick={() => setOpen((v) => !v)}>
+        <span className="mtp-dd__ic">{icon}</span>
+        <span className="mtp-dd__lbl">{dangChon?.ten}</span>
+        <ChevronDown size={13} className={`mtp-dd__chev${open ? " mtp-dd__chev--up" : ""}`} />
+      </button>
+
+      {open && (
+        <ul className="mtp-dd__panel">
+          {options.map((o) => (
+            <li key={o.id}>
+              <button
+                type="button"
+                className={`mtp-dd__item${o.id === value ? " mtp-dd__item--on" : ""}`}
+                onClick={() => { onChange(o.id); setOpen(false); }}
+              >
+                {o.ten}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }
 
-function Card({ may }) {
-  const on = may.trangThai === "Hoạt động";
+function Card({ may, index }) {
+  const on = may.status === "Active";
+  const anh = may.imageUrls?.[0];
+  const { chinh, phu } = tachTenMay(may.equipmentName);
+
   return (
     <div className="mtp-card">
       <div className="mtp-thumb">
-        <img src={may.anh} alt={may.ten} loading="lazy" />
+        {anh ? (
+          <img src={anh} alt={may.equipmentName} loading="lazy" />
+        ) : (
+          <div className="mtp-thumb-empty" role="img" aria-label={may.equipmentName}>
+            <Dumbbell size={22} />
+          </div>
+        )}
         <span className={`mtp-dot mtp-dot--${on ? "on" : "off"}`} />
       </div>
       <div className="mtp-body">
-        <div className="mtp-row">
-          <p className="mtp-name">{may.ten}</p>
-          <div className="mtp-meta">
-            <span className={`mtp-status mtp-status--${on ? "on" : "off"}`}>{may.trangThai}</span>
-            <span className="mtp-qty">×{may.soLuong}</span>
-          </div>
-        </div>
-        <p className="mtp-desc">{may.moTa}</p>
-        <div className="mtp-tags">
-          <span className="mtp-tag mtp-tag--g">{tenNhom(may.nhom)}</span>
-          {may.chiNhanh.map(id => <span key={id} className="mtp-tag"><MapPin size={9} />{tenCN(id)}</span>)}
+        <span className="mtp-num">{soThuTu(index)}</span>
+        <span className="mtp-sep" />
+        <div className="mtp-txt">
+          <p className="mtp-name">{chinh}</p>
+          {phu && <p className="mtp-name-en">{phu}</p>}
+          <span className={`mtp-status mtp-status--${on ? "on" : "off"}`}>{trangThaiHienThi(may.status)}</span>
         </div>
       </div>
+    </div>
+  );
+}
+
+function SkeletonGrid() {
+  return (
+    <div className="mtp-skeleton-grid">
+      {Array.from({ length: 8 }).map((_, i) => (
+        <div className="mtp-skel" key={i}>
+          <div className="mtp-skel__img" />
+          <div className="mtp-skel__ln" />
+          <div className="mtp-skel__ln mtp-skel__ln--sm" />
+        </div>
+      ))}
     </div>
   );
 }

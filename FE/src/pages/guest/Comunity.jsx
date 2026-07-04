@@ -1,798 +1,1447 @@
 import {
+    Apple,
+    ArrowLeft,
     Bell,
+    ChevronDown,
+    Dumbbell,
+    Flame,
     Heart,
+    HeartPulse,
+    HelpCircle,
     Home,
-    Image as ImageIcon,
+    Loader2,
+    LogOut,
     MessageCircle,
-    MoreHorizontal,
+    Newspaper,
     Plus,
-    Repeat2,
-    Send,
-    Smile,
-    X,
+    RotateCcw,
+    Search,
+    Trophy,
+    Users
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
-/**
- * Đổi lại 2 đường dẫn import bên dưới cho khớp với vị trí thật của
- * Header / Footer trong project của bạn (ví dụ "../layout/Header").
- * Vì 2 file này chưa có trong sandbox nên khung xem trước ở đây sẽ
- * báo lỗi "module not found" — nhưng khi bạn thả ForumFeed.jsx vào
- * đúng project đã có sẵn Header/Footer thì sẽ chạy bình thường.
- *
- * LƯU Ý QUAN TRỌNG VỀ RESPONSIVE:
- * Bản trước dùng @container (container query) để đổi layout, nhưng
- * container query chỉ "nhìn thấy" chiều rộng thật nếu phần tử cha
- * (do Header/Footer bọc ngoài) có width: 100% / flex: 1 rõ ràng.
- * Nếu Header/Footer bọc component này trong 1 div không giãn hết
- * chiều ngang, container sẽ luôn bị đo hẹp -> layout tụt về bản
- * mobile dù màn hình rộng (đúng lỗi bạn gặp trong ảnh chụp).
- * Bản này đổi sang @media (dựa theo kích thước MÀN HÌNH thật) để
- * chắc chắn hoạt động đúng bất kể Header/Footer bọc kiểu gì.
- *
- * BẢN CẬP NHẬT TÔNG MÀU (theo ảnh Header/Hero bạn gửi):
- * - Nền đen tuyền giữ nguyên, đổi màu nhấn chính (nút, viền active,
- *   badge HLV...) sang cam-đỏ giống chữ "TỰ DO" / nút "Xem gói tập".
- * - Trái tim (thích) dùng riêng một màu đỏ thuần để luôn nổi bật,
- *   tách biệt với màu cam-đỏ dùng cho các hành động khác.
- * - Đã bỏ ô tìm kiếm trên thanh desktop và icon kính lúp trên thanh
- *   mobile theo yêu cầu.
- * - Icon "Hoạt động" trên thanh mobile đổi từ trái tim sang chuông
- *   thông báo, đồng bộ với chuông ở thanh desktop.
- */
-import Footer from "../../component/Footer";
-import Header from "../../component/Header";
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
 
-// ---- Design tokens -------------------------------------------------------
-const ACCENT = "#FF4620"; // cam-đỏ — hành động chính (đăng, nút, viền active), khớp tông ảnh
-const ACCENT_TEAL = "#14B8A6"; // xanh ngọc — huấn luyện viên
-const LIKE_RED = "#EF4444"; // đỏ riêng cho trái tim (thích)
-const CURRENT_USER = "Quang"; // TODO: thay bằng user thật khi có auth
-
-const AVATAR_COLORS = ["#FF4620", "#5B8C5A", "#A64AC9", "#D4A017", "#4A5FC1", "#14B8A6"];
-const EMOJI_QUICK = ["💪", "🔥", "🏋️", "🎯", "👏", "😅"];
-
-function avatarColor(name) {
-    let sum = 0;
-    for (let i = 0; i < name.length; i++) sum += name.charCodeAt(i);
-    return AVATAR_COLORS[sum % AVATAR_COLORS.length];
+// 999 -> "999", 1000 -> "1k", 1100 -> "1.1k", 2500 -> "2.5k"
+function formatCount(n) {
+    if (n < 1000) return String(n);
+    const val = Math.round((n / 1000) * 10) / 10;
+    const text = Number.isInteger(val) ? val.toString() : val.toFixed(1);
+    return text + "k";
 }
 
-function initials(name) {
-    const parts = name.trim().split(" ");
-    return parts.slice(-2).map((w) => w[0]).join("").toUpperCase();
+function delay(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function Avatar({ name, size = 40, ring = false }) {
-    const core = (
-        <div
-            style={{
-                width: size,
-                height: size,
-                minWidth: size,
-                borderRadius: "50%",
-                background: avatarColor(name),
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                fontSize: size * 0.38,
-                fontWeight: 700,
-                color: "#06070a",
-            }}
-        >
-            {initials(name)}
-        </div>
-    );
-    if (!ring) return core;
-    const pad = Math.max(2, Math.round(size * 0.06));
+function hexToRgba(hex, alpha = 1) {
+    const clean = hex.replace("#", "");
+    const bigint = parseInt(clean, 16);
+    const r = (bigint >> 16) & 255;
+    const g = (bigint >> 8) & 255;
+    const b = bigint & 255;
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
+// Look up a category's brand color, either by id or by its display label
+// (posts store categoryId, the trending mock only stores the label — both
+// paths are supported so either shape works once the API is live).
+function getCategoryColor(categories, { id, label } = {}) {
+    const match = categories.find((c) => (id && c.id === id) || (label && c.label === label));
+    return match ? match.color : "#6C63FF";
+}
+
+// ---------------------------------------------------------------------------
+// Mock data — this is what the API layer below currently returns.
+// When a real backend is ready, delete this block and let the api.* methods
+// fetch from the server instead.
+// ---------------------------------------------------------------------------
+
+const MOCK_CATEGORIES = [
+    { id: "all", label: "Tất cả chủ đề", count: 128, icon: Dumbbell, color: "#6C63FF" },
+    { id: "training", label: "Tập luyện", count: 128, icon: Dumbbell, color: "#4c8dff" },
+    { id: "nutrition", label: "Dinh dưỡng", count: 95, icon: Apple, color: "#f5a524" },
+    { id: "health", label: "Sức khỏe", count: 64, icon: HeartPulse, color: "#22c55e" },
+    { id: "recovery", label: "Phục hồi", count: 42, icon: RotateCcw, color: "#06b6d4" },
+    { id: "qa", label: "Hỏi đáp", count: 58, icon: HelpCircle, color: "#a78bfa" },
+    { id: "achievements", label: "Thành quả", count: 27, icon: Trophy, color: "#eab308" },
+    { id: "news", label: "Tin tức & Sự kiện", count: 16, icon: Newspaper, color: "#ef4444" },
+];
+
+
+// On phones the tab bar doubles as the entry point for the two sidebar
+// widgets (desktop shows them permanently in the right column) — tapping
+// "TV tích cực" / "Chủ đề nổi bật" swaps the feed content instead of
+// cluttering the page with extra strips above the posts.
+// The first two tabs show on every screen size. "TV tích cực" is a
+// phone-only extra tab (mobileOnly) — on PC/tablet the active-members
+// widget is already permanently visible in the right sidebar, so it
+// doesn't need its own tab there; on phone it does, since the right
+// sidebar is hidden.
+const MOBILE_TABS = [
+    { id: "latest", label: "Mới nhất" },
+    { id: "trending", label: "Thịnh hành" },
+    { id: "active-members", label: "TV tích cực", mobileOnly: true },
+];
+
+const MOCK_POSTS = [
+    {
+        id: "p1",
+        categoryId: "training",
+        tag: "Tập luyện",
+        title: "Lịch tập 5 buổi/tuần cho người mới bắt đầu",
+        excerpt:
+            "Xin chào mọi người, mình là người mới tập gym, muốn tìm lịch tập 5 buổi/tuần...",
+        author: "minhduc210",
+        time: "2 giờ trước",
+        comments: 25,
+        views: 1200,
+    },
+    {
+        id: "p2",
+        categoryId: "nutrition",
+        tag: "Dinh dưỡng",
+        title: "Thực đơn giảm mỡ hiệu quả cho nam giới",
+        excerpt:
+            "Mình cao 1m75 nặng 75kg, mục tiêu giảm mỡ còn 68kg. Anh em có thể gợi ý...",
+        author: "fitfoodie",
+        time: "5 giờ trước",
+        comments: 18,
+        views: 856,
+    },
+    {
+        id: "p3",
+        categoryId: "health",
+        tag: "Sức khỏe",
+        title: "Đau vai khi tập ngực – Nguyên nhân và cách khắc phục",
+        excerpt:
+            "Mỗi lần tập ngực xong vai mình bị đau, nhất là bài đẩy tạ. Có ai gặp tình trạng...",
+        author: "dr.hung",
+        time: "1 ngày trước",
+        comments: 31,
+        views: 1500,
+    },
+    {
+        id: "p4",
+        categoryId: "achievements",
+        tag: "Thành quả",
+        title: "Chia sẻ quá trình 6 tháng transformation",
+        excerpt:
+            "Mình bắt đầu tập từ tháng 1, đây là kết quả sau 6 tháng. Cố gắng không ngừng!",
+        author: "thanhfit",
+        time: "2 ngày trước",
+        comments: 42,
+        views: 2300,
+    },
+    {
+        id: "p5",
+        categoryId: "recovery",
+        tag: "Phục hồi",
+        title: "Creatine – Uống như thế nào là đúng?",
+        excerpt:
+            "Mình mới mua creatine về nhưng chưa rõ liều lượng và thời điểm sử dụng hợp lý...",
+        author: "gym.bro",
+        time: "3 ngày trước",
+        comments: 12,
+        views: 692,
+    },
+];
+
+const MOCK_MEMBERS = [
+    { rank: 1, name: "minhduc210", postCount: 82, medal: "gold" },
+    { rank: 2, name: "thanhfit", postCount: 65, medal: "silver" },
+    { rank: 3, name: "coach.huy", postCount: 54, medal: "bronze" },
+    { rank: 4, name: "gym.bro", postCount: 31 },
+    { rank: 5, name: "fitfoodie", postCount: 24 },
+];
+
+const MEMBER_RANGES = [
+    { id: "week", label: "Tuần" },
+    { id: "month", label: "Tháng" },
+    { id: "all", label: "Tất cả" },
+];
+
+// ---------------------------------------------------------------------------
+// API layer
+// ---------------------------------------------------------------------------
+// Everything the UI needs goes through here. Right now each method just
+// resolves the mock data above after a short fake delay so the loading
+// states are visible. To wire up a real backend, replace the body of each
+// method with a fetch() call and keep the same return shape — no other
+// component needs to change.
+//
+//   async getPosts({ categoryId, tabId, page }) {
+//     const params = new URLSearchParams({ category: categoryId, tab: tabId, page });
+//     const res = await fetch(`${API_BASE}/posts?${params}`);
+//     if (!res.ok) throw new Error("Không tải được danh sách chủ đề");
+//     return res.json(); // -> { items: [...], page, hasMore }
+//   }
+// ---------------------------------------------------------------------------
+
+const API_BASE = "/api"; // update when the real backend is ready
+
+const api = {
+    async getCategories() {
+        await delay(200);
+        return MOCK_CATEGORIES;
+    },
+
+    async getPosts({ categoryId = "all", tabId = "latest", page = 1 } = {}) {
+        await delay(450);
+        let items = MOCK_POSTS;
+        if (categoryId !== "all") {
+            items = items.filter((p) => p.categoryId === categoryId);
+        }
+        // tabId would normally be sent to the server to sort/filter server-side
+        return { items, page, hasMore: false, tabId, categoryId };
+    },
+
+    async getMembers({ range = "week" } = {}) {
+        await delay(200);
+        return { items: MOCK_MEMBERS, range };
+    },
+
+    async getTrending() {
+        await delay(200);
+        // A real endpoint would return full post objects too — keeping the
+        // shape identical to getPosts() means the "Chủ đề nổi bật" view can
+        // reuse <PostCard> directly instead of a separate mini-widget.
+        return [...MOCK_POSTS]
+            .sort((a, b) => b.views - a.views)
+            .slice(0, 3)
+            .map((post, i) => ({ ...post, rank: i + 1 }));
+    },
+};
+
+// ---------------------------------------------------------------------------
+// Small pieces
+// ---------------------------------------------------------------------------
+
+function Avatar({ letter, size = 32, medal }) {
     return (
         <div
-            style={{
-                width: size + pad * 2,
-                height: size + pad * 2,
-                borderRadius: "50%",
-                padding: pad,
-                background: `linear-gradient(135deg, ${ACCENT}, ${ACCENT_TEAL})`,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-            }}
+            className={`avatar${medal ? " avatar-ring avatar-" + medal : ""}`}
+            style={{ width: size, height: size, fontSize: size * 0.42 }}
         >
-            {core}
+            {letter}
         </div>
     );
 }
 
-// ---- Seed data -------------------------------------------------------------
-const seedPosts = [
-    {
-        id: 1,
-        user: { name: "Minh Trường", badge: "HLV" },
-        time: "2 giờ",
-        text: "PR mới: Deadlift 140kg x 3! 3 tháng trước mình còn kéo không nổi thanh không tạ đúng form. Cứ từ từ mà lên anh em ơi 💪",
-        image: null,
-        likes: 128,
-        liked: false,
-        comments: 14,
-        reposts: 6,
-        replies: [{ id: 101, user: { name: "Hải Đăng" }, time: "1 giờ", text: "Quá đỉnh! Cho em xin giáo án với ạ" }],
-    },
-    {
-        id: 2,
-        user: { name: "Thu Hà" },
-        time: "5 giờ",
-        text: "Có ai tập ở chi nhánh Q7 buổi tối không, rủ tập cùng cho có động lực 🙌",
-        image: null,
-        likes: 34,
-        liked: false,
-        comments: 9,
-        reposts: 1,
-        replies: [],
-    },
-    {
-        id: 3,
-        user: { name: "Quốc Bảo", badge: "HLV" },
-        time: "1 ngày",
-        text: "Mẹo nhỏ: trước khi squat nặng, dành 5 phút mobilize hông + mắt cá. Giảm hẳn nguy cơ chấn thương mà form cũng đẹp hơn nhiều.",
-        image: null,
-        likes: 256,
-        liked: true,
-        comments: 22,
-        reposts: 18,
-        replies: [{ id: 301, user: { name: "Ngọc Anh" }, time: "20 giờ", text: "Cảm ơn anh, đúng vấn đề em đang gặp luôn" }],
-    },
-    {
-        id: 4,
-        user: { name: "Anh Tuấn" },
-        time: "1 ngày",
-        text: "Tự tập không PT vẫn xuống được 8kg trong 2 tháng nhờ theo dõi số liệu ở mục Thống kê. Motivation cả app luôn 🔥",
-        image: null,
-        likes: 87,
-        liked: false,
-        comments: 11,
-        reposts: 3,
-        replies: [],
-    },
-];
-
-const newPostsPool = [
-    {
-        user: { name: "Diệu Linh" },
-        text: "Vừa hoàn thành buổi HIIT 30 phút đầu tiên, tim đập như trống hội nhưng sướng ghê 😆",
-    },
-    {
-        user: { name: "Hoàng Long", badge: "HLV" },
-        text: "Nhắc nhở: uống đủ nước trước - trong - sau buổi tập nhé anh em, đừng đợi khát mới uống.",
-    },
-    {
-        user: { name: "Kim Ngân" },
-        text: "Tháng này tăng được 3kg cơ theo InBody, cảm ơn team đã động viên mỗi ngày 🙏",
-    },
-];
-
-const seedNotifications = [
-    { id: 1, user: "Hải Đăng", text: "đã bình luận vào bài viết của bạn: \"Quá đỉnh! Cho em xin giáo án với ạ\"", time: "1 giờ", read: false },
-    { id: 2, user: "Ngọc Anh", text: "đã bình luận vào bài viết của bạn", time: "20 giờ", read: false },
-    { id: 3, user: "Thu Hà", text: "đã thích bài viết của bạn", time: "1 ngày", read: true },
-];
-
-// ---- Nav bars ---------------------------------------------------------------
-// Nội dung danh sách thông báo dùng chung cho cả chuông desktop và chuông mobile
-function NotificationList({ notifications }) {
+function Tag({ label, color }) {
+    const style = color
+        ? { color, background: hexToRgba(color, 0.16) }
+        : undefined;
     return (
-        <>
-            <div className="notif-dropdown-title">Thông báo</div>
-            {notifications.length === 0 ? (
-                <div className="notif-empty">Chưa có thông báo nào</div>
-            ) : (
-                notifications.map((n) => (
-                    <div key={n.id} className={`notif-row ${n.read ? "" : "unread"}`}>
-                        <Avatar name={n.user} size={32} />
-                        <div className="notif-text-col">
-                            <span className="notif-text">
-                                <strong>{n.user}</strong> {n.text}
-                            </span>
-                            <span className="notif-time">{n.time}</span>
-                        </div>
-                    </div>
-                ))
-            )}
-        </>
+        <span className="tag" style={style}>
+            {label}
+        </span>
     );
 }
 
-// Desktop: thanh trên kiểu Facebook (logo + Home + avatar + chuông), đã bỏ ô tìm kiếm
-function NotificationBell({ notifications, onMarkAllRead }) {
-    const [open, setOpen] = useState(false);
-    const unreadCount = notifications.filter((n) => !n.read).length;
+function Spinner({ size = 16 }) {
+    return <Loader2 size={size} className="spinner" />;
+}
 
-    function toggle() {
-        setOpen((v) => {
-            const next = !v;
-            if (next) onMarkAllRead();
-            return next;
-        });
-    }
+// ---------------------------------------------------------------------------
+// Header
+// ---------------------------------------------------------------------------
 
+function Header({ onLogoClick }) {
     return (
-        <div className="notif-wrap">
-            <button className="topnav-home-btn" onClick={toggle} title="Thông báo" aria-label="Thông báo">
-                <Bell size={20} />
-                {unreadCount > 0 && <span className="notif-dot">{unreadCount}</span>}
+        <header className="header">
+            <a href="/" className="back-btn" title="Quay lại trang chủ Gym">
+                <ArrowLeft size={18} className="back-btn-icon" />
+                <LogOut size={18} className="menu-icon" />
+                <span className="back-btn-label">Trang chủ Gym</span>
+            </a>
+
+            <div className="divider" />
+
+            <button
+                className="brand"
+                onClick={onLogoClick}
+                title="Về đầu diễn đàn & tải chủ đề mới"
+            >
+                <div className="brand-icon">
+                    <Dumbbell size={18} color="#fff5f0" />
+                </div>
+                <div className="brand-text">
+                    <div className="brand-title">GYM</div>
+                    <div className="brand-sub">FORUM</div>
+                </div>
             </button>
 
-            {open && (
-                <div className="notif-dropdown">
-                    <NotificationList notifications={notifications} />
-                </div>
-            )}
-        </div>
+            <div className="header-spacer" />
+
+            <button className="icon-btn search-btn">
+                <Search size={18} />
+            </button>
+
+            <button className="icon-btn notif-btn">
+                <Bell size={18} />
+                <span className="dot" />
+            </button>
+
+            <button className="user-btn">
+                <Avatar letter="M" size={32} />
+                <span className="user-name">minhduc210</span>
+                <ChevronDown size={16} className="icon-faint" />
+            </button>
+        </header>
     );
 }
 
-function TopNavBar({ onOpenProfile, onGoHome, notifications, onMarkAllRead }) {
+// ---------------------------------------------------------------------------
+// Left sidebar
+// ---------------------------------------------------------------------------
+
+function Sidebar({ categories, activeCategoryId, onSelectCategory, loading }) {
     return (
-        <div className="topnav">
-            <div className="topnav-inner">
-                <div className="topnav-identity">
-                    <button className="topnav-profile-btn" onClick={onOpenProfile} title="Trang cá nhân" aria-label="Trang cá nhân">
-                        <Avatar name={CURRENT_USER} size={36} />
-                        <span className="topnav-profile-name">{CURRENT_USER}</span>
-                    </button>
-
-                    <button className="topnav-home-btn" onClick={onGoHome} title="Về đầu trang & tải bài mới" aria-label="Về đầu trang & tải bài mới">
-                        <Home size={20} />
-                    </button>
-                </div>
-
-                {/* Đẩy chuông sát mép phải, đối xứng với cụm avatar/Quang bên
-                    trái (topnav-inner có padding trái/phải bằng nhau nên 2 bên
-                    sẽ cân đối tự động). Ô tìm kiếm đã được bỏ theo yêu cầu. */}
-                <div className="topnav-bell-slot">
-                    <NotificationBell notifications={notifications} onMarkAllRead={onMarkAllRead} />
-                </div>
-            </div>
-        </div>
-    );
-}
-
-// Mobile: thanh dưới cố định kiểu Threads (Home / Đăng / Thông báo / Cá nhân)
-// Đã bỏ icon kính lúp và đổi icon trái tim thành chuông thông báo.
-function BottomNavBar({ onOpenProfile, onCompose, notifications, onMarkAllRead }) {
-    const [notifOpen, setNotifOpen] = useState(false);
-    const unreadCount = notifications.filter((n) => !n.read).length;
-
-    function toggleNotif() {
-        setNotifOpen((v) => {
-            const next = !v;
-            if (next) onMarkAllRead();
-            return next;
-        });
-    }
-
-    return (
-        <>
-            {notifOpen && (
-                <div className="mobile-notif-sheet">
-                    <NotificationList notifications={notifications} />
-                </div>
-            )}
-
-            <div className="bottomnav">
-                <button
-                    className="bottomnav-btn active"
-                    onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
-                    aria-label="Trang chủ"
-                >
-                    <Home size={24} />
-                </button>
-                <button className="bottomnav-btn" onClick={onCompose} aria-label="Đăng bài">
-                    <Plus size={24} />
-                </button>
-                <button className="bottomnav-btn bottomnav-notif-wrap" onClick={toggleNotif} aria-label="Thông báo">
-                    <Bell size={24} />
-                    {unreadCount > 0 && <span className="notif-dot bottomnav-notif-dot">{unreadCount}</span>}
-                </button>
-                <button className="bottomnav-btn bottomnav-avatar" onClick={onOpenProfile} aria-label="Trang cá nhân">
-                    <Avatar name={CURRENT_USER} size={26} />
-                </button>
-            </div>
-        </>
-    );
-}
-
-function Post({ post, onToggleLike, replyOpen, onOpenReply, replyDraft, onReplyDraftChange, onSubmitReply }) {
-    const hasReplies = post.replies.length > 0;
-    const isCoach = post.user.badge === "HLV";
-
-    return (
-        <div className="post">
-            <div className="post-row">
-                <div className="post-avatar-col">
-                    <Avatar name={post.user.name} ring={isCoach} />
-                    {(hasReplies || replyOpen) && <div className="thread-line" />}
-                </div>
-
-                <div className="post-body">
-                    <div className="post-header">
-                        <span className="post-name">{post.user.name}</span>
-                        {post.user.badge && <span className="badge">{post.user.badge}</span>}
-                        <span className="dot">·</span>
-                        <span className="post-time">{post.time}</span>
-                        <button className="more-icon" aria-label="Thêm tùy chọn">
-                            <MoreHorizontal size={16} />
-                        </button>
-                    </div>
-
-                    <p className="post-text">{post.text}</p>
-
-                    {post.image && <img src={post.image} alt="" className="post-image" />}
-
-                    <div className="action-row">
-                        <button className="action-btn" onClick={() => onToggleLike(post.id)} aria-label="Thích">
-                            <Heart size={18} fill={post.liked ? LIKE_RED : "none"} color={post.liked ? LIKE_RED : "#9297a3"} />
-                            <span style={{ color: post.liked ? LIKE_RED : "#9297a3" }}>{post.likes}</span>
-                        </button>
-                        <button className={`action-btn ${replyOpen ? "active" : ""}`} onClick={() => onOpenReply(post.id)} aria-label="Bình luận">
-                            <MessageCircle size={18} color={replyOpen ? ACCENT : "#9297a3"} />
-                            <span style={{ color: replyOpen ? ACCENT : "#9297a3" }}>{post.comments}</span>
-                        </button>
-                        <button className="action-btn" aria-label="Chia sẻ lại">
-                            <Repeat2 size={18} color="#9297a3" />
-                            <span>{post.reposts}</span>
-                        </button>
-                        <button className="action-btn" aria-label="Gửi">
-                            <Send size={17} color="#9297a3" />
-                        </button>
-                    </div>
-
-                    {hasReplies && (
-                        <div className="reply-preview">
-                            <Avatar name={post.replies[0].user.name} size={26} />
-                            <div className="reply-text-col">
-                                <span className="reply-name">
-                                    {post.replies[0].user.name} <span className="dot">·</span> <span className="post-time">{post.replies[0].time}</span>
+        <aside className="sidebar">
+            <div className="sidebar-label">DANH MỤC</div>
+            <nav className="category-list">
+                {loading && categories.length === 0
+                    ? Array.from({ length: 6 }).map((_, i) => (
+                        <div key={i} className="category-item skeleton" />
+                    ))
+                    : categories.map((c) => {
+                        const Icon = c.icon;
+                        const isActive = c.id === activeCategoryId;
+                        return (
+                            <button
+                                key={c.id}
+                                className={`category-item${isActive ? " active" : ""}`}
+                                onClick={() => onSelectCategory(c.id)}
+                                style={{ "--cat-color": c.color, "--cat-bg": hexToRgba(c.color, 0.18) }}
+                            >
+                                <span className="category-left">
+                                    <span className="category-icon-circle">
+                                        <Icon size={16} className="category-icon" />
+                                    </span>
+                                    <span className="category-label">{c.label}</span>
                                 </span>
-                                <p className="post-text small">{post.replies[0].text}</p>
-                            </div>
-                        </div>
-                    )}
-                    {post.replies.length > 1 && <div className="more-replies">Xem thêm {post.replies.length - 1} bình luận</div>}
+                                <span className="category-count">{c.count}</span>
+                            </button>
+                        );
+                    })}
+            </nav>
 
-                    {replyOpen && (
-                        <div className="inline-reply">
-                            <Avatar name={CURRENT_USER} size={26} />
-                            <div className="inline-reply-input">
-                                <textarea
-                                    autoFocus
-                                    placeholder={`Trả lời ${post.user.name}...`}
-                                    value={replyDraft}
-                                    onChange={(e) => onReplyDraftChange(e.target.value)}
-                                    rows={1}
-                                />
-                                <button className="send-icon-btn" disabled={!replyDraft.trim()} onClick={() => onSubmitReply(post.id)} aria-label="Gửi bình luận">
-                                    <Send size={15} />
-                                </button>
-                            </div>
-                        </div>
-                    )}
+            <button className="btn-primary sidebar-cta">
+                <Plus size={16} />
+                Tạo chủ đề mới
+            </button>
+        </aside>
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Feed
+// ---------------------------------------------------------------------------
+
+function PostCard({ post, categories }) {
+    const color = getCategoryColor(categories, { id: post.categoryId });
+    return (
+        <div className="post-card">
+            <div className="post-thumb">
+                <span className="post-thumb-tag">
+                    <Tag label={post.tag} color={color} />
+                </span>
+            </div>
+            <div className="post-body">
+                <div className="post-top">
+                    <Tag label={post.tag} color={color} />
+                    <h3 className="post-title">{post.title}</h3>
+                </div>
+                <p className="post-excerpt">{post.excerpt}</p>
+                <div className="post-meta">
+                    <span className="post-author">
+                        <Avatar letter={post.author[0].toUpperCase()} size={20} />
+                        {post.author} · {post.time}
+                    </span>
+                    <span className="post-stat">
+                        <MessageCircle size={13} /> {formatCount(post.comments)}
+                    </span>
+                    <span className="post-stat">
+                        <Heart size={13} /> {formatCount(post.views)}
+                    </span>
                 </div>
             </div>
         </div>
     );
 }
 
-function Composer({ onSubmit, openSignal }) {
-    const [open, setOpen] = useState(false);
-    const [draft, setDraft] = useState("");
-    const [imagePreview, setImagePreview] = useState(null);
-    const [emojiOpen, setEmojiOpen] = useState(false);
-    const fileInputRef = useRef(null);
+function PostSkeleton() {
+    return (
+        <div className="post-card">
+            <div className="post-thumb skeleton" />
+            <div className="post-body">
+                <div className="skeleton-line" style={{ width: "40%", height: 12 }} />
+                <div className="skeleton-line" style={{ width: "70%", height: 14, marginTop: 10 }} />
+                <div className="skeleton-line" style={{ width: "90%", height: 12, marginTop: 10 }} />
+            </div>
+        </div>
+    );
+}
 
-    // Cho phép BottomNavBar (nút "+") mở composer từ xa: mỗi lần openSignal
-    // tăng lên (khác 0), composer sẽ tự mở ra.
-    useEffect(() => {
-        if (openSignal) setOpen(true);
-    }, [openSignal]);
-
-    function handleImagePick(e) {
-        const file = e.target.files && e.target.files[0];
-        if (!file) return;
-        setImagePreview(URL.createObjectURL(file));
-    }
-
-    function reset() {
-        setDraft("");
-        setImagePreview(null);
-        setEmojiOpen(false);
-        setOpen(false);
-    }
-
-    function submit() {
-        if (!draft.trim() && !imagePreview) return;
-        onSubmit({ text: draft.trim(), image: imagePreview });
-        reset();
-    }
+function MainFeed({
+    feedRef,
+    activeTabId,
+    onTabChange,
+    posts,
+    loading,
+    error,
+    onRetry,
+    categories,
+    members,
+    membersLoading,
+    memberRange,
+    onMemberRangeChange,
+    trending,
+    trendingLoading,
+}) {
+    const showMembers = activeTabId === "active-members";
+    const showPopular = activeTabId === "popular-topics";
 
     return (
-        <div className="composer-wrap">
-            {!open ? (
-                <div className="composer-collapsed" onClick={() => setOpen(true)}>
-                    <Avatar name={CURRENT_USER} size={38} />
-                    <span>{CURRENT_USER} ơi, bạn đang tập gì thế?</span>
-                    <div className="composer-collapsed-icons">
-                        <ImageIcon size={18} color={ACCENT_TEAL} />
-                    </div>
+        <main className="feed" ref={feedRef}>
+            <div className="feed-head">
+                <h1>Diễn đàn</h1>
+                <p>Nơi chia sẻ kinh nghiệm, kiến thức và truyền cảm hứng luyện tập mỗi ngày.</p>
+            </div>
+
+            {/* "Mới nhất" / "Thịnh hành" show on every screen size. "TV tích
+                cực" is an extra tab that only appears on phone (hidden on
+                PC/tablet via CSS) since desktop already shows that widget
+                permanently in the right sidebar. */}
+            <div className="tab-bar">
+                {MOBILE_TABS.map((t) => (
+                    <button
+                        key={t.id}
+                        className={`tab-btn${t.id === activeTabId ? " active" : ""}${t.mobileOnly ? " tab-mobile-only" : ""}`}
+                        onClick={() => onTabChange(t.id)}
+                    >
+                        {t.label}
+                    </button>
+                ))}
+            </div>
+
+            {showMembers ? (
+                <ActiveMembers
+                    members={members}
+                    range={memberRange}
+                    onRangeChange={onMemberRangeChange}
+                    loading={membersLoading}
+                />
+            ) : showPopular ? (
+                <div className="post-list">
+                    {trendingLoading
+                        ? Array.from({ length: 3 }).map((_, i) => <PostSkeleton key={i} />)
+                        : trending.map((p) => <PostCard key={p.id} post={p} categories={categories} />)}
+                </div>
+            ) : error ? (
+                <div className="feed-error">
+                    <p>{error}</p>
+                    <button className="btn-primary" onClick={onRetry}>
+                        Thử lại
+                    </button>
                 </div>
             ) : (
-                <div className="composer-open">
-                    <div className="composer-open-row">
-                        <Avatar name={CURRENT_USER} size={38} />
-                        <textarea
-                            autoFocus
-                            placeholder="Chia sẻ buổi tập, thành tích hay câu hỏi của bạn..."
-                            value={draft}
-                            onChange={(e) => setDraft(e.target.value)}
-                        />
-                    </div>
-
-                    {imagePreview && (
-                        <div className="image-preview-wrap">
-                            <img src={imagePreview} alt="Ảnh đính kèm" />
-                            <button className="image-remove-btn" onClick={() => setImagePreview(null)} aria-label="Xóa ảnh">
-                                <X size={14} />
-                            </button>
-                        </div>
-                    )}
-
-                    {emojiOpen && (
-                        <div className="emoji-row">
-                            {EMOJI_QUICK.map((e) => (
-                                <button key={e} className="emoji-btn" onClick={() => setDraft((d) => d + e)}>
-                                    {e}
-                                </button>
-                            ))}
-                        </div>
-                    )}
-
-                    <div className="composer-actions">
-                        <div className="composer-actions-left">
-                            <input ref={fileInputRef} type="file" accept="image/*" style={{ display: "none" }} onChange={handleImagePick} />
-                            <button className="icon-pill" onClick={() => fileInputRef.current?.click()} aria-label="Đính kèm ảnh">
-                                <ImageIcon size={16} color={ACCENT_TEAL} />
-                            </button>
-                            <button className={`icon-pill ${emojiOpen ? "active" : ""}`} onClick={() => setEmojiOpen((v) => !v)} aria-label="Chèn biểu tượng cảm xúc">
-                                <Smile size={16} color={ACCENT} />
-                            </button>
-                        </div>
-
-                        <div className="composer-actions-right">
-                            <button className="btn-ghost" onClick={reset}>
-                                Hủy
-                            </button>
-                            <button className="btn-accent" disabled={!draft.trim() && !imagePreview} onClick={submit}>
-                                Đăng
-                            </button>
-                        </div>
-                    </div>
+                <div className="post-list">
+                    {loading
+                        ? Array.from({ length: 3 }).map((_, i) => <PostSkeleton key={i} />)
+                        : posts.length === 0
+                            ? <p className="feed-empty">Chưa có chủ đề nào trong danh mục này.</p>
+                            : posts.map((p) => <PostCard key={p.id} post={p} categories={categories} />)}
                 </div>
             )}
+        </main>
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Right sidebar
+// ---------------------------------------------------------------------------
+
+function BannerCard() {
+    return (
+        <div className="banner-card">
+            <img
+                src="https://images.unsplash.com/photo-1517836357463-d25dfeac3438?w=600&q=80&auto=format&fit=crop"
+                alt=""
+                className="banner-img"
+            />
+            <div className="banner-overlay" />
+            <div className="banner-content">
+                <h3 className="banner-title">
+                    TẬP LUYỆN
+                    <br />
+                    KIẾN TẠO
+                    <br />
+                    PHIÊN BẢN
+                    <br />
+                    <span className="banner-accent">TỐT HƠN</span>
+                </h3>
+            </div>
+            <button className="btn-primary banner-cta">
+                <Plus size={15} />
+                Tạo chủ đề
+            </button>
         </div>
     );
 }
 
-// ---- Main page --------------------------------------------------------------
-export default function ForumFeed() {
-    const [posts, setPosts] = useState(seedPosts);
-    const [openReplyId, setOpenReplyId] = useState(null);
-    const [replyDraft, setReplyDraft] = useState("");
-    const [composeSignal, setComposeSignal] = useState(0);
-    const [newPostIndex, setNewPostIndex] = useState(0);
-    const [notifications, setNotifications] = useState(seedNotifications);
+function ActiveMembers({ members, range, onRangeChange, loading }) {
+    return (
+        <div className="panel-card">
+            <div className="panel-head">
+                <div className="panel-label">
+                    <Users size={13} />
+                    THÀNH VIÊN TÍCH CỰC
+                </div>
+                <button className="link-btn">Xem tất cả</button>
+            </div>
 
-    function markAllNotificationsRead() {
-        setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+            <div className="segment">
+                {MEMBER_RANGES.map((r) => (
+                    <button
+                        key={r.id}
+                        className={`segment-btn${r.id === range ? " active" : ""}`}
+                        onClick={() => onRangeChange(r.id)}
+                    >
+                        {r.label}
+                    </button>
+                ))}
+            </div>
+
+            <div className="member-list">
+                {loading
+                    ? Array.from({ length: 5 }).map((_, i) => (
+                        <div key={i} className="skeleton-line" style={{ width: "100%", height: 26 }} />
+                    ))
+                    : members.map((m) => (
+                        <div key={m.name} className="member-row">
+                            <span className={`member-rank${m.medal ? " medal-" + m.medal : ""}`}>
+                                {m.rank}
+                            </span>
+                            <Avatar letter={m.name[0].toUpperCase()} size={26} medal={m.medal} />
+                            <span className="member-name">{m.name}</span>
+                            <span className="member-points">{formatCount(m.postCount)} bài đăng</span>
+                        </div>
+                    ))}
+            </div>
+        </div>
+    );
+}
+
+function TrendingTopics({ trending, loading, categories }) {
+    return (
+        <div className="panel-card">
+            <div className="panel-head">
+                <div className="panel-label">
+                    <Flame size={13} />
+                    CHỦ ĐỀ NỔI BẬT
+                </div>
+                <button className="link-btn">Xem tất cả</button>
+            </div>
+
+            <div className="trending-list">
+                {loading
+                    ? Array.from({ length: 3 }).map((_, i) => (
+                        <div key={i} className="skeleton-line" style={{ width: "100%", height: 36 }} />
+                    ))
+                    : trending.map((t) => (
+                        <div key={t.title} className="trending-row">
+                            <span className="trending-rank">{t.rank}</span>
+                            <div className="trending-body">
+                                <p className="trending-title">{t.title}</p>
+                                <div className="trending-meta">
+                                    <Tag label={t.tag} color={getCategoryColor(categories, { label: t.tag })} />
+                                    <span className="post-stat">
+                                        <MessageCircle size={11} /> {formatCount(t.comments)}
+                                    </span>
+                                    <span className="post-stat">
+                                        <Heart size={11} /> {formatCount(t.views)}
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                    ))}
+            </div>
+        </div>
+    );
+}
+
+function RightSidebar({ members, memberRange, onMemberRangeChange, membersLoading, trending, trendingLoading, categories }) {
+    return (
+        <aside className="right-sidebar">
+            <BannerCard />
+            <ActiveMembers
+                members={members}
+                range={memberRange}
+                onRangeChange={onMemberRangeChange}
+                loading={membersLoading}
+            />
+            <TrendingTopics trending={trending} loading={trendingLoading} categories={categories} />
+        </aside>
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Mobile bottom navigation (hidden on desktop/tablet via CSS)
+// ---------------------------------------------------------------------------
+
+function BottomNav({ onHomeClick }) {
+    const items = [
+        { key: "home", icon: Home, label: "Trang chủ", onClick: onHomeClick },
+        { key: "notif", icon: Bell, label: "Thông báo" },
+        { key: "create", icon: Plus, label: null, isCta: true },
+    ];
+    return (
+        <nav className="bottom-nav">
+            {items.map((item) => {
+                const Icon = item.icon;
+                if (item.isCta) {
+                    return (
+                        <button key={item.key} className="bottom-nav-cta" onClick={item.onClick}>
+                            <Icon size={22} />
+                        </button>
+                    );
+                }
+                return (
+                    <button key={item.key} className="bottom-nav-item" onClick={item.onClick}>
+                        <Icon size={19} />
+                        <span>{item.label}</span>
+                    </button>
+                );
+            })}
+        </nav>
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Styles (plain CSS, no Tailwind)
+// ---------------------------------------------------------------------------
+
+const styles = `
+html, body {
+  height: 100%;
+  min-height: 100%;
+  margin: 0;
+  padding: 0;
+  background: #0a0a0a;
+}
+
+* { box-sizing: border-box; }
+
+.gym-forum {
+  --bg: #0a0a0a;
+  --panel: #131313;
+  --panel-2: #17181a;
+  --border: #262626;
+  --text: #f2f0ec;
+  --text-dim: #9a9a97;
+  --text-faint: #66655f;
+  --accent: #6C63FF;
+  --accent-2: #8B7CF6;
+  --accent-dim: rgba(108, 99, 255, 0.14);
+  --accent-border: rgba(108, 99, 255, 0.35);
+  --accent-text: #f5f3ff;
+
+  height: 100%;
+  min-height: 100%;
+  width: 100%;
+  background: var(--bg);
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  color: var(--text);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* ---------- Header ---------- */
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0 1.5rem;
+  height: 4rem;
+  flex-shrink: 0;
+  background: #0d0d0d;
+  border-bottom: 1px solid var(--border);
+}
+
+.back-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--text-dim);
+  text-decoration: none;
+  background: transparent;
+  border: none;
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.625rem;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.15s, color 0.15s;
+}
+.back-btn:hover { background: var(--panel-2); color: var(--text); }
+
+.divider {
+  width: 1px;
+  height: 1.5rem;
+  background: var(--border);
+  flex-shrink: 0;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  flex-shrink: 0;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 0.25rem 0.375rem;
+  border-radius: 0.625rem;
+  transition: background 0.15s;
+}
+.brand:hover { background: var(--panel-2); }
+.brand-icon {
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 0.625rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, var(--accent-2), var(--accent));
+}
+.brand-text { line-height: 1.1; text-align: left; }
+.brand-title { font-weight: 800; font-size: 0.875rem; color: var(--text); letter-spacing: 0.5px; }
+.brand-sub { font-weight: 800; font-size: 0.625rem; color: var(--accent); letter-spacing: 2px; }
+
+.header-spacer { flex: 1; }
+
+.btn-primary {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  border: none;
+  cursor: pointer;
+  color: var(--accent-text);
+  font-weight: 700;
+  font-size: 0.875rem;
+  background: linear-gradient(135deg, var(--accent-2), var(--accent));
+  border-radius: 0.75rem;
+  transition: filter 0.15s, transform 0.1s;
+}
+.btn-primary:hover { filter: brightness(1.1); }
+.btn-primary:active { transform: scale(0.98); }
+
+.icon-btn {
+  position: relative;
+  width: 2.75rem;
+  height: 2.75rem;
+  border-radius: 0.75rem;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-dim);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.icon-btn .dot {
+  position: absolute;
+  top: 0.5625rem;
+  right: 0.6875rem;
+  width: 0.4375rem;
+  height: 0.4375rem;
+  border-radius: 50%;
+  background: var(--accent);
+}
+.menu-icon { display: none; }
+.search-btn { display: none; }
+
+.user-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 0.25rem 0.5rem 0.25rem 0.25rem;
+  border-radius: 0.75rem;
+  color: var(--text);
+  flex-shrink: 0;
+}
+.user-name { font-size: 0.875rem; font-weight: 500; }
+.icon-faint { color: var(--text-faint); }
+
+.avatar {
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  color: var(--accent-text);
+  background: linear-gradient(135deg, var(--accent-2), var(--accent));
+  flex-shrink: 0;
+}
+.avatar-ring { box-shadow: 0 0 0 2px #0d0d0d, 0 0 0 3px var(--ring-color); }
+.avatar-gold { --ring-color: #f4b740; }
+.avatar-silver { --ring-color: #c7ccd8; }
+.avatar-bronze { --ring-color: #d98a4f; }
+
+.tag {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--accent-2);
+  background: var(--accent-dim);
+  padding: 0.1875rem 0.5625rem;
+  border-radius: 0.4375rem;
+  white-space: nowrap;
+}
+
+/* ---------- Layout ---------- */
+
+.body-wrap {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 1.5rem;
+  padding: 1.5rem;
+  max-width: 90rem;
+  width: 100%;
+  margin: 0 auto;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* shared scroll behaviour for the three columns */
+.sidebar,
+.feed,
+.right-sidebar {
+  height: 100%;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+.sidebar::-webkit-scrollbar,
+.feed::-webkit-scrollbar,
+.right-sidebar::-webkit-scrollbar { width: 6px; }
+.sidebar::-webkit-scrollbar-thumb,
+.feed::-webkit-scrollbar-thumb,
+.right-sidebar::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+/* ---------- Sidebar ---------- */
+
+.sidebar {
+  flex: 0 0 16rem;
+  max-width: 16rem;
+  min-width: 12rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding-right: 0.25rem;
+}
+.sidebar-label {
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 2px;
+  color: var(--text-faint);
+  padding: 0 0.25rem;
+  margin-bottom: 0.25rem;
+}
+.category-list { display: flex; flex-direction: column; gap: 0.25rem; }
+.category-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.625rem 0.75rem;
+  border-radius: 0.75rem;
+  font-size: 0.875rem;
+  color: var(--text-dim);
+  background: transparent;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.category-item:hover { background: var(--panel-2); }
+.category-item.active {
+  background: var(--accent-dim);
+  color: #ffffff;
+  border-color: var(--accent-border);
+}
+.category-item.skeleton { height: 2.5rem; background: var(--panel-2); border: none; }
+.category-left { display: flex; align-items: center; gap: 0.625rem; }
+.category-icon-circle { display: inline-flex; align-items: center; justify-content: center; }
+.category-icon { color: var(--cat-color, var(--text-faint)); }
+.category-label { }
+.category-count {
+  font-size: 0.75rem;
+  padding: 0.125rem 0.4375rem;
+  border-radius: 0.4375rem;
+  background: var(--panel-2);
+  color: var(--text-faint);
+}
+.category-item.active .category-count { background: var(--accent); color: var(--accent-text); }
+
+.sidebar-cta { height: 2.75rem; justify-content: center; margin-top: 0.25rem; flex-shrink: 0; }
+
+/* ---------- Feed ---------- */
+
+.feed { flex: 1 1 auto; min-width: 0; padding-right: 0.5rem; }
+.feed-head { margin-bottom: 1.25rem; }
+.feed-head h1 { font-size: 1.5rem; font-weight: 800; margin: 0 0 0.25rem; color: var(--text); }
+.feed-head p { font-size: 0.875rem; color: var(--text-dim); margin: 0; }
+
+.tab-bar {
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.25rem;
+  border-radius: 0.75rem;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  margin-bottom: 1.25rem;
+  flex-wrap: wrap;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+/* "TV tích cực" is a phone-only extra tab — on tablet/desktop the
+   active-members widget is already permanently visible in the right
+   sidebar, so this tab is hidden there and only the first two tabs show */
+.tab-mobile-only { display: none; }
+.tab-btn {
+  border: none;
+  cursor: pointer;
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 0.875rem;
+  font-weight: 500;
+  padding: 0.5rem 1rem;
+  border-radius: 0.5625rem;
+  transition: background 0.15s, color 0.15s;
+}
+.tab-btn.active { background: var(--accent); color: var(--accent-text); font-weight: 700; }
+
+.post-list { display: flex; flex-direction: column; gap: 0.75rem; padding-bottom: 1rem; }
+.post-card {
+  display: flex;
+  gap: 1rem;
+  padding: 1rem;
+  border-radius: 1rem;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+.post-card:hover { border-color: var(--accent-border); }
+.post-thumb {
+  position: relative;
+  width: 5rem;
+  height: 5rem;
+  border-radius: 0.75rem;
+  background: var(--panel-2);
+  flex-shrink: 0;
+}
+.post-thumb-tag { display: none; }
+.post-body { flex: 1; min-width: 0; }
+.post-top { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.375rem; flex-wrap: wrap; }
+.post-title { font-size: 0.9375rem; font-weight: 600; color: var(--text); margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.post-excerpt {
+  font-size: 0.875rem;
+  color: var(--text-dim);
+  margin: 0 0 0.75rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.post-meta { display: flex; align-items: center; gap: 1rem; font-size: 0.75rem; color: var(--text-faint); flex-wrap: wrap; }
+.post-author { display: flex; align-items: center; gap: 0.5rem; }
+.post-stat { display: flex; align-items: center; gap: 0.25rem; }
+
+.feed-empty { color: var(--text-dim); font-size: 0.875rem; padding: 1rem 0; }
+.feed-error {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 1.25rem;
+  border-radius: 1rem;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  font-size: 0.875rem;
+}
+.feed-error .btn-primary { height: 2.25rem; padding: 0 1rem; }
+
+/* skeleton loading */
+.skeleton, .skeleton-line {
+  background: linear-gradient(90deg, var(--panel-2) 25%, #202020 37%, var(--panel-2) 63%);
+  background-size: 400% 100%;
+  animation: skeleton-shimmer 1.4s ease infinite;
+  border-radius: 0.5rem;
+}
+@keyframes skeleton-shimmer {
+  0% { background-position: 100% 50%; }
+  100% { background-position: 0 50%; }
+}
+.spinner { animation: spin 0.9s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ---------- Right sidebar ---------- */
+
+.right-sidebar {
+  flex: 0 0 20rem;
+  max-width: 20rem;
+  min-width: 14rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding-right: 0.25rem;
+}
+
+.banner-card {
+  position: relative;
+  overflow: hidden;
+  border-radius: 1rem;
+  border: 1px solid var(--border);
+  aspect-ratio: 4 / 3;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 1.25rem;
+  flex-shrink: 0;
+}
+.banner-img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  filter: grayscale(100%) contrast(1.2) brightness(0.5);
+}
+.banner-overlay {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(140deg, rgba(10,10,10,0.95) 20%, rgba(10,10,10,0.6) 55%, rgba(10,10,10,0.25) 100%);
+}
+.banner-content { position: relative; z-index: 1; }
+.banner-title { font-size: 1.3125rem; font-weight: 800; line-height: 1.25; color: #ffffff; margin: 0; }
+.banner-accent { color: var(--accent-2); }
+.banner-cta { position: relative; z-index: 1; align-self: flex-start; height: 2.5rem; padding: 0 1rem; }
+
+.panel-card {
+  border-radius: 1rem;
+  padding: 1rem;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.panel-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.75rem; }
+.panel-label {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 1.5px;
+  color: var(--text-faint);
+}
+.link-btn { border: none; background: transparent; cursor: pointer; font-size: 0.75rem; font-weight: 500; color: var(--accent-2); }
+
+.segment { display: flex; align-items: center; padding: 0.25rem; border-radius: 0.625rem; background: var(--panel-2); margin-bottom: 0.75rem; }
+.segment-btn {
+  flex: 1;
+  border: none;
+  cursor: pointer;
+  background: transparent;
+  color: var(--text-faint);
+  font-size: 0.75rem;
+  font-weight: 500;
+  padding: 0.375rem 0;
+  border-radius: 0.5rem;
+  transition: background 0.15s, color 0.15s;
+}
+.segment-btn.active { background: var(--accent); color: var(--accent-text); font-weight: 700; }
+
+.member-list { display: flex; flex-direction: column; gap: 0.625rem; }
+.member-row { display: flex; align-items: center; gap: 0.625rem; }
+.member-rank { width: 1.25rem; text-align: center; font-size: 0.75rem; font-weight: 700; color: var(--text-faint); }
+.member-rank.medal-gold { color: #f4b740; }
+.member-rank.medal-silver { color: #c7ccd8; }
+.member-rank.medal-bronze { color: #d98a4f; }
+.member-name { flex: 1; font-size: 0.875rem; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.member-points { font-size: 0.75rem; color: var(--text-faint); white-space: nowrap; }
+
+.trending-list { display: flex; flex-direction: column; gap: 0.875rem; }
+.trending-row { display: flex; gap: 0.625rem; }
+.trending-rank {
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 0.4375rem;
+  background: var(--panel-2);
+  color: var(--accent-2);
+  font-size: 0.75rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.trending-body { min-width: 0; }
+.trending-title {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--text);
+  margin: 0 0 0.375rem;
+  line-height: 1.35;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.trending-meta { display: flex; align-items: center; gap: 0.625rem; flex-wrap: wrap; }
+
+/* ---------- Mobile bottom navigation ---------- */
+
+.bottom-nav { display: none; }
+
+/* ===========================================================================
+   Responsive
+   - >1100px  : three independent-scroll columns (desktop, as designed above)
+   - 701–1100px: single scrolling column; categories become a horizontal
+                 pill bar above the feed; banner/trending stack below the
+                 post list
+   - ≤700px   : same stacked layout, further compacted for phones; this is
+                 also the only width where the "TV tích cực" tab and the
+                 "Tạo chủ đề mới" sidebar button are shown/hidden per the
+                 mobile-only rules below
+   =========================================================================== */
+
+@media (max-width: 1100px) {
+  .gym-forum { height: auto; min-height: 100%; overflow: visible; }
+
+  .header { position: sticky; top: 0; z-index: 10; }
+
+  .body-wrap {
+    flex-direction: column;
+    overflow: visible;
+    height: auto;
+    padding: 1rem;
+    gap: 1rem;
+  }
+
+  .sidebar,
+  .feed,
+  .right-sidebar {
+    height: auto;
+    max-width: 100%;
+    min-width: 0;
+    width: 100%;
+    overflow: visible;
+    flex: 1 1 auto;
+    padding-right: 0;
+  }
+
+  /* categories collapse into a horizontally-scrollable pill bar */
+  .sidebar { gap: 0.625rem; }
+  .sidebar-label { display: none; }
+  .category-list {
+    flex-direction: row;
+    overflow-x: auto;
+    gap: 0.5rem;
+    padding-bottom: 0.25rem;
+  }
+  .category-item {
+    flex-shrink: 0;
+    white-space: nowrap;
+    padding: 0.5rem 0.875rem;
+  }
+  .category-item.skeleton { flex-shrink: 0; width: 8rem; height: 2.25rem; }
+  .sidebar-cta { width: auto; padding: 0 1.25rem; align-self: flex-start; }
+
+  .feed { order: 1; }
+  .right-sidebar {
+    order: 2;
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 1rem;
+  }
+  .right-sidebar .banner-card { flex: 1 1 16rem; aspect-ratio: auto; min-height: 12rem; }
+  .right-sidebar .panel-card { flex: 1 1 16rem; }
+
+  .tab-bar { overflow-x: auto; max-width: 100%; }
+  .tab-btn { white-space: nowrap; }
+}
+
+@media (max-width: 700px) {
+  /* header: exit/back icon + centered logo + search + avatar */
+  .back-btn-label { display: none; }
+  .back-btn-icon { display: none; }
+  .menu-icon { display: block; }
+  .back-btn { padding: 0.5rem; }
+  .user-name { display: none; }
+  .header { padding: 0 0.75rem; gap: 0.625rem; }
+  .divider { display: none; }
+  .brand { flex: 1; justify-content: center; }
+  .header-spacer { flex: 0; }
+  .search-btn { display: flex; }
+  .notif-btn { display: none; }
+
+  .body-wrap { padding: 0.75rem; gap: 0.875rem; padding-bottom: 0; }
+  .feed { padding-bottom: 5.5rem; }
+
+  /* "Tạo chủ đề mới" lives only in the bottom-nav + on desktop/tablet */
+  .sidebar-cta { display: none; }
+
+  /* on phone, the third tab ("TV tích cực") becomes visible too */
+  .tab-mobile-only { display: inline-block; }
+
+  /* categories become icon-on-top circular chips */
+  .category-item {
+    flex-direction: column;
+    gap: 0.375rem;
+    padding: 0.625rem 0.5rem;
+    min-width: 4.5rem;
+    border-radius: 1rem;
+  }
+  .category-left { flex-direction: column; gap: 0.375rem; }
+  .category-icon-circle {
+    width: 2.25rem;
+    height: 2.25rem;
+    border-radius: 50%;
+    background: var(--cat-bg);
+  }
+  .category-label {
+    font-size: 0.6875rem;
+    text-align: center;
+    line-height: 1.15;
+    white-space: normal;
+    max-width: 4rem;
+  }
+  .category-count { display: none; }
+
+  /* on phone, the right column widgets are reached via the tabs instead */
+  .right-sidebar { display: none; }
+
+  /* post cards: full-width image on top with the tag overlaid on it */
+  .post-card { flex-direction: column; padding: 0; overflow: hidden; gap: 0; }
+  .post-thumb { width: 100%; height: 9rem; border-radius: 0; }
+  .post-thumb-tag { display: inline-flex; position: absolute; top: 0.625rem; left: 0.625rem; z-index: 1; }
+  .post-body { padding: 0.875rem; }
+  .post-top { flex-direction: column; align-items: flex-start; gap: 0.25rem; margin-bottom: 0.5rem; }
+  .post-top > .tag { display: none; }
+  .post-title {
+    white-space: normal;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .post-excerpt { display: none; }
+  .post-meta { gap: 0.625rem; }
+
+  .feed-head h1 { font-size: 1.25rem; }
+  .feed-head p { font-size: 0.8125rem; }
+
+  /* bottom tab bar */
+  .bottom-nav {
+    display: flex;
+    align-items: center;
+    justify-content: space-around;
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 4.25rem;
+    padding: 0 0.5rem;
+    background: #0d0d0d;
+    border-top: 1px solid var(--border);
+    z-index: 20;
+  }
+  .bottom-nav-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.25rem;
+    border: none;
+    background: transparent;
+    color: var(--text-faint);
+    font-size: 0.625rem;
+    cursor: pointer;
+    padding: 0.25rem 0.5rem;
+  }
+  .bottom-nav-cta {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 3rem;
+    height: 3rem;
+    border-radius: 50%;
+    border: none;
+    cursor: pointer;
+    color: #fff5f0;
+    background: linear-gradient(135deg, var(--accent-2), var(--accent));
+    transform: translateY(-0.75rem);
+    box-shadow: 0 6px 16px var(--accent-dim);
+  }
+}
+`;
+
+// ---------------------------------------------------------------------------
+// Root
+// ---------------------------------------------------------------------------
+
+export default function GymForum() {
+    const feedRef = useRef(null);
+
+    const [categories, setCategories] = useState([]);
+    const [categoriesLoading, setCategoriesLoading] = useState(true);
+    const [activeCategoryId, setActiveCategoryId] = useState("all");
+
+    const [activeTabId, setActiveTabId] = useState("latest");
+
+    const [posts, setPosts] = useState([]);
+    const [postsLoading, setPostsLoading] = useState(true);
+    const [postsError, setPostsError] = useState(null);
+
+    const [members, setMembers] = useState([]);
+    const [membersLoading, setMembersLoading] = useState(true);
+    const [memberRange, setMemberRange] = useState("week");
+
+    const [trending, setTrending] = useState([]);
+    const [trendingLoading, setTrendingLoading] = useState(true);
+
+    // ---- data loaders -----------------------------------------------------
+
+    async function loadPosts({ categoryId, tabId, scrollTop = false } = {}) {
+        setPostsLoading(true);
+        setPostsError(null);
+        try {
+            const data = await api.getPosts({
+                categoryId: categoryId ?? activeCategoryId,
+                tabId: tabId ?? activeTabId,
+                page: 1,
+            });
+            setPosts(data.items);
+        } catch (err) {
+            setPostsError("Không tải được danh sách chủ đề. Vui lòng thử lại.");
+        } finally {
+            setPostsLoading(false);
+            if (scrollTop && feedRef.current) {
+                feedRef.current.scrollTo({ top: 0, behavior: "smooth" });
+            }
+        }
     }
 
-    function toggleLike(id) {
-        setPosts(posts.map((p) => (p.id === id ? { ...p, liked: !p.liked, likes: p.liked ? p.likes - 1 : p.likes + 1 } : p)));
+    async function loadMembers(range) {
+        setMembersLoading(true);
+        try {
+            const data = await api.getMembers({ range: range ?? memberRange });
+            setMembers(data.items);
+        } finally {
+            setMembersLoading(false);
+        }
     }
 
-    function addPost({ text, image }) {
-        const newPost = {
-            id: Date.now(),
-            user: { name: CURRENT_USER },
-            time: "Vừa xong",
-            text,
-            image,
-            likes: 0,
-            liked: false,
-            comments: 0,
-            reposts: 0,
-            replies: [],
-        };
-        setPosts([newPost, ...posts]);
+    async function loadTrending() {
+        setTrendingLoading(true);
+        try {
+            const data = await api.getTrending();
+            setTrending(data);
+        } finally {
+            setTrendingLoading(false);
+        }
     }
 
-    function openReply(id) {
-        setOpenReplyId(openReplyId === id ? null : id);
-        setReplyDraft("");
+    // ---- initial load ------------------------------------------------------
+
+    useEffect(() => {
+        (async () => {
+            setCategoriesLoading(true);
+            const cats = await api.getCategories();
+            setCategories(cats);
+            setCategoriesLoading(false);
+        })();
+        loadPosts({ scrollTop: false });
+        loadMembers();
+        loadTrending();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    // ---- handlers -----------------------------------------------------------
+
+    function handleSelectCategory(categoryId) {
+        setActiveCategoryId(categoryId);
+        loadPosts({ categoryId, scrollTop: true });
     }
 
-    function submitReply(id) {
-        if (!replyDraft.trim()) return;
-        setPosts(
-            posts.map((p) =>
-                p.id === id
-                    ? {
-                        ...p,
-                        comments: p.comments + 1,
-                        replies: [...p.replies, { id: Date.now(), user: { name: CURRENT_USER }, time: "Vừa xong", text: replyDraft.trim() }],
-                    }
-                    : p
-            )
-        );
-        setReplyDraft("");
-        setOpenReplyId(null);
+    function handleTabChange(tabId) {
+        setActiveTabId(tabId);
+        loadPosts({ tabId, scrollTop: true });
     }
 
-    function handleCompose() {
-        window.scrollTo({ top: 0, behavior: "smooth" });
-        setComposeSignal((c) => c + 1);
+    function handleMemberRangeChange(range) {
+        setMemberRange(range);
+        loadMembers(range);
     }
 
-    function handleGoHome() {
-        window.scrollTo({ top: 0, behavior: "smooth" });
-        // TODO: thay đoạn giả lập này bằng gọi API lấy bài viết mới thật.
-        const template = newPostsPool[newPostIndex % newPostsPool.length];
-        const newPost = {
-            id: Date.now(),
-            user: template.user,
-            time: "Vừa xong",
-            text: template.text,
-            image: null,
-            likes: 0,
-            liked: false,
-            comments: 0,
-            reposts: 0,
-            replies: [],
-        };
-        setPosts((prev) => [newPost, ...prev]);
-        setNewPostIndex((i) => i + 1);
+    // Clicking the "GYM FORUM" logo: reset filters, jump back to the top of
+    // the feed, and pull a fresh copy of the topic list — same code path a
+    // real "refresh" action would use once the API is live.
+    function handleLogoClick() {
+        setActiveCategoryId("all");
+        setActiveTabId("latest");
+        loadPosts({ categoryId: "all", tabId: "latest", scrollTop: true });
     }
 
     return (
-        <>
-            <Header />
-
-            <div className="forum-root">
-                <style>{`
-          @import url('https://fonts.googleapis.com/css2?family=Sora:wght@600;700&family=Inter:wght@400;500;600;700&display=swap');
-
-          .forum-root {
-            background: #08090b;
-            min-height: 100vh;
-            width: 100%;
-            color: #f5f6f8;
-            font-family: 'Inter', system-ui, sans-serif;
-            padding-bottom: 76px; /* chừa chỗ cho bottomnav trên mobile */
-            box-sizing: border-box;
-          }
-          .forum-root *, .forum-root *::before, .forum-root *::after { box-sizing: border-box; }
-          .forum-root button { font-family: inherit; }
-          .forum-root textarea:focus, .forum-root button:focus-visible { outline: 2px solid ${ACCENT}; outline-offset: 2px; }
-          .forum-root input:focus { outline: none; }
-
-          /* ============== DESKTOP TOP NAV (kiểu Facebook) ============== */
-          .topnav {
-            display: none; /* mặc định ẩn, chỉ hiện ở desktop */
-            /* Thanh này "nổi lên" nhưng phải nằm NGAY DƯỚI Header thật của
-               web (Trang Chủ / Gói tập / .../ Cộng Đồng), không đè lên nó.
-               Vì không biết chiều cao thật của Header đó, mình cho sticky
-               cách đỉnh màn hình một khoảng = --site-header-height. Bạn
-               chỉnh số px này bằng đúng chiều cao Header thật (đo bằng
-               DevTools) để 2 thanh luôn dính khít nhau khi cuộn trang. */
-            --site-header-height: 62px;
-            position: sticky; top: var(--site-header-height); z-index: 30;
-            background: transparent;
-            padding: 0 20px 6px;
-          }
-          .topnav-inner {
-            position: relative;
-            max-width: 1120px; margin: 0 auto; padding: 10px 20px;
-            display: flex; align-items: center; gap: 16px;
-            background: linear-gradient(180deg, #14161c, #101216);
-            border: 1px solid #262a33;
-            border-radius: 0 0 18px 18px;
-            box-shadow: 0 10px 28px rgba(0,0,0,0.45), 0 1px 0 rgba(255,255,255,0.03) inset;
-          }
-          .topnav-identity { display: flex; align-items: center; gap: 6px; }
-          /* Ô tìm kiếm đã bỏ, chuông đẩy sát mép phải để cân đối với cụm
-             avatar/Quang bên trái. */
-          .topnav-bell-slot {
-            margin-left: auto;
-            display: flex; align-items: center;
-          }
-          .topnav-profile-btn {
-            display: flex; align-items: center; gap: 10px; background: none; border: none; cursor: pointer;
-            padding: 4px 12px 4px 4px; border-radius: 999px; transition: background .15s;
-          }
-          .topnav-profile-btn:hover { background: #14161b; }
-          .topnav-profile-name { font-size: 14px; font-weight: 700; color: #e6e7eb; white-space: nowrap; font-family: 'Sora', sans-serif; line-height: 1; }
-          .topnav-home-btn {
-            display: flex; align-items: center; justify-content: center; width: 34px; height: 34px;
-            background: none; border: none; color: ${ACCENT}; cursor: pointer; border-radius: 10px; transition: background .15s;
-          }
-          .topnav-home-btn:hover { background: #14161b; }
-          .notif-wrap { position: relative; }
-          .notif-dot {
-            position: absolute; top: 2px; right: 2px; min-width: 15px; height: 15px; padding: 0 3px;
-            border-radius: 999px; background: #ef4444; color: #fff; font-size: 10px; font-weight: 700;
-            display: flex; align-items: center; justify-content: center; line-height: 1;
-          }
-          .notif-dropdown {
-            position: absolute; top: calc(100% + 10px); right: 0; width: 320px; z-index: 40;
-            background: #111318; border: 1px solid #23262e; border-radius: 16px;
-            box-shadow: 0 12px 32px rgba(0,0,0,0.5); overflow: hidden;
-          }
-          .notif-dropdown-title { font-family: 'Sora', sans-serif; font-weight: 700; font-size: 14px; padding: 14px 16px; border-bottom: 1px solid #1c1e24; }
-          .notif-empty { padding: 20px 16px; color: #6c7280; font-size: 13px; text-align: center; }
-          .notif-row { display: flex; gap: 10px; padding: 12px 16px; border-bottom: 1px solid #16181e; }
-          .notif-row:last-child { border-bottom: none; }
-          .notif-row.unread { background: rgba(255,70,32,0.07); }
-          .notif-text-col { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
-          .notif-text { font-size: 13px; color: #d0d2d9; line-height: 1.4; }
-          .notif-text strong { color: #f5f6f8; font-weight: 700; }
-          .notif-time { font-size: 11.5px; color: #6c7280; }
-
-          /* ============== MOBILE BOTTOM NAV (kiểu Threads) ============== */
-          .bottomnav {
-            position: fixed; left: 0; right: 0; bottom: 0; z-index: 30;
-            display: flex; align-items: center; justify-content: space-around;
-            background: rgba(8,9,11,0.96); backdrop-filter: blur(10px);
-            border-top: 1px solid #1c1e24;
-            padding: 8px 6px calc(8px + env(safe-area-inset-bottom, 0px));
-          }
-          .bottomnav-btn {
-            background: none; border: none; color: #9297a3; cursor: pointer;
-            display: flex; align-items: center; justify-content: center;
-            padding: 8px 18px; border-radius: 10px; transition: background .15s, color .15s;
-          }
-          .bottomnav-btn:hover { background: #14161b; }
-          .bottomnav-btn.active { color: #f5f6f8; }
-          .bottomnav-avatar { padding: 4px 14px; }
-          .bottomnav-notif-wrap { position: relative; }
-          .bottomnav-notif-dot { top: 2px; right: 8px; }
-
-          .mobile-notif-sheet {
-            position: fixed; left: 10px; right: 10px; bottom: 74px; z-index: 35;
-            background: #111318; border: 1px solid #23262e; border-radius: 16px;
-            box-shadow: 0 12px 32px rgba(0,0,0,0.55); overflow: hidden; max-height: 60vh; overflow-y: auto;
-          }
-
-          /* ============== LAYOUT ============== */
-          /* Không còn sidebar trái/phải nên chỉ còn 1 cột nội dung, nới
-             chiều rộng tối đa lên để bài viết không bị hẹp/ngắn. */
-          .layout { max-width: 900px; margin: 0 auto; padding: 16px; width: 100%; }
-          .main-col { max-width: 720px; margin: 0 auto; width: 100%; }
-
-          @media (min-width: 760px) {
-            .forum-root { padding-bottom: 0; }
-            .topnav { display: block; }
-            .bottomnav { display: none; }
-            .mobile-notif-sheet { display: none; }
-            .layout { padding-top: 24px; padding-left: 24px; padding-right: 24px; }
-          }
-
-          /* composer */
-          .composer-wrap { margin-top: 4px; margin-bottom: 18px; }
-          .composer-collapsed {
-            display: flex; align-items: center; gap: 12px;
-            background: #111318; border: 1px solid #1e2129; border-radius: 999px;
-            padding: 10px 14px; cursor: text; transition: border-color .15s;
-          }
-          .composer-collapsed:hover { border-color: #2c303a; }
-          .composer-collapsed span { flex: 1; color: #7d8290; font-size: 14px; }
-          .composer-collapsed-icons { display: flex; }
-          .composer-open { background: #111318; border: 1px solid #1e2129; border-radius: 18px; padding: 16px; }
-          .composer-open-row { display: flex; gap: 12px; }
-          .composer-open textarea {
-            flex: 1; background: transparent; border: none; color: #f5f6f8;
-            font-size: 15px; resize: none; min-height: 64px; font-family: inherit; line-height: 1.5;
-          }
-          .composer-open textarea::placeholder { color: #636874; }
-
-          .image-preview-wrap { position: relative; margin-top: 10px; margin-left: 50px; }
-          .image-preview-wrap img { width: 100%; max-height: 320px; object-fit: cover; border-radius: 14px; display: block; }
-          .image-remove-btn {
-            position: absolute; top: 8px; right: 8px; width: 26px; height: 26px; border-radius: 50%;
-            background: rgba(0,0,0,0.65); border: none; color: #fff; display: flex; align-items: center; justify-content: center; cursor: pointer;
-          }
-
-          .emoji-row { display: flex; gap: 6px; margin: 10px 0 0 50px; }
-          .emoji-btn { background: #181a20; border: 1px solid #23262e; border-radius: 10px; font-size: 17px; padding: 4px 8px; cursor: pointer; }
-          .emoji-btn:hover { border-color: ${ACCENT}; }
-
-          .composer-actions { display: flex; justify-content: space-between; align-items: center; margin-top: 12px; padding-top: 12px; border-top: 1px solid #1c1e24; }
-          .composer-actions-left { display: flex; gap: 8px; }
-          .icon-pill { width: 34px; height: 34px; border-radius: 10px; background: transparent; border: 1px solid #23262e; display: flex; align-items: center; justify-content: center; cursor: pointer; }
-          .icon-pill:hover, .icon-pill.active { background: #181a20; }
-          .composer-actions-right { display: flex; gap: 10px; }
-          .btn-ghost { padding: 7px 16px; border-radius: 999px; font-size: 13px; font-weight: 600; background: transparent; color: #b5b8c1; border: 1px solid #262a33; cursor: pointer; }
-          .btn-accent { padding: 7px 18px; border-radius: 999px; font-size: 13px; font-weight: 700; background: ${ACCENT}; color: #fff; border: none; cursor: pointer; }
-          .btn-accent:disabled { background: #1c2431; color: #4d5563; cursor: default; }
-
-          /* feed */
-          .feed { display: flex; flex-direction: column; gap: 10px; }
-          .post { background: #0c0d10; border: 1px solid #1a1c22; border-radius: 16px; padding: 16px; transition: border-color .15s; }
-          .post:hover { border-color: #23262e; }
-          .post-row { display: flex; gap: 12px; }
-          .post-avatar-col { display: flex; flex-direction: column; align-items: center; }
-          .thread-line { width: 2px; flex: 1; background: linear-gradient(180deg, #23262e, transparent); margin-top: 6px; min-height: 20px; }
-          .post-body { flex: 1; min-width: 0; }
-          .post-header { display: flex; align-items: center; gap: 6px; }
-          .post-name { font-family: 'Sora', sans-serif; font-weight: 700; font-size: 14.5px; }
-          .badge { font-size: 10.5px; font-weight: 700; color: ${ACCENT_TEAL}; border: 1px solid rgba(20,184,166,0.4); background: rgba(20,184,166,0.08); border-radius: 5px; padding: 1px 6px; }
-          .dot { color: #4b4f5a; font-size: 13px; }
-          .post-time { color: #6c7280; font-size: 13px; }
-          .more-icon { margin-left: auto; background: none; border: none; color: #5a5f6b; cursor: pointer; display: flex; padding: 2px; }
-          .more-icon:hover { color: #9297a3; }
-          .post-text { margin: 6px 0 10px; font-size: 14.5px; line-height: 1.55; color: #e6e7eb; white-space: pre-line; }
-          .post-text.small { margin: 0; font-size: 14px; color: #cfd1d8; }
-          .post-image { width: 100%; max-height: 420px; object-fit: cover; border-radius: 14px; display: block; margin: 4px 0 10px; }
-          .action-row { display: flex; align-items: center; gap: 22px; }
-          .action-btn { display: flex; align-items: center; gap: 6px; background: none; border: none; cursor: pointer; color: #9297a3; font-size: 13px; padding: 4px 0; }
-          .action-btn.active { color: ${ACCENT}; }
-          .reply-preview { display: flex; gap: 10px; margin-top: 12px; }
-          .reply-text-col { flex: 1; }
-          .reply-name { font-size: 13px; font-weight: 600; color: #d0d2d9; }
-          .more-replies { margin: 8px 0 0 36px; font-size: 13px; color: #6c7280; cursor: pointer; }
-          .more-replies:hover { color: ${ACCENT}; }
-          .inline-reply { display: flex; gap: 10px; margin-top: 12px; align-items: flex-start; }
-          .inline-reply-input { flex: 1; display: flex; align-items: flex-end; gap: 8px; background: #131519; border: 1px solid #23262e; border-radius: 12px; padding: 8px 10px; }
-          .inline-reply-input textarea { flex: 1; background: transparent; border: none; color: #f5f6f8; font-size: 13.5px; resize: none; font-family: inherit; min-height: 20px; }
-          .inline-reply-input textarea::placeholder { color: #636874; }
-          .send-icon-btn { width: 30px; height: 30px; min-width: 30px; border-radius: 50%; background: ${ACCENT}; color: #fff; border: none; cursor: pointer; display: flex; align-items: center; justify-content: center; }
-          .send-icon-btn:disabled { background: #1c2431; color: #4d5563; cursor: default; }
-        `}</style>
-
-                <TopNavBar
-                    onOpenProfile={() => console.log("Mở trang cá nhân")}
-                    onGoHome={handleGoHome}
-                    notifications={notifications}
-                    onMarkAllRead={markAllNotificationsRead}
+        <div className="gym-forum">
+            <style>{styles}</style>
+            <Header onLogoClick={handleLogoClick} />
+            <div className="body-wrap">
+                <Sidebar
+                    categories={categories}
+                    activeCategoryId={activeCategoryId}
+                    onSelectCategory={handleSelectCategory}
+                    loading={categoriesLoading}
                 />
-
-                <div className="layout">
-                    <div className="main-col">
-                        <Composer onSubmit={addPost} openSignal={composeSignal} />
-
-                        <div className="feed">
-                            {posts.map((post) => (
-                                <Post
-                                    key={post.id}
-                                    post={post}
-                                    onToggleLike={toggleLike}
-                                    replyOpen={openReplyId === post.id}
-                                    onOpenReply={openReply}
-                                    replyDraft={replyDraft}
-                                    onReplyDraftChange={setReplyDraft}
-                                    onSubmitReply={submitReply}
-                                />
-                            ))}
-                        </div>
-                    </div>
-                </div>
-
-                <BottomNavBar
-                    onOpenProfile={() => console.log("Mở trang cá nhân")}
-                    onCompose={handleCompose}
-                    notifications={notifications}
-                    onMarkAllRead={markAllNotificationsRead}
+                <MainFeed
+                    feedRef={feedRef}
+                    activeTabId={activeTabId}
+                    onTabChange={handleTabChange}
+                    posts={posts}
+                    loading={postsLoading}
+                    error={postsError}
+                    onRetry={() => loadPosts({ scrollTop: false })}
+                    categories={categories}
+                    members={members}
+                    membersLoading={membersLoading}
+                    memberRange={memberRange}
+                    onMemberRangeChange={handleMemberRangeChange}
+                    trending={trending}
+                    trendingLoading={trendingLoading}
+                />
+                <RightSidebar
+                    members={members}
+                    memberRange={memberRange}
+                    onMemberRangeChange={handleMemberRangeChange}
+                    membersLoading={membersLoading}
+                    trending={trending}
+                    trendingLoading={trendingLoading}
+                    categories={categories}
                 />
             </div>
-
-            <Footer />
-        </>
+            <BottomNav onHomeClick={handleLogoClick} />
+        </div>
     );
 }

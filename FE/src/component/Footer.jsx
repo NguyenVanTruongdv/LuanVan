@@ -111,9 +111,8 @@ export default function Footer() {
                         {/* Nav col */}
                         <div className="vt-footer__col">
                             <p className="vt-footer__col-title">Dịch vụ</p>
-                            <a href="/goi-tap" className="vt-footer__link">Gói tập</a>
-                            <a href="/may-tap" className="vt-footer__link">Danh mục máy tập</a>
-                            <a href="/check-in" className="vt-footer__link">Check-in</a>
+                            <a href="/packages" className="vt-footer__link">Gói tập</a>
+                            <a href="/equipment" className="vt-footer__link">Danh mục máy tập</a>
                             <a href="/thong-ke" className="vt-footer__link">Thống kê cá nhân</a>
                             <a href="/lich-su" className="vt-footer__link">Lịch sử tập</a>
                         </div>

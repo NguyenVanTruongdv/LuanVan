@@ -23,6 +23,16 @@ const memberApi = {
     getPaymentStatus(orderCode) {
         return authApi.get(`/api/payment/status/${orderCode}`);
     },
+    getAll(params = {}) {
+        const query = new URLSearchParams(
+            Object.entries(params).filter(
+                ([, v]) => v !== undefined && v !== null && v !== ""
+            )
+        ).toString();
+
+        const url = query ? `/api/equipment?${query}` : "/api/equipment";
+        return authApi.get(url, false);
+    },
     getMyinfoToPayment() {
         return authApi.get("/api/payment/my-info")
     },
@@ -31,7 +41,18 @@ const memberApi = {
     },
     cancelPayment(orderCode) {
         return authApi.post(`/api/payment/cancel/${orderCode}`);
-    }
+    },
+    // Danh sách chi nhánh — hỗ trợ lọc name/status + phân trang (page, pageSize)
+    getBranches(params = {}) {
+        const query = new URLSearchParams(
+            Object.entries(params).filter(
+                ([, v]) => v !== undefined && v !== null && v !== ""
+            )
+        ).toString();
+
+        const url = query ? `/api/branches?${query}` : "/api/branches";
+        return authApi.get(url, false);
+    },
 
     // Ví dụ sau này
     // getProfile() {

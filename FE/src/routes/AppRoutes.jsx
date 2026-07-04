@@ -45,7 +45,7 @@ function AppRoutes() {
             <Route path="/branch" element={<BranchListt />} />
             <Route path="/branch/:id" element={<BranchDetail />} />
             <Route path="/comunity" element={<ForumFeed />} />
-
+            <Route path="/member/branches" element={<BranchList />} />
             {/* ================= AUTH ================= */}
 
             <Route path="/member/login" element={<MemberLogin />} />
@@ -57,6 +57,7 @@ function AppRoutes() {
             <Route
                 element={
                     <ProtectedRoute allowedRoles={["Member"]} loginPath="/member/login" />}>
+
                 <Route path="/member/branches" element={<BranchList />} />
                 <Route path="/thong-ke" element={<ThongKe />} />
                 <Route path="/issue" element={<IssueReportForm />} />

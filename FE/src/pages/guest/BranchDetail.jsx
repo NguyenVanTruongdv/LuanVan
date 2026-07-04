@@ -207,7 +207,7 @@ function BranchDetail() {
     if (!branch) {
         return (
             <div style={S.page}>
-                <Header />
+                <Header active="branch" />
                 <div style={S.container}>
                     <p style={S.notFound}>Không tìm thấy chi nhánh.</p>
                 </div>
@@ -221,7 +221,7 @@ function BranchDetail() {
 
     return (
         <div style={S.page}>
-            <Header />
+            <Header active="branch" />
 
             <div style={S.container}>
                 <button style={S.backLink} onClick={() => navigate(-1)}>

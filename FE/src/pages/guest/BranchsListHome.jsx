@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import Footer from "../../component/Footer"; // chỉnh lại path cho đúng project của bạn
 import Header from "../../component/Header"; // chỉnh lại path cho đúng project của bạn
+import memberApi from "../../api/memberApi"; // chỉnh lại path cho đúng project của bạn
 
 /* ─── Design tokens — phẳng, tối giản, đồng bộ pricing card ─── */
 const C = {
@@ -15,15 +16,6 @@ const C = {
   subtle: "#6b6b64",
   green: "#4ade80",
 };
-
-/* ─── Mock branches (sau này thay bằng API: GET /api/branches) ─── */
-const BRANCHES = [
-  { branchId: 1, branchName: "VTGYM Quận 1", address: "12 Nguyễn Huệ, Bến Nghé, Quận 1, TP.HCM", phone: "028 3822 1234", status: "Active", lat: 10.7745, lng: 106.7032 },
-  { branchId: 2, branchName: "VTGYM Quận 7", address: "88 Nguyễn Thị Thập, Tân Phú, Quận 7, TP.HCM", phone: "028 3771 5678", status: "Active", lat: 10.7329, lng: 106.7218 },
-  { branchId: 3, branchName: "VTGYM Bình Thạnh", address: "245 Điện Biên Phủ, Bình Thạnh, TP.HCM", phone: "028 3514 9090", status: "Active", lat: 10.8033, lng: 106.7128 },
-  { branchId: 4, branchName: "VTGYM Tân Bình", address: "56 Cộng Hòa, Tân Bình, TP.HCM", phone: "028 3948 1122", status: "Inactive", lat: 10.8011, lng: 106.6528 },
-  { branchId: 5, branchName: "VTGYM Thủ Đức", address: "120 Võ Văn Ngân, Thủ Đức, TP.HCM", phone: "028 3722 3344", status: "Active", lat: 10.8494, lng: 106.7717 },
-];
 
 /* ─── Responsive helpers ─── */
 function useBreakpoint() {
@@ -43,10 +35,9 @@ function useBreakpoint() {
 }
 
 function gmapsUrl(branch) {
-  if (branch.lat && branch.lng) {
-    return `https://www.google.com/maps/search/?api=1&query=${branch.lat},${branch.lng}`;
-  }
-  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(branch.address)}`;
+  // Backend hiện chưa lưu tọa độ (lat/lng), nên chỉ đường theo tên + địa chỉ
+  const query = `${branch.branchName} ${branch.address}`;
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`;
 }
 
 function getStyles(bp) {
@@ -94,6 +85,12 @@ function getStyles(bp) {
       gridTemplateColumns: isTablet ? "1fr" : "repeat(3, 1fr)",
       gap: isMobile ? "16px" : "20px",
       alignItems: "start",
+    },
+    stateWrap: {
+      textAlign: "center",
+      color: C.muted,
+      fontSize: "14px",
+      padding: "40px 0",
     },
   };
 }
@@ -240,6 +237,39 @@ function BranchListHome() {
   const bp = useBreakpoint();
   const S = getStyles(bp);
 
+  const [branches, setBranches] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    let ignore = false;
+
+    async function fetchBranches() {
+      setLoading(true);
+      setError(null);
+      try {
+        const res = await memberApi.getBranches({ status: "Active", pageSize: 100 });
+
+        // TODO: log thử console.log(res) 1 lần để biết chính xác shape response của bạn,
+        // rồi bỏ các nhánh fallback không cần thiết bên dưới.
+        const payload = res?.data ?? res;
+        const items = payload?.items ?? payload?.Items ?? payload ?? [];
+
+        if (!ignore) setBranches(Array.isArray(items) ? items : []);
+      } catch (err) {
+        if (!ignore) setError("Không tải được danh sách chi nhánh. Vui lòng thử lại.");
+        console.error("getBranches error:", err);
+      } finally {
+        if (!ignore) setLoading(false);
+      }
+    }
+
+    fetchBranches();
+    return () => {
+      ignore = true;
+    };
+  }, []);
+
   return (
     <div style={S.page}>
       <Header />
@@ -257,11 +287,21 @@ function BranchListHome() {
           </p>
         </div>
 
-        <div style={S.grid}>
-          {BRANCHES.map((b) => (
-            <BranchCard key={b.branchId} branch={b} bp={bp} />
-          ))}
-        </div>
+        {loading && <div style={S.stateWrap}>Đang tải danh sách chi nhánh...</div>}
+
+        {!loading && error && <div style={S.stateWrap}>{error}</div>}
+
+        {!loading && !error && branches.length === 0 && (
+          <div style={S.stateWrap}>Chưa có chi nhánh nào để hiển thị.</div>
+        )}
+
+        {!loading && !error && branches.length > 0 && (
+          <div style={S.grid}>
+            {branches.map((b) => (
+              <BranchCard key={b.branchId} branch={b} bp={bp} />
+            ))}
+          </div>
+        )}
       </div>
 
       <Footer />

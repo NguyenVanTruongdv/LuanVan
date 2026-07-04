@@ -42,7 +42,7 @@ function normalizePlan(raw) {
     };
 }
 
-function PlanCard({ plan, onBuy }) {
+function PlanCard({ plan, onBuy, loading }) {
     const onSale = plan.status === "OnSale";
     const lines = splitDescription(plan.description);
 
@@ -72,10 +72,10 @@ function PlanCard({ plan, onBuy }) {
 
             <button
                 className={`mp-btn${plan.featured ? " mp-btn--primary" : " mp-btn--ghost"} mp-plan__cta`}
-                disabled={!onSale}
+                disabled={!onSale || loading}
                 onClick={() => onSale && onBuy(plan)}
             >
-                {onSale ? "Chọn mua" : "Ngừng bán"}
+                {!onSale ? "Ngừng bán" : loading ? "Đang kiểm tra..." : "Chọn mua"}
             </button>
         </div>
     );
@@ -84,46 +84,23 @@ function PlanCard({ plan, onBuy }) {
 export default function MembershipPlansPage() {
     const navigate = useNavigate();
 
-    // Kiểm tra ngay khi vào trang: member có transaction đang Pending không.
-    // Nếu có -> redirect thẳng sang /payment (trang đó sẽ tự resume màn QR từ pending),
-    // không cho xem/chọn gói ở đây nữa. checkingPending=true trong lúc chờ kết quả
-    // để tránh flash danh sách gói ra rồi mới điều hướng.
-    const [checkingPending, setCheckingPending] = useState(true);
-
+    // Trang này là trang công khai (public) để xem bảng giá -> không tự động gọi API
+    // kiểm tra transaction Pending khi vừa vào trang nữa. Việc kiểm tra chỉ thực hiện
+    // ngay tại thời điểm khách bấm "Chọn mua" một gói cụ thể.
     const [plans, setPlans] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
 
-    useEffect(() => {
-        let mounted = true;
+    // planId đang được kiểm tra pending (để disable + đổi label nút của đúng thẻ đó)
+    const [checkingPlanId, setCheckingPlanId] = useState(null);
 
-        (async () => {
-            try {
-                const res = await memberApi.getPendingPayment();
-                const pending = res?.data ?? res;
-
-                if (mounted && pending?.hasPending) {
-                    navigate("/payment", { replace: true });
-                    return; // không setCheckingPending(false) để không render trang này ra trước khi chuyển hướng xong
-                }
-            } catch (err) {
-                console.warn("Không kiểm tra được đơn hàng đang chờ:", err);
-                // Lỗi thì vẫn cho xem trang gói tập bình thường, không chặn người dùng
-            } finally {
-                if (mounted) setCheckingPending(false);
-            }
-        })();
-
-        return () => {
-            mounted = false;
-        };
-    }, [navigate]);
+    // Khi phát hiện có giao dịch Pending -> lưu lại { plan (gói khách vừa bấm), pending (đơn cũ) }
+    // để hiển thị modal hỏi khách muốn tiếp tục thanh toán đơn cũ hay hủy để mua gói mới.
+    const [pendingInfo, setPendingInfo] = useState(null);
+    const [switchingPlan, setSwitchingPlan] = useState(false);
+    const [pendingActionError, setPendingActionError] = useState(null);
 
     useEffect(() => {
-        // Chỉ tải danh sách gói sau khi đã chắc chắn không có đơn Pending nào,
-        // tránh gọi API thừa nếu chuẩn bị bị redirect sang /payment.
-        if (checkingPending) return;
-
         let mounted = true;
 
         (async () => {
@@ -159,38 +136,69 @@ export default function MembershipPlansPage() {
         return () => {
             mounted = false;
         };
-    }, [checkingPending]);
+    }, []);
 
     // Ẩn hẳn các gói đã ngừng bán (Discontinued) khỏi trang
     const visiblePlans = plans.filter((p) => p.status !== "Discontinued");
     const onSaleCount = visiblePlans.filter((p) => p.status === "OnSale").length;
 
-    const handleBuy = (plan) => {
-        navigate("/payment", { state: { plan } });
+    // Bấm "Chọn mua": kiểm tra xem member đang có giao dịch Pending nào chưa hoàn thành không.
+    // API thật: memberApi.getPendingPayment() -> GET /api/payment/pending
+    // - Có pending -> hiện modal hỏi khách muốn tiếp tục thanh toán đơn cũ hay hủy để mua gói mới.
+    // - Không có pending -> qua thẳng trang thanh toán với gói vừa chọn như bình thường.
+    const handleBuy = async (plan) => {
+        try {
+            setCheckingPlanId(plan.planId);
+            setPendingActionError(null);
+
+            const res = await memberApi.getPendingPayment();
+            const pending = res?.data ?? res;
+
+            if (pending?.hasPending) {
+                setPendingInfo({ plan, pending });
+            } else {
+                navigate("/payment", { state: { plan } });
+            }
+        } catch (err) {
+            console.warn("Không kiểm tra được giao dịch đang chờ:", err);
+            // Lỗi khi kiểm tra thì vẫn cho khách qua trang thanh toán bình thường,
+            // trang đó sẽ tự xử lý nếu có vấn đề khi tạo đơn.
+            navigate("/payment", { state: { plan } });
+        } finally {
+            setCheckingPlanId(null);
+        }
     };
 
-    // Đang kiểm tra pending (hoặc chuẩn bị redirect) -> chỉ hiện loading, không render gì khác
-    if (checkingPending) {
-        return (
-            <>
-                <Header />
-                <div className="mp-page">
-                    <style>{`
-            .mp-page{
-            background: var(--bg, #0c0c0d);
-            color: var(--text, #f2f1ee);
-            font-family: var(--font-body, 'Inter', sans-serif);
-            min-height: 100vh;
-            }
-        `}</style>
-                    <div style={{ padding: "80px 32px", textAlign: "center", color: "var(--text-dim, #9a9a9e)" }}>
-                        Đang kiểm tra thông tin...
-                    </div>
-                </div>
-                <Footer />
-            </>
-        );
-    }
+    // Khách chọn "Tiếp tục thanh toán" đơn Pending có sẵn -> qua thẳng trang thanh toán,
+    // trang đó sẽ hiển thị lại màn QR với đầy đủ thông tin cá nhân + gói tập của đơn cũ.
+    const handleContinuePending = () => {
+        if (!pendingInfo) return;
+        navigate("/payment", {
+            state: { resumePending: true, pending: pendingInfo.pending },
+        });
+    };
+
+    // Khách chọn "Không" -> hủy giao dịch cũ (dùng chung API hủy với nút hủy ở trang QR),
+    // sau đó mới cho qua trang thanh toán để mua gói mới vừa bấm.
+    // API thật: memberApi.cancelPayment(orderCode) -> POST /api/payment/cancel/{orderCode}
+    const handleCancelPendingAndBuyNew = async () => {
+        if (!pendingInfo) return;
+        try {
+            setSwitchingPlan(true);
+            setPendingActionError(null);
+
+            await memberApi.cancelPayment(pendingInfo.pending.orderCode);
+
+            const newPlan = pendingInfo.plan;
+            setPendingInfo(null);
+            navigate("/payment", { state: { plan: newPlan } });
+        } catch (err) {
+            console.error("Lỗi khi hủy giao dịch cũ:", err);
+            setPendingActionError("Không thể hủy giao dịch cũ. Vui lòng thử lại.");
+        } finally {
+            setSwitchingPlan(false);
+        }
+    };
 
     return (
         <>
@@ -311,6 +319,21 @@ export default function MembershipPlansPage() {
             .mp-btn:hover:not(:disabled){ transform: translateY(-2px); filter:brightness(1.05); }
             .mp-btn:disabled{ opacity:.5; cursor:not-allowed; }
 
+            .mp-modal-overlay{
+            position:fixed; inset:0; background:rgba(0,0,0,0.6); backdrop-filter:blur(2px);
+            display:flex; align-items:center; justify-content:center; z-index:50; padding:16px;
+            }
+            .mp-modal{
+            background: var(--bg-soft, #171718); border:1px solid var(--line, #2a2a2c); border-radius:14px;
+            padding:24px; width:100%; max-width:400px; animation: mpFade .2s ease;
+            }
+            @keyframes mpFade{ from{ opacity:0; transform:translateY(8px);} to{ opacity:1; transform:translateY(0);} }
+            .mp-modal h3{ font-family: var(--font-display, 'Oswald'); margin:0 0 10px; font-size:19px; text-transform:uppercase; }
+            .mp-modal p{ color: var(--text-dim, #9a9a9e); font-size:13.5px; line-height:1.6; margin:0; }
+            .mp-modal-error{ color: var(--accent, #ff4f2b); font-size:12.5px; margin-top:12px; }
+            .mp-modal-actions{ display:flex; gap:10px; margin-top:20px; }
+            .mp-modal-actions .mp-btn{ flex:1; }
+
             @media (max-width: 1100px){
             .mp-plans{ grid-template-columns: repeat(2, 1fr); }
             }
@@ -355,11 +378,53 @@ export default function MembershipPlansPage() {
                 {!loading && !error && visiblePlans.length > 0 && (
                     <section className="mp-plans">
                         {visiblePlans.map((plan) => (
-                            <PlanCard key={plan.planId} plan={plan} onBuy={handleBuy} />
+                            <PlanCard
+                                key={plan.planId}
+                                plan={plan}
+                                onBuy={handleBuy}
+                                loading={checkingPlanId === plan.planId}
+                            />
                         ))}
                     </section>
                 )}
             </div>
+
+            {/* Modal: phát hiện có giao dịch Pending khi khách bấm "Chọn mua" */}
+            {pendingInfo && (
+                <div
+                    className="mp-modal-overlay"
+                    onClick={() => !switchingPlan && setPendingInfo(null)}
+                >
+                    <div className="mp-modal" onClick={(e) => e.stopPropagation()}>
+                        <h3>Giao dịch chưa hoàn thành</h3>
+                        <p>
+                            Bạn có giao dịch <b style={{ color: "var(--text, #f2f1ee)" }}>#{pendingInfo.pending.orderCode}</b> chưa hoàn thành. Bạn có muốn tiếp tục thanh toán không?
+                        </p>
+
+                        {pendingActionError && (
+                            <div className="mp-modal-error">{pendingActionError}</div>
+                        )}
+
+                        <div className="mp-modal-actions">
+                            <button
+                                className="mp-btn mp-btn--ghost"
+                                disabled={switchingPlan}
+                                onClick={handleCancelPendingAndBuyNew}
+                            >
+                                {switchingPlan ? "Đang hủy..." : "Không, hủy giao dịch cũ"}
+                            </button>
+                            <button
+                                className="mp-btn mp-btn--primary"
+                                disabled={switchingPlan}
+                                onClick={handleContinuePending}
+                            >
+                                Tiếp tục thanh toán
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             <Footer />
         </>
     );
