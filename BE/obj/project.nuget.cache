@@ -1,10 +1,11 @@
 {
   "version": 2,
-  "dgSpecHash": "1Cam/dLOx9Q=",
+  "dgSpecHash": "jqF2XK5+XNk=",
   "success": true,
   "projectFilePath": "E:\\HK2_2025_2026\\Luận Van Tốt Nghiệp\\be\\BE.csproj",
   "expectedPackageFiles": [
-    "C:\\Users\\truon\\.nuget\\packages\\awssdk.core\\4.0.7.1\\awssdk.core.4.0.7.1.nupkg.sha512",
+    "C:\\Users\\truon\\.nuget\\packages\\awssdk.core\\4.0.100.2\\awssdk.core.4.0.100.2.nupkg.sha512",
+    "C:\\Users\\truon\\.nuget\\packages\\awssdk.extensions.netcore.setup\\4.0.100.2\\awssdk.extensions.netcore.setup.4.0.100.2.nupkg.sha512",
     "C:\\Users\\truon\\.nuget\\packages\\awssdk.rekognition\\4.0.3.30\\awssdk.rekognition.4.0.3.30.nupkg.sha512",
     "C:\\Users\\truon\\.nuget\\packages\\awssdk.s3\\4.0.23.3\\awssdk.s3.4.0.23.3.nupkg.sha512",
     "C:\\Users\\truon\\.nuget\\packages\\bcrypt.net-next\\4.2.0\\bcrypt.net-next.4.2.0.nupkg.sha512",

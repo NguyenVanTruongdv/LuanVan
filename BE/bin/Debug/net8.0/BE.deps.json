@@ -8,6 +8,7 @@
     ".NETCoreApp,Version=v8.0": {
       "BE/1.0.0": {
         "dependencies": {
+          "AWSSDK.Extensions.NETCore.Setup": "4.0.100.2",
           "AWSSDK.Rekognition": "4.0.3.30",
           "AWSSDK.S3": "4.0.23.3",
           "BCrypt.Net-Next": "4.2.0",
@@ -22,17 +23,31 @@
           "BE.dll": {}
         }
       },
-      "AWSSDK.Core/4.0.7.1": {
+      "AWSSDK.Core/4.0.100.2": {
         "runtime": {
           "lib/net8.0/AWSSDK.Core.dll": {
             "assemblyVersion": "4.0.0.0",
-            "fileVersion": "4.0.7.1"
+            "fileVersion": "4.0.100.2"
+          }
+        }
+      },
+      "AWSSDK.Extensions.NETCore.Setup/4.0.100.2": {
+        "dependencies": {
+          "AWSSDK.Core": "4.0.100.2",
+          "Microsoft.Extensions.Configuration.Abstractions": "8.0.0",
+          "Microsoft.Extensions.DependencyInjection.Abstractions": "8.0.0",
+          "Microsoft.Extensions.Logging.Abstractions": "8.0.0"
+        },
+        "runtime": {
+          "lib/net8.0/AWSSDK.Extensions.NETCore.Setup.dll": {
+            "assemblyVersion": "4.0.0.0",
+            "fileVersion": "4.0.100.2"
           }
         }
       },
       "AWSSDK.Rekognition/4.0.3.30": {
         "dependencies": {
-          "AWSSDK.Core": "4.0.7.1"
+          "AWSSDK.Core": "4.0.100.2"
         },
         "runtime": {
           "lib/net8.0/AWSSDK.Rekognition.dll": {
@@ -43,7 +58,7 @@
       },
       "AWSSDK.S3/4.0.23.3": {
         "dependencies": {
-          "AWSSDK.Core": "4.0.7.1"
+          "AWSSDK.Core": "4.0.100.2"
         },
         "runtime": {
           "lib/net8.0/AWSSDK.S3.dll": {
@@ -688,12 +703,19 @@
       "serviceable": false,
       "sha512": ""
     },
-    "AWSSDK.Core/4.0.7.1": {
+    "AWSSDK.Core/4.0.100.2": {
       "type": "package",
       "serviceable": true,
-      "sha512": "sha512-XA0GHLwEMkoVu3u8neKnLEDD9ViXpn26ie9UhKXZXYRzCRfSFrLWpBOhupWlf+cJEFBYCC5mx2NsN8h59Y+M2Q==",
-      "path": "awssdk.core/4.0.7.1",
-      "hashPath": "awssdk.core.4.0.7.1.nupkg.sha512"
+      "sha512": "sha512-1hz6lB2Meymkv9rdOy30p5pIbGpYLK0H4O8XUMGwEMmXUB4FJhyTNk69dLWIFdDUrY66h0NyKy9maHKXMRTwJA==",
+      "path": "awssdk.core/4.0.100.2",
+      "hashPath": "awssdk.core.4.0.100.2.nupkg.sha512"
+    },
+    "AWSSDK.Extensions.NETCore.Setup/4.0.100.2": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-WTZP8ARqP7ekvb50t7F6QDo6iDLYGQd1f98RYx6TqbRdSeMuKaRS42c7mYTyHaCscCXwft7Qqs7gA+Vdu2300w==",
+      "path": "awssdk.extensions.netcore.setup/4.0.100.2",
+      "hashPath": "awssdk.extensions.netcore.setup.4.0.100.2.nupkg.sha512"
     },
     "AWSSDK.Rekognition/4.0.3.30": {
       "type": "package",

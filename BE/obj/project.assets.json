@@ -2,7 +2,7 @@
   "version": 3,
   "targets": {
     "net8.0": {
-      "AWSSDK.Core/4.0.7.1": {
+      "AWSSDK.Core/4.0.100.2": {
         "type": "package",
         "compile": {
           "lib/net8.0/AWSSDK.Core.dll": {
@@ -13,6 +13,28 @@
           "lib/net8.0/AWSSDK.Core.dll": {
             "related": ".xml"
           }
+        }
+      },
+      "AWSSDK.Extensions.NETCore.Setup/4.0.100.2": {
+        "type": "package",
+        "dependencies": {
+          "AWSSDK.Core": "4.0.100.2",
+          "Microsoft.Extensions.Configuration.Abstractions": "2.0.0",
+          "Microsoft.Extensions.DependencyInjection.Abstractions": "8.0.0",
+          "Microsoft.Extensions.Logging.Abstractions": "2.0.0"
+        },
+        "compile": {
+          "lib/net8.0/AWSSDK.Extensions.NETCore.Setup.dll": {
+            "related": ".xml"
+          }
+        },
+        "runtime": {
+          "lib/net8.0/AWSSDK.Extensions.NETCore.Setup.dll": {
+            "related": ".xml"
+          }
+        },
+        "build": {
+          "buildTransitive/net8.0/AWSSDK.Extensions.NETCore.Setup.targets": {}
         }
       },
       "AWSSDK.Rekognition/4.0.3.30": {
@@ -1168,15 +1190,15 @@
     }
   },
   "libraries": {
-    "AWSSDK.Core/4.0.7.1": {
-      "sha512": "XA0GHLwEMkoVu3u8neKnLEDD9ViXpn26ie9UhKXZXYRzCRfSFrLWpBOhupWlf+cJEFBYCC5mx2NsN8h59Y+M2Q==",
+    "AWSSDK.Core/4.0.100.2": {
+      "sha512": "1hz6lB2Meymkv9rdOy30p5pIbGpYLK0H4O8XUMGwEMmXUB4FJhyTNk69dLWIFdDUrY66h0NyKy9maHKXMRTwJA==",
       "type": "package",
-      "path": "awssdk.core/4.0.7.1",
+      "path": "awssdk.core/4.0.100.2",
       "hasTools": true,
       "files": [
         ".nupkg.metadata",
         ".signature.p7s",
-        "awssdk.core.4.0.7.1.nupkg.sha512",
+        "awssdk.core.4.0.100.2.nupkg.sha512",
         "awssdk.core.nuspec",
         "images/AWSLogo.png",
         "lib/net472/AWSSDK.Core.dll",
@@ -1188,6 +1210,28 @@
         "lib/netstandard2.0/AWSSDK.Core.dll",
         "lib/netstandard2.0/AWSSDK.Core.xml",
         "tools/account-management.ps1"
+      ]
+    },
+    "AWSSDK.Extensions.NETCore.Setup/4.0.100.2": {
+      "sha512": "WTZP8ARqP7ekvb50t7F6QDo6iDLYGQd1f98RYx6TqbRdSeMuKaRS42c7mYTyHaCscCXwft7Qqs7gA+Vdu2300w==",
+      "type": "package",
+      "path": "awssdk.extensions.netcore.setup/4.0.100.2",
+      "files": [
+        ".nupkg.metadata",
+        ".signature.p7s",
+        "ConfigurationSchema.json",
+        "awssdk.extensions.netcore.setup.4.0.100.2.nupkg.sha512",
+        "awssdk.extensions.netcore.setup.nuspec",
+        "buildTransitive/net8.0/AWSSDK.Extensions.NETCore.Setup.targets",
+        "buildTransitive/netcoreapp3.1/AWSSDK.Extensions.NETCore.Setup.targets",
+        "buildTransitive/netstandard2.0/AWSSDK.Extensions.NETCore.Setup.targets",
+        "images/AWSLogo.png",
+        "lib/net8.0/AWSSDK.Extensions.NETCore.Setup.dll",
+        "lib/net8.0/AWSSDK.Extensions.NETCore.Setup.xml",
+        "lib/netcoreapp3.1/AWSSDK.Extensions.NETCore.Setup.dll",
+        "lib/netcoreapp3.1/AWSSDK.Extensions.NETCore.Setup.xml",
+        "lib/netstandard2.0/AWSSDK.Extensions.NETCore.Setup.dll",
+        "lib/netstandard2.0/AWSSDK.Extensions.NETCore.Setup.xml"
       ]
     },
     "AWSSDK.Rekognition/4.0.3.30": {
@@ -3226,6 +3270,7 @@
   },
   "projectFileDependencyGroups": {
     "net8.0": [
+      "AWSSDK.Extensions.NETCore.Setup >= 4.0.100.2",
       "AWSSDK.Rekognition >= 4.0.3.30",
       "AWSSDK.S3 >= 4.0.23.3",
       "BCrypt.Net-Next >= 4.2.0",
@@ -3243,11 +3288,11 @@
   "project": {
     "version": "1.0.0",
     "restore": {
-      "projectUniqueName": "E:\\HK2_2025_2026\\Luận Van Tốt Nghiệp\\BE\\BE.csproj",
+      "projectUniqueName": "E:\\HK2_2025_2026\\Luận Van Tốt Nghiệp\\be\\BE.csproj",
       "projectName": "BE",
-      "projectPath": "E:\\HK2_2025_2026\\Luận Van Tốt Nghiệp\\BE\\BE.csproj",
+      "projectPath": "E:\\HK2_2025_2026\\Luận Van Tốt Nghiệp\\be\\BE.csproj",
       "packagesPath": "C:\\Users\\truon\\.nuget\\packages\\",
-      "outputPath": "E:\\HK2_2025_2026\\Luận Van Tốt Nghiệp\\BE\\obj\\",
+      "outputPath": "E:\\HK2_2025_2026\\Luận Van Tốt Nghiệp\\be\\obj\\",
       "projectStyle": "PackageReference",
       "configFilePaths": [
         "C:\\Users\\truon\\AppData\\Roaming\\NuGet\\NuGet.Config"
@@ -3280,6 +3325,10 @@
       "net8.0": {
         "targetAlias": "net8.0",
         "dependencies": {
+          "AWSSDK.Extensions.NETCore.Setup": {
+            "target": "Package",
+            "version": "[4.0.100.2, )"
+          },
           "AWSSDK.Rekognition": {
             "target": "Package",
             "version": "[4.0.3.30, )"

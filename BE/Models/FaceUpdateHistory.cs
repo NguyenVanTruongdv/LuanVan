@@ -43,6 +43,16 @@ public partial class FaceUpdateHistory
     /// </summary>
     public DateTime PerformedAt { get; set; }
 
+    /// <summary>
+    /// Ảnh đại diện cũ trên S3, NULL nếu lần đầu đăng ký
+    /// </summary>
+    public string? OldProfileImage { get; set; }
+
+    /// <summary>
+    /// Ảnh đại diện mới trên S3
+    /// </summary>
+    public string NewProfileImage { get; set; } = null!;
+
     public virtual Member Member { get; set; } = null!;
 
     public virtual Employee PerformedByNavigation { get; set; } = null!;

@@ -118,3 +118,4 @@ E:\HK2_2025_2026\Luận Van Tốt Nghiệp\BE\obj\Debug\net8.0\refint\BE.dll
 E:\HK2_2025_2026\Luận Van Tốt Nghiệp\BE\obj\Debug\net8.0\BE.pdb
 E:\HK2_2025_2026\Luận Van Tốt Nghiệp\BE\obj\Debug\net8.0\BE.genruntimeconfig.cache
 E:\HK2_2025_2026\Luận Van Tốt Nghiệp\BE\obj\Debug\net8.0\ref\BE.dll
+E:\HK2_2025_2026\Luận Van Tốt Nghiệp\be\bin\Debug\net8.0\AWSSDK.Extensions.NETCore.Setup.dll

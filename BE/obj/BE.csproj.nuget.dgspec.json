@@ -44,6 +44,10 @@
         "net8.0": {
           "targetAlias": "net8.0",
           "dependencies": {
+            "AWSSDK.Extensions.NETCore.Setup": {
+              "target": "Package",
+              "version": "[4.0.100.2, )"
+            },
             "AWSSDK.Rekognition": {
               "target": "Package",
               "version": "[4.0.3.30, )"

@@ -28,9 +28,6 @@ public partial class Equipment
     /// </summary>
     public int BranchId { get; set; }
 
-    /// <summary>
-    /// Trạng thái: Active=đang hoạt động, Broken=bị hỏng, UnderMaintenance=đang sửa chữa
-    /// </summary>
     public string Status { get; set; } = null!;
 
     /// <summary>

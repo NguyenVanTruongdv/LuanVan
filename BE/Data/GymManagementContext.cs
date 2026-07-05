@@ -80,12 +80,9 @@ public partial class GymManagementContext : DbContext
     public virtual DbSet<Transaction> Transactions { get; set; }
 
     protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
-    {
-        if (!optionsBuilder.IsConfigured)
-        {
-            // Không cấu hình gì ở đây
-        }
-    }
+#warning To protect potentially sensitive information in your connection string, you should move it out of source code. You can avoid scaffolding the connection string by using the Name= syntax to read it from configuration - see https://go.microsoft.com/fwlink/?linkid=2131148. For more guidance on storing connection strings, see https://go.microsoft.com/fwlink/?LinkId=723263.
+        => optionsBuilder.UseMySql("server=localhost;port=3306;database=gym_management;user=root", Microsoft.EntityFrameworkCore.ServerVersion.Parse("9.1.0-mysql"));
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder
@@ -416,8 +413,7 @@ public partial class GymManagementContext : DbContext
                 .HasColumnName("equipment_name");
             entity.Property(e => e.Status)
                 .HasDefaultValueSql("'Active'")
-                .HasComment("Trạng thái: Active=đang hoạt động, Broken=bị hỏng, UnderMaintenance=đang sửa chữa")
-                .HasColumnType("enum('Active','Broken','UnderMaintenance')")
+                .HasColumnType("enum('Active','Deleted')")
                 .HasColumnName("status");
 
             entity.HasOne(d => d.Branch).WithMany(p => p.Equipment)
@@ -551,10 +547,18 @@ public partial class GymManagementContext : DbContext
                 .HasMaxLength(100)
                 .HasComment("Face ID mới trên AWS sau khi cập nhật")
                 .HasColumnName("new_face_id_aws");
+            entity.Property(e => e.NewProfileImage)
+                .HasMaxLength(500)
+                .HasComment("Ảnh đại diện mới trên S3")
+                .HasColumnName("new_profile_image");
             entity.Property(e => e.OldFaceIdAws)
                 .HasMaxLength(100)
                 .HasComment("Face ID cũ trên AWS — NULL nếu đây là lần đăng ký đầu tiên")
                 .HasColumnName("old_face_id_aws");
+            entity.Property(e => e.OldProfileImage)
+                .HasMaxLength(500)
+                .HasComment("Ảnh đại diện cũ trên S3, NULL nếu lần đầu đăng ký")
+                .HasColumnName("old_profile_image");
             entity.Property(e => e.PerformedAt)
                 .HasDefaultValueSql("CURRENT_TIMESTAMP")
                 .HasComment("Thời điểm thực hiện thay đổi")
@@ -1201,9 +1205,7 @@ public partial class GymManagementContext : DbContext
                 .HasComment("Thời điểm thực hiện cập nhật")
                 .HasColumnType("datetime")
                 .HasColumnName("updated_at");
-            entity.Property(e => e.UpdatedByEmployeeId)
-                .HasComment("Nhân viên thực hiện cập nhật — FK tới employees.employee_id")
-                .HasColumnName("updated_by_employee_id");
+            entity.Property(e => e.UpdatedByEmployeeId).HasColumnName("updated_by_employee_id");
 
             entity.HasOne(d => d.Member).WithMany(p => p.MemberUpdateLogs)
                 .HasForeignKey(d => d.MemberId)
@@ -1212,7 +1214,6 @@ public partial class GymManagementContext : DbContext
 
             entity.HasOne(d => d.UpdatedByEmployee).WithMany(p => p.MemberUpdateLogs)
                 .HasForeignKey(d => d.UpdatedByEmployeeId)
-                .OnDelete(DeleteBehavior.ClientSetNull)
                 .HasConstraintName("fk_mul_employee");
         });
 
@@ -1651,6 +1652,8 @@ public partial class GymManagementContext : DbContext
 
             entity.ToTable("transactions", tb => tb.HasComment("Giao dịch thanh toán mua hoặc gia hạn gói tập"));
 
+            entity.HasIndex(e => e.BankReferenceCode, "UX_Transactions_BankReferenceCode").IsUnique();
+
             entity.HasIndex(e => e.PlanId, "fk_gd_goi");
 
             entity.HasIndex(e => e.MemberId, "fk_gd_hv");
@@ -1696,7 +1699,7 @@ public partial class GymManagementContext : DbContext
             entity.Property(e => e.PaymentStatus)
                 .HasDefaultValueSql("'Pending'")
                 .HasComment("Trạng thái thanh toán: Pending=chờ xác nhận, Paid=đã thanh toán, Failed=thất bại")
-                .HasColumnType("enum('Pending','Paid','Failed')")
+                .HasColumnType("enum('Pending','Paid','Cancelled')")
                 .HasColumnName("payment_status");
             entity.Property(e => e.PlanId)
                 .HasComment("Gói tập được mua trong giao dịch này — FK tới membership_plans.plan_id")

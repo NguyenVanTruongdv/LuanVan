@@ -38,10 +38,7 @@ public partial class MemberUpdateLog
     /// </summary>
     public string NewValue { get; set; } = null!;
 
-    /// <summary>
-    /// Nhân viên thực hiện cập nhật — FK tới employees.employee_id
-    /// </summary>
-    public long UpdatedByEmployeeId { get; set; } 
+    public long? UpdatedByEmployeeId { get; set; }
 
     /// <summary>
     /// Thời điểm thực hiện cập nhật
@@ -50,5 +47,5 @@ public partial class MemberUpdateLog
 
     public virtual Member Member { get; set; } = null!;
 
-    public virtual Employee UpdatedByEmployee { get; set; } = null!;
+    public virtual Employee? UpdatedByEmployee { get; set; }
 }
