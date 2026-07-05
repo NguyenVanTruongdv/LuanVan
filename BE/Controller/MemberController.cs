@@ -69,6 +69,16 @@ namespace BE.Controllers
             return Ok(result);
         }
 
+        // ===================== KIỂM TRA TRÙNG SỐ ĐIỆN THOẠI =====================
+        // Dùng ở FE ngay sau khi nhập xong form thông tin (bước 1), trước khi cho qua bước chọn gói.
+        // Đặt TRƯỚC route {id:long} vì "check-phone" không parse được thành long.
+        [HttpGet("check-phone")]
+        public async Task<IActionResult> CheckPhoneExists([FromQuery] string phone)
+        {
+            var exists = await _memberService.CheckPhoneExistsAsync(phone);
+            return Ok(new { exists });
+        }
+
         // ===================== LẤY THÔNG TIN CHI TIẾT 1 HỘI VIÊN =====================
         [HttpGet("{id:long}")]
         public async Task<IActionResult> GetMember(long id)
@@ -106,9 +116,8 @@ namespace BE.Controllers
         }
 
         // ===================== SỬA FACE ID / ẢNH ĐẠI DIỆN =====================
-        // Luôn bắt buộc có performedBy (không null). [FromForm] vì có kèm file ảnh.
+        // Chỉ nhân viên được sửa. Luôn bắt buộc có performedBy (không null). [FromForm] vì có kèm file ảnh.
         [HttpPut("{id:long}/face-id")]
-        [HttpPost("{memberId}/face-id")]
         public async Task<IActionResult> UpdateFaceId(long id, [FromForm] UpdateFaceIdRequest request)
         {
             if (!IsEmployee())

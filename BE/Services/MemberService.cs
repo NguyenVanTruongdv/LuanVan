@@ -19,6 +19,13 @@ namespace BE.Services
     //   quan tới FaceID, ProfileImage trở thành bắt buộc (không có ảnh thì không có gì để đăng ký cả).
     // - UpdatedByEmployeeId (MemberUpdateLog) và PerformedBy (FaceUpdateHistory) cần đổi kiểu
     //   trong Model từ "long" sang "long?" để cho phép null khi khách tự cập nhật.
+    // - BranchId KHÔNG nhận từ FE khi tạo hội viên nữa — BE tự lấy chi nhánh gán cho nhân viên
+    //   đang thực hiện (performedBy) thông qua Employee.Branches.
+    // - StartDate/ExpiryDate KHÔNG nhận từ FE nữa — BE tự tính: StartDate = hôm nay,
+    //   ExpiryDate = StartDate + DurationDays (của MembershipPlan) + SoNgayTangThucTe.
+    // - SoNgayTangThucTe KHÔNG nhận từ FE nữa — BE tự tính dựa vào PromotionId + DurationDays
+    //   của gói (xem CalculateSoNgayTangThucTeAsync). Tránh trường hợp client tự sửa số ngày
+    //   tặng qua DevTools/Postman để được tặng thêm ngày tùy ý.
     public class MemberService
     {
         private readonly GymManagementContext _context;
@@ -35,6 +42,40 @@ namespace BE.Services
             _faceService = faceService;
         }
 
+        // ===================== KIỂM TRA TRÙNG SỐ ĐIỆN THOẠI =====================
+        // Dùng ở FE ngay sau khi nhập xong form thông tin (bước 1), trước khi cho qua bước chọn gói,
+        // để báo trùng SĐT sớm thay vì phải đợi tới lúc submit tạo hội viên mới biết.
+        public async Task<bool> CheckPhoneExistsAsync(string phone)
+        {
+            if (string.IsNullOrWhiteSpace(phone))
+                throw new ArgumentException("Số điện thoại không được để trống.");
+
+            return await _context.Members.AnyAsync(m => m.Phone == phone);
+        }
+
+        // ===================== TÍNH SỐ NGÀY TẶNG THỰC TẾ TỪ KHUYẾN MÃI =====================
+        // KHÔNG nhận SoNgayTangThucTe từ FE — quy tắc quy đổi (xem comment trong Model MemberPackage):
+        //   TangNgay    => lấy đúng số ngày tặng của khuyến mãi
+        //   TangChuKy   => số chu kỳ tặng × DurationDays của gói
+        //   Không có KM (PromotionId == null) => 0
+        // TODO: đổi tên property PromotionType/SoNgayTang/SoChuKyTang cho khớp Model Promotion thật của bạn.
+        private async Task<short> CalculateSoNgayTangThucTeAsync(int? promotionId, short planDurationDays)
+        {
+            if (promotionId == null)
+                return 0;
+
+            var promotion = await _context.Promotions.FirstOrDefaultAsync(p => p.PromotionId == promotionId);
+            if (promotion == null)
+                throw new KeyNotFoundException("Không tìm thấy khuyến mãi.");
+
+            return promotion.PromoType switch
+            {
+                "TangNgay" => (short)(promotion.SoNgayTang ?? 0),
+                "TangChuKy" => (short)((promotion.SoChuKyTang ?? 0) * planDurationDays),
+                _ => 0
+            };
+        }
+
         // ===================== TẠO HỘI VIÊN MỚI =====================
         public async Task<MemberResponse> CreateMemberAsync(CreateMemberRequest request, long performedBy)
         {
@@ -44,6 +85,28 @@ namespace BE.Services
 
             var now = DateTime.UtcNow;
             var generatedPassword = GenerateRandomPassword();
+            var emp = await _context.Employees
+                .Include(e => e.Branches)
+                .FirstOrDefaultAsync(e => e.EmployeeId == performedBy);
+
+            if (emp == null)
+                throw new Exception("Không tìm thấy nhân viên.");
+
+            var branchId = emp.Branches.FirstOrDefault()?.BranchId;
+
+            if (branchId == null)
+                throw new Exception("Nhân viên chưa được gán chi nhánh.");
+
+            // Lấy gói tập từ DB để tự tính ngày — KHÔNG tin StartDate/ExpiryDate do FE gửi lên,
+            // vì client hoàn toàn có thể sửa DevTools/Postman gửi ngày tùy ý để "tăng hạn" gói tập.
+            var plan = await _context.MembershipPlans.FirstOrDefaultAsync(p => p.PlanId == request.PlanId);
+            if (plan == null)
+                throw new KeyNotFoundException("Không tìm thấy gói tập.");
+
+            var soNgayTangThucTe = await CalculateSoNgayTangThucTeAsync(request.PromotionId, plan.DurationDays);
+
+            var startDate = DateOnly.FromDateTime(now);
+            var expiryDate = startDate.AddDays(plan.DurationDays + soNgayTangThucTe);
 
             // 1. Tạo hội viên (cần MemberId trước khi đăng ký Face — dùng làm ExternalImageId bên AWS)
             var member = new Member
@@ -52,7 +115,7 @@ namespace BE.Services
                 Phone = request.Phone,
                 PasswordHash = BCrypt.Net.BCrypt.HashPassword(generatedPassword),
                 Gender = request.Gender,
-                BranchId = request.BranchId,
+                BranchId = branchId,
                 Status = "PendingActivation",
                 InternalNotes = request.InternalNotes,
                 CreatedBy = performedBy,
@@ -80,7 +143,7 @@ namespace BE.Services
                 MemberId = member.MemberId,
                 OldFaceIdAws = null,
                 NewFaceIdAws = faceIdAws,
-                NewProfileImage = profileImageUrl,   // ← THÊM DÒNG NÀY
+                NewProfileImage = profileImageUrl,
                 Reason = "Đăng ký khuôn mặt lần đầu khi tạo hội viên",
                 PerformedBy = performedBy,
                 PerformedAt = now
@@ -113,7 +176,8 @@ namespace BE.Services
             _context.Transactions.Add(transactionEntity);
             await _context.SaveChangesAsync(); // cần TransactionId
 
-            // 4. Tạo gói tập, gắn với hóa đơn vừa tạo
+            // 4. Tạo gói tập, gắn với hóa đơn vừa tạo — StartDate/ExpiryDate/SoNgayTangThucTe
+            //    lấy từ các biến đã tự tính ở backend, không dùng giá trị FE gửi lên
             _context.MemberPackages.Add(new MemberPackage
             {
                 MemberId = member.MemberId,
@@ -122,9 +186,9 @@ namespace BE.Services
                 PromotionId = request.PromotionId,
                 GiaGoc = request.GiaGoc,
                 Amount = request.Amount,
-                SoNgayTangThucTe = request.SoNgayTangThucTe,
-                StartDate = request.StartDate,
-                ExpiryDate = request.ExpiryDate,
+                SoNgayTangThucTe = soNgayTangThucTe,
+                StartDate = startDate,
+                ExpiryDate = expiryDate,
                 PackageStatus = "Active",
                 CreatedAt = now,
                 UpdatedAt = now
@@ -352,20 +416,14 @@ namespace BE.Services
 
         // ===================== SỬA FACE ID / ẢNH ĐẠI DIỆN =====================
         // Chỉ nhân viên mới được sửa Face ID/ảnh đại diện — performedBy luôn bắt buộc, không null.
-        // ProfileImage giờ LUÔN bắt buộc (xem UpdateFaceIdRequest) vì FaceId mới chỉ có được
-        // bằng cách đăng ký lại ảnh mới qua AWS Rekognition — không có khái niệm "chỉ đổi FaceId suông".
-        // Mỗi lần gọi đều ghi 1 dòng FaceUpdateHistory. Ảnh cũ trên S3 và FaceId cũ trên Rekognition
-        // sẽ bị xóa sau khi lưu DB xong.
-       // ===================== SỬA FACE ID / ẢNH ĐẠI DIỆN =====================
-// Chỉ nhân viên mới được sửa Face ID/ảnh đại diện — performedBy luôn bắt buộc, không null.
-// ProfileImage luôn bắt buộc (xem UpdateFaceIdRequest) vì FaceId mới chỉ có được
-// bằng cách đăng ký lại ảnh mới qua AWS Rekognition.
-//
-// Chính sách lưu ảnh: chỉ giữ lại tối đa 2 phiên bản ảnh gần nhất (ảnh hiện tại + ảnh vừa bị thay).
-// Ảnh nào "quá 1 đời" (bị thay từ 2 lần cập nhật trở lên) sẽ bị xóa khỏi S3, đồng thời cả 2
-// bản ghi lịch sử đang trỏ tới URL đó (bản ghi cũ có NewProfileImage = URL, bản ghi kế tiếp có
-// OldProfileImage = URL) đều được null hóa để tránh hiển thị ảnh vỡ.
-       public async Task<MemberResponse> UpdateFaceIdAsync(long memberId, UpdateFaceIdRequest request, long performedBy)
+        // ProfileImage luôn bắt buộc (xem UpdateFaceIdRequest) vì FaceId mới chỉ có được
+        // bằng cách đăng ký lại ảnh mới qua AWS Rekognition.
+        //
+        // Chính sách lưu ảnh: chỉ giữ lại tối đa 2 phiên bản ảnh gần nhất (ảnh hiện tại + ảnh vừa bị thay).
+        // Ảnh nào "quá 1 đời" (bị thay từ 2 lần cập nhật trở lên) sẽ bị xóa khỏi S3, đồng thời cả 2
+        // bản ghi lịch sử đang trỏ tới URL đó (bản ghi cũ có NewProfileImage = URL, bản ghi kế tiếp có
+        // OldProfileImage = URL) đều được null hóa để tránh hiển thị ảnh vỡ.
+        public async Task<MemberResponse> UpdateFaceIdAsync(long memberId, UpdateFaceIdRequest request, long performedBy)
         {
             var member = await _context.Members.FirstOrDefaultAsync(m => m.MemberId == memberId);
             if (member == null)
@@ -437,7 +495,19 @@ namespace BE.Services
             if (hasFaceId)
                 throw new InvalidOperationException("Hội viên đã có FaceID.");
 
+            // Lấy thông tin gói tập để tính ngày hiệu lực — KHÔNG tin StartDate/ExpiryDate FE gửi lên
+            var plan = await _context.MembershipPlans.FirstOrDefaultAsync(p => p.PlanId == request.PlanId);
+            if (plan == null)
+                throw new KeyNotFoundException("Không tìm thấy gói tập.");
+            if (plan.Status != "OnSale")
+                throw new InvalidOperationException("Gói tập hiện không còn bán.");
+
             var now = DateTime.UtcNow;
+
+            var soNgayTangThucTe = await CalculateSoNgayTangThucTeAsync(request.PromotionId, plan.DurationDays);
+
+            var startDate = DateOnly.FromDateTime(now);
+            var expiryDate = startDate.AddDays(plan.DurationDays + soNgayTangThucTe);
 
             // 1. Tạo giao dịch (hóa đơn) cho gói tập
             string? receiptImageUrl = null;
@@ -466,7 +536,8 @@ namespace BE.Services
             _context.Transactions.Add(transactionEntity);
             await _context.SaveChangesAsync(); // cần TransactionId
 
-            // 2. Tạo gói tập, gắn với hóa đơn vừa tạo
+            // 2. Tạo gói tập, gắn với hóa đơn vừa tạo — StartDate/ExpiryDate/SoNgayTangThucTe
+            //    lấy từ các biến đã tự tính ở backend
             _context.MemberPackages.Add(new MemberPackage
             {
                 MemberId = memberId,
@@ -475,9 +546,9 @@ namespace BE.Services
                 PromotionId = request.PromotionId,
                 GiaGoc = request.GiaGoc,
                 Amount = request.Amount,
-                SoNgayTangThucTe = request.SoNgayTangThucTe,
-                StartDate = request.StartDate,
-                ExpiryDate = request.ExpiryDate,
+                SoNgayTangThucTe = soNgayTangThucTe,
+                StartDate = startDate,
+                ExpiryDate = expiryDate,
                 PackageStatus = "Active",
                 CreatedAt = now,
                 UpdatedAt = now
@@ -647,7 +718,7 @@ namespace BE.Services
         }
 
         // ===================== LỊCH SỬ CẬP NHẬT (gộp theo phiên sửa) =====================
-       public async Task<List<MemberUpdateSessionResponse>> GetUpdateHistoryAsync(long memberId)
+        public async Task<List<MemberUpdateSessionResponse>> GetUpdateHistoryAsync(long memberId)
         {
             // 1) Lịch sử cập nhật thông tin (họ tên, sđt, giới tính, ghi chú...)
             var infoLogs = await _context.MemberUpdateLogs
@@ -697,6 +768,7 @@ namespace BE.Services
                 .OrderByDescending(s => s.UpdatedAt)
                 .ToList();
         }
+
         // ===================== HÀM DỰNG RESPONSE =====================
         private async Task<MemberResponse> BuildMemberResponse(long memberId)
         {

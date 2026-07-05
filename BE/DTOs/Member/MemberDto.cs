@@ -39,14 +39,11 @@ namespace BE.Dtos.Member
         [Range(0, double.MaxValue, ErrorMessage = "Số tiền phải >= 0")]
         public decimal Amount { get; set; }
 
-        [Range(0, short.MaxValue, ErrorMessage = "Số ngày tặng không hợp lệ")]
-        public short SoNgayTangThucTe { get; set; }
+        // ĐÃ BỎ: SoNgayTangThucTe — BE tự tính từ PromotionId + DurationDays của gói,
+        // không nhận số ngày tặng do FE tự tính gửi lên nữa (tránh sửa DevTools/Postman).
 
-        [Required(ErrorMessage = "Vui lòng nhập ngày bắt đầu")]
-        public DateOnly StartDate { get; set; }
-
-        [Required(ErrorMessage = "Vui lòng nhập ngày hết hạn")]
-        public DateOnly ExpiryDate { get; set; }
+        // ĐÃ BỎ: StartDate, ExpiryDate — BE tự tính (StartDate = hôm nay,
+        // ExpiryDate = StartDate + DurationDays + SoNgayTangThucTe tự tính).
 
         [Required(ErrorMessage = "Vui lòng chọn phương thức thanh toán")]
         public string PaymentMethod { get; set; } = null!;
@@ -117,7 +114,6 @@ namespace BE.Dtos.Member
     }
 
     // ===================== SỬA FACE ID (API riêng) =====================
-    // NewFaceIdAws đã bị bỏ — FaceId mới luôn do AWS Rekognition sinh ra từ ProfileImage mới.
     public class UpdateFaceIdRequest
     {
         [Required(ErrorMessage = "Vui lòng chụp ảnh khuôn mặt mới để cập nhật Face ID")]
@@ -146,24 +142,21 @@ namespace BE.Dtos.Member
         public string NewValue { get; set; } = null!;
     }
 
-   public class MemberUpdateSessionResponse
-{
-    public string SessionId { get; set; } = null!;
-    public string SessionType { get; set; } = null!; // "INFO" | "FACEID"
-    public string? EmployeeName { get; set; }
-    public DateTime UpdatedAt { get; set; }
+    public class MemberUpdateSessionResponse
+    {
+        public string SessionId { get; set; } = null!;
+        public string SessionType { get; set; } = null!; // "INFO" | "FACEID"
+        public string? EmployeeName { get; set; }
+        public DateTime UpdatedAt { get; set; }
 
-    // Dùng cho SessionType = "INFO" (đổi họ tên, sđt, giới tính, ghi chú...)
-    public List<MemberUpdateLogItem> Changes { get; set; } = new();
+        public List<MemberUpdateLogItem> Changes { get; set; } = new();
 
-    // Dùng cho SessionType = "FACEID" — FE hiển thị trực tiếp, không cần đọc qua Changes
-    public string? OldImageUrl { get; set; }
-    public string? NewImageUrl { get; set; }
-    public string? Reason { get; set; }
-}
+        public string? OldImageUrl { get; set; }
+        public string? NewImageUrl { get; set; }
+        public string? Reason { get; set; }
+    }
 
     // ===================== KÍCH HOẠT =====================
-    // ProfileImage bắt buộc ở cả 2 request — FaceIdAws không còn nhận từ client nữa.
     public class ActivateMemberWithPackageRequest
     {
         [Required(ErrorMessage = "Vui lòng chụp ảnh khuôn mặt để đăng ký Face ID")]
@@ -183,14 +176,7 @@ namespace BE.Dtos.Member
         [Range(0, double.MaxValue, ErrorMessage = "Số tiền phải >= 0")]
         public decimal Amount { get; set; }
 
-        [Range(0, short.MaxValue, ErrorMessage = "Số ngày tặng không hợp lệ")]
-        public short SoNgayTangThucTe { get; set; }
-
-        [Required(ErrorMessage = "Vui lòng nhập ngày bắt đầu")]
-        public DateOnly StartDate { get; set; }
-
-        [Required(ErrorMessage = "Vui lòng nhập ngày hết hạn")]
-        public DateOnly ExpiryDate { get; set; }
+        // ĐÃ BỎ: SoNgayTangThucTe, StartDate, ExpiryDate — BE tự tính toàn bộ.
 
         public IFormFile? ReceiptImage { get; set; }
     }
