@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
+import cashierApi from "../api/cashierApi"; // đổi lại path cho khớp cấu trúc thư mục thực tế
 import logo from "../assets/logo.png";
 
 // Outline SVG icons (no color — inherits currentColor)
@@ -22,7 +23,6 @@ const Icons = {
             <polyline points="3.27 6.96 12 12.01 20.73 6.96" /><line x1="12" y1="22.08" x2="12" y2="12" />
         </svg>
     ),
-    // "Nhận diện" (face recognition) parent icon — scan/face frame
     recognition: (
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
             <path d="M4 7V5a2 2 0 0 1 2-2h2" /><path d="M4 17v2a2 2 0 0 0 2 2h2" />
@@ -30,7 +30,6 @@ const Icons = {
             <circle cx="12" cy="11" r="3" /><path d="M8 17c.7-1.6 2.2-2.5 4-2.5s3.3.9 4 2.5" />
         </svg>
     ),
-    // Camera icon — opens the face-recognition camera page in a new tab
     camera: (
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
             <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
@@ -90,6 +89,11 @@ const Icons = {
             <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.73 21a2 2 0 0 1-3.46 0" />
         </svg>
     ),
+    chevronSmall: (
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="6 9 12 15 18 9" />
+        </svg>
+    ),
 };
 
 const NAV_ITEMS = [
@@ -101,7 +105,7 @@ const NAV_ITEMS = [
         matchPrefix: "/cashier/member",
         children: [
             { id: "members-list", icon: Icons.list, label: "Danh sách hội viên", path: "/cashier/members" },
-            { id: "members-activate", icon: Icons.activate, label: "Kích hoạt hội viên", path: "/cashier/member-activate" },
+            { id: "members-activate", icon: Icons.activate, label: "Kích hoạt hội viên", path: "/cashier/member-active" },
             { id: "members-create", icon: Icons.add, label: "Tạo hội viên mới", path: "/cashier/member-create" },
         ],
     },
@@ -121,7 +125,6 @@ const NAV_ITEMS = [
         label: "Nhận diện",
         matchPrefix: "/cashier/checkin",
         children: [
-            // Mở trang camera nhận diện (route "/indentify" -> <CameraRecognition />) ở tab mới
             { id: "camera-recognition", icon: Icons.camera, label: "Camera nhận diện", path: "/indentify", newTab: true },
             { id: "checkin-history", icon: Icons.history, label: "Lịch sử", path: "/cashier/checkin-history" },
         ],
@@ -138,17 +141,40 @@ const NAV_ITEMS = [
     },
 ];
 
-// Green palette matching reference image
-const GREEN = {
-    primary: "#1B6B52",      // dark green active bg
-    primaryHover: "#154f3d",
-    light: "#E8F5F0",        // light green hover bg
-    accent: "#1B6B52",
-    border: "#d0e8df",
-    text: "#1B6B52",
+// ── Bảng màu tối hiện đại — lấy cảm hứng từ màn hình đăng nhập (navy + cyan glow) ──
+const C = {
+    bgDeep: "#080B14",
+    panel: "rgba(18, 26, 46, 0.72)",
+    panelSolid: "#0F1729",
+    panelBorder: "rgba(148, 163, 184, 0.12)",
+    cyan: "#22D3EE",
+    cyanDark: "#0E7490",
+    cyanSoft: "rgba(34, 211, 238, 0.14)",
+    cyanGlow: "rgba(34, 211, 238, 0.35)",
+    blue: "#3B82F6",
+    textPrimary: "#F1F5F9",
+    textSecondary: "#94A3B8",
+    textMuted: "#64748B",
+    danger: "#F87171",
+    dangerBg: "rgba(248, 113, 113, 0.1)",
+    dangerBorder: "rgba(248, 113, 113, 0.28)",
+    surfaceLight: "#F4F6F8",
 };
 
-export default function CashierLayout({ branchName = "Chi nhánh Quận 1" }) {
+function getInitials(fullName) {
+    if (!fullName) return "NV";
+    const parts = fullName.trim().split(/\s+/);
+    if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
+
+const ROLE_LABELS = {
+    Staff: "Cashier",
+    Manager: "Quản lý",
+    Admin: "Quản trị viên",
+};
+
+export default function CashierLayout() {
     document.title = "VT Gym Cashier";
 
     const navigate = useNavigate();
@@ -160,6 +186,45 @@ export default function CashierLayout({ branchName = "Chi nhánh Quận 1" }) {
         );
         return match ? new Set([match.id]) : new Set();
     });
+
+    const [profile, setProfile] = useState(null);
+    const [profileLoading, setProfileLoading] = useState(true);
+    const [profileError, setProfileError] = useState(false);
+
+    const [branches, setBranches] = useState([]);
+    const [selectedBranch, setSelectedBranch] = useState("");
+    const [branchMenuOpen, setBranchMenuOpen] = useState(false);
+
+    useEffect(() => {
+        let cancelled = false;
+
+        async function fetchProfile() {
+            setProfileLoading(true);
+            setProfileError(false);
+            try {
+                // Nếu authApi trả nguyên response axios thay vì unwrap sẵn,
+                // đổi thành: const data = (await cashierApi.getEmployeeProfile()).data;
+                const data = await cashierApi.getEmployeeProfile();
+
+                if (cancelled) return;
+
+                setProfile(data);
+                const branchList = Array.isArray(data.branches) ? data.branches : [];
+                setBranches(branchList);
+                setSelectedBranch(branchList[0] || "");
+            } catch (err) {
+                if (!cancelled) setProfileError(true);
+                console.error("Không thể tải thông tin nhân viên:", err);
+            } finally {
+                if (!cancelled) setProfileLoading(false);
+            }
+        }
+
+        fetchProfile();
+        return () => {
+            cancelled = true;
+        };
+    }, []);
 
     const isItemActive = (item) => {
         if (item.id === "dashboard") return location.pathname === "/cashier";
@@ -191,249 +256,364 @@ export default function CashierLayout({ branchName = "Chi nhánh Quận 1" }) {
         setSidebarOpen(false);
     };
 
+    const staffName = profile?.fullName || (profileLoading ? "Đang tải..." : "Nhân viên");
+    const staffRole = ROLE_LABELS[profile?.role] || profile?.role || "Cashier";
+    const staffInitials = getInitials(profile?.fullName);
+
     return (
-        <div style={S.root}>
+        <div style={S.page}>
             <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
         * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { font-family: 'Inter', sans-serif; background: #F4F6F8; }
+        body { font-family: 'Inter', sans-serif; }
         button { cursor: pointer; border: none; background: none; font-family: inherit; }
 
         .hamburger-btn { display: none; }
 
-        .nav-item-btn {
-          transition: background 0.15s, color 0.15s !important;
-        }
+        .nav-item-btn { transition: background 0.15s, color 0.15s !important; }
         .nav-item-btn:hover:not(.nav-item-active) {
-          background: ${GREEN.light} !important;
-          color: ${GREEN.primary} !important;
+          background: rgba(148, 163, 184, 0.08) !important;
+          color: ${C.textPrimary} !important;
         }
-        .sub-item-btn {
-          transition: background 0.15s, color 0.15s !important;
-        }
+        .sub-item-btn { transition: background 0.15s, color 0.15s !important; }
         .sub-item-btn:hover:not(.sub-item-active) {
-          background: ${GREEN.light} !important;
-          color: ${GREEN.primary} !important;
-        }
-        .logout-btn:hover {
-          background: #FEE2E2 !important;
-          border-color: #FCA5A5 !important;
+          background: rgba(148, 163, 184, 0.08) !important;
+          color: ${C.textPrimary} !important;
         }
         .logout-btn { transition: background 0.15s, border-color 0.15s !important; }
+        .logout-btn:hover {
+          background: rgba(248, 113, 113, 0.18) !important;
+          border-color: rgba(248, 113, 113, 0.45) !important;
+        }
+        .branch-select-btn { transition: border-color 0.15s, background 0.15s !important; }
+        .branch-select-btn:hover:not(:disabled) {
+          border-color: ${C.cyan} !important;
+          background: rgba(34, 211, 238, 0.06) !important;
+        }
+        .branch-menu-item { transition: background 0.15s, color 0.15s !important; }
+        .branch-menu-item:hover {
+          background: rgba(34, 211, 238, 0.1) !important;
+          color: ${C.cyan} !important;
+        }
+        .icon-btn { transition: background 0.15s !important; }
+        .icon-btn:hover { background: rgba(148, 163, 184, 0.1) !important; }
+
+        @keyframes skeleton-pulse {
+          0%, 100% { opacity: 0.5; }
+          50% { opacity: 1; }
+        }
+        .skeleton {
+          animation: skeleton-pulse 1.4s ease-in-out infinite;
+          background: rgba(148, 163, 184, 0.18);
+          border-radius: 4px;
+        }
 
         @media (max-width: 767px) {
           .hamburger-btn { display: flex !important; }
           .app-sidebar {
             position: fixed !important;
-            top: 60px; bottom: 0; left: 0;
-            transform: translateX(-100%);
+            top: 84px; bottom: 16px; left: 16px;
+            transform: translateX(-120%);
             transition: transform 0.25s cubic-bezier(0.4,0,0.2,1);
             z-index: 200;
           }
           .app-sidebar.is-open { transform: translateX(0); }
+          .staff-info-text, .branch-name-text { display: none !important; }
         }
         @media (min-width: 768px) {
-          .app-sidebar { position: sticky !important; transform: none !important; }
+          .app-sidebar { position: relative !important; transform: none !important; }
         }
       `}</style>
 
-            {/* ── TOPBAR ── */}
-            <header style={S.topbar}>
-                <div style={S.topbarLeft}>
-                    <button
-                        className="hamburger-btn"
-                        style={S.hamburger}
-                        onClick={() => setSidebarOpen(!sidebarOpen)}
-                        aria-label="Toggle menu"
-                    >
-                        <span style={S.hamburgerLine} />
-                        <span style={S.hamburgerLine} />
-                        <span style={S.hamburgerLine} />
-                    </button>
+            {/* Glow nền — mô phỏng ánh sáng teal/blue của màn hình đăng nhập */}
+            <div style={S.glowTopLeft} />
+            <div style={S.glowBottomRight} />
 
-                    {/* Logo — compact size */}
-                    <div style={S.logo}>
-                        <img src={logo} alt="Logo" style={S.logoImage} />
-                        <div style={S.logoText}>
-                            <span style={S.logoTitle}>VT Gym</span>
-                            <span style={S.logoSub}>Cashier Portal</span>
-                        </div>
-                    </div>
-                </div>
-
-                <div style={S.topbarRight}>
-                    {/* Bell */}
-                    <button style={S.iconBtn} aria-label="Thông báo">
-                        <span style={{ color: "#64748B" }}>{Icons.bell}</span>
-                    </button>
-
-                    {/* Branch selector */}
-                    <div style={S.branchSelect}>
-                        <span style={S.branchName}>{branchName}</span>
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#64748B" strokeWidth="2"><polyline points="6 9 12 15 18 9" /></svg>
-                    </div>
-
-                    {/* Staff */}
-                    <div style={S.staffBadge}>
-                        <div style={S.avatar}>
-                            <span style={S.avatarText}>NA</span>
-                        </div>
-                        <div style={S.staffInfo}>
-                            <span style={S.staffName}>NhanVien TanQuy</span>
-                            <span style={S.staffRole}>Cashier</span>
-                        </div>
-                    </div>
-                </div>
-            </header>
-
-            <div style={S.body}>
-                {sidebarOpen && (
-                    <div style={S.overlay} onClick={() => setSidebarOpen(false)} />
-                )}
-
-                {/* ── SIDEBAR ── */}
-                <aside className={`app-sidebar ${sidebarOpen ? "is-open" : ""}`} style={S.sidebar}>
-                    {/* Menu label */}
-                    <div style={S.menuLabel}>MENU CHÍNH</div>
-
-                    <nav style={S.nav}>
-                        <div style={S.navColumn}>
-                            {NAV_ITEMS.map((item) => {
-                                const active = isItemActive(item);
-                                const isOpen = openSubmenus.has(item.id);
-                                return (
-                                    <div key={item.id}>
-                                        <button
-                                            className={`nav-item-btn${active ? " nav-item-active" : ""}`}
-                                            style={{
-                                                ...S.navItem,
-                                                ...(active ? S.navItemActive : S.navItemInactive),
-                                            }}
-                                            onClick={() => handleTopClick(item)}
-                                        >
-                                            <span style={{ ...S.navIconWrap, color: active ? "white" : "#64748B" }}>
-                                                {item.icon}
-                                            </span>
-                                            <span style={S.navLabel}>{item.label}</span>
-                                            {item.children && (
-                                                <span style={{
-                                                    ...S.chevron,
-                                                    transform: isOpen ? "rotate(180deg)" : "rotate(0deg)",
-                                                    color: active ? "rgba(255,255,255,0.8)" : "#94A3B8",
-                                                }}>
-                                                    {Icons.chevronDown}
-                                                </span>
-                                            )}
-                                        </button>
-
-                                        {item.children && isOpen && (
-                                            <div style={S.submenu}>
-                                                {item.children.map((child) => {
-                                                    const childActive = !child.newTab && location.pathname === child.path;
-                                                    return (
-                                                        <button
-                                                            key={child.id}
-                                                            className={`sub-item-btn${childActive ? " sub-item-active" : ""}`}
-                                                            style={{
-                                                                ...S.subItem,
-                                                                ...(childActive ? S.subItemActive : S.subItemInactive),
-                                                            }}
-                                                            onClick={() => handleChildClick(child)}
-                                                            title={child.newTab ? "Mở ở tab mới" : undefined}
-                                                        >
-                                                            <span style={{ color: childActive ? GREEN.primary : "#94A3B8", flexShrink: 0 }}>
-                                                                {child.icon}
-                                                            </span>
-                                                            <span style={S.subLabel}>{child.label}</span>
-                                                            {child.newTab && (
-                                                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
-                                                                    <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
-                                                                    <polyline points="15 3 21 3 21 9" />
-                                                                    <line x1="10" y1="14" x2="21" y2="3" />
-                                                                </svg>
-                                                            )}
-                                                        </button>
-                                                    );
-                                                })}
-                                            </div>
-                                        )}
-                                    </div>
-                                );
-                            })}
-                        </div>
-
-                        {/* Logout */}
+            <div style={S.shell}>
+                {/* ── TOPBAR ── */}
+                <header style={S.topbar}>
+                    <div style={S.topbarLeft}>
                         <button
-                            className="logout-btn"
-                            style={S.logoutBtn}
-                            onClick={() => alert("Đăng xuất")}
+                            className="hamburger-btn"
+                            style={S.hamburger}
+                            onClick={() => setSidebarOpen(!sidebarOpen)}
+                            aria-label="Toggle menu"
                         >
-                            <span style={{ color: "#DC2626" }}>{Icons.logout}</span>
-                            <span style={S.logoutLabel}>Đăng xuất</span>
+                            <span style={S.hamburgerLine} />
+                            <span style={S.hamburgerLine} />
+                            <span style={S.hamburgerLine} />
                         </button>
-                    </nav>
-                </aside>
 
-                {/* ── PAGE CONTENT ── */}
-                <main style={S.main}>
-                    <Outlet />
-                </main>
+                        <div style={S.logo}>
+                            <div style={S.logoIconBox}>
+                                <img src={logo} alt="Logo" style={S.logoImage} />
+                            </div>
+                            <div style={S.logoText}>
+                                <span style={S.logoTitle}>VT Gym</span>
+                                <span style={S.logoSub}>Cashier Portal</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div style={S.topbarRight}>
+                        <button className="icon-btn" style={S.iconBtn} aria-label="Thông báo">
+                            <span style={{ color: C.textSecondary }}>{Icons.bell}</span>
+                        </button>
+
+                        {/* Branch selector */}
+                        <div style={{ position: "relative" }}>
+                            <button
+                                className="branch-select-btn"
+                                style={S.branchSelect}
+                                onClick={() => branches.length > 1 && setBranchMenuOpen((o) => !o)}
+                                disabled={branches.length <= 1}
+                            >
+                                {profileLoading ? (
+                                    <span className="skeleton" style={{ width: 110, height: 14 }} />
+                                ) : (
+                                    <span className="branch-name-text" style={S.branchName}>
+                                        {selectedBranch || (profileError ? "Không tải được chi nhánh" : "Chưa có chi nhánh")}
+                                    </span>
+                                )}
+                                {branches.length > 1 && (
+                                    <span style={{ color: C.textSecondary, display: "flex" }}>{Icons.chevronSmall}</span>
+                                )}
+                            </button>
+
+                            {branchMenuOpen && branches.length > 1 && (
+                                <div style={S.branchMenu}>
+                                    {branches.map((b) => (
+                                        <button
+                                            key={b}
+                                            className="branch-menu-item"
+                                            style={{
+                                                ...S.branchMenuItem,
+                                                ...(b === selectedBranch ? { color: C.cyan, fontWeight: 700, background: C.cyanSoft } : {}),
+                                            }}
+                                            onClick={() => {
+                                                setSelectedBranch(b);
+                                                setBranchMenuOpen(false);
+                                            }}
+                                        >
+                                            {b}
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Staff */}
+                        <div style={S.staffBadge}>
+                            <div style={S.avatar}>
+                                {profileLoading ? (
+                                    <span className="skeleton" style={{ width: 20, height: 12, background: "rgba(255,255,255,0.35)" }} />
+                                ) : (
+                                    <span style={S.avatarText}>{staffInitials}</span>
+                                )}
+                            </div>
+                            <div className="staff-info-text" style={S.staffInfo}>
+                                {profileLoading ? (
+                                    <>
+                                        <span className="skeleton" style={{ width: 100, height: 12, marginBottom: 4 }} />
+                                        <span className="skeleton" style={{ width: 60, height: 10 }} />
+                                    </>
+                                ) : (
+                                    <>
+                                        <span style={S.staffName}>{staffName}</span>
+                                        <span style={S.staffRole}>{staffRole}</span>
+                                    </>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                </header>
+
+                <div style={S.body}>
+                    {sidebarOpen && (
+                        <div style={S.overlay} onClick={() => setSidebarOpen(false)} />
+                    )}
+
+                    {/* ── SIDEBAR ── */}
+                    <aside className={`app-sidebar ${sidebarOpen ? "is-open" : ""}`} style={S.sidebar}>
+                        <div style={S.menuLabel}>MENU CHÍNH</div>
+
+                        <nav style={S.nav}>
+                            <div style={S.navColumn}>
+                                {NAV_ITEMS.map((item) => {
+                                    const active = isItemActive(item);
+                                    const isOpen = openSubmenus.has(item.id);
+                                    return (
+                                        <div key={item.id}>
+                                            <button
+                                                className={`nav-item-btn${active ? " nav-item-active" : ""}`}
+                                                style={{
+                                                    ...S.navItem,
+                                                    ...(active ? S.navItemActive : S.navItemInactive),
+                                                }}
+                                                onClick={() => handleTopClick(item)}
+                                            >
+                                                <span style={{ ...S.navIconWrap, color: active ? "#04222B" : C.textSecondary }}>
+                                                    {item.icon}
+                                                </span>
+                                                <span style={S.navLabel}>{item.label}</span>
+                                                {item.children && (
+                                                    <span style={{
+                                                        ...S.chevron,
+                                                        transform: isOpen ? "rotate(180deg)" : "rotate(0deg)",
+                                                        color: active ? "rgba(4,34,43,0.7)" : C.textMuted,
+                                                    }}>
+                                                        {Icons.chevronDown}
+                                                    </span>
+                                                )}
+                                            </button>
+
+                                            {item.children && isOpen && (
+                                                <div style={S.submenu}>
+                                                    {item.children.map((child) => {
+                                                        const childActive = !child.newTab && location.pathname === child.path;
+                                                        return (
+                                                            <button
+                                                                key={child.id}
+                                                                className={`sub-item-btn${childActive ? " sub-item-active" : ""}`}
+                                                                style={{
+                                                                    ...S.subItem,
+                                                                    ...(childActive ? S.subItemActive : S.subItemInactive),
+                                                                }}
+                                                                onClick={() => handleChildClick(child)}
+                                                                title={child.newTab ? "Mở ở tab mới" : undefined}
+                                                            >
+                                                                <span style={{ color: childActive ? C.cyan : C.textMuted, flexShrink: 0 }}>
+                                                                    {child.icon}
+                                                                </span>
+                                                                <span style={S.subLabel}>{child.label}</span>
+                                                                {child.newTab && (
+                                                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={C.textMuted} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                                                                        <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                                                                        <polyline points="15 3 21 3 21 9" />
+                                                                        <line x1="10" y1="14" x2="21" y2="3" />
+                                                                    </svg>
+                                                                )}
+                                                            </button>
+                                                        );
+                                                    })}
+                                                </div>
+                                            )}
+                                        </div>
+                                    );
+                                })}
+                            </div>
+
+                            {/* Logout */}
+                            <button
+                                className="logout-btn"
+                                style={S.logoutBtn}
+                                onClick={() => alert("Đăng xuất")}
+                            >
+                                <span style={{ color: C.danger }}>{Icons.logout}</span>
+                                <span style={S.logoutLabel}>Đăng xuất</span>
+                            </button>
+                        </nav>
+                    </aside>
+
+                    {/* ── PAGE CONTENT ── */}
+                    <main style={S.main}>
+                        <Outlet context={{ profile }} />
+                    </main>
+                </div>
             </div>
         </div>
     );
 }
 
 const S = {
-    root: {
-        display: "flex",
-        flexDirection: "column",
+    page: {
+        position: "relative",
         height: "100vh",
+        width: "100%",
         overflow: "hidden",
+        background: C.bgDeep,
         fontFamily: "'Inter', sans-serif",
-        background: "#F4F6F8",
+    },
+    glowTopLeft: {
+        position: "absolute",
+        top: -180,
+        left: -180,
+        width: 480,
+        height: 480,
+        borderRadius: "50%",
+        background: "radial-gradient(circle, rgba(34,211,238,0.22) 0%, rgba(34,211,238,0) 70%)",
+        filter: "blur(10px)",
+        pointerEvents: "none",
+        zIndex: 0,
+    },
+    glowBottomRight: {
+        position: "absolute",
+        bottom: -220,
+        right: -220,
+        width: 560,
+        height: 560,
+        borderRadius: "50%",
+        background: "radial-gradient(circle, rgba(59,130,246,0.18) 0%, rgba(59,130,246,0) 70%)",
+        filter: "blur(10px)",
+        pointerEvents: "none",
+        zIndex: 0,
     },
 
-    // TOPBAR
+    shell: {
+        position: "relative",
+        zIndex: 1,
+        display: "flex",
+        flexDirection: "column",
+        height: "100%",
+        padding: 16,
+        gap: 16,
+    },
+
     topbar: {
-        height: 60,
+        height: 68,
         flexShrink: 0,
-        background: "white",
-        borderBottom: "1px solid #E8ECF4",
+        background: C.panel,
+        backdropFilter: "blur(16px)",
+        WebkitBackdropFilter: "blur(16px)",
+        border: `1px solid ${C.panelBorder}`,
+        borderRadius: 18,
         display: "flex",
         alignItems: "center",
         justifyContent: "space-between",
-        padding: "0 20px 0 0",
-        zIndex: 110,
-        boxShadow: "0 1px 3px rgba(0,0,0,0.06)",
+        padding: "0 20px",
+        boxShadow: "0 8px 30px rgba(0,0,0,0.35)",
     },
     topbarLeft: {
         display: "flex",
         alignItems: "center",
-        gap: 0,
+        gap: 12,
     },
     topbarRight: {
         display: "flex",
         alignItems: "center",
-        gap: 12,
+        gap: 10,
     },
 
-    // Logo — fits nicely in sidebar width
     logo: {
-        width: 240,
         display: "flex",
         alignItems: "center",
-        justifyContent: "flex-start",
         gap: 10,
-        padding: "0 20px",
-        borderRight: "1px solid #E8ECF4",
-        height: 60,
+    },
+    logoIconBox: {
+        width: 38,
+        height: 38,
+        borderRadius: 10,
+        background: `linear-gradient(135deg, ${C.cyanDark}, #0B4A57)`,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
         flexShrink: 0,
+        boxShadow: `0 0 0 1px rgba(34,211,238,0.25) inset`,
     },
     logoImage: {
-        height: 34,
-        width: "auto",
+        height: 22,
+        width: 22,
         objectFit: "contain",
-        flexShrink: 0,
     },
     logoText: {
         display: "flex",
@@ -441,16 +621,16 @@ const S = {
         lineHeight: 1.2,
     },
     logoTitle: {
-        fontSize: 13,
+        fontSize: 14,
         fontWeight: 800,
-        color: "#0D1117",
+        color: C.textPrimary,
         letterSpacing: "-0.2px",
         whiteSpace: "nowrap",
     },
     logoSub: {
         fontSize: 11,
         fontWeight: 500,
-        color: "#1B6B52",
+        color: C.cyan,
         whiteSpace: "nowrap",
     },
 
@@ -459,68 +639,88 @@ const S = {
         gap: 5,
         padding: "7px 8px",
         cursor: "pointer",
-        marginLeft: 8,
     },
     hamburgerLine: {
         display: "block",
         width: 20,
         height: 2,
-        background: "#475569",
+        background: C.textSecondary,
         borderRadius: 2,
     },
 
-    // Bell button
     iconBtn: {
-        width: 36,
-        height: 36,
-        borderRadius: 8,
+        width: 38,
+        height: 38,
+        borderRadius: 10,
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
         background: "transparent",
-        cursor: "pointer",
     },
 
-    // Branch selector
     branchSelect: {
         display: "flex",
         alignItems: "center",
-        gap: 6,
-        padding: "6px 12px",
-        borderRadius: 8,
-        border: "1px solid #E2E8F0",
-        background: "white",
-        cursor: "pointer",
-        color: "#334155",
+        gap: 8,
+        padding: "8px 14px",
+        borderRadius: 10,
+        border: `1px solid ${C.panelBorder}`,
+        background: "rgba(255,255,255,0.03)",
+        color: C.textSecondary,
         fontSize: 13,
         fontWeight: 500,
         whiteSpace: "nowrap",
+        minHeight: 38,
     },
     branchName: {
-        color: "#334155",
+        color: C.textSecondary,
         fontSize: 13,
     },
+    branchMenu: {
+        position: "absolute",
+        top: "calc(100% + 8px)",
+        right: 0,
+        background: C.panelSolid,
+        border: `1px solid ${C.panelBorder}`,
+        borderRadius: 12,
+        boxShadow: "0 12px 32px rgba(0,0,0,0.5)",
+        minWidth: 200,
+        zIndex: 120,
+        overflow: "hidden",
+        padding: 6,
+    },
+    branchMenuItem: {
+        display: "block",
+        width: "100%",
+        textAlign: "left",
+        padding: "9px 12px",
+        fontSize: 13,
+        borderRadius: 8,
+        color: C.textSecondary,
+    },
 
-    // Staff badge
     staffBadge: {
         display: "flex",
         alignItems: "center",
-        gap: 8,
+        gap: 10,
         flexShrink: 0,
+        paddingLeft: 10,
+        borderLeft: `1px solid ${C.panelBorder}`,
     },
     avatar: {
-        width: 32,
-        height: 32,
+        width: 36,
+        height: 36,
         borderRadius: "50%",
-        background: GREEN.primary,
+        background: `linear-gradient(135deg, ${C.cyan}, ${C.blue})`,
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
         flexShrink: 0,
+        boxShadow: `0 0 0 3px ${C.cyanSoft}`,
     },
     avatarText: {
-        color: "white",
-        fontWeight: 700,
+        color: "#04222B",
+        fontWeight: 800,
         fontSize: 12,
     },
     staffInfo: {
@@ -531,48 +731,50 @@ const S = {
     staffName: {
         fontSize: 13,
         fontWeight: 600,
-        color: "#0F172A",
+        color: C.textPrimary,
         whiteSpace: "nowrap",
     },
     staffRole: {
         fontSize: 11,
-        color: "#64748B",
+        color: C.textMuted,
         fontWeight: 400,
     },
 
-    // BODY
     body: {
         display: "flex",
         flex: 1,
         overflow: "hidden",
         position: "relative",
-        height: "calc(100vh - 60px)",
+        gap: 16,
     },
     overlay: {
         position: "fixed",
         inset: 0,
-        background: "rgba(15,23,42,0.4)",
+        background: "rgba(2,6,16,0.6)",
         zIndex: 150,
         backdropFilter: "blur(2px)",
     },
 
-    // SIDEBAR
     sidebar: {
-        width: 240,
-        background: "white",
-        borderRight: "1px solid #E8ECF4",
+        width: 250,
+        background: C.panel,
+        backdropFilter: "blur(16px)",
+        WebkitBackdropFilter: "blur(16px)",
+        border: `1px solid ${C.panelBorder}`,
+        borderRadius: 18,
         display: "flex",
         flexDirection: "column",
         flexShrink: 0,
         height: "100%",
         overflowY: "auto",
+        boxShadow: "0 8px 30px rgba(0,0,0,0.35)",
     },
     menuLabel: {
         fontSize: 11,
         fontWeight: 700,
-        color: "#64748B",
+        color: C.textMuted,
         letterSpacing: "0.08em",
-        padding: "20px 16px 8px",
+        padding: "20px 16px 10px",
         textTransform: "uppercase",
     },
     nav: {
@@ -589,25 +791,25 @@ const S = {
         flex: 1,
     },
 
-    // Nav items
     navItem: {
         display: "flex",
         alignItems: "center",
         gap: 10,
         width: "100%",
         padding: "10px 12px",
-        borderRadius: 8,
+        borderRadius: 10,
         fontSize: 14.5,
         fontWeight: 600,
         textAlign: "left",
     },
     navItemActive: {
-        background: GREEN.primary,
-        color: "white",
+        background: `linear-gradient(135deg, ${C.cyan}, #38BDF8)`,
+        color: "#04222B",
+        boxShadow: `0 4px 16px ${C.cyanGlow}`,
     },
     navItemInactive: {
         background: "transparent",
-        color: "#0D1117",
+        color: C.textSecondary,
     },
     navIconWrap: {
         flexShrink: 0,
@@ -622,7 +824,6 @@ const S = {
         flexShrink: 0,
     },
 
-    // Submenu
     submenu: {
         display: "flex",
         flexDirection: "column",
@@ -637,48 +838,50 @@ const S = {
         gap: 8,
         width: "100%",
         padding: "9px 10px",
-        borderRadius: 7,
+        borderRadius: 8,
         fontSize: 13.5,
         textAlign: "left",
     },
     subItemActive: {
-        background: GREEN.light,
-        color: GREEN.primary,
+        background: C.cyanSoft,
+        color: C.cyan,
         fontWeight: 700,
     },
     subItemInactive: {
         background: "transparent",
-        color: "#1E293B",
+        color: C.textSecondary,
         fontWeight: 500,
     },
     subLabel: { flex: 1 },
 
-    // Logout
     logoutBtn: {
         display: "flex",
         alignItems: "center",
         gap: 10,
         marginTop: "auto",
-        padding: "9px 12px",
-        borderRadius: 8,
-        background: "#FFF5F5",
-        border: "1px solid #FECACA",
+        padding: "10px 12px",
+        borderRadius: 10,
+        background: C.dangerBg,
+        border: `1px solid ${C.dangerBorder}`,
         width: "100%",
         marginTop: 8,
     },
     logoutLabel: {
         fontSize: 14.5,
         fontWeight: 600,
-        color: "#DC2626",
+        color: C.danger,
     },
 
-    // Main
     main: {
         flex: 1,
+        background: C.surfaceLight,
+        borderRadius: 18,
+        border: `1px solid ${C.panelBorder}`,
         overflowY: "auto",
         overflowX: "hidden",
         padding: "28px 32px",
         minWidth: 0,
         height: "100%",
+        boxShadow: "0 8px 30px rgba(0,0,0,0.35)",
     },
 };

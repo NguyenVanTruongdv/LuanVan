@@ -100,6 +100,11 @@ export default function MembershipPlansPage() {
     const [switchingPlan, setSwitchingPlan] = useState(false);
     const [pendingActionError, setPendingActionError] = useState(null);
 
+    // Khi tài khoản đang PendingActivation VÀ đã có sẵn 1 gói tập PendingActivation (đã mua
+    // online trước đó, chưa từng ra quầy) -> chặn mua thêm, chỉ hiển thị thông báo yêu cầu
+    // ra quầy kích hoạt. Không có "plan" đi kèm vì đây không phải lỗi của riêng 1 gói cụ thể.
+    const [blockedByPendingPackage, setBlockedByPendingPackage] = useState(false);
+
     useEffect(() => {
         let mounted = true;
 
@@ -142,14 +147,27 @@ export default function MembershipPlansPage() {
     const visiblePlans = plans.filter((p) => p.status !== "Discontinued");
     const onSaleCount = visiblePlans.filter((p) => p.status === "OnSale").length;
 
-    // Bấm "Chọn mua": kiểm tra xem member đang có giao dịch Pending nào chưa hoàn thành không.
-    // API thật: memberApi.getPendingPayment() -> GET /api/payment/pending
-    // - Có pending -> hiện modal hỏi khách muốn tiếp tục thanh toán đơn cũ hay hủy để mua gói mới.
-    // - Không có pending -> qua thẳng trang thanh toán với gói vừa chọn như bình thường.
+    // Bấm "Chọn mua": kiểm tra theo đúng thứ tự ưu tiên nghiệp vụ:
+    //   1) Tài khoản đang PendingActivation và đã có sẵn 1 gói Pending (mua online trước đó)
+    //      -> CHẶN LUÔN, không cho tạo giao dịch mới, yêu cầu ra quầy kích hoạt trước.
+    //      API thật: memberApi.checkPendingPurchaseStatus() -> GET /api/payment/pending-purchase-status
+    //   2) Nếu qua được bước 1 -> kiểm tra tiếp có transaction Pending (đã tạo QR nhưng chưa
+    //      chuyển khoản) hay không như cũ, để hỏi khách tiếp tục thanh toán đơn cũ hay huỷ.
+    //      API thật: memberApi.getPendingPayment() -> GET /api/payment/pending
     const handleBuy = async (plan) => {
         try {
             setCheckingPlanId(plan.planId);
             setPendingActionError(null);
+
+            const statusRes = await memberApi.checkPendingPurchaseStatus();
+            const status = statusRes?.data ?? statusRes;
+
+            // status.canPurchasePackage === false chỉ xảy ra khi tài khoản đang Pending
+            // và đã có sẵn 1 gói Pending -> chặn, hiện thông báo, dừng luôn tại đây.
+            if (status && status.canPurchasePackage === false) {
+                setBlockedByPendingPackage(true);
+                return;
+            }
 
             const res = await memberApi.getPendingPayment();
             const pending = res?.data ?? res;
@@ -160,9 +178,10 @@ export default function MembershipPlansPage() {
                 navigate("/payment", { state: { plan } });
             }
         } catch (err) {
-            console.warn("Không kiểm tra được giao dịch đang chờ:", err);
+            console.warn("Không kiểm tra được điều kiện mua gói:", err);
             // Lỗi khi kiểm tra thì vẫn cho khách qua trang thanh toán bình thường,
-            // trang đó sẽ tự xử lý nếu có vấn đề khi tạo đơn.
+            // trang đó sẽ tự xử lý nếu có vấn đề khi tạo đơn (BE vẫn chặn lại lần nữa
+            // nếu thực sự đang bị giới hạn 1 gói Pending).
             navigate("/payment", { state: { plan } });
         } finally {
             setCheckingPlanId(null);
@@ -388,6 +407,32 @@ export default function MembershipPlansPage() {
                     </section>
                 )}
             </div>
+
+            {/* Modal: tài khoản đang chờ kích hoạt và đã có sẵn 1 gói tập Pending -> chặn mua thêm */}
+            {blockedByPendingPackage && (
+                <div
+                    className="mp-modal-overlay"
+                    onClick={() => setBlockedByPendingPackage(false)}
+                >
+                    <div className="mp-modal" onClick={(e) => e.stopPropagation()}>
+                        <h3>Bạn đã đăng ký gói tập</h3>
+                        <p>
+                            Bạn đã đăng ký một gói tập và đang chờ kích hoạt. Vui lòng đến quầy
+                            thu ngân tại phòng gym để kích hoạt tài khoản và đăng ký FaceID
+                            trước khi mua thêm gói khác.
+                        </p>
+
+                        <div className="mp-modal-actions">
+                            <button
+                                className="mp-btn mp-btn--primary"
+                                onClick={() => setBlockedByPendingPackage(false)}
+                            >
+                                Đã hiểu
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* Modal: phát hiện có giao dịch Pending khi khách bấm "Chọn mua" */}
             {pendingInfo && (

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { FaExclamationTriangle } from "react-icons/fa";
 import authApi, { isLoggedIn as checkIsLoggedIn, getCurrentUser } from "../api/authApi";
 import logo from "../assets/logo.png";
 // Lưu ý: chỉnh lại đường dẫn "../api/authApi" cho khớp vị trí thực tế của Header.jsx trong dự án.
@@ -15,7 +16,7 @@ const NAV_LINKS = [
     { label: "Máy tập", href: "/equiptment" },
     { label: "Chi nhánh", href: "/branch" },
     { label: "Thống kê", href: "/thong-ke", requireAuth: true },
-    { label: "Báo cáo vấn đề", href: "/issue", requireAuth: true },
+    { label: "Báo cáo vấn đề", href: "/issue", requireAuth: true, requireActive: true },
     { label: "Cộng Đồng", href: "/comunity" },
 ];
 
@@ -72,13 +73,15 @@ export default function Header({ active } = {}) {
     const [authed, setAuthed] = useState(false);
     const [userName, setUserName] = useState("");
     const [userRole, setUserRole] = useState("");
+    const [userStatus, setUserStatus] = useState("");
 
     useEffect(() => {
         if (checkIsLoggedIn()) {
-            const { fullName, role } = getCurrentUser();
+            const { fullName, role, status } = getCurrentUser();
             setAuthed(true);
             setUserName(fullName || "Thành viên");
             setUserRole(role || "");
+            setUserStatus(status || "");
         } else {
             setAuthed(false);
             setUserName("");
@@ -95,13 +98,21 @@ export default function Header({ active } = {}) {
         setAuthed(false);
         setUserName("");
         setUserRole("");
+        setUserStatus("");
         setUserOpen(false);
         setMenuOpen(false);
         window.location.href = "/member/login";
     };
 
     /* danh sách nav hiển thị theo trạng thái đăng nhập */
-    const visibleNavLinks = NAV_LINKS.filter(link => !link.requireAuth || authed);
+    const visibleNavLinks = NAV_LINKS.filter(link => {
+        if (link.requireAuth && !authed)
+            return false;
+        if (link.requireActive && userStatus !== "Active")
+            return false;
+
+        return true;
+    });
 
     /* close user dropdown on outside click */
     useEffect(() => {
@@ -359,6 +370,41 @@ export default function Header({ active } = {}) {
         @media (max-width: 600px) {
           .vt-hdr__row { padding: 0 16px; }
         }
+          .inactive-warning{
+    position:absolute;
+    top:-3px;
+    right:30px;
+    color:#facc15;
+    cursor:help;
+}
+
+.inactive-warning svg{
+    font-size:16px;
+    filter:drop-shadow(0 0 2px rgba(0,0,0,.5));
+}
+
+.inactive-tooltip{
+    position:absolute;
+    top:22px;
+    right:0;
+    width:230px;
+    padding:10px 12px;
+    background:#1f1f1f;
+    color:#fff;
+    border:1px solid #facc15;
+    border-radius:8px;
+    font-size:12px;
+    line-height:1.5;
+    opacity:0;
+    visibility:hidden;
+    transition:.2s;
+    z-index:1000;
+}
+
+.inactive-warning:hover .inactive-tooltip{
+    opacity:1;
+    visibility:visible;
+}
       `}</style>
 
             <header className="vt-hdr">
@@ -383,11 +429,24 @@ export default function Header({ active } = {}) {
                         ))}
                     </nav>
 
+
+
+
                     {/* ACTIONS */}
                     <div className="vt-hdr__actions">
                         {authed ? (
                             /* user dropdown — desktop, chỉ hiện khi đã đăng nhập */
                             <div className="vt-usr" ref={userRef}>
+                                {authed && userStatus === "PendingActivation" && (
+                                    <div className="inactive-warning">
+                                        <FaExclamationTriangle />
+                                        <span className="inactive-tooltip">
+                                            Tài khoản của bạn chưa được kích hoạt.
+                                            <br />
+                                            Vui lòng đến chi nhánh để đang ký khuôn mặt.
+                                        </span>
+                                    </div>
+                                )}
                                 <button className="vt-usr__btn" onClick={() => setUserOpen(v => !v)} aria-label="Tài khoản">
                                     <IconUser />
                                 </button>

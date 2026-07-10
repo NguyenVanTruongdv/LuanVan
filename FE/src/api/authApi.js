@@ -1,109 +1,171 @@
 const BASE_URL =
-import.meta.env.VITE_API_BASE_URL || "http://localhost:5231";
+    import.meta.env.VITE_API_BASE_URL || "http://localhost:5231";
 
 // ─────────────────────────────────────────────
 // Token Helpers
 // ─────────────────────────────────────────────
 
 export function getAccessToken() {
-return localStorage.getItem("accessToken");
+    return localStorage.getItem("accessToken");
 }
 
 export function getRefreshToken() {
-return localStorage.getItem("refreshToken");
+    return localStorage.getItem("refreshToken");
 }
 
 export function saveTokens(data) {
-localStorage.setItem("accessToken", data.accessToken);
-localStorage.setItem("refreshToken", data.refreshToken);
-localStorage.setItem("fullName", data.fullName || "");
-localStorage.setItem("role", data.role || "");
-localStorage.setItem("entityType", data.entityType || "");
+    localStorage.setItem("accessToken", data.accessToken);
+    localStorage.setItem("refreshToken", data.refreshToken);
+    localStorage.setItem("fullName", data.fullName || "");
+    localStorage.setItem("role", data.role || "");
+    localStorage.setItem("entityType", data.entityType || "");
+    localStorage.setItem("status", data.status || "");
 }
 
 export function clearTokens() {
-localStorage.removeItem("accessToken");
-localStorage.removeItem("refreshToken");
-localStorage.removeItem("fullName");
-localStorage.removeItem("role");
-localStorage.removeItem("entityType");
+    localStorage.removeItem("accessToken");
+    localStorage.removeItem("refreshToken");
+    localStorage.removeItem("fullName");
+    localStorage.removeItem("role");
+    localStorage.removeItem("entityType");
+    localStorage.removeItem("status");
 }
 
 export function isLoggedIn() {
-return !!getAccessToken();
+    return !!getAccessToken();
 }
 
 export function getCurrentUser() {
-return {
-fullName: localStorage.getItem("fullName") || "",
-role: localStorage.getItem("role") || "",
-entityType: localStorage.getItem("entityType") || "",
-};
+    return {
+        fullName: localStorage.getItem("fullName") || "",
+        role: localStorage.getItem("role") || "",
+        entityType: localStorage.getItem("entityType") || "",
+        status: localStorage.getItem("status") || "",
+    };
 }
 
 // ─────────────────────────────────────────────
-// Base Request
+// Base Request (JSON)
 // ─────────────────────────────────────────────
 
 async function request(method, path, body = null, auth = false) {
-const headers = {
-"Content-Type": "application/json",
-};
+    // QUAN TRỌNG: nếu body là FormData (upload ảnh/file), KHÔNG được tự set
+    // Content-Type. Trình duyệt cần tự sinh ra "multipart/form-data; boundary=..."
+    // — tự set "application/json" (hoặc tự set multipart tay, thiếu boundary) sẽ
+    // làm server không parse được file trong request (IFormFile luôn nhận về null).
+    const isFormData = body instanceof FormData;
 
-if (auth) {
-    headers.Authorization = `Bearer ${getAccessToken()}`;
-}
-
-const options = {
-    method,
-    headers,
-};
-
-if (body) {
-    options.body = JSON.stringify(body);
-}
-
-let res = await fetch(`${BASE_URL}${path}`, options);
-
-// AccessToken hết hạn
-if (res.status === 401 && auth) {
-    try {
-        await authApi.refreshToken({
-            refreshToken: getRefreshToken(),
-        });
-
-        headers.Authorization = `Bearer ${getAccessToken()}`;
-
-        res = await fetch(`${BASE_URL}${path}`, {
-            ...options,
-            headers,
-        });
-    } catch {
-        clearTokens();
-        window.location.href = "/member/login";
-        throw new Error("Phiên đăng nhập đã hết hạn");
+    const headers = {};
+    if (!isFormData) {
+        headers["Content-Type"] = "application/json";
     }
+
+    if (auth) {
+        headers.Authorization = `Bearer ${getAccessToken()}`;
+    }
+
+    const options = {
+        method,
+        headers,
+    };
+
+    if (body) {
+        options.body = isFormData ? body : JSON.stringify(body);
+    }
+
+    let res = await fetch(`${BASE_URL}${path}`, options);
+
+    // AccessToken hết hạn
+    if (res.status === 401 && auth) {
+        try {
+            await authApi.refreshToken({
+                refreshToken: getRefreshToken(),
+            });
+
+            headers.Authorization = `Bearer ${getAccessToken()}`;
+
+            res = await fetch(`${BASE_URL}${path}`, {
+                ...options,
+                headers,
+            });
+        } catch {
+            clearTokens();
+            window.location.href = "/member/login";
+            throw new Error("Phiên đăng nhập đã hết hạn");
+        }
+    }
+
+    const data = await res.json().catch(() => null);
+
+    if (!res.ok) {
+        const err = new Error(
+            data?.message ||
+            data?.title ||
+            "Có lỗi xảy ra"
+        );
+
+        err.status = res.status;
+        err.errors = data?.errors;
+        err.data = data;
+
+        throw err;
+    }
+
+    return data;
 }
 
-const data = await res.json().catch(() => null);
+// ─────────────────────────────────────────────
+// Base Request (Blob) — dùng cho endpoint trả về file (ảnh, PDF...)
+// như GET /api/transactions/{id}/invoice. Không thể tái dùng request()
+// ở trên vì nó luôn ép res.json().
+// ─────────────────────────────────────────────
 
-if (!res.ok) {
-    const err = new Error(
-        data?.message ||
-        data?.title ||
-        "Có lỗi xảy ra"
-    );
+async function requestBlob(method, path, auth = true) {
+    const headers = {};
+    if (auth) {
+        headers.Authorization = `Bearer ${getAccessToken()}`;
+    }
 
-    err.status = res.status;
-    err.errors = data?.errors;
-    err.data = data;
+    const options = { method, headers };
 
-    throw err;
-}
+    let res = await fetch(`${BASE_URL}${path}`, options);
 
-return data;
+    // AccessToken hết hạn — refresh rồi gọi lại, giống hệt logic của request()
+    if (res.status === 401 && auth) {
+        try {
+            await authApi.refreshToken({
+                refreshToken: getRefreshToken(),
+            });
 
+            headers.Authorization = `Bearer ${getAccessToken()}`;
 
+            res = await fetch(`${BASE_URL}${path}`, {
+                ...options,
+                headers,
+            });
+        } catch {
+            clearTokens();
+            window.location.href = "/member/login";
+            throw new Error("Phiên đăng nhập đã hết hạn");
+        }
+    }
+
+    const contentType = res.headers.get("content-type") || "";
+
+    if (!res.ok) {
+        // BE trả lỗi dạng JSON (vd 404 { message: "..." }) chứ không phải file
+        let message = "Có lỗi xảy ra";
+        if (contentType.includes("application/json")) {
+            const data = await res.json().catch(() => null);
+            message = data?.message || data?.title || message;
+        }
+        const err = new Error(message);
+        err.status = res.status;
+        throw err;
+    }
+
+    const blob = await res.blob();
+    return { blob, contentType };
 }
 
 // ─────────────────────────────────────────────
@@ -112,119 +174,128 @@ return data;
 
 const authApi = {
 
-// ===== OTP =====
+    // ===== OTP =====
 
-sendOtp(payload) {
-    return request(
-        "POST",
-        "/api/auth/send-otp",
-        payload
-    );
-},
+    sendOtp(payload) {
+        return request(
+            "POST",
+            "/api/auth/send-otp",
+            payload
+        );
+    },
 
-verifyRegisterOtp(payload) {
-    return request(
-        "POST",
-        "/api/auth/verify-otp",
-        payload
-    );
-},
+    verifyRegisterOtp(payload) {
+        return request(
+            "POST",
+            "/api/auth/verify-otp",
+            payload
+        );
+    },
 
-// ===== LOGIN =====
+    // ===== LOGIN =====
 
-async loginMember(payload) {
-    const data = await request(
-        "POST",
-        "/api/auth/member/login",
-        payload
-    );
+    async loginMember(payload) {
+        const data = await request(
+            "POST",
+            "/api/auth/member/login",
+            payload
+        );
 
-    saveTokens(data);
-    return data;
-},
+        saveTokens(data);
+        return data;
+    },
 
-async loginEmployee(payload) {
-    const data = await request(
-        "POST",
-        "/api/auth/employee/login",
-        payload
-    );
+    async loginEmployee(payload) {
+        const data = await request(
+            "POST",
+            "/api/auth/employee/login",
+            payload
+        );
 
-    saveTokens(data);
-    return data;
-},
+        saveTokens(data);
+        return data;
+    },
 
-// ===== REFRESH TOKEN =====
+    // ===== REFRESH TOKEN =====
 
-async refreshToken(payload) {
-    const data = await request(
-        "POST",
-        "/api/auth/refresh-token",
-        payload
-    );
+    async refreshToken(payload) {
+        const data = await request(
+            "POST",
+            "/api/auth/refresh-token",
+            payload
+        );
 
-    saveTokens(data);
-    return data;
-},
+        saveTokens(data);
+        return data;
+    },
 
-// ===== LOGOUT =====
+    // ===== LOGOUT =====
 
-async logout() {
-    const refreshToken = getRefreshToken();
+    async logout() {
+        const refreshToken = getRefreshToken();
 
-    if (refreshToken) {
-        try {
-            await request(
-                "POST",
-                "/api/auth/logout",
-                { refreshToken }
-            );
-        } catch {
-            // ignore
+        if (refreshToken) {
+            try {
+                await request(
+                    "POST",
+                    "/api/auth/logout",
+                    { refreshToken }
+                );
+            } catch {
+                // ignore
+            }
         }
-    }
 
-    clearTokens();
-},
+        clearTokens();
+    },
 
-// ===== AUTH FETCH =====
+    // ===== AUTH FETCH (JSON) =====
+    // body có thể là object thường (JSON) HOẶC FormData (upload file) —
+    // request() tự nhận diện, không cần truyền thêm cờ gì ở đây.
 
-get(path, auth = true) {
-    return request(
-        "GET",
-        path,
-        null,
-        auth
-    );
-},
+    get(path, auth = true) {
+        return request(
+            "GET",
+            path,
+            null,
+            auth
+        );
+    },
 
-post(path, body, auth = true) {
-    return request(
-        "POST",
-        path,
-        body,
-        auth
-    );
-},
+    post(path, body, auth = true) {
+        return request(
+            "POST",
+            path,
+            body,
+            auth
+        );
+    },
 
-put(path, body, auth = true) {
-    return request(
-        "PUT",
-        path,
-        body,
-        auth
-    );
-},
+    put(path, body, auth = true) {
+        return request(
+            "PUT",
+            path,
+            body,
+            auth
+        );
+    },
 
-delete(path, auth = true) {
-    return request(
-        "DELETE",
-        path,
-        null,
-        auth
-    );
-},
+    delete(path, auth = true) {
+        return request(
+            "DELETE",
+            path,
+            null,
+            auth
+        );
+    },
 
+    // ===== AUTH FETCH (BLOB) =====
+    // Dùng cho endpoint trả về file thật (ảnh/PDF...) như xem hóa đơn.
+    // Trả về { blob, contentType } thay vì JSON.
+
+    getBlob(path, auth = true) {
+        return requestBlob("GET", path, auth);
+    },
 
 };
 

@@ -1,8 +1,7 @@
 import {
     Activity,
-    ArrowLeft, Award,
-    Building2,
-    Camera, Check,
+    ArrowLeft, ArrowRight, Award,
+    Camera, Check, Clock,
     Eye, FileText, MapPin, Pencil, Phone, RotateCcw, Search,
     TrendingUp,
     User, Users,
@@ -11,81 +10,149 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-/* ── DESIGN TOKENS – white theme, indigo/violet accent ── */
+// Đường dẫn từ src/pages/cashier/member/ListMember.jsx tới src/api/cashierApi.js
+import cashierApi from "../../../api/cashierApi";
+
+/* ── DESIGN TOKENS – nền sáng, tông cyan/navy đồng bộ với Cashier Portal,
+      xanh lá riêng cho các hành động liên quan FaceID ── */
 const C = {
-    bg: "#F4F7F7",
+    bg: "#F1F5F9",
     surface: "#FFFFFF",
     card: "#FFFFFF",
-    cardAlt: "#F4FAF9",
-    border: "#D7E2E1",
-    borderDark: "#A9BFBC",
-    ink: "#0A1A16",          // ← đậm hơn
-    inkSoft: "#1E3530",      // ← đậm hơn (thay vì #5C7572)
-    inkMuted: "#3D5C57",     // ← đậm hơn (thay vì #92ABA8)
-    accent: "#6366F1",
-    accentDark: "#4F46E5",
-    accentRGB: "99,102,241",
-    accentGlow: "rgba(99,102,241,0.14)",
-    accentSoft: "rgba(99,102,241,0.09)",
-    accentGradient: "linear-gradient(135deg, #6366F1 0%, #8B5CF6 55%, #C084FC 100%)",
-    accentRing: "rgba(99,102,241,0.2)",
-    green: "#15803D",        // ← đậm hơn
+    cardAlt: "#F8FAFC",
+    border: "#E2E8F0",
+    borderDark: "#CBD5E1",
+    ink: "#0F172A",
+    inkSoft: "#1E293B",
+    inkMuted: "#64748B",
+    accent: "#0891B2",
+    accentDark: "#0E7490",
+    accentRGB: "8,145,178",
+    accentSoft: "rgba(34,211,238,0.10)",
+    accentGradient: "linear-gradient(135deg, #0E7490 0%, #0891B2 45%, #22D3EE 100%)",
+    accentRing: "rgba(34,211,238,0.28)",
+    // ── Xanh lá hiện đại, dùng riêng cho các hành động liên quan FaceID ──
+    faceGreen: "#059669",
+    faceGreenRGB: "5,150,105",
+    faceGreenGradient: "linear-gradient(135deg, #059669 0%, #10B981 55%, #34D399 100%)",
+    faceGreenSoft: "rgba(16,185,129,0.10)",
+    faceGreenRing: "rgba(16,185,129,0.22)",
+    green: "#15803D",
     greenBg: "#F0FDF4",
     greenBorder: "#BBF7D0",
-    amber: "#B45309",        // ← đậm hơn
+    amber: "#B45309",
     amberBg: "#FFFBEB",
     amberBorder: "#FDE68A",
-    red: "#B91C1C",          // ← đậm hơn
+    red: "#B91C1C",
     redBg: "#FEF2F2",
     redBorder: "#FECACA",
-    shadow: "0 1px 4px rgba(16,35,31,0.06), 0 4px 16px rgba(16,35,31,0.05)",
-    shadowMd: "0 2px 8px rgba(16,35,31,0.08), 0 8px 26px rgba(16,35,31,0.07)",
+    shadow: "0 1px 4px rgba(15,23,42,0.06), 0 4px 16px rgba(15,23,42,0.05)",
+    shadowMd: "0 2px 8px rgba(15,23,42,0.08), 0 8px 26px rgba(15,23,42,0.07)",
 };
 
-const CHI_NHANH = ["Quận 1", "Quận 3", "Bình Thạnh", "Thủ Đức"];
+// Danh sách chi nhánh mặc định — chỉ dùng khi chưa tải được dữ liệu hội viên nào.
+// Khi đã có members, danh sách chi nhánh thật sự lấy trực tiếp từ BranchName trả về bởi BE.
+const CHI_NHANH_FALLBACK = ["Quận 1", "Quận 3", "Bình Thạnh", "Thủ Đức"];
 
-const seedMembers = [
-    { id: "HV0001", hoTen: "Nguyễn Thị Lan", sdt: "0901234567", chiNhanh: "Quận 1", ngayDangKy: "2023-02-14", goiTap: "Gold", trangThai: "Đang hoạt động", gioiTinh: "Nữ", ghiChu: "", avatar: "" },
-    { id: "HV0002", hoTen: "Trần Văn Minh", sdt: "0912345678", chiNhanh: "Quận 3", ngayDangKy: "2022-11-02", goiTap: "Platinum", trangThai: "Đang hoạt động", gioiTinh: "Nam", ghiChu: "Đau lưng, tránh deadlift", avatar: "" },
-    { id: "HV0003", hoTen: "Lê Thị Hồng", sdt: "0987654321", chiNhanh: "Bình Thạnh", ngayDangKy: "2024-01-20", goiTap: "Silver", trangThai: "Tạm ngưng", gioiTinh: "Nữ", ghiChu: "", avatar: "" },
-    { id: "HV0004", hoTen: "Phạm Quốc Anh", sdt: "0934567890", chiNhanh: "Thủ Đức", ngayDangKy: "2023-07-09", goiTap: "Gold", trangThai: "Đang hoạt động", gioiTinh: "Nam", ghiChu: "", avatar: "" },
-    { id: "HV0005", hoTen: "Hoàng Thị Mai", sdt: "0945678901", chiNhanh: "Quận 1", ngayDangKy: "2024-03-30", goiTap: "Basic", trangThai: "Đang hoạt động", gioiTinh: "Nữ", ghiChu: "Dị ứng nhẹ với latex", avatar: "" },
-    { id: "HV0006", hoTen: "Đặng Văn Hùng", sdt: "0956789012", chiNhanh: "Quận 3", ngayDangKy: "2021-06-18", goiTap: "Platinum", trangThai: "Hết hạn", gioiTinh: "Nam", ghiChu: "", avatar: "" },
-    { id: "HV0007", hoTen: "Vũ Thị Thu", sdt: "0967890123", chiNhanh: "Bình Thạnh", ngayDangKy: "2023-10-05", goiTap: "Silver", trangThai: "Đang hoạt động", gioiTinh: "Nữ", ghiChu: "", avatar: "" },
-    { id: "HV0008", hoTen: "Bùi Minh Tuấn", sdt: "0978901234", chiNhanh: "Thủ Đức", ngayDangKy: "2022-02-28", goiTap: "Gold", trangThai: "Đang hoạt động", gioiTinh: "Nam", ghiChu: "", avatar: "" },
-];
+const FACEID_REASONS = ["Nhận diện kém", "Khác"];
 
-const memberApi = {
-    async list() {
-        await new Promise(r => setTimeout(r, 250));
-        return seedMembers;
-    },
-    async updateInfo(id, patch) {
-        await new Promise(r => setTimeout(r, 400));
-        return { id, ...patch };
-    },
-    async uploadAvatar(id, imageDataUrl) {
-        await new Promise(r => setTimeout(r, 500));
-        return imageDataUrl;
-    },
+/* ══════════════════════════════════════════════════════════
+   MAP DỮ LIỆU API (tiếng Anh) <-> UI (tiếng Việt)
+   Khớp với BE: BE.Dtos.Member (MemberListItem / MemberResponse)
+   ══════════════════════════════════════════════════════════ */
+const STATUS_MAP = {
+    PendingActivation: "Chờ hoạt động",
+    Active: "Đang hoạt động",
+    Suspended: "Tạm ngưng",
+    Expired: "Hết hạn",
 };
+const GENDER_MAP = { Male: "Nam", Female: "Nữ", Other: "Khác" };
+const GENDER_MAP_REVERSE = { Nam: "Male", Nữ: "Female", Khác: "Other" };
+
+// Khớp với FieldName ghi trong MemberUpdateLog (BE: MemberService.UpdateMemberInfoAsync)
+const FIELD_LABELS = {
+    full_name: "Họ và tên",
+    phone: "Số điện thoại",
+    gender: "Giới tính",
+    internal_notes: "Ghi chú nội bộ",
+    CREATE_MEMBER: "Tạo hội viên",
+};
+
+function normalizeListItem(m) {
+    const pkg = m.currentPackages?.[0];
+    return {
+        id: m.memberId,
+        hoTen: m.fullName,
+        sdt: m.phone,
+        chiNhanh: m.branchName,
+        goiTap: pkg?.planName || "Chưa có gói",
+        trangThai: STATUS_MAP[m.status] || m.status,
+        gioiTinh: "",
+        ghiChu: "",
+        avatar: m.profileImage || "",
+        ngayDangKy: pkg?.startDate || "",
+    };
+}
+
+function normalizeDetail(m) {
+    return {
+        id: m.memberId,
+        hoTen: m.fullName,
+        sdt: m.phone,
+        chiNhanh: m.branchName,
+        goiTap: m.currentMemberPackageId || "Chưa có gói",
+        trangThai: STATUS_MAP[m.status] || m.status,
+        gioiTinh: GENDER_MAP[m.gender] || "",
+        ghiChu: m.internalNotes || "",
+        avatar: m.profileImage || "",
+        ngayDangKy: m.createdAt || "",
+    };
+}
+
+// UI -> payload PUT /api/members/{id}
+// Đã confirm theo MemberService.UpdateMemberInfoAsync: backend CHỈ đọc 4 field này,
+// không có branchId, không có status.
+function toUpdatePayload(draft) {
+    return {
+        fullName: draft.hoTen,
+        phone: draft.sdt,
+        gender: GENDER_MAP_REVERSE[draft.gioiTinh] || draft.gioiTinh,
+        internalNotes: draft.ghiChu,
+    };
+}
 
 function initials(name) {
     return (name || "HV").split(" ").filter(Boolean).slice(-2).map(w => w[0]).join("").toUpperCase();
 }
 function formatDate(iso) {
     if (!iso) return "—";
-    const [y, m, d] = iso.split("-");
+    const datePart = iso.split("T")[0];
+    const [y, m, d] = datePart.split("-");
+    if (!y || !m || !d) return "—";
     return `${d}/${m}/${y}`;
+}
+function formatDateTime(iso) {
+    if (!iso) return "—";
+    const [datePart, timePart] = iso.split("T");
+    const [y, m, d] = (datePart || "").split("-");
+    const hm = (timePart || "").slice(0, 5);
+    if (!y || !m || !d) return "—";
+    return `${d}/${m}/${y}${hm ? " " + hm : ""}`;
+}
+
+// Chuyển dataURL (ảnh chụp/upload) thành Blob để gửi multipart/form-data
+async function dataUrlToBlob(dataUrl) {
+    const res = await fetch(dataUrl);
+    return res.blob();
 }
 
 const AVATAR_PALETTES = [
-    ["#6366F1", "#22D3EE"], ["#0EA5E9", "#38BDF8"],
+    ["#0EA5E9", "#22D3EE"], ["#0891B2", "#38BDF8"],
     ["#EC4899", "#F472B6"], ["#10B981", "#34D399"],
     ["#F59E0B", "#FCD34D"], ["#EF4444", "#F87171"],
 ];
 function avatarPalette(id) {
-    const idx = parseInt((id || "0").replace(/\D/g, "")) % AVATAR_PALETTES.length;
+    const idx = parseInt(String(id ?? "0").replace(/\D/g, "") || "0") % AVATAR_PALETTES.length;
     return AVATAR_PALETTES[idx];
 }
 
@@ -95,10 +162,19 @@ const GOI_STYLE = {
     "Gold": { bg: "#FEF3C7", fg: "#78350F", border: "#F59E0B" },
     "Platinum": { bg: "#CFFAFE", fg: "#0C4A6E", border: "#22D3EE" },
 };
+const DEFAULT_GOI_STYLE = { bg: "#E0F2FE", fg: C.accentDark, border: "#BAE6FD" };
+
 const STATUS_STYLE = {
     "Đang hoạt động": { bg: C.greenBg, fg: C.green, border: C.greenBorder, dot: C.green },
-    "Tạm ngưng": { bg: C.amberBg, fg: C.amber, border: C.amberBorder, dot: C.amber },
+    "Chờ hoạt động": { bg: C.amberBg, fg: C.amber, border: C.amberBorder, dot: C.amber },
+    "Tạm ngưng": { bg: C.redBg, fg: C.red, border: C.redBorder, dot: C.red },
     "Hết hạn": { bg: C.redBg, fg: C.red, border: C.redBorder, dot: C.red },
+};
+
+// ── Badge phân biệt loại phiên trong lịch sử cập nhật: INFO (thông tin) vs FACEID (khuôn mặt) ──
+const SESSION_TYPE_STYLE = {
+    INFO: { label: "Cập nhật thông tin", bg: C.accentSoft, fg: C.accentDark, border: "rgba(34,211,238,0.3)", icon: Pencil },
+    FACEID: { label: "Cập nhật FaceID", bg: C.faceGreenSoft, fg: C.faceGreen, border: C.faceGreenRing, icon: Camera },
 };
 
 function StatusBadge({ value }) {
@@ -114,7 +190,7 @@ function StatusBadge({ value }) {
     );
 }
 function GoiBadge({ value }) {
-    const s = GOI_STYLE[value] || GOI_STYLE["Basic"];
+    const s = GOI_STYLE[value] || DEFAULT_GOI_STYLE;
     return (
         <span style={{
             display: "inline-flex", alignItems: "center", padding: "4px 10px", borderRadius: 7,
@@ -147,17 +223,22 @@ const inp = {
     transition: "border-color .15s",
 };
 const btnAccent = { display: "inline-flex", alignItems: "center", gap: 7, fontSize: 13.5, fontWeight: 700, padding: "10px 18px", borderRadius: 10, cursor: "pointer", fontFamily: "inherit", border: "none", background: C.accentGradient, color: "#fff", boxShadow: `0 3px 12px rgba(${C.accentRGB},0.32)` };
+// ── Nút xanh lá hiện đại, dùng cho các hành động liên quan FaceID ──
+const btnGreen = { display: "inline-flex", alignItems: "center", gap: 7, fontSize: 13.5, fontWeight: 700, padding: "10px 18px", borderRadius: 10, cursor: "pointer", fontFamily: "inherit", border: "none", background: C.faceGreenGradient, color: "#fff", boxShadow: `0 3px 12px rgba(${C.faceGreenRGB},0.32)` };
 const btnOutline = { display: "inline-flex", alignItems: "center", gap: 7, fontSize: 13.5, fontWeight: 700, padding: "10px 16px", borderRadius: 10, cursor: "pointer", fontFamily: "inherit", background: C.surface, color: C.inkSoft, border: `1.5px solid ${C.border}` };
 const btnDanger = { display: "inline-flex", alignItems: "center", gap: 7, fontSize: 13.5, fontWeight: 700, padding: "10px 16px", borderRadius: 10, cursor: "pointer", fontFamily: "inherit", background: C.redBg, color: C.red, border: `1.5px solid ${C.redBorder}` };
+// ── Nút "Hủy" tông trung tính nhạt, dùng khi đứng cạnh nút Lưu để không lấn át hành động chính ──
+const btnCancelSoft = { display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 700, padding: "10px 14px", borderRadius: 10, cursor: "pointer", fontFamily: "inherit", background: C.surface, color: C.inkMuted, border: `1.5px solid ${C.border}` };
 
 function GlobalStyles() {
     return (
         <style>{`
             .gw-input:focus { border-color: ${C.accent} !important; box-shadow: 0 0 0 3px ${C.accentRing}; }
             .gw-input:hover { border-color: ${C.borderDark}; }
+            .gw-input-green:focus { border-color: ${C.faceGreen} !important; box-shadow: 0 0 0 3px ${C.faceGreenRing}; }
+            .gw-input-green:hover { border-color: ${C.faceGreen}; }
             .gw-photo-col { width: 320px; }
             .gw-grid-2 { display: grid; grid-template-columns: 1fr 1fr; }
-            /* Bảng cuộn: chiều cao tối đa, phần header cố định */
             .gw-table-scroll {
                 max-height: 480px;
                 overflow-y: auto;
@@ -167,7 +248,16 @@ function GlobalStyles() {
                 position: sticky;
                 top: 0;
                 z-index: 2;
-                background: #EDF4F3;
+                background: #EEF6FA;
+            }
+            .gw-modal-backdrop {
+                position: fixed; inset: 0; background: rgba(15,23,42,0.5);
+                display: flex; align-items: center; justify-content: center;
+                z-index: 50; padding: 20px;
+            }
+            .gw-modal {
+                background: ${C.surface}; border-radius: 16px; border: 1px solid ${C.border};
+                box-shadow: ${C.shadowMd}; width: 100%; max-width: 420px; padding: 22px;
             }
             @media (max-width: 760px) {
                 .gw-photo-col { width: 100% !important; border-right: none !important; border-bottom: 1px solid ${C.border}; }
@@ -185,11 +275,11 @@ function GlobalStyles() {
     );
 }
 
-function Eyebrow({ icon: Icon, children }) {
+function Eyebrow({ icon: Icon, children, color = C.accent, bg = C.accentSoft }) {
     return (
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <div style={{ width: 26, height: 26, borderRadius: 8, background: C.accentSoft, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                <Icon size={13} color={C.accent} />
+            <div style={{ width: 26, height: 26, borderRadius: 8, background: bg, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                <Icon size={13} color={color} />
             </div>
             <span style={{ fontSize: 11, fontWeight: 800, color: C.inkSoft, letterSpacing: 0.8, textTransform: "uppercase" }}>{children}</span>
         </div>
@@ -204,6 +294,8 @@ function FaceIdCapture({ onSave, onCancel, aspect = "4/5", saving = false }) {
     const [ready, setReady] = useState(false);
     const [err, setErr] = useState("");
     const [captured, setCaptured] = useState(null);
+    const [reason, setReason] = useState("");
+    const [reasonOther, setReasonOther] = useState("");
 
     const stop = useCallback(() => {
         streamRef.current?.getTracks().forEach(t => t.stop());
@@ -238,7 +330,7 @@ function FaceIdCapture({ onSave, onCancel, aspect = "4/5", saving = false }) {
         setCaptured(cvs.toDataURL("image/jpeg", 0.92));
     };
 
-    const retake = () => { setCaptured(null); startCam(); };
+    const retake = () => { setCaptured(null); setReason(""); setReasonOther(""); startCam(); };
 
     const pickFile = e => {
         const f = e.target.files[0]; if (!f) return;
@@ -250,13 +342,17 @@ function FaceIdCapture({ onSave, onCancel, aspect = "4/5", saving = false }) {
     };
 
     const cancel = () => { stop(); onCancel(); };
-    const save = () => { if (captured) onSave(captured); };
+
+    const finalReason = reason === "Khác" ? reasonOther.trim() : reason;
+    const canSave = !!captured && !!finalReason;
+
+    const save = () => { if (canSave) onSave(captured, finalReason); };
 
     return (
         <div style={{ display: "flex", flexDirection: "column", gap: 13 }}>
             <div style={{
                 position: "relative", width: "100%", aspectRatio: aspect, borderRadius: 16, overflow: "hidden",
-                background: "linear-gradient(135deg, #0B1224 0%, #1E1B4B 100%)",
+                background: "linear-gradient(135deg, #0B1224 0%, #082F49 100%)",
                 border: `1.5px solid ${C.border}`, boxShadow: C.shadow
             }}>
                 {captured ? (
@@ -266,9 +362,9 @@ function FaceIdCapture({ onSave, onCancel, aspect = "4/5", saving = false }) {
                         <video ref={videoRef} muted playsInline style={{ width: "100%", height: "100%", objectFit: "cover", transform: "scaleX(-1)", opacity: ready ? 1 : 0, transition: "opacity .3s" }} />
                         {ready && (
                             <svg viewBox="0 0 300 300" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", pointerEvents: "none" }}>
-                                <ellipse cx="150" cy="150" rx="80" ry="105" fill="none" stroke={`rgba(${C.accentRGB},0.9)`} strokeWidth="2.5" strokeDasharray="10 7" />
+                                <ellipse cx="150" cy="150" rx="80" ry="105" fill="none" stroke={`rgba(${C.faceGreenRGB},0.9)`} strokeWidth="2.5" strokeDasharray="10 7" />
                                 {[[40, 40, 1, 1], [260, 40, -1, 1], [40, 260, 1, -1], [260, 260, -1, -1]].map(([x, y, dx, dy], i) => (
-                                    <path key={i} d={`M${x} ${y + dy * 24} v${-dy * 24} h${dx * 24}`} stroke={C.accent} strokeWidth="3" fill="none" strokeLinecap="round" />
+                                    <path key={i} d={`M${x} ${y + dy * 24} v${-dy * 24} h${dx * 24}`} stroke={C.faceGreen} strokeWidth="3" fill="none" strokeLinecap="round" />
                                 ))}
                             </svg>
                         )}
@@ -278,7 +374,7 @@ function FaceIdCapture({ onSave, onCancel, aspect = "4/5", saving = false }) {
                             </div>
                         )}
                         {ready && (
-                            <div style={{ position: "absolute", bottom: 14, left: 0, right: 0, textAlign: "center", color: "#A5B4FC", fontSize: 12, fontWeight: 600 }}>
+                            <div style={{ position: "absolute", bottom: 14, left: 0, right: 0, textAlign: "center", color: "#6EE7B7", fontSize: 12, fontWeight: 600 }}>
                                 Canh mặt vào khung bầu dục
                             </div>
                         )}
@@ -286,8 +382,8 @@ function FaceIdCapture({ onSave, onCancel, aspect = "4/5", saving = false }) {
                 )}
                 {captured && (
                     <div style={{ position: "absolute", top: 12, left: 12, display: "flex", alignItems: "center", gap: 6, background: "rgba(0,0,0,0.5)", borderRadius: 999, padding: "5px 11px" }}>
-                        <Check size={12} color="#A5B4FC" />
-                        <span style={{ color: "#E0E7FF", fontSize: 11.5, fontWeight: 700 }}>Ảnh đã chụp</span>
+                        <Check size={12} color="#6EE7B7" />
+                        <span style={{ color: "#D1FAE5", fontSize: 11.5, fontWeight: 700 }}>Ảnh đã chụp</span>
                     </div>
                 )}
                 {err && (
@@ -299,33 +395,59 @@ function FaceIdCapture({ onSave, onCancel, aspect = "4/5", saving = false }) {
 
             <input ref={fileRef} type="file" accept="image/*" style={{ display: "none" }} onChange={pickFile} />
 
+            {captured && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 10, padding: "13px 14px", borderRadius: 12, border: `1.5px solid ${C.border}`, background: C.cardAlt }}>
+                    <span style={{ fontSize: 12.5, fontWeight: 800, color: C.inkSoft }}>Lý do cập nhật FaceID <span style={{ color: C.red }}>*</span></span>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                        {FACEID_REASONS.map(r => (
+                            <label key={r} style={{
+                                display: "flex", alignItems: "center", gap: 8, fontSize: 13.5, cursor: "pointer",
+                                color: reason === r ? C.faceGreen : C.inkSoft, fontWeight: reason === r ? 800 : 600
+                            }}>
+                                <input type="radio" name="faceid-reason" checked={reason === r} onChange={() => setReason(r)} style={{ accentColor: C.faceGreen, width: 15, height: 15 }} />
+                                {r}
+                            </label>
+                        ))}
+                        {reason === "Khác" && (
+                            <input
+                                className="gw-input-green"
+                                style={{ ...inp, marginLeft: 23, width: "calc(100% - 23px)" }}
+                                placeholder="Nhập lý do cụ thể…"
+                                value={reasonOther}
+                                onChange={e => setReasonOther(e.target.value)}
+                            />
+                        )}
+                    </div>
+                </div>
+            )}
+
             {!captured ? (
                 <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                     <div style={{ display: "flex", gap: 8 }}>
-                        <button onClick={shoot} disabled={!ready} style={{ ...btnAccent, flex: 1, justifyContent: "center", opacity: ready ? 1 : 0.4 }}>
+                        <button onClick={shoot} disabled={!ready} style={{ ...btnGreen, flex: 1, justifyContent: "center", opacity: ready ? 1 : 0.4 }}>
                             <Camera size={15} /> Chụp ảnh
                         </button>
                         <button onClick={() => fileRef.current?.click()} style={{ ...btnOutline, flex: 1, justifyContent: "center" }}>
                             <Pencil size={13} /> Tải ảnh lên
                         </button>
                     </div>
-                    <button onClick={cancel} style={{ ...btnDanger, width: "100%", justifyContent: "center" }}>
+                    <button onClick={cancel} style={{ ...btnCancelSoft, width: "100%", justifyContent: "center" }}>
                         <X size={14} /> Hủy
                     </button>
                 </div>
             ) : (
                 <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                    <button onClick={retake} disabled={saving} style={{ ...btnOutline, width: "100%", justifyContent: "center" }}>
+                        <RotateCcw size={13} /> Chụp lại
+                    </button>
                     <div style={{ display: "flex", gap: 8 }}>
-                        <button onClick={save} disabled={saving} style={{ ...btnAccent, flex: 1, justifyContent: "center", opacity: saving ? 0.7 : 1 }}>
+                        <button onClick={save} disabled={saving || !canSave} style={{ ...btnGreen, flex: 1, justifyContent: "center", opacity: (saving || !canSave) ? 0.5 : 1 }}>
                             <Check size={15} /> {saving ? "Đang lưu…" : "Lưu"}
                         </button>
-                        <button onClick={retake} disabled={saving} style={{ ...btnOutline, flex: 1, justifyContent: "center" }}>
-                            <RotateCcw size={13} /> Chụp lại
+                        <button onClick={cancel} disabled={saving} style={{ ...btnCancelSoft, flex: "0 0 96px", justifyContent: "center" }}>
+                            <X size={14} /> Hủy
                         </button>
                     </div>
-                    <button onClick={cancel} disabled={saving} style={{ ...btnDanger, width: "100%", justifyContent: "center" }}>
-                        <X size={14} /> Hủy
-                    </button>
                 </div>
             )}
         </div>
@@ -379,11 +501,110 @@ function StatCard({ icon: Icon, label, value, color, bgColor }) {
     );
 }
 
+// Thumbnail ảnh khuôn mặt trong lịch sử (trước/sau) — placeholder khi chưa có ảnh
+function FaceHistoryThumb({ src, label }) {
+    return (
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6, flex: 1 }}>
+            <div style={{
+                width: "100%", aspectRatio: "1/1", borderRadius: 10, overflow: "hidden",
+                border: `1.5px solid ${C.border}`, background: src ? "#0B1224" : C.cardAlt,
+                display: "flex", alignItems: "center", justifyContent: "center",
+            }}>
+                {src
+                    ? <img src={src} alt={label} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                    : <Camera size={18} color={C.inkMuted} style={{ opacity: 0.5 }} />
+                }
+            </div>
+            <span style={{ fontSize: 10.5, fontWeight: 700, color: C.inkMuted, textTransform: "uppercase", letterSpacing: 0.4 }}>{label}</span>
+        </div>
+    );
+}
+
+// Panel lịch sử cập nhật — khớp với GET /api/members/{id}/update-history
+// (MemberService.GetUpdateHistoryAsync). Mỗi phiên có sessionType: "INFO" | "FACEID".
+// - INFO: đổi trực tiếp field (fullName, phone, gender, internal_notes, hoặc CREATE_MEMBER)
+// - FACEID: đổi ảnh khuôn mặt, có oldImageUrl/newImageUrl + reason, changes luôn rỗng
+function HistoryModal({ sessions, loading, onClose }) {
+    return (
+        <div className="gw-modal-backdrop" onClick={onClose}>
+            <div className="gw-modal" style={{ maxWidth: 560, maxHeight: "82vh", display: "flex", flexDirection: "column" }} onClick={e => e.stopPropagation()}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+                    <span style={{ fontSize: 16.5, fontWeight: 800, color: C.ink }}>Lịch sử cập nhật</span>
+                    <button onClick={onClose} style={{ ...btnOutline, padding: "7px 9px" }}><X size={14} /></button>
+                </div>
+                <div style={{ overflowY: "auto", display: "flex", flexDirection: "column", gap: 12 }}>
+                    {loading && <div style={{ color: C.inkMuted, textAlign: "center", padding: 24 }}>Đang tải…</div>}
+                    {!loading && sessions.length === 0 && (
+                        <div style={{ color: C.inkMuted, textAlign: "center", padding: 24 }}>Chưa có lịch sử cập nhật.</div>
+                    )}
+                    {!loading && sessions.map(s => {
+                        const typeStyle = SESSION_TYPE_STYLE[s.sessionType] || SESSION_TYPE_STYLE.INFO;
+                        const TypeIcon = typeStyle.icon;
+                        const isFaceId = s.sessionType === "FACEID";
+                        return (
+                            <div key={s.sessionId} style={{ border: `1px solid ${C.border}`, borderRadius: 12, padding: "12px 14px", background: C.cardAlt }}>
+                                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10, gap: 8, flexWrap: "wrap" }}>
+                                    <span style={{
+                                        display: "inline-flex", alignItems: "center", gap: 6, padding: "3px 10px", borderRadius: 999,
+                                        background: typeStyle.bg, color: typeStyle.fg, fontSize: 11.5, fontWeight: 800, border: `1px solid ${typeStyle.border}`
+                                    }}>
+                                        <TypeIcon size={11} /> {typeStyle.label}
+                                    </span>
+                                    <span style={{ fontSize: 12, color: C.inkMuted, fontWeight: 700 }}>{formatDateTime(s.updatedAt)}</span>
+                                </div>
+
+                                <div style={{ fontSize: 12, color: C.inkMuted, fontWeight: 600, marginBottom: 10 }}>
+                                    {s.employeeName || "Hội viên tự cập nhật"}
+                                </div>
+
+                                {!isFaceId ? (
+                                    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                                        {s.changes.map((c, i) => (
+                                            <div key={i} style={{ fontSize: 13.5, color: C.inkSoft }}>
+                                                <b>{FIELD_LABELS[c.fieldName] || c.fieldName}:</b>{" "}
+                                                {c.fieldName === "CREATE_MEMBER"
+                                                    ? c.newValue
+                                                    : <>{c.oldValue || "—"} → {c.newValue || "—"}</>}
+                                            </div>
+                                        ))}
+                                    </div>
+                                ) : (
+                                    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                                        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                                            <FaceHistoryThumb src={s.oldImageUrl} label="Trước" />
+                                            <ArrowRight size={15} color={C.inkMuted} style={{ flexShrink: 0 }} />
+                                            <FaceHistoryThumb src={s.newImageUrl} label="Sau" />
+                                        </div>
+                                        {s.reason && (
+                                            <div style={{
+                                                fontSize: 13, color: C.faceGreen, fontWeight: 700, background: C.faceGreenSoft,
+                                                border: `1px solid ${C.faceGreenRing}`, borderRadius: 8, padding: "7px 11px"
+                                            }}>
+                                                Lý do: {s.reason}
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+                        );
+                    })}
+                </div>
+            </div>
+        </div>
+    );
+}
+
 /* ── LIST PAGE ── */
 function ListPage({ members, onView, onEdit, loading = false }) {
     const [fName, setFName] = useState("");
     const [fPhone, setFPhone] = useState("");
     const [fBranch, setFBranch] = useState("Tất cả");
+
+    // Chi nhánh lấy trực tiếp từ dữ liệu BE trả về (BranchName), tránh lệch với danh sách chi nhánh thật.
+    const branchOptions = useMemo(() => {
+        const fromData = Array.from(new Set(members.map(m => m.chiNhanh).filter(Boolean)));
+        return fromData.length > 0 ? fromData : CHI_NHANH_FALLBACK;
+    }, [members]);
 
     const filtered = useMemo(() => members.filter(m =>
         m.hoTen.toLowerCase().includes(fName.trim().toLowerCase())
@@ -392,6 +613,7 @@ function ListPage({ members, onView, onEdit, loading = false }) {
     ), [members, fName, fPhone, fBranch]);
 
     const active = members.filter(m => m.trangThai === "Đang hoạt động").length;
+    const pending = members.filter(m => m.trangThai === "Chờ hoạt động").length;
     const expired = members.filter(m => m.trangThai === "Hết hạn").length;
 
     return (
@@ -406,6 +628,7 @@ function ListPage({ members, onView, onEdit, loading = false }) {
             <div style={{ display: "flex", gap: 14, marginBottom: 22, flexWrap: "wrap" }}>
                 <StatCard icon={Users} label="Tổng hội viên" value={members.length} color={C.accent} bgColor={C.accentSoft} />
                 <StatCard icon={Activity} label="Đang hoạt động" value={active} color={C.green} bgColor={C.greenBg} />
+                <StatCard icon={TrendingUp} label="Chờ hoạt động" value={pending} color={C.amber} bgColor={C.amberBg} />
                 <StatCard icon={TrendingUp} label="Hết hạn" value={expired} color={C.red} bgColor={C.redBg} />
             </div>
 
@@ -422,7 +645,7 @@ function ListPage({ members, onView, onEdit, loading = false }) {
                     <MapPin size={14} style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: C.inkMuted, zIndex: 1 }} />
                     <select className="gw-input" value={fBranch} onChange={e => setFBranch(e.target.value)} style={{ ...inp, paddingLeft: 35, fontSize: 14, appearance: "none" }}>
                         <option>Tất cả</option>
-                        {CHI_NHANH.map(c => <option key={c}>{c}</option>)}
+                        {branchOptions.map(c => <option key={c}>{c}</option>)}
                     </select>
                 </div>
                 <button onClick={() => { setFName(""); setFPhone(""); setFBranch("Tất cả"); }} style={{ ...btnOutline, padding: "10px 14px" }}>
@@ -430,7 +653,6 @@ function ListPage({ members, onView, onEdit, loading = false }) {
                 </button>
             </div>
 
-            {/* ── Bảng có thể cuộn ── */}
             <div style={{ border: `1px solid ${C.border}`, borderRadius: 16, overflow: "hidden", background: C.card, boxShadow: C.shadow }}>
                 <div className="gw-table-scroll">
                     <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
@@ -447,14 +669,14 @@ function ListPage({ members, onView, onEdit, loading = false }) {
                         <tbody>
                             {filtered.map(m => (
                                 <tr key={m.id} style={{ borderBottom: `1px solid ${C.border}`, transition: "background .1s" }}
-                                    onMouseEnter={e => e.currentTarget.style.background = "#EDF6F4"}
+                                    onMouseEnter={e => e.currentTarget.style.background = "#F0F9FF"}
                                     onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
                                     <td style={{ padding: "13px 16px" }}>
                                         <div style={{ display: "flex", alignItems: "center", gap: 11 }}>
                                             <Avatar name={m.hoTen} src={m.avatar} id={m.id} size={38} />
                                             <div>
                                                 <div style={{ fontWeight: 800, color: C.ink }}>{m.hoTen}</div>
-                                                <div style={{ fontSize: 11.5, color: C.inkMuted, marginTop: 1, fontWeight: 600 }}>{m.id}</div>
+                                                <div style={{ fontSize: 11.5, color: C.inkMuted, marginTop: 1, fontWeight: 600 }}>HV{String(m.id).padStart(4, "0")}</div>
                                             </div>
                                         </div>
                                     </td>
@@ -485,33 +707,57 @@ function ListPage({ members, onView, onEdit, loading = false }) {
 }
 
 /* ── DETAIL PAGE ── */
-function DetailPage({ member, onBack, onSave, initialEditingInfo = false }) {
+function DetailPage({ memberId, listSnapshot, onBack, onSave, initialEditingInfo = false }) {
+    const [member, setMember] = useState(listSnapshot);
+    const [draft, setDraft] = useState(listSnapshot);
+    const [loadingDetail, setLoadingDetail] = useState(true);
     const [editingPhoto, setEditingPhoto] = useState(false);
     const [editingInfo, setEditingInfo] = useState(initialEditingInfo);
-    const [draft, setDraft] = useState(member);
     const [flash, setFlash] = useState("");
     const [error, setError] = useState("");
     const [savingPhoto, setSavingPhoto] = useState(false);
     const [savingInfo, setSavingInfo] = useState(false);
 
+    // Lịch sử cập nhật — khớp GET /api/members/{id}/update-history
+    const [showHistory, setShowHistory] = useState(false);
+    const [historyLoading, setHistoryLoading] = useState(false);
+    const [historySessions, setHistorySessions] = useState([]);
+
+    const fetchDetail = useCallback(() => {
+        setLoadingDetail(true);
+        setError("");
+        return cashierApi.getMemberDetail(memberId)
+            .then(res => {
+                const detail = normalizeDetail(res);
+                setMember(detail);
+                setDraft(detail);
+                return detail;
+            })
+            .catch(() => { setError("Không tải được thông tin chi tiết hội viên."); })
+            .finally(() => setLoadingDetail(false));
+    }, [memberId]);
+
     useEffect(() => {
-        setDraft(member);
+        fetchDetail();
         setEditingPhoto(false);
         setEditingInfo(initialEditingInfo);
-        setError("");
-    }, [member.id]);
+    }, [memberId, fetchDetail, initialEditingInfo]);
 
     const set = k => e => setDraft(d => ({ ...d, [k]: typeof e === "string" ? e : e.target.value }));
 
     const showFlash = msg => { setFlash(msg); setTimeout(() => setFlash(""), 2200); };
 
-    const handleCapture = async dataUrl => {
+    // dataUrl: ảnh chụp/upload (base64) | reason: lý do cập nhật FaceID (bắt buộc)
+    const handleCapture = async (dataUrl, reason) => {
         setError(""); setSavingPhoto(true);
         try {
-            const avatarUrl = await memberApi.uploadAvatar(member.id, dataUrl);
-            const updated = { ...member, avatar: avatarUrl };
-            setDraft(updated);
-            onSave(updated);
+            const blob = await dataUrlToBlob(dataUrl);
+            const formData = new FormData();
+            formData.append("ProfileImage", blob, "faceid.jpg");
+            formData.append("Reason", reason);
+            await cashierApi.updateFaceId(memberId, formData);
+            const updated = await fetchDetail();
+            if (updated) onSave(updated);
             setEditingPhoto(false);
             showFlash("Đã cập nhật ảnh FaceID!");
         } catch (e) {
@@ -524,8 +770,9 @@ function DetailPage({ member, onBack, onSave, initialEditingInfo = false }) {
     const handleSaveInfo = async () => {
         setError(""); setSavingInfo(true);
         try {
-            const result = await memberApi.updateInfo(member.id, draft);
-            onSave({ ...draft, ...result });
+            await cashierApi.updateMember(memberId, toUpdatePayload(draft));
+            setMember(draft);
+            onSave(draft);
             setEditingInfo(false);
             showFlash("Đã lưu thông tin hội viên!");
         } catch (e) {
@@ -541,16 +788,42 @@ function DetailPage({ member, onBack, onSave, initialEditingInfo = false }) {
         setError("");
     };
 
-    const [c1, c2] = avatarPalette(member.id);
+    const openHistory = async () => {
+        setShowHistory(true);
+        setHistoryLoading(true);
+        try {
+            const data = await cashierApi.getUpdateHistory(memberId);
+            setHistorySessions(data || []);
+        } catch (e) {
+            setHistorySessions([]);
+        } finally {
+            setHistoryLoading(false);
+        }
+    };
+
+    const [c1, c2] = avatarPalette(memberId);
+
+    if (loadingDetail) {
+        return (
+            <div style={{ textAlign: "center", padding: 80, color: C.inkMuted, fontWeight: 600 }}>
+                Đang tải thông tin hội viên…
+            </div>
+        );
+    }
 
     return (
         <div>
-            <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 22 }}>
-                <button onClick={onBack} style={{ ...btnOutline, padding: "9px 11px" }}><ArrowLeft size={16} /></button>
-                <div>
-                    <div style={{ fontSize: 22, fontWeight: 800, color: C.ink, letterSpacing: -0.4 }}>Chi tiết hội viên</div>
-                    <div style={{ fontSize: 13, color: C.inkMuted, marginTop: 3, fontWeight: 600 }}>Mã: {member.id}</div>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 22, flexWrap: "wrap" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                    <button onClick={onBack} style={{ ...btnOutline, padding: "9px 11px" }}><ArrowLeft size={16} /></button>
+                    <div>
+                        <div style={{ fontSize: 22, fontWeight: 800, color: C.ink, letterSpacing: -0.4 }}>Chi tiết hội viên</div>
+                        <div style={{ fontSize: 13, color: C.inkMuted, marginTop: 3, fontWeight: 600 }}>Mã: HV{String(memberId).padStart(4, "0")}</div>
+                    </div>
                 </div>
+                <button onClick={openHistory} style={{ ...btnOutline, padding: "9px 14px" }}>
+                    <Clock size={14} /> Lịch sử cập nhật
+                </button>
             </div>
 
             {flash && (
@@ -575,7 +848,7 @@ function DetailPage({ member, onBack, onSave, initialEditingInfo = false }) {
                         <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 13 }}>
                             {editingPhoto ? (
                                 <>
-                                    <Eyebrow icon={Camera}>Chụp FaceID mới</Eyebrow>
+                                    <Eyebrow icon={Camera} color={C.faceGreen} bg={C.faceGreenSoft}>Chụp FaceID mới</Eyebrow>
                                     <FaceIdCapture
                                         aspect="4/5"
                                         onSave={handleCapture}
@@ -602,8 +875,8 @@ function DetailPage({ member, onBack, onSave, initialEditingInfo = false }) {
                         </div>
 
                         {!editingPhoto && (
-                            <div style={{ marginTop: 18, paddingTop: 18, borderTop: `1px solid ${C.border}` }}>
-                                <button onClick={() => setEditingPhoto(true)} style={{ ...btnAccent, width: "100%", justifyContent: "center" }}>
+                            <div style={{ marginTop: 18, paddingTop: 18, borderTop: `1px solid ${C.border}`, display: "flex", flexDirection: "column", gap: 10 }}>
+                                <button onClick={() => setEditingPhoto(true)} style={{ ...btnGreen, width: "100%", justifyContent: "center" }}>
                                     <Camera size={15} /> Cập nhật FaceID
                                 </button>
                             </div>
@@ -629,7 +902,6 @@ function DetailPage({ member, onBack, onSave, initialEditingInfo = false }) {
                                     <ReadField icon={User} label="Họ và tên" value={draft.hoTen} full />
                                     <ReadField icon={Phone} label="Số điện thoại" value={draft.sdt} />
                                     <ReadField label="Giới tính" value={draft.gioiTinh} />
-                                    <ReadField icon={Building2} label="Chi nhánh đăng ký" value={draft.chiNhanh} />
                                     <ReadField label="Ngày đăng ký" value={formatDate(draft.ngayDangKy)} />
                                     <ReadField icon={Award} label="Gói tập" value={draft.goiTap} />
                                     <ReadField icon={Activity} label="Trạng thái" value={draft.trangThai} />
@@ -656,21 +928,6 @@ function DetailPage({ member, onBack, onSave, initialEditingInfo = false }) {
                                             ))}
                                         </div>
                                     </Field>
-                                    <Field label="Chi nhánh" required icon={Building2}>
-                                        <select className="gw-input" style={inp} value={draft.chiNhanh} onChange={set("chiNhanh")}>
-                                            {CHI_NHANH.map(c => <option key={c}>{c}</option>)}
-                                        </select>
-                                    </Field>
-                                    <Field label="Gói tập" icon={Award}>
-                                        <select className="gw-input" style={inp} value={draft.goiTap} onChange={set("goiTap")}>
-                                            {["Basic", "Silver", "Gold", "Platinum"].map(g => <option key={g}>{g}</option>)}
-                                        </select>
-                                    </Field>
-                                    <Field label="Trạng thái" icon={Activity}>
-                                        <select className="gw-input" style={inp} value={draft.trangThai} onChange={set("trangThai")}>
-                                            {["Đang hoạt động", "Tạm ngưng", "Hết hạn"].map(g => <option key={g}>{g}</option>)}
-                                        </select>
-                                    </Field>
                                     <Field label="Ghi chú nội bộ" full icon={FileText}>
                                         <textarea className="gw-input" rows={3} style={{ ...inp, resize: "vertical", lineHeight: 1.6 }}
                                             placeholder="Dị ứng, yêu cầu đặc biệt…" value={draft.ghiChu} onChange={set("ghiChu")} />
@@ -689,7 +946,7 @@ function DetailPage({ member, onBack, onSave, initialEditingInfo = false }) {
                                     <button onClick={handleSaveInfo} disabled={savingInfo} style={{ ...btnAccent, fontSize: 14.5, padding: "11px 26px", opacity: savingInfo ? 0.7 : 1 }}>
                                         <Check size={16} /> {savingInfo ? "Đang lưu…" : "Lưu thay đổi"}
                                     </button>
-                                    <button onClick={handleCancelInfo} disabled={savingInfo} style={{ ...btnOutline, fontSize: 14, padding: "11px 18px" }}>
+                                    <button onClick={handleCancelInfo} disabled={savingInfo} style={{ ...btnCancelSoft, fontSize: 14, padding: "11px 18px" }}>
                                         <X size={14} /> Hủy
                                     </button>
                                 </>
@@ -698,44 +955,58 @@ function DetailPage({ member, onBack, onSave, initialEditingInfo = false }) {
                     </div>
                 </div>
             </div>
+
+            {showHistory && (
+                <HistoryModal
+                    sessions={historySessions}
+                    loading={historyLoading}
+                    onClose={() => setShowHistory(false)}
+                />
+            )}
         </div>
     );
 }
 
 /* ── APP SHELL ── */
-export default function MemberManagementApp() {
-    const [members, setMembers] = useState(seedMembers);
+export default function ListMember() {
+    const [members, setMembers] = useState([]);
     const [loadingList, setLoadingList] = useState(false);
     const [listError, setListError] = useState("");
     const [route, setRoute] = useState({ page: "list" });
 
-    useEffect(() => {
-        let active = true;
+    const fetchList = useCallback(() => {
         setLoadingList(true);
-        memberApi.list()
-            .then(data => { if (active) setMembers(data); })
-            .catch(() => { if (active) setListError("Không tải được danh sách hội viên."); })
-            .finally(() => { if (active) setLoadingList(false); });
-        return () => { active = false; };
+        setListError("");
+        return cashierApi.getListMembers({})
+            .then(data => setMembers((data || []).map(normalizeListItem)))
+            .catch(() => setListError("Không tải được danh sách hội viên."))
+            .finally(() => setLoadingList(false));
     }, []);
 
-    const currentMember = useMemo(() => {
+    useEffect(() => {
+        fetchList();
+    }, [fetchList]);
+
+    const listSnapshot = useMemo(() => {
         if (!route.id) return null;
         return members.find(m => m.id === route.id) || null;
     }, [route.id, members]);
 
-    const goList = () => setRoute({ page: "list" });
+    const goList = () => {
+        setRoute({ page: "list" });
+        fetchList();
+    };
     const goDetail = m => setRoute({ page: "detail", id: m.id, editMode: false });
     const goEdit = m => setRoute({ page: "detail", id: m.id, editMode: true });
 
     const handleInlineSave = updated => {
-        setMembers(prev => prev.map(m => m.id === updated.id ? updated : m));
+        setMembers(prev => prev.map(m => m.id === updated.id ? { ...m, ...updated } : m));
     };
 
     return (
         <div style={{ minHeight: "100vh", background: C.bg, fontFamily: "'Inter',-apple-system,BlinkMacSystemFont,sans-serif", color: C.ink }}>
             <GlobalStyles />
-            <div style={{ borderBottom: `1px solid ${C.border}`, background: C.surface, boxShadow: "0 1px 4px rgba(16,35,31,0.06)" }} />
+            <div style={{ borderBottom: `1px solid ${C.border}`, background: C.surface, boxShadow: "0 1px 4px rgba(15,23,42,0.06)" }} />
 
             <div style={{ maxWidth: 1180, margin: "0 auto", padding: "32px 28px 80px" }}>
                 {route.page === "list" && (
@@ -748,15 +1019,16 @@ export default function MemberManagementApp() {
                         <ListPage members={members} onView={goDetail} onEdit={goEdit} loading={loadingList} />
                     </>
                 )}
-                {route.page === "detail" && currentMember && (
+                {route.page === "detail" && listSnapshot && (
                     <DetailPage
-                        member={currentMember}
+                        memberId={route.id}
+                        listSnapshot={listSnapshot}
                         onBack={goList}
                         onSave={handleInlineSave}
                         initialEditingInfo={route.editMode === true}
                     />
                 )}
-                {route.page !== "list" && !currentMember && (
+                {route.page === "detail" && !listSnapshot && !loadingList && (
                     <div style={{ textAlign: "center", padding: 80, color: C.inkMuted }}>
                         Không tìm thấy hội viên.
                         <div style={{ marginTop: 16 }}><button onClick={goList} style={btnOutline}>← Về danh sách</button></div>

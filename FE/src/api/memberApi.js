@@ -42,6 +42,12 @@ const memberApi = {
     cancelPayment(orderCode) {
         return authApi.post(`/api/payment/cancel/${orderCode}`);
     },
+    // Kiểm tra tài khoản đang PendingActivation có sẵn 1 gói tập chờ kích hoạt hay chưa.
+    // memberId lấy từ JWT ở BE, không truyền id từ FE.
+    // API thật: GET /api/payment/pending-purchase-status
+    checkPendingPurchaseStatus() {
+        return authApi.get("/api/payment/pending-purchase-status");
+    },
     // Danh sách chi nhánh — hỗ trợ lọc name/status + phân trang (page, pageSize)
     getBranches(params = {}) {
         const query = new URLSearchParams(

@@ -1,4 +1,5 @@
-import { Route, Routes } from "react-router-dom";
+
+import { Navigate, Route, Routes } from "react-router-dom";
 import ProtectedRoute from "./ProtectedRoute";
 
 // Public
@@ -21,12 +22,14 @@ import IssueReportForm from "../pages/guest/Issuereportform";
 import ThongKe from "../pages/guest/Thongke";
 
 // Staff
+import { getCurrentUser, isLoggedIn } from "../api/authApi";
 import CashierLayout from "../layouts/CashierLayout";
 import Dashboard from "../pages/cashier/CashierDashboard";
 import IncidentReportForm from "../pages/cashier/Incident/IncidenReport";
 import IncidentList from "../pages/cashier/Incident/IncidentList";
 import CameraRecognition from "../pages/cashier/indentify/Camerarecognition";
 import CheckinHistory from "../pages/cashier/indentify/History";
+import MemberActive from "../pages/cashier/member/ActiveMember";
 import MemberListPage from "../pages/cashier/member/ListMember";
 import GymMemberRegistration from "../pages/cashier/member/RegisterMember";
 import LichSuDangKyGoiTap from "../pages/cashier/packages/History";
@@ -60,7 +63,7 @@ function AppRoutes() {
 
                 <Route path="/member/branches" element={<BranchList />} />
                 <Route path="/thong-ke" element={<ThongKe />} />
-                <Route path="/issue" element={<IssueReportForm />} />
+                <Route path="/issue" element={isLoggedIn() && getCurrentUser().status === "Active" ? < IssueReportForm /> : <Navigate to="/" replace />} />
                 <Route path="/payment" element={<Payment />} />
             </Route>
 
@@ -72,7 +75,7 @@ function AppRoutes() {
                         allowedRoles={[
                             "Admin",
                             "Manager",
-                            "Cashier",
+                            "Staff",
                             "Technician",
                         ]}
                         loginPath="/staff/login"
@@ -80,44 +83,16 @@ function AppRoutes() {
                 }
             >
                 <Route path="/indentify" element={<CameraRecognition />} />
-
                 <Route path="/cashier" element={<CashierLayout />}>
                     <Route index element={<Dashboard />} />
-
-                    <Route
-                        path="checkin-history"
-                        element={<CheckinHistory />}
-                    />
-
-                    <Route
-                        path="member-create"
-                        element={<GymMemberRegistration />}
-                    />
-
-                    <Route
-                        path="members"
-                        element={<MemberListPage />}
-                    />
-
-                    <Route
-                        path="incidents-report"
-                        element={<IncidentReportForm />}
-                    />
-
-                    <Route
-                        path="incidents-list"
-                        element={<IncidentList />}
-                    />
-
-                    <Route
-                        path="packages/renew"
-                        element={<RenewPage />}
-                    />
-
-                    <Route
-                        path="packages/history"
-                        element={<LichSuDangKyGoiTap />}
-                    />
+                    <Route path="checkin-history" element={<CheckinHistory />} />
+                    <Route path="member-create" element={<GymMemberRegistration />} />
+                    <Route path="member-active" element={<MemberActive />} />
+                    <Route path="members" element={<MemberListPage />} />
+                    <Route path="incidents-report" element={<IncidentReportForm />} />
+                    <Route path="incidents-list" element={<IncidentList />} />
+                    <Route path="packages/renew" element={<RenewPage />} />
+                    <Route path="packages/history" element={<LichSuDangKyGoiTap />} />
                 </Route>
             </Route>
 

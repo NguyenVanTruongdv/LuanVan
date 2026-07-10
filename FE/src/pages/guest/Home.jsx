@@ -429,6 +429,16 @@ export default function Home() {
   const [packagesLoading, setPackagesLoading] = useState(true);
   const [packagesError, setPackagesError] = useState(null);
 
+  // Kiểm tra điều kiện mua gói khi bấm "Chọn gói này" — giống hệt MembershipPlansPage.
+  // planId đang được kiểm tra (để disable + đổi label đúng nút đang bấm)
+  const [checkingPlanId, setCheckingPlanId] = useState(null);
+  // Có transaction Pending (đã tạo QR nhưng chưa chuyển khoản) -> hỏi khách tiếp tục hay huỷ
+  const [pendingInfo, setPendingInfo] = useState(null);
+  const [switchingPlan, setSwitchingPlan] = useState(false);
+  const [pendingActionError, setPendingActionError] = useState(null);
+  // Tài khoản đang PendingActivation và đã có sẵn 1 gói PendingActivation -> chặn mua thêm
+  const [blockedByPendingPackage, setBlockedByPendingPackage] = useState(false);
+
   // Thư viện ảnh
   const [gallery, setGallery] = useState([]);
   const [galleryLoading, setGalleryLoading] = useState(true);
@@ -547,22 +557,88 @@ export default function Home() {
     return () => clearInterval(t);
   }, []);
 
-  // Bấm "Chọn gói này" -> chuyển sang trang /payment kèm state.plan,
-  // giống hệt cách MembershipPlansPage đang làm (handleBuy).
-  const handleBuyPackage = (p) => {
+  // Bấm "Chọn gói này" -> kiểm tra theo đúng thứ tự ưu tiên nghiệp vụ, y hệt
+  // MembershipPlansPage.handleBuy:
+  //   1) Tài khoản đang PendingActivation và đã có sẵn 1 gói Pending (mua online trước đó)
+  //      -> CHẶN LUÔN, yêu cầu ra quầy kích hoạt trước.
+  //      API thật: memberApi.checkPendingPurchaseStatus() -> GET /api/payment/pending-purchase-status
+  //   2) Nếu qua được bước 1 -> kiểm tra tiếp có transaction Pending (đã tạo QR nhưng chưa
+  //      chuyển khoản) hay không, để hỏi khách tiếp tục thanh toán đơn cũ hay huỷ.
+  //      API thật: memberApi.getPendingPayment() -> GET /api/payment/pending
+  //   3) Không vướng gì -> chuyển sang /payment kèm state.plan như cũ.
+  const handleBuyPackage = async (p) => {
+    const plan = {
+      planId: p.id,
+      planName: p.name,
+      price: p.price,
+      durationDays: p.durationDays,
+      description: p.rawDescription,
+      status: p.status,
+      featured: p.highlighted,
+    };
+
+    try {
+      setCheckingPlanId(p.id);
+      setPendingActionError(null);
+
+      const statusRes = await memberApi.checkPendingPurchaseStatus();
+      const status = statusRes?.data ?? statusRes;
+
+      // status.canPurchasePackage === false chỉ xảy ra khi tài khoản đang Pending
+      // và đã có sẵn 1 gói Pending -> chặn, hiện thông báo, dừng luôn tại đây.
+      if (status && status.canPurchasePackage === false) {
+        setBlockedByPendingPackage(true);
+        return;
+      }
+
+      const res = await memberApi.getPendingPayment();
+      const pending = res?.data ?? res;
+
+      if (pending?.hasPending) {
+        setPendingInfo({ plan, pending });
+      } else {
+        navigate("/payment", { state: { plan } });
+      }
+    } catch (err) {
+      console.warn("Không kiểm tra được điều kiện mua gói:", err);
+      // Lỗi khi kiểm tra thì vẫn cho khách qua trang thanh toán bình thường,
+      // trang đó sẽ tự xử lý nếu có vấn đề khi tạo đơn (BE vẫn chặn lại lần nữa
+      // nếu thực sự đang bị giới hạn 1 gói Pending).
+      navigate("/payment", { state: { plan } });
+    } finally {
+      setCheckingPlanId(null);
+    }
+  };
+
+  // Khách chọn "Tiếp tục thanh toán" đơn Pending có sẵn -> qua thẳng trang thanh toán,
+  // trang đó sẽ hiển thị lại màn QR với đầy đủ thông tin cá nhân + gói tập của đơn cũ.
+  const handleContinuePending = () => {
+    if (!pendingInfo) return;
     navigate("/payment", {
-      state: {
-        plan: {
-          planId: p.id,
-          planName: p.name,
-          price: p.price,
-          durationDays: p.durationDays,
-          description: p.rawDescription,
-          status: p.status,
-          featured: p.highlighted,
-        },
-      },
+      state: { resumePending: true, pending: pendingInfo.pending },
     });
+  };
+
+  // Khách chọn "Không" -> hủy giao dịch cũ (dùng chung API hủy với nút hủy ở trang QR),
+  // sau đó mới cho qua trang thanh toán để mua gói mới vừa bấm.
+  // API thật: memberApi.cancelPayment(orderCode) -> POST /api/payment/cancel/{orderCode}
+  const handleCancelPendingAndBuyNew = async () => {
+    if (!pendingInfo) return;
+    try {
+      setSwitchingPlan(true);
+      setPendingActionError(null);
+
+      await memberApi.cancelPayment(pendingInfo.pending.orderCode);
+
+      const newPlan = pendingInfo.plan;
+      setPendingInfo(null);
+      navigate("/payment", { state: { plan: newPlan } });
+    } catch (err) {
+      console.error("Lỗi khi hủy giao dịch cũ:", err);
+      setPendingActionError("Không thể hủy giao dịch cũ. Vui lòng thử lại.");
+    } finally {
+      setSwitchingPlan(false);
+    }
   };
 
   return (
@@ -655,9 +731,10 @@ export default function Home() {
                     <button
                       type="button"
                       className={`h-btn ${p.highlighted ? "h-btn--primary" : "h-btn--ghost"} h-plan__cta`}
+                      disabled={checkingPlanId === p.id}
                       onClick={() => handleBuyPackage(p)}
                     >
-                      Chọn gói này
+                      {checkingPlanId === p.id ? "Đang kiểm tra..." : "Chọn gói này"}
                     </button>
                   </div>
                 ))}
@@ -790,12 +867,12 @@ export default function Home() {
               {!branchesLoading && !branchesError && (
                 <div className="h-bstrip__pills">
                   {branches.map(b => (
-                    <a>
+                    <a
                       href={b.href}
                       key={b.id}
                       className={`h-pill${activeBranch?.id === b.id ? " h-pill--active" : ""}`}
                       onClick={(e) => { e.preventDefault(); setActiveBranch(b); }}
-
+                    >
                       <span className="h-pill__dot" />
                       <span>{b.name}</span>
                       <span className="h-pill__arr">→</span>
@@ -811,6 +888,68 @@ export default function Home() {
 
       </main>
       <Footer />
+
+      {/* Modal: tài khoản đang chờ kích hoạt và đã có sẵn 1 gói tập Pending -> chặn mua thêm */}
+      {blockedByPendingPackage && (
+        <div
+          className="mp-modal-overlay"
+          onClick={() => setBlockedByPendingPackage(false)}
+        >
+          <div className="mp-modal" onClick={(e) => e.stopPropagation()}>
+            <h3>Bạn đã đăng ký gói tập</h3>
+            <p>
+              Bạn đã đăng ký một gói tập và đang chờ kích hoạt. Vui lòng đến quầy
+              thu ngân tại phòng gym để kích hoạt tài khoản và đăng ký FaceID
+              trước khi mua thêm gói khác.
+            </p>
+
+            <div className="mp-modal-actions">
+              <button
+                className="h-btn h-btn--primary"
+                onClick={() => setBlockedByPendingPackage(false)}
+              >
+                Đã hiểu
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: phát hiện có giao dịch Pending khi khách bấm "Chọn gói này" */}
+      {pendingInfo && (
+        <div
+          className="mp-modal-overlay"
+          onClick={() => !switchingPlan && setPendingInfo(null)}
+        >
+          <div className="mp-modal" onClick={(e) => e.stopPropagation()}>
+            <h3>Giao dịch chưa hoàn thành</h3>
+            <p>
+              Bạn có giao dịch <b style={{ color: "var(--text)" }}>#{pendingInfo.pending.orderCode}</b> chưa hoàn thành. Bạn có muốn tiếp tục thanh toán không?
+            </p>
+
+            {pendingActionError && (
+              <div className="mp-modal-error">{pendingActionError}</div>
+            )}
+
+            <div className="mp-modal-actions">
+              <button
+                className="h-btn h-btn--ghost"
+                disabled={switchingPlan}
+                onClick={handleCancelPendingAndBuyNew}
+              >
+                {switchingPlan ? "Đang hủy..." : "Không, hủy giao dịch cũ"}
+              </button>
+              <button
+                className="h-btn h-btn--primary"
+                disabled={switchingPlan}
+                onClick={handleContinuePending}
+              >
+                Tiếp tục thanh toán
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <style>{`
         /* ── page shell ── */
@@ -828,6 +967,8 @@ export default function Home() {
         .h-btn--primary:hover { transform:translateY(-2px); box-shadow:0 8px 28px rgba(255,79,43,.45); }
         .h-btn--ghost   { background:rgba(255,255,255,.07); border:1px solid rgba(255,255,255,.15); color:var(--text); }
         .h-btn--ghost:hover { transform:translateY(-2px); border-color:var(--steel); color:var(--steel); }
+        .h-btn:disabled { opacity:.5; cursor:not-allowed; }
+        .h-btn:disabled:hover { transform:none; box-shadow:none; }
         .h-head     { margin-bottom:28px; text-align:center; }
         .h-head .h-sub { max-width:480px; margin:8px auto 0; }
         .h-empty    { font-size:13.5px; color:var(--text-dim); text-align:center; padding:24px 0; }
@@ -950,11 +1091,27 @@ export default function Home() {
         .h-bstrip   { padding:0 32px 80px; }
         .h-bstrip__box { background:var(--bg-soft); border:1px solid var(--line); border-radius:16px; padding:36px 40px; display:flex; flex-direction:column; gap:20px; }
         .h-bstrip__pills { display:flex; flex-wrap:wrap; gap:10px; }
-        .h-pill     { display:inline-flex; align-items:center; gap:8px; padding:9px 16px; border-radius:9px; background:var(--bg-elevated); border:1px solid var(--line); font-size:13.5px; font-weight:500; color:var(--text-dim); transition:border-color .2s,color .2s; }
+        .h-pill     { display:inline-flex; align-items:center; gap:8px; padding:9px 16px; border-radius:9px; background:var(--bg-elevated); border:1px solid var(--line); font-size:13.5px; font-weight:500; color:var(--text-dim); transition:border-color .2s,color .2s; text-decoration:none; }
         .h-pill:hover { border-color:var(--steel); color:var(--text); }
         .h-pill--active { border-color:var(--accent); color:var(--text); }
         .h-pill__dot { width:8px; height:8px; border-radius:50%; background:var(--steel); flex-shrink:0; }
         .h-pill__arr { color:var(--text-dim); margin-left:4px; font-size:14px; }
+
+        /* modal: dùng chung style cho "gói Pending" + "giao dịch Pending", đồng bộ với MembershipPlansPage */
+        .mp-modal-overlay{
+          position:fixed; inset:0; background:rgba(0,0,0,0.6); backdrop-filter:blur(2px);
+          display:flex; align-items:center; justify-content:center; z-index:50; padding:16px;
+        }
+        .mp-modal{
+          background: var(--bg-soft, #171718); border:1px solid var(--line, #2a2a2c); border-radius:14px;
+          padding:24px; width:100%; max-width:400px; animation: mpFade .2s ease;
+        }
+        @keyframes mpFade{ from{ opacity:0; transform:translateY(8px);} to{ opacity:1; transform:translateY(0);} }
+        .mp-modal h3{ font-family: var(--font-display, 'Oswald'); margin:0 0 10px; font-size:19px; text-transform:uppercase; }
+        .mp-modal p{ color: var(--text-dim, #9a9a9e); font-size:13.5px; line-height:1.6; margin:0; }
+        .mp-modal-error{ color: var(--accent, #ff4f2b); font-size:12.5px; margin-top:12px; }
+        .mp-modal-actions{ display:flex; gap:10px; margin-top:20px; }
+        .mp-modal-actions .h-btn{ flex:1; }
 
         /* responsive */
         @media (max-width:1024px) {

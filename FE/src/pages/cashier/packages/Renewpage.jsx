@@ -1,4 +1,5 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import cashierApi from "../../../api/cashierApi";
 
 /* ─────────────────────────────────────────────
    STYLES
@@ -191,6 +192,7 @@ html,body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:va
   font-size:13px;color:var(--text-1);font-family:'Inter',sans-serif;font-weight:500;outline:none;
 }
 .transfer-ref-input:focus{border-color:var(--blue);box-shadow:0 0 0 3px rgba(37,99,235,.10);}
+.transfer-file-input { margin-top:10px;font-size:12.5px;color:var(--text-2);font-weight:500; }
 .transfer-confirm {
   display:flex;align-items:flex-start;gap:9px;margin-top:12px;cursor:pointer;user-select:none;
 }
@@ -245,12 +247,22 @@ html,body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:va
   border-radius:var(--radius-sm);padding:11px 13px;font-size:12.5px;color:var(--warn);font-weight:500;
   margin-bottom:14px;line-height:1.5;
 }
+.notice.error { background:var(--danger-light);border-color:var(--danger-border);color:var(--danger); }
 
 /* section label */
 .section-label { font-size:11px;font-weight:700;color:var(--text-3);text-transform:uppercase;letter-spacing:.7px;margin-bottom:10px; }
 
 /* divider */
 .divider { height:1px;background:var(--border);margin:18px 0; }
+
+/* spinner */
+.spinner {
+  width:16px;height:16px;border-radius:50%;border:2.5px solid rgba(255,255,255,.4);
+  border-top-color:#fff;animation:spin .7s linear infinite;
+}
+.spinner.dark { border-color:var(--border-md);border-top-color:var(--green); }
+@keyframes spin{to{transform:rotate(360deg)}}
+.center-loading { display:flex;align-items:center;justify-content:center;gap:8px;padding:24px 0;font-size:13px;color:var(--text-3);font-weight:600; }
 
 /* success overlay */
 .overlay{position:fixed;inset:0;background:rgba(15,23,42,.5);display:flex;align-items:center;justify-content:center;z-index:200;padding:20px;}
@@ -272,36 +284,15 @@ html,body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:va
 @media(max-width:480px){.plan-grid{grid-template-columns:1fr;}.pay-grid{grid-template-columns:1fr;}}
 `;
 
-/* ─────────── DATA ─────────── */
-const PLANS = [
-    { planId: 1, planName: "Gói 1 Tháng", price: 350000, durationDays: 30, description: "Tập không giới hạn · Check-in mọi giờ", status: "OnSale" },
-    { planId: 2, planName: "Gói 3 Tháng", price: 900000, durationDays: 90, description: "Tiết kiệm 14% · Ưu tiên đặt lớp", status: "OnSale" },
-    { planId: 3, planName: "Gói 6 Tháng", price: 1600000, durationDays: 180, description: "Tiết kiệm 24% · Tặng 1 PT session", status: "OnSale" },
-    { planId: 4, planName: "Gói 1 Năm", price: 2800000, durationDays: 365, description: "Tiết kiệm 33% · Tặng 3 PT sessions + áo", status: "OnSale" },
-    { planId: 5, planName: "Gói Ngày", price: 50000, durationDays: 1, description: "Vào tập 1 lần duy nhất", status: "OnSale" },
-    { planId: 6, planName: "Gói VIP Cũ", price: 5000000, durationDays: 365, description: "Không còn bán", status: "Discontinued" },
-];
-
+/* ─────────── STATIC DATA (chưa có API riêng, giữ tạm) ─────────── */
+// NOTE: Chưa có endpoint /api/promotions thật. `id` dưới đây là placeholder
+// để map sang PromotionId (int?) mà BE yêu cầu trong RenewMembershipRequest.
+// Khi có API thật, thay object này bằng dữ liệu fetch được (nhớ giữ field `id` là số).
 const PROMO_CODES = {
-    "SUMMER25": { label: "SUMMER25", discountPct: 25, desc: "Giảm 25%" },
-    "TANGGOI": { label: "TANGGOI", bonusDays: 15, desc: "Tặng thêm 15 ngày" },
-    "NEWMEM": { label: "NEWMEM", discountPct: 10, desc: "Hội viên mới giảm 10%" },
+    "SUMMER25": { id: 1, label: "SUMMER25", discountPct: 25, desc: "Giảm 25%" },
+    "TANGGOI": { id: 2, label: "TANGGOI", bonusDays: 15, desc: "Tặng thêm 15 ngày" },
+    "NEWMEM": { id: 3, label: "NEWMEM", discountPct: 10, desc: "Hội viên mới giảm 10%" },
 };
-
-const MEMBERS = [
-    {
-        id: 1, name: "Nguyễn Văn An", phone: "0912 345 678", email: "an.nguyen@gmail.com",
-        currentPackage: { planName: "Gói 3 Tháng", startDate: "2025-04-01", expiryDate: "2025-07-01", status: "Active" }
-    },
-    {
-        id: 2, name: "Trần Thị Bích", phone: "0908 765 432", email: "bich.tran@gmail.com",
-        currentPackage: { planName: "Gói 1 Tháng", startDate: "2025-05-01", expiryDate: "2025-06-01", status: "Expired" }
-    },
-    {
-        id: 3, name: "Lê Minh Cường", phone: "0977 111 222", email: "cuong.le@gmail.com",
-        currentPackage: null
-    },
-];
 
 const BANK_INFO = {
     bankName: "Vietcombank",
@@ -310,24 +301,125 @@ const BANK_INFO = {
 };
 
 const COLORS = ["#1E6B45", "#2563EB", "#7C3AED", "#DB2777", "#D97706"];
-const avatarColor = id => COLORS[id % COLORS.length];
-const initials = name => name.split(" ").slice(-2).map(w => w[0]).join("").toUpperCase();
-const fmtMoney = n => n.toLocaleString("vi-VN") + "₫";
-const fmtDate = iso => new Date(iso).toLocaleDateString("vi-VN", { day: "2-digit", month: "2-digit", year: "numeric" });
+const avatarColor = id => COLORS[Number(id) % COLORS.length] || COLORS[0];
+const initials = name => (name || "").split(" ").filter(Boolean).slice(-2).map(w => w[0]).join("").toUpperCase();
+const fmtMoney = n => (n || 0).toLocaleString("vi-VN") + "₫";
+const fmtDate = iso => iso ? new Date(iso).toLocaleDateString("vi-VN", { day: "2-digit", month: "2-digit", year: "numeric" }) : "—";
 const addDays = (dateStr, days) => {
     const d = new Date(dateStr); d.setDate(d.getDate() + days);
     return d.toISOString().slice(0, 10);
 };
+const todayISO = () => new Date().toISOString().slice(0, 10);
+
+/* ─────────── HELPERS: unwrap + normalize dữ liệu từ API ───────────
+   Vì chưa biết chính xác shape response của BE, các hàm dưới cố gắng
+   đọc nhiều kiểu field phổ biến (camelCase / PascalCase / bọc trong data/items).
+   Chỉnh lại theo response thật của BE nếu cần. */
+function unwrap(res) {
+    return res?.data ?? res ?? null;
+}
+// BE bọc response dạng { currentPackage: { memberPackageId, planId, planName, startDate, expiryDate, packageStatus } }.
+// Hàm này dò qua các key bọc phổ biến (currentPackage/CurrentPackage, data/Data) để tìm đúng object DTO
+// (nhận diện bằng field planName/PlanName).
+function extractPackageDto(res) {
+    const candidates = [
+        res?.data?.currentPackage,
+        res?.data?.CurrentPackage,
+        res?.currentPackage,
+        res?.CurrentPackage,
+        res?.data?.data,
+        res?.data?.Data,
+        res?.data,
+        res,
+    ];
+    for (const c of candidates) {
+        if (c && typeof c === "object" && (c.planName ?? c.PlanName)) {
+            return c;
+        }
+    }
+    // fallback: object không có planName nhưng cũng không phải lớp bọc (không có key lồng bên trong)
+    for (const c of candidates) {
+        if (c && typeof c === "object" && !("data" in c) && !("Data" in c) && !("currentPackage" in c) && !("CurrentPackage" in c)) {
+            return c;
+        }
+    }
+    return null;
+}
+function unwrapList(res) {
+    const d = unwrap(res);
+    if (Array.isArray(d)) return d;
+    if (Array.isArray(d?.items)) return d.items;
+    if (Array.isArray(d?.data)) return d.data;
+    if (Array.isArray(d?.members)) return d.members;
+    if (Array.isArray(d?.packages)) return d.packages;
+    return [];
+}
+// Khớp CurrentPackageDto (RenewService.GetCurrentPackageAsync):
+// { MemberPackageId, PlanId, PlanName, StartDate, ExpiryDate, PackageStatus }
+// BE chỉ trả về gói có PackageStatus == "Active", hoặc null nếu không có.
+function normalizePackageInfo(pkg) {
+    if (!pkg) return null;
+    return {
+        memberPackageId: pkg.memberPackageId ?? pkg.MemberPackageId,
+        planId: pkg.planId ?? pkg.PlanId,
+        planName: pkg.planName ?? pkg.PlanName,
+        startDate: pkg.startDate ?? pkg.StartDate,
+        expiryDate: pkg.expiryDate ?? pkg.ExpiryDate,
+        status: pkg.packageStatus ?? pkg.PackageStatus ?? "Active",
+    };
+}
+function normalizeMember(m) {
+    if (!m) return null;
+    return {
+        id: m.id ?? m.Id ?? m.memberId ?? m.MemberId,
+        name: m.fullName ?? m.FullName ?? m.name,
+        phone: m.phone ?? m.Phone,
+        email: m.email ?? m.Email,
+        raw: m,
+    };
+}
+function normalizePlan(p) {
+    return {
+        planId: p.planId ?? p.PlanId ?? p.id ?? p.Id,
+        planName: p.planName ?? p.PlanName ?? p.name ?? p.Name,
+        price: Number(p.price ?? p.Price ?? 0),
+        durationDays: Number(p.durationDays ?? p.DurationDays ?? p.duration ?? 0),
+        description: p.description ?? p.Description ?? "",
+        status: p.status ?? p.Status ?? (p.isActive === false ? "Discontinued" : "OnSale"),
+    };
+}
 
 /* ───────────────────────────────────────── */
 export default function RenewPage() {
+    /* ---- hội viên: tìm kiếm qua API (debounce) ---- */
     const [searchQ, setSearchQ] = useState("");
+    const [memberResults, setMemberResults] = useState([]);
+    const [searching, setSearching] = useState(false);
+    const [searchError, setSearchError] = useState("");
     const [selectedMember, setMember] = useState(null);
+    const [loadingMemberDetail, setLoadingMemberDetail] = useState(false);
+
+    /* ---- gói tập hiện tại: getCurrentMemberPack() ---- */
+    const [currentPkg, setCurrentPkg] = useState(null);
+    const [loadingPkgInfo, setLoadingPkgInfo] = useState(false);
+    const [pkgInfoError, setPkgInfoError] = useState("");
+
+    /* ---- gói tập: load 1 lần từ API ---- */
+    const [plans, setPlans] = useState([]);
+    const [loadingPlans, setLoadingPlans] = useState(true);
+    const [plansError, setPlansError] = useState("");
     const [selectedPlan, setPlan] = useState(null);
-    const [promoCode, setPromoCode] = useState("");      // selected key from PROMO_CODES, "" = none
+
+    /* ---- khuyến mãi / thanh toán ---- */
+    const [promoCode, setPromoCode] = useState("");      // key trong PROMO_CODES, "" = none
     const [paymentMethod, setPaymentMethod] = useState(null); // "cash" | "transfer"
     const [transferRef, setTransferRef] = useState("");
     const [transferConfirmed, setTransferConfirmed] = useState(false);
+    const [receiptFile, setReceiptFile] = useState(null);
+
+    /* ---- submit ---- */
+    const [submitting, setSubmitting] = useState(false);
+    const [submitError, setSubmitError] = useState("");
     const [success, setSuccess] = useState(null);
 
     const appliedPromo = promoCode ? PROMO_CODES[promoCode] : null;
@@ -335,38 +427,118 @@ export default function RenewPage() {
     /* step logic */
     const step = !selectedMember ? 1 : !selectedPlan ? 2 : 3;
 
-    /* filtered member list */
-    const memberResults = useMemo(() => {
-        const q = searchQ.trim().toLowerCase().replace(/\s/g, "");
-        if (!q) return [];
-        return MEMBERS.filter(m =>
-            m.name.toLowerCase().replace(/\s/g, "").includes(q) ||
-            m.phone.replace(/\s/g, "").includes(q)
-        );
+    /* ---- load danh sách gói tập khi mount ---- */
+    useEffect(() => {
+        let active = true;
+        (async () => {
+            setLoadingPlans(true);
+            setPlansError("");
+            try {
+                const res = await cashierApi.getAllPackage();
+                if (!active) return;
+                setPlans(unwrapList(res).map(normalizePlan));
+            } catch (e) {
+                if (active) setPlansError("Không tải được danh sách gói tập. Vui lòng thử lại.");
+            } finally {
+                if (active) setLoadingPlans(false);
+            }
+        })();
+        return () => { active = false; };
+    }, []);
+
+    /* ---- tìm hội viên: debounce theo searchQ ---- */
+    useEffect(() => {
+        const q = searchQ.trim();
+        if (!q) { setMemberResults([]); setSearchError(""); return; }
+        let active = true;
+        setSearching(true);
+        const t = setTimeout(async () => {
+            try {
+                const res = await cashierApi.getListMembers({ search: q });
+                if (!active) return;
+                setMemberResults(unwrapList(res).map(normalizeMember).filter(Boolean));
+                setSearchError("");
+            } catch (e) {
+                if (active) { setMemberResults([]); setSearchError("Không tìm được hội viên. Vui lòng thử lại."); }
+            } finally {
+                if (active) setSearching(false);
+            }
+        }, 350);
+        return () => { active = false; clearTimeout(t); };
     }, [searchQ]);
 
-    /* pricing */
+    /* ---- chọn hội viên: lấy chi tiết hội viên từ API ---- */
+    async function handleSelectMember(m) {
+        setSearchQ("");
+        setMemberResults([]);
+        setLoadingMemberDetail(true);
+        try {
+            const res = await cashierApi.getMemberDetail(m.id);
+            const detail = normalizeMember(unwrap(res)) || m;
+            setMember(detail);
+        } catch (e) {
+            // fallback: vẫn cho chọn bằng dữ liệu từ kết quả tìm kiếm
+            setMember(m);
+        } finally {
+            setLoadingMemberDetail(false);
+        }
+    }
+
+    /* ---- lấy gói tập hiện tại của hội viên: getCurrentMemberPack(id) ----
+       GET /api/members/{id}/packages → CurrentPackageDto | null.
+       BE chỉ trả về gói có PackageStatus == "Active"; không có gói active → null. */
+    useEffect(() => {
+        if (!selectedMember?.id) { setCurrentPkg(null); setPkgInfoError(""); return; }
+        let active = true;
+        (async () => {
+            setLoadingPkgInfo(true);
+            setPkgInfoError("");
+            try {
+                const res = await cashierApi.getCurrentMemberPack(selectedMember.id);
+                if (!active) return;
+                setCurrentPkg(normalizePackageInfo(extractPackageDto(res)));
+            } catch (e) {
+                if (active) {
+                    setCurrentPkg(null);
+                    setPkgInfoError("Không tải được thông tin gói tập hiện tại.");
+                }
+            } finally {
+                if (active) setLoadingPkgInfo(false);
+            }
+        })();
+        return () => { active = false; };
+    }, [selectedMember?.id]);
+
+    function changeMember() {
+        setMember(null); setPlan(null); setPromoCode("");
+        setPaymentMethod(null); setTransferConfirmed(false); setTransferRef("");
+        setReceiptFile(null); setSubmitError("");
+        setCurrentPkg(null); setPkgInfoError("");
+    }
+
+    /* pricing (chỉ để hiển thị — BE tự tính GiaGoc/Amount/ngày dựa trên PlanId/PromotionId) */
     const basePrice = selectedPlan?.price ?? 0;
     const discountAmt = appliedPromo?.discountPct ? Math.round(basePrice * appliedPromo.discountPct / 100) : 0;
     const finalPrice = basePrice - discountAmt;
     const bonusDays = appliedPromo?.bonusDays ?? 0;
     const totalDays = (selectedPlan?.durationDays ?? 0) + bonusDays;
 
-    /* new expiry */
-    const newExpiry = useMemo(() => {
-        if (!selectedMember || !selectedPlan) return null;
-        const pkg = selectedMember.currentPackage;
-        const base = pkg?.status === "Active" && pkg.expiryDate > new Date().toISOString().slice(0, 10)
-            ? pkg.expiryDate
-            : new Date().toISOString().slice(0, 10);
-        return addDays(base, totalDays);
-    }, [selectedMember, selectedPlan, totalDays]);
+    const pkg = currentPkg;
+    const isExtending = !!pkg; // BE chỉ trả về gói có PackageStatus === "Active", hoặc null
 
-    const isExtending = selectedMember?.currentPackage?.status === "Active"
-        && selectedMember.currentPackage.expiryDate > new Date().toISOString().slice(0, 10);
+    /* ngày bắt đầu / hết hạn ước tính của gói mới (chỉ để hiển thị) */
+    const newStartDate = useMemo(() => {
+        if (!selectedMember) return null;
+        return isExtending ? pkg.expiryDate : todayISO();
+    }, [selectedMember, isExtending, pkg]);
+
+    const newExpiry = useMemo(() => {
+        if (!newStartDate || !selectedPlan) return null;
+        return addDays(newStartDate, totalDays);
+    }, [newStartDate, selectedPlan, totalDays]);
 
     /* can the user actually submit? */
-    const canSubmit = !!selectedMember && !!selectedPlan && !!paymentMethod
+    const canSubmit = !!selectedMember && !!selectedPlan && !!paymentMethod && !submitting
         && (paymentMethod === "cash" || (paymentMethod === "transfer" && transferConfirmed));
 
     function handlePromoChange(e) {
@@ -375,29 +547,58 @@ export default function RenewPage() {
 
     function selectPaymentMethod(method) {
         setPaymentMethod(method);
-        if (method === "cash") { setTransferConfirmed(false); setTransferRef(""); }
+        if (method === "cash") { setTransferConfirmed(false); setTransferRef(""); setReceiptFile(null); }
     }
 
-    function handleSubmit() {
+    /* ---- gọi API renew — khớp RenewMembershipRequest (RenewController.Renew) ----
+       public int PlanId
+       public int? PromotionId        // null = không dùng khuyến mãi
+       public string PaymentMethod    // "Cash" | "BankTransfer"
+       public string? BankReferenceCode
+       + ReceiptImage (file, optional)
+       KHÔNG gửi GiaGoc/Amount/SoNgayTangThucTe/StartDate/ExpiryDate — BE tự tính từ PlanId/PromotionId. */
+    async function handleSubmit() {
         if (!canSubmit) return;
-        setSuccess({
-            memberName: selectedMember.name,
-            planName: selectedPlan.planName,
-            amount: finalPrice,
-            newExpiry,
-            bonusDays,
-            paymentMethod,
-            transferRef,
-        });
+        setSubmitting(true);
+        setSubmitError("");
+        try {
+            const fd = new FormData();
+            fd.append("PlanId", selectedPlan.planId);
+            if (appliedPromo?.id != null) {
+                fd.append("PromotionId", appliedPromo.id);
+            }
+            fd.append("PaymentMethod", paymentMethod === "cash" ? "Cash" : "BankTransfer");
+            if (transferRef) fd.append("BankReferenceCode", transferRef);
+            if (receiptFile) fd.append("ReceiptImage", receiptFile);
+
+            const res = await cashierApi.renewMembership(selectedMember.id, fd);
+            const data = unwrap(res);
+
+            setSuccess({
+                memberName: selectedMember.name,
+                planName: selectedPlan.planName,
+                amount: data?.amount ?? data?.Amount ?? finalPrice,
+                newExpiry: data?.expiryDate ?? data?.ExpiryDate ?? newExpiry,
+                bonusDays,
+                paymentMethod,
+                transferRef,
+            });
+        } catch (e) {
+            setSubmitError(
+                e?.response?.data?.message ?? e?.message ?? "Gia hạn thất bại. Vui lòng thử lại."
+            );
+        } finally {
+            setSubmitting(false);
+        }
     }
 
     function reset() {
         setSearchQ(""); setMember(null); setPlan(null);
         setPromoCode(""); setPaymentMethod(null);
-        setTransferRef(""); setTransferConfirmed(false); setSuccess(null);
+        setTransferRef(""); setTransferConfirmed(false);
+        setReceiptFile(null); setSubmitError(""); setSuccess(null);
+        setCurrentPkg(null); setPkgInfoError("");
     }
-
-    const pkg = selectedMember?.currentPackage;
 
     return (
         <>
@@ -453,7 +654,7 @@ export default function RenewPage() {
                                     <div className="card-head-sub">Tìm theo tên hoặc số điện thoại</div>
                                 </div>
                                 {selectedMember && (
-                                    <button onClick={() => { setMember(null); setPlan(null); setPromoCode(""); setPaymentMethod(null); setTransferConfirmed(false); setTransferRef(""); }} style={{ marginLeft: "auto", background: "none", border: "1px solid var(--border-md)", borderRadius: "var(--radius-sm)", padding: "5px 10px", fontSize: 12, fontWeight: 600, cursor: "pointer", color: "var(--text-2)" }}>
+                                    <button onClick={changeMember} style={{ marginLeft: "auto", background: "none", border: "1px solid var(--border-md)", borderRadius: "var(--radius-sm)", padding: "5px 10px", fontSize: 12, fontWeight: 600, cursor: "pointer", color: "var(--text-2)" }}>
                                         Đổi hội viên
                                     </button>
                                 )}
@@ -465,11 +666,21 @@ export default function RenewPage() {
                                             <svg className="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
                                             <input className="search-input" placeholder="Nhập tên hoặc SĐT hội viên..." value={searchQ} onChange={e => setSearchQ(e.target.value)} autoFocus />
                                         </div>
-                                        {searchQ && memberResults.length === 0 && (
+
+                                        {searching && (
+                                            <div className="center-loading"><span className="spinner dark" /> Đang tìm...</div>
+                                        )}
+
+                                        {!searching && searchError && (
+                                            <div className="notice error" style={{ marginTop: 10, marginBottom: 0 }}>{searchError}</div>
+                                        )}
+
+                                        {!searching && !searchError && searchQ && memberResults.length === 0 && (
                                             <p style={{ fontSize: 13, color: "var(--text-3)", marginTop: 10, fontWeight: 500 }}>Không tìm thấy hội viên phù hợp</p>
                                         )}
-                                        {memberResults.map(m => (
-                                            <div key={m.id} className="member-result" onClick={() => { setMember(m); setSearchQ(""); }}>
+
+                                        {!searching && memberResults.map(m => (
+                                            <div key={m.id} className="member-result" onClick={() => handleSelectMember(m)}>
                                                 <div className="avatar" style={{ background: avatarColor(m.id) }}>{initials(m.name)}</div>
                                                 <div>
                                                     <div className="member-name">{m.name}</div>
@@ -479,6 +690,8 @@ export default function RenewPage() {
                                             </div>
                                         ))}
                                     </>
+                                ) : loadingMemberDetail ? (
+                                    <div className="center-loading"><span className="spinner dark" /> Đang tải thông tin hội viên...</div>
                                 ) : (
                                     <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                                         <div className="avatar" style={{ background: avatarColor(selectedMember.id), width: 44, height: 44, fontSize: 16 }}>{initials(selectedMember.name)}</div>
@@ -491,8 +704,8 @@ export default function RenewPage() {
                             </div>
                         </div>
 
-                        {/* Current package info */}
-                        {selectedMember && (
+                        {/* Current package info — getCurrentMemberPack() */}
+                        {selectedMember && !loadingMemberDetail && (
                             <div className="card">
                                 <div className="card-head">
                                     <div className="card-head-icon">
@@ -504,22 +717,24 @@ export default function RenewPage() {
                                     </div>
                                 </div>
                                 <div className="card-body">
-                                    {pkg ? (
-                                        <div className={`pkg-banner ${pkg.status === "Active" ? "active" : "expired"}`}>
+                                    {loadingPkgInfo ? (
+                                        <div className="center-loading"><span className="spinner dark" /> Đang kiểm tra gói tập...</div>
+                                    ) : pkgInfoError ? (
+                                        <div className="notice error" style={{ marginBottom: 0 }}>{pkgInfoError}</div>
+                                    ) : pkg ? (
+                                        <div className="pkg-banner active">
                                             <div style={{ flex: 1 }}>
-                                                <div className="pkg-banner-label">{pkg.status === "Active" ? "Đang hiệu lực" : "Đã hết hạn"}</div>
+                                                <div className="pkg-banner-label">Đang hiệu lực</div>
                                                 <div className="pkg-banner-name">{pkg.planName}</div>
                                                 <div className="pkg-banner-dates">{fmtDate(pkg.startDate)} → {fmtDate(pkg.expiryDate)}</div>
                                             </div>
-                                            <span className={`pkg-banner-badge ${pkg.status === "Active" ? "badge-active" : "badge-expired"}`}>
-                                                {pkg.status === "Active" ? "Active" : "Expired"}
-                                            </span>
+                                            <span className="pkg-banner-badge badge-active">Active</span>
                                         </div>
                                     ) : (
                                         <div className="pkg-banner none">
                                             <div>
                                                 <div className="pkg-banner-label">Chưa có gói</div>
-                                                <div style={{ fontSize: 14, color: "var(--text-2)" }}>Hội viên chưa mua gói tập nào</div>
+                                                <div style={{ fontSize: 14, color: "var(--text-2)" }}>Hội viên chưa có gói tập đang hiệu lực</div>
                                             </div>
                                         </div>
                                     )}
@@ -528,7 +743,7 @@ export default function RenewPage() {
                         )}
 
                         {/* Step 2: Chọn gói */}
-                        {selectedMember && (
+                        {selectedMember && !loadingMemberDetail && (
                             <div className="card">
                                 <div className="card-head">
                                     <div className="card-head-icon">
@@ -540,23 +755,31 @@ export default function RenewPage() {
                                     </div>
                                 </div>
                                 <div className="card-body">
-                                    <div className="plan-grid">
-                                        {PLANS.map(p => {
-                                            const disc = p.status === "Discontinued";
-                                            const sel = selectedPlan?.planId === p.planId;
-                                            const perMonth = p.durationDays >= 30 ? Math.round(p.price / (p.durationDays / 30)) : null;
-                                            return (
-                                                <div key={p.planId} className={`plan-card${sel ? " selected" : ""}${disc ? " discontinued" : ""}`} onClick={() => !disc && setPlan(p)}>
-                                                    {p.durationDays >= 180 && !disc && <div className="plan-badge">Phổ biến</div>}
-                                                    <div className="plan-name">{p.planName}</div>
-                                                    <div className="plan-duration">{p.durationDays} ngày{perMonth ? ` · ~${fmtMoney(perMonth)}/tháng` : ""}</div>
-                                                    <div className="plan-price">{fmtMoney(p.price)}<span className="plan-price-unit">VNĐ</span></div>
-                                                    {p.description && <div className="plan-desc">{p.description}</div>}
-                                                    {sel && <div className="plan-selected-check"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round"><polyline points="20 6 9 17 4 12" /></svg></div>}
-                                                </div>
-                                            );
-                                        })}
-                                    </div>
+                                    {loadingPlans && (
+                                        <div className="center-loading"><span className="spinner dark" /> Đang tải danh sách gói tập...</div>
+                                    )}
+                                    {!loadingPlans && plansError && (
+                                        <div className="notice error">{plansError}</div>
+                                    )}
+                                    {!loadingPlans && !plansError && (
+                                        <div className="plan-grid">
+                                            {plans.map(p => {
+                                                const disc = p.status === "Discontinued";
+                                                const sel = selectedPlan?.planId === p.planId;
+                                                const perMonth = p.durationDays >= 30 ? Math.round(p.price / (p.durationDays / 30)) : null;
+                                                return (
+                                                    <div key={p.planId} className={`plan-card${sel ? " selected" : ""}${disc ? " discontinued" : ""}`} onClick={() => !disc && setPlan(p)}>
+                                                        {p.durationDays >= 180 && !disc && <div className="plan-badge">Phổ biến</div>}
+                                                        <div className="plan-name">{p.planName}</div>
+                                                        <div className="plan-duration">{p.durationDays} ngày{perMonth ? ` · ~${fmtMoney(perMonth)}/tháng` : ""}</div>
+                                                        <div className="plan-price">{fmtMoney(p.price)}<span className="plan-price-unit">VNĐ</span></div>
+                                                        {p.description && <div className="plan-desc">{p.description}</div>}
+                                                        {sel && <div className="plan-selected-check"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round"><polyline points="20 6 9 17 4 12" /></svg></div>}
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    )}
                                 </div>
                             </div>
                         )}
@@ -637,6 +860,13 @@ export default function RenewPage() {
                                                 onChange={e => setTransferRef(e.target.value)}
                                             />
 
+                                            <input
+                                                type="file"
+                                                accept="image/*"
+                                                className="transfer-file-input"
+                                                onChange={e => setReceiptFile(e.target.files?.[0] ?? null)}
+                                            />
+
                                             {!transferConfirmed ? (
                                                 <label className="transfer-confirm">
                                                     <input type="checkbox" checked={transferConfirmed} onChange={e => setTransferConfirmed(e.target.checked)} />
@@ -693,8 +923,8 @@ export default function RenewPage() {
 
                                         <div className="summary-divider" />
 
-                                        {/* Giá */}
-                                        <div className="section-label">Chi tiết giá</div>
+                                        {/* Giá (ước tính hiển thị — BE tính lại và trả về khi renew) */}
+                                        <div className="section-label">Chi tiết giá (ước tính)</div>
                                         <div className="summary-row">
                                             <span className="lbl">Giá gốc</span>
                                             <span className="val">{fmtMoney(basePrice)}</span>
@@ -750,18 +980,27 @@ export default function RenewPage() {
                                             </div>
                                         )}
 
-                                        {/* New expiry */}
+                                        {submitError && (
+                                            <div className="notice error" style={{ marginTop: 14 }}>{submitError}</div>
+                                        )}
+
+                                        {/* New expiry (ước tính — BE trả về giá trị chính xác sau khi renew) */}
                                         <div className="summary-new-expiry">
                                             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--green)" strokeWidth="2.5" strokeLinecap="round"><rect x="3" y="4" width="18" height="18" rx="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" /></svg>
                                             <div>
-                                                <div className="summary-new-expiry-label">Hạn mới sau gia hạn</div>
+                                                <div className="summary-new-expiry-label">Hạn mới sau gia hạn (ước tính)</div>
                                                 <div className="summary-new-expiry-date">{fmtDate(newExpiry)}</div>
                                             </div>
                                         </div>
 
                                         <button className="btn-submit" onClick={handleSubmit} disabled={!canSubmit}>
-                                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round"><polyline points="20 6 9 17 4 12" /></svg>
-                                            Xác nhận gia hạn · {fmtMoney(finalPrice)}
+                                            {submitting
+                                                ? <><span className="spinner" /> Đang xử lý...</>
+                                                : <>
+                                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round"><polyline points="20 6 9 17 4 12" /></svg>
+                                                    Xác nhận gia hạn · {fmtMoney(finalPrice)}
+                                                </>
+                                            }
                                         </button>
 
                                         {!paymentMethod && (
