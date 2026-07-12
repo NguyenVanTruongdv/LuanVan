@@ -47,9 +47,13 @@ public partial class MembershipPlan
 
     public virtual ICollection<MemberPackage> MemberPackages { get; set; } = new List<MemberPackage>();
 
-    public virtual ICollection<PromotionPlan> PromotionPlans { get; set; } = new List<PromotionPlan>();
-
     public virtual ICollection<PromotionUsage> PromotionUsages { get; set; } = new List<PromotionUsage>();
+
+    public virtual ICollection<Promotion> Promotions { get; set; } = new List<Promotion>();
+
+    public virtual ICollection<TransactionAdjustmentLog> TransactionAdjustmentLogNewPlans { get; set; } = new List<TransactionAdjustmentLog>();
+
+    public virtual ICollection<TransactionAdjustmentLog> TransactionAdjustmentLogOldPlans { get; set; } = new List<TransactionAdjustmentLog>();
 
     public virtual ICollection<Transaction> Transactions { get; set; } = new List<Transaction>();
 }

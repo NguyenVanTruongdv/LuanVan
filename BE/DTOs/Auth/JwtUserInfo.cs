@@ -5,6 +5,7 @@ public class JwtUserInfo
     public string FullName { get; set; } = "";
     public string Role { get; set; } = "";
     public string EntityType { get; set; } = ""; // "Employee" | "Member"
+    public string? Status { get; set; }
 }
 
 

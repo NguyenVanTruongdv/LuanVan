@@ -72,13 +72,13 @@ public partial class Employee
 
     public virtual ICollection<AccountLockLog> AccountLockLogPerformedByNavigations { get; set; } = new List<AccountLockLog>();
 
-    public virtual ICollection<Branch> Branches { get; set; } = new List<Branch>();
-
     public virtual ICollection<CheckIn> CheckInCheckOutStaffs { get; set; } = new List<CheckIn>();
 
     public virtual ICollection<CheckIn> CheckInStaffs { get; set; } = new List<CheckIn>();
 
     public virtual Employee? CreatedByNavigation { get; set; }
+
+    public virtual ICollection<EmployeeBranch> EmployeeBranches { get; set; } = new List<EmployeeBranch>();
 
     public virtual ICollection<FaceDatum> FaceData { get; set; } = new List<FaceDatum>();
 
@@ -87,8 +87,6 @@ public partial class Employee
     public virtual ICollection<HomeImage> HomeImages { get; set; } = new List<HomeImage>();
 
     public virtual ICollection<Incident> IncidentApprovedByNavigations { get; set; } = new List<Incident>();
-
-    public virtual ICollection<Incident> IncidentAssignedToNavigations { get; set; } = new List<Incident>();
 
     public virtual ICollection<Incident> IncidentReportedByEmployees { get; set; } = new List<Incident>();
 
@@ -103,6 +101,8 @@ public partial class Employee
     public virtual ICollection<Promotion> Promotions { get; set; } = new List<Promotion>();
 
     public virtual Role Role { get; set; } = null!;
+
+    public virtual ICollection<TransactionAdjustmentLog> TransactionAdjustmentLogs { get; set; } = new List<TransactionAdjustmentLog>();
 
     public virtual ICollection<Transaction> Transactions { get; set; } = new List<Transaction>();
 }

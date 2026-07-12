@@ -9,15 +9,32 @@ using Microsoft.EntityFrameworkCore;
 
 namespace BE.Services
 {
+    // [MỚI] BranchId của Transaction giờ là cột BẮT BUỘC (int, not null) — khách mua online phải
+    // chọn chi nhánh ngay từ CreatePaymentRequestDto.BranchId. Giá trị này được lưu thẳng vào
+    // Transaction.BranchId lúc tạo QR (CreatePaymentAsync), rồi webhook (HandleWebhookAsync) đọc
+    // lại để gán cho MemberPackage — đảm bảo MemberPackage.BranchId luôn là chi nhánh khách đã
+    // chọn lúc mua, không phụ thuộc chi nhánh nhân viên đứng kích hoạt sau này.
+    //
+    // [SỬA] Đã bỏ bảng PromotionPlans (quan hệ many-to-many giữa Promotion và MembershipPlan).
+    // Promotion giờ gắn trực tiếp 1-1 với 1 MembershipPlan qua cột Promotion.PlanId, nên mọi chỗ
+    // trước đây join qua PromotionPlans giờ chỉ cần lọc thẳng Promotions.Where(p => p.PlanId == ...).
     public class PaymentService
     {
         private readonly GymManagementContext _db;
         private readonly IConfiguration _configuration;
+        private readonly TransactionService _transactionService;
+        private readonly MemberPackageService _packageService;
 
-        public PaymentService(GymManagementContext context, IConfiguration configuration)
+        public PaymentService(
+            GymManagementContext context,
+            IConfiguration configuration,
+            TransactionService transactionService,
+            MemberPackageService packageService)
         {
             _db = context;
             _configuration = configuration;
+            _transactionService = transactionService;
+            _packageService = packageService;
         }
 
         public async Task<CreatePaymentResponseDto> CreatePaymentAsync(long member_id, CreatePaymentRequestDto dto)
@@ -33,8 +50,10 @@ namespace BE.Services
                 throw new NotFoundException("Không tìm thấy hội viên");
             }
 
-            // Nếu member đã có transaction Pending -> tái sử dụng, không tạo mới
-            // (chặn spam transaction khi user bấm xác nhận nhiều lần / vào ra trang payment)
+            // BranchId bắt buộc phải hợp lệ — khách phải chọn chi nhánh muốn gắn cho gói tập
+            // này ngay lúc mua online (dto.BranchId do FE gửi lên).
+            await _packageService.EnsureBranchExistsAsync(dto.BranchId);
+
             var existingPending = await _db.Transactions
                 .FirstOrDefaultAsync(t => t.MemberId == member_id
                                         && t.PaymentStatus == PaymentStatus.Pending.ToString());
@@ -48,20 +67,30 @@ namespace BE.Services
                 };
             }
 
+            if (member.Status == "PendingActivation")
+            {
+                var pendingPackage = await _packageService.GetPendingPackageAsync(member_id);
+                if (pendingPackage != null)
+                    throw new InvalidOperationException(
+                        "Tài khoản đang chờ kích hoạt chỉ được mua 1 gói tập. " +
+                        "Vui lòng đến quầy kích hoạt gói đã mua trước khi mua thêm gói khác.");
+            }
+
             decimal giaGoc = pac.Price;
             decimal amount = giaGoc;
 
-            var promotion = await _db.PromotionPlans
-                                           .Where(x => x.PlanId == pac.PlanId)
-                                           .Select(x => x.Promotion)
-                                           .FirstOrDefaultAsync(p =>
-                                               p.TrangThai == "HoatDong"
-                                               && p.NgayBatDau <= DateTime.Now
-                                               && p.NgayKetThuc >= DateTime.Now
-                                               && (
-                                                   p.GioiHanLuot == null
-                                                   || p.SoLuotDaDung < p.GioiHanLuot
-                                               ));
+            // [SỬA] Trước đây join PromotionPlans để tìm khuyến mãi áp cho gói pac.PlanId.
+            // Giờ Promotion có sẵn cột PlanId nên query thẳng bảng Promotions, không cần join nữa.
+            var promotion = await _db.Promotions
+                .FirstOrDefaultAsync(p =>
+                    p.PlanId == pac.PlanId
+                    && p.TrangThai == "HoatDong"
+                    && p.NgayBatDau <= DateTime.Now
+                    && p.NgayKetThuc >= DateTime.Now
+                    && (
+                        p.GioiHanLuot == null
+                        || p.SoLuotDaDung < p.GioiHanLuot
+                    ));
             if (promotion != null)
             {
                 switch (promotion.PromoType)
@@ -100,6 +129,7 @@ namespace BE.Services
                 MemberId = member.MemberId,
                 PlanId = pac.PlanId,
                 PromotionId = promotion?.PromotionId,
+                BranchId = dto.BranchId, // giữ chi nhánh khách chọn, webhook sẽ đọc lại
 
                 PaymentMethod = PaymentMethod.BankTransfer.ToString(),
                 PaymentStatus = PaymentStatus.Pending.ToString(),
@@ -118,7 +148,7 @@ namespace BE.Services
 
             return new CreatePaymentResponseDto
             {
-                OrderCode = OrderCode, //để gửi lên sepay, tí sepay gửi lại xác dịnh ck thành công. 
+                OrderCode = OrderCode,
                 Amount = amount,
                 QrImage = qrImage
             };
@@ -144,22 +174,20 @@ namespace BE.Services
         public async Task<PaymentPageInfoDto> GetPaymentPageInfoAsync(long memberId)
         {
             var member = await _db.Members
-                .Include(m => m.Branch)
                 .AsNoTracking()
                 .FirstOrDefaultAsync(m => m.MemberId == memberId);
 
             if (member == null)
                 throw new Exception("Không tìm thấy hội viên.");
 
-            // Gói đang active gần nhất — ưu tiên bản ghi có ExpiryDate lớn nhất
             var currentPackage = await _db.MemberPackages
                 .Include(mp => mp.Plan)
+                .Include(mp => mp.Branch)
                 .AsNoTracking()
                 .Where(mp => mp.MemberId == memberId && mp.PackageStatus == "Active")
                 .OrderByDescending(mp => mp.ExpiryDate)
                 .FirstOrDefaultAsync();
 
-            // Danh sách gói đang mở bán để hiển thị cho hội viên chọn
             var availablePlans = await _db.MembershipPlans
                 .AsNoTracking()
                 .Where(p => p.Status == "OnSale")
@@ -179,7 +207,7 @@ namespace BE.Services
             {
                 FullName = member.FullName,
                 Phone = member.Phone,
-                BranchName = member.Branch?.BranchName,
+                BranchName = currentPackage?.Branch?.BranchName,
                 CurrentPackage = currentPackage == null
                     ? null
                     : new CurrentPackageDto
@@ -195,11 +223,6 @@ namespace BE.Services
             };
         }
 
-        /// <summary>
-        /// Kiểm tra xem member hiện tại có transaction nào đang Pending không.
-        /// Dùng cho FE: khi vào trang payment, nếu có pending thì đưa thẳng tới màn QR
-        /// thay vì tạo transaction mới, tránh sinh ra hàng loạt bản ghi Pending rác.
-        /// </summary>
         public async Task<PendingPaymentResponseDto> GetPendingPaymentAsync(long memberId)
         {
             var transaction = await _db.Transactions
@@ -225,10 +248,6 @@ namespace BE.Services
             };
         }
 
-        /// <summary>
-        /// Hủy transaction đang Pending theo yêu cầu của member (bấm nút "Hủy đơn hàng" ở màn QR).
-        /// Chỉ cho hủy khi transaction còn Pending, tránh đụng độ với webhook vừa xử lý Paid.
-        /// </summary>
         public async Task CancelPaymentAsync(long memberId, string orderCode)
         {
             var transaction = await _db.Transactions
@@ -248,19 +267,23 @@ namespace BE.Services
 
         public async Task HandleWebhookAsync(SepayWebhookDto request)
         {
-            // Chỉ xử lý tiền vào
             if (!request.TransferType.Equals("in", StringComparison.OrdinalIgnoreCase))
                 return;
 
-            // 1. IDEMPOTENCY CHECK: nếu ReferenceCode này đã được xử lý rồi thì bỏ qua ngay
-            // (chặn trường hợp Sepay retry / gọi webhook trùng)
             bool alreadyProcessed = await _db.Transactions
                 .AnyAsync(t => t.BankReferenceCode == request.ReferenceCode);
             if (alreadyProcessed)
                 return;
 
-            // 3. Bọc toàn bộ read-check-write trong 1 DB transaction với isolation level cao
-            // để chặn race condition khi 2 webhook đến gần như đồng thời
+            Transaction? paidTransaction = null;
+            MembershipPlan? paidPlan = null;
+            Promotion? paidPromotion = null;
+            short paidBonusDays = 0;
+            DateOnly paidStartDate = default;
+            DateOnly paidExpiryDate = default;
+            int paidBranchId = 0; // [MỚI] dùng để lấy thông tin chi nhánh in hóa đơn sau khi commit
+            bool shouldGenerateInvoice = false;
+
             var strategy = _db.Database.CreateExecutionStrategy();
 
             await strategy.ExecuteAsync(async () =>
@@ -269,28 +292,36 @@ namespace BE.Services
                     .BeginTransactionAsync(IsolationLevel.Serializable);
                 try
                 {
-                    // 2. Match chính xác OrderCode dưới dạng token độc lập, tránh Contains mập mờ
-                    // (vd "GYM1" không được match nhầm khi nội dung là "GYM19")
-                    var transaction = _db.Transactions.FirstOrDefault(t =>
-                        System.Text.RegularExpressions.Regex.IsMatch(
-                            request.Content,
-                            $@"\b{System.Text.RegularExpressions.Regex.Escape(t.OrderCode)}\b",
-                            System.Text.RegularExpressions.RegexOptions.IgnoreCase));
+                    var match = System.Text.RegularExpressions.Regex.Match(
+                        request.Content,
+                        @"\bGYM\d{18,}\b"
+                    );
+
+                    var orderCode = match.Value;
+
+                    var transaction = await _db.Transactions
+                        .FirstOrDefaultAsync(t => t.OrderCode == orderCode);
 
                     if (transaction == null)
                         throw new Exception("Không tìm thấy giao dịch.");
 
-                    // Re-check bên trong transaction (double-check locking pattern)
-                    // Đã xử lý rồi thì bỏ qua, không throw để tránh Sepay retry vô ích
                     if (transaction.PaymentStatus == "Paid")
                     {
                         await dbTransaction.CommitAsync();
                         return;
                     }
 
-                    // Kiểm tra số tiền
                     if (transaction.Amount != request.TransferAmount)
                         throw new Exception("Số tiền thanh toán không khớp.");
+
+                    // [MỚI] BranchId giờ là cột bắt buộc (int, not null) trên Transaction — đã được
+                    // gán ngay lúc CreatePaymentAsync nên không cần check null nữa.
+                    int branchId = transaction.BranchId;
+
+                    var member = await _db.Members
+                        .FirstOrDefaultAsync(m => m.MemberId == transaction.MemberId);
+                    if (member == null)
+                        throw new Exception("Không tìm thấy hội viên.");
 
                     transaction.PaymentStatus = "Paid";
                     transaction.UpdatedAt = DateTime.Now;
@@ -303,10 +334,11 @@ namespace BE.Services
                         throw new Exception("Không tìm thấy gói tập.");
 
                     short soNgayTang = 0;
+                    Promotion? promotion = null;
 
                     if (transaction.PromotionId.HasValue)
                     {
-                        var promotion = await _db.Promotions
+                        promotion = await _db.Promotions
                             .FirstOrDefaultAsync(x => x.PromotionId == transaction.PromotionId);
 
                         if (promotion != null)
@@ -324,47 +356,45 @@ namespace BE.Services
                         }
                     }
 
-                    // Tính StartDate: nối tiếp sau ExpiryDate lớn nhất trong các gói đang Active
-                    // của hội viên này. Nếu chưa có gói Active nào (hoặc gói Active đã hết hạn),
-                    // gói mới bắt đầu từ hôm nay.
-                    var today = DateOnly.FromDateTime(DateTime.Today);
+                    MemberPackage memberPackage;
 
-                    var latestActiveExpiry = await _db.MemberPackages
-                        .Where(mp => mp.MemberId == transaction.MemberId
-                                  && mp.PackageStatus == "Active")
-                        .MaxAsync(mp => (DateOnly?)mp.ExpiryDate);
-
-                    var startDate = (latestActiveExpiry.HasValue && latestActiveExpiry.Value > today)
-                        ? latestActiveExpiry.Value
-                        : today;
-
-                    var expiryDate = startDate.AddDays(plan.DurationDays + soNgayTang);
-
-                    var memberPackage = new MemberPackage
+                    if (member.Status == "PendingActivation")
                     {
-                        MemberId = transaction.MemberId,
-                        TransactionId = transaction.TransactionId,
-                        PlanId = transaction.PlanId,
-                        PromotionId = transaction.PromotionId,
+                        memberPackage = await _packageService.CreatePendingPackageAsync(
+                            member.MemberId, transaction.PlanId, transaction.PromotionId,
+                            transaction.GiaGoc, transaction.Amount, soNgayTang,
+                            transaction.TransactionId, branchId);
 
-                        GiaGoc = transaction.GiaGoc,
-                        Amount = transaction.Amount,
+                        var todayForInvoice = DateOnly.FromDateTime(DateTime.Today);
+                        paidStartDate = todayForInvoice;
+                        paidExpiryDate = todayForInvoice.AddDays(plan.DurationDays + soNgayTang);
+                    }
+                    else
+                    {
+                        memberPackage = await _packageService.CreateActivePackageForCustomerAsync(
+                            member.MemberId, transaction.PlanId, transaction.PromotionId,
+                            transaction.GiaGoc, transaction.Amount, soNgayTang,
+                            transaction.TransactionId, branchId);
 
-                        SoNgayTangThucTe = soNgayTang,
+                        paidStartDate = memberPackage.StartDate!.Value;
+                        paidExpiryDate = memberPackage.ExpiryDate!.Value;
 
-                        StartDate = startDate,
-                        ExpiryDate = expiryDate,
-
-                        PackageStatus = "Active",
-
-                        CreatedAt = DateTime.Now,
-                        UpdatedAt = DateTime.Now
-                    };
-
-                    _db.MemberPackages.Add(memberPackage);
+                        if (member.Status == "Expired")
+                        {
+                            member.Status = "Active";
+                            member.UpdatedAt = DateTime.Now;
+                        }
+                    }
 
                     await _db.SaveChangesAsync();
                     await dbTransaction.CommitAsync();
+
+                    paidTransaction = transaction;
+                    paidPlan = plan;
+                    paidPromotion = promotion;
+                    paidBonusDays = soNgayTang;
+                    paidBranchId = branchId; // [MỚI]
+                    shouldGenerateInvoice = true;
                 }
                 catch
                 {
@@ -372,6 +402,39 @@ namespace BE.Services
                     throw;
                 }
             });
+
+            if (shouldGenerateInvoice && paidTransaction != null && paidPlan != null)
+            {
+                var member = await _db.Members
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(m => m.MemberId == paidTransaction.MemberId);
+
+                // [MỚI] Lấy thông tin chi nhánh khách đã chọn lúc mua online để in lên hóa đơn
+                var branch = await _db.Branches
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(b => b.BranchId == paidBranchId);
+
+                await _transactionService.GenerateAndAttachInvoiceAsync(paidTransaction, new InvoiceData
+                {
+                    OrderCode = paidTransaction.OrderCode,
+                    MemberName = member?.FullName,
+                    MemberPhone = member?.Phone,
+                    PlanName = paidPlan.PlanName,
+                    GiaGoc = paidTransaction.GiaGoc,
+                    DiscountAmount = paidTransaction.GiaGoc - paidTransaction.Amount,
+                    Amount = paidTransaction.Amount,
+                    BonusDays = paidBonusDays,
+                    StartDate = paidStartDate,
+                    ExpiryDate = paidExpiryDate,
+                    PaymentMethod = paidTransaction.PaymentMethod,
+                    CreatedAt = paidTransaction.CreatedAt,
+                    EmployeeName = null,
+                    PromotionName = paidPromotion?.TenKhuyenMai,
+                    BranchName = branch?.BranchName,     // [MỚI]
+                    BranchAddress = branch?.Address,      // [MỚI]
+                    BranchPhone = branch?.Phone            // [MỚI]
+                });
+            }
         }
 
         private string BuildQrImage(Transaction transaction)

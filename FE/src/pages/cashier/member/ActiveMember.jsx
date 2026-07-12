@@ -50,30 +50,133 @@ function normalizePackage(p) {
 // (cashierApi.getApplicablePromotions). Nghiệp vụ hiện tại đảm bảo mỗi gói chỉ có
 // tối đa 1 khuyến mãi hiệu lực tại 1 thời điểm -> FE luôn lấy phần tử đầu tiên và
 // ÁP DỤNG TỰ ĐỘNG, không cho nhân viên chọn thủ công.
-// Giả định BE trả về: { promotionId, name, type, value } trong đó
-// type = "ExtraDays" (tặng thêm N ngày sử dụng) hoặc "Discount" (giảm thẳng N đồng).
-// Nếu tên field/shape thực tế khác, chỉ cần chỉnh lại hàm này.
+// BE trả về: { promotionId, tenKhuyenMai, promoType, phanTramGiam, soTienGiam,
+// mucGiamToiDa, soNgayTang, soChuKyTang, moTa } trong đó promoType là 1 trong 4
+// giá trị: "GiamPhanTram" (giảm % trên giá gói, tối đa mucGiamToiDa nếu có),
+// "GiamTienMat" (giảm thẳng soTienGiam đồng), "TangNgay" (tặng thêm soNgayTang
+// ngày sử dụng), "TangChuKy" (tặng thêm soChuKyTang chu kỳ sử dụng, tức
+// soChuKyTang lần thời hạn gốc của gói). Mỗi loại chỉ có đúng 1 field "value"
+// tương ứng khác null, các field còn lại đều null.
 function normalizePromotion(p) {
-  const { promotionId, name, type, value } = p;
+  const {
+    promotionId,
+    tenKhuyenMai,
+    promoType,
+    phanTramGiam,
+    soTienGiam,
+    mucGiamToiDa,
+    soNgayTang,
+    soChuKyTang,
+    moTa,
+  } = p;
+
+  let value = 0;
+  switch (promoType) {
+    case "GiamPhanTram":
+      value = Number(phanTramGiam) || 0;
+      break;
+    case "GiamTienMat":
+      value = Number(soTienGiam) || 0;
+      break;
+    case "TangNgay":
+      value = Number(soNgayTang) || 0;
+      break;
+    case "TangChuKy":
+      value = Number(soChuKyTang) || 0;
+      break;
+    default:
+      break;
+  }
+
   return {
     id: `promotion-${promotionId}`,
     promotionId,
-    name,
-    type, // "ExtraDays" | "Discount"
-    value: Number(value) || 0,
+    name: tenKhuyenMai,
+    type: promoType, // "GiamPhanTram" | "GiamTienMat" | "TangNgay" | "TangChuKy"
+    value,
+    maxDiscount: Number(mucGiamToiDa) || 0, // chỉ áp dụng cho GiamPhanTram
+    description: moTa || "", // mô tả gốc từ BE, ưu tiên hiển thị nếu có
   };
+}
+
+// Các loại khuyến mãi cộng thêm ngày sử dụng (hiển thị màu "bonus" trên
+// thanh timeline + voucher), phân biệt với loại giảm tiền.
+function isBonusDaysPromotion(type) {
+  return type === "TangNgay" || type === "TangChuKy";
+}
+
+// Mô tả đầy đủ của khuyến mãi, dùng cho khối "Khuyến mãi áp dụng".
+// Ưu tiên dùng moTa do BE trả về (câu văn tự nhiên); nếu BE không có thì
+// tự sinh mô tả dựa theo loại khuyến mãi.
+function promotionDescription(promotion) {
+  if (!promotion) return "";
+  if (promotion.description) return promotion.description;
+  switch (promotion.type) {
+    case "TangNgay":
+      return `Tặng ${promotion.value} ngày sử dụng`;
+    case "TangChuKy":
+      return `Tặng ${promotion.value} chu kỳ sử dụng`;
+    case "GiamTienMat":
+      return `Giảm ${currency(promotion.value)}`;
+    case "GiamPhanTram":
+      return `Giảm ${promotion.value}%`;
+    default:
+      return "";
+  }
+}
+
+// Nhãn ngắn gọn của khuyến mãi, dùng ở cột tóm tắt bên phải và bước xác nhận.
+function promotionShortLabel(promotion) {
+  if (!promotion) return "";
+  switch (promotion.type) {
+    case "TangNgay":
+      return `+${promotion.value} ngày`;
+    case "TangChuKy":
+      return `+${promotion.value} chu kỳ`;
+    case "GiamTienMat":
+      return `-${currency(promotion.value)}`;
+    case "GiamPhanTram":
+      return `-${promotion.value}%`;
+    default:
+      return "";
+  }
 }
 
 // Tính lại thời hạn + số tiền sau khi áp dụng khuyến mãi (nếu có) cho 1 gói tập.
 // FIX: ép kiểu số cho mọi giá trị đầu vào (price, durationDays, promotion.value)
 // để không bao giờ trả về NaN/undefined lan sang currency().
+// Hỗ trợ đủ 4 loại khuyến mãi: TangNgay, TangChuKy (cộng thêm ngày sử dụng) và
+// GiamTienMat, GiamPhanTram (giảm trừ vào thành tiền).
 function computePricing(pkg, promotion, today) {
   if (!pkg) return null;
   const price = Number(pkg.price) || 0;
   const durationDays = Number(pkg.durationDays) || 0;
   const promoValue = Number(promotion?.value) || 0;
-  const bonusDays = promotion?.type === "ExtraDays" ? promoValue : 0;
-  const discount = promotion?.type === "Discount" ? Math.min(promoValue, price) : 0;
+
+  let bonusDays = 0;
+  let discount = 0;
+
+  switch (promotion?.type) {
+    case "TangNgay":
+      bonusDays = promoValue;
+      break;
+    case "TangChuKy":
+      // N chu kỳ = N lần thời hạn gốc của gói
+      bonusDays = promoValue * durationDays;
+      break;
+    case "GiamTienMat":
+      discount = Math.min(promoValue, price);
+      break;
+    case "GiamPhanTram": {
+      const rawDiscount = (price * promoValue) / 100;
+      const maxDiscount = Number(promotion?.maxDiscount) || 0;
+      discount = maxDiscount > 0 ? Math.min(rawDiscount, maxDiscount, price) : Math.min(rawDiscount, price);
+      break;
+    }
+    default:
+      break;
+  }
+
   const totalDays = durationDays + bonusDays;
   const finalAmount = price - discount;
   return {
@@ -375,19 +478,15 @@ function PackageStep({
               <div
                 className={
                   "voucher-row voucher-row-static" +
-                  (promotion.type === "ExtraDays" ? " voucher-days" : " voucher-discount")
+                  (isBonusDaysPromotion(promotion.type) ? " voucher-days" : " voucher-discount")
                 }
               >
                 <div className="voucher-row-icon">
-                  {promotion.type === "ExtraDays" ? <CalendarPlus size={16} /> : <Tag size={16} />}
+                  {isBonusDaysPromotion(promotion.type) ? <CalendarPlus size={16} /> : <Tag size={16} />}
                 </div>
                 <div className="voucher-row-info">
                   <div className="voucher-row-name">{promotion.name}</div>
-                  <div className="voucher-row-desc">
-                    {promotion.type === "ExtraDays"
-                      ? `Tặng ${promotion.value} ngày sử dụng`
-                      : `Giảm ${currency(promotion.value)}`}
-                  </div>
+                  <div className="voucher-row-desc">{promotionDescription(promotion)}</div>
                 </div>
                 <div className="voucher-row-check">
                   <Check size={12} />
@@ -682,11 +781,7 @@ function ConfirmStep({
             <div className="confirm-row">
               <span className="confirm-label">Khuyến mãi</span>
               <span className="confirm-value">
-                {promotion.name} (
-                {promotion.type === "ExtraDays"
-                  ? `+${promotion.value} ngày`
-                  : `-${currency(promotion.value)}`}
-                )
+                {promotion.name} ({promotionShortLabel(promotion)})
               </span>
             </div>
           )}
@@ -982,11 +1077,7 @@ function MemberActivationFlow({
             {promotion && (
               <div className="summary-row">
                 <span>Khuyến mãi</span>
-                <strong className="ok">
-                  {promotion.type === "ExtraDays"
-                    ? `+${promotion.value} ngày`
-                    : `-${currency(promotion.value)}`}
-                </strong>
+                <strong className="ok">{promotionShortLabel(promotion)}</strong>
               </div>
             )}
             {selectedPackage && (
@@ -1119,37 +1210,37 @@ export default function MemberActive() {
 }
 
 /* ------------------------------------------------------------------ */
-/*  Styles — tông màu theo layout Cashier Portal (navy + cyan),        */
-/*  nền tổng thể vẫn sáng để không bị quá tối.                          */
+/*  Styles — tông màu tối (dark navy), đồng bộ với layout Cashier      */
+/*  Portal trong ảnh mẫu. Nút bấm dùng tông teal trầm, dịu mắt hơn      */
+/*  thay vì cyan sáng chói.                                             */
 /* ------------------------------------------------------------------ */
 
 const CSS = `
 :root{
-  --ink:#152238;
-  --muted:#66758c;
-  --primary:#0891b2;
-  --primary-dark:#0e7490;
-  --primary-light:#e0f7fa;
-  --navy:#0f1b2d;
-  --navy-light:#17263f;
-  --surface:#ffffff;
-  --bg:#eef2f6;
-  --border:#dde3ea;
-  --danger:#d64545;
-  --warn:#b8862f;
-  --warn-bg:#fbf1e0;
-  --bonus:#f59e0b;
-  --bonus-bg:#fef3e2;
-  --discount:#10b981;
-  --discount-bg:#e3f9f0;
+  --ink:#E7ECF3;
+  --muted:#8B96A8;
+  --primary:#2C8FA8;
+  --primary-dark:#3FB4CE;
+  --primary-light:rgba(44,143,168,0.16);
+  --navy:#0A0F1C;
+  --navy-light:#141F35;
+  --surface:#111827;
+  --bg:#0B1220;
+  --border:#232E44;
+  --danger:#F1685E;
+  --warn:#D9A441;
+  --warn-bg:rgba(217,164,65,0.12);
+  --bonus:#E0A030;
+  --bonus-bg:rgba(224,160,48,0.12);
+  --discount:#3FBE8E;
+  --discount-bg:rgba(63,190,142,0.12);
 }
 *{box-sizing:border-box;}
 .app-shell{
-  min-height:100vh;
-  background:var(--bg);
+  min-height:100%;
+  background:transparent;
   font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
   color:var(--ink);
-  padding:32px 24px 60px;
 }
 .page{max-width:1080px;margin:0 auto;}
 .back-link{
@@ -1162,14 +1253,15 @@ const CSS = `
 .page-head{
   display:flex;gap:14px;align-items:flex-start;margin-bottom:24px;
   background:linear-gradient(135deg,var(--navy),var(--navy-light));
+  border:1px solid var(--border);
   border-radius:16px;padding:20px 24px;
 }
 .page-head-icon{
-  width:42px;height:42px;border-radius:12px;background:rgba(34,211,238,0.16);
-  color:#22d3ee;display:flex;align-items:center;justify-content:center;flex:none;
+  width:42px;height:42px;border-radius:12px;background:rgba(63,180,206,0.14);
+  color:#3FB4CE;display:flex;align-items:center;justify-content:center;flex:none;
 }
 .page-head h1{font-size:21px;font-weight:700;margin:0 0 4px;letter-spacing:-0.01em;color:#fff;}
-.page-head p{font-size:13.5px;color:rgba(255,255,255,0.62);margin:0;}
+.page-head p{font-size:13.5px;color:rgba(231,236,243,0.6);margin:0;}
 
 .search-bar{
   display:flex;align-items:center;gap:10px;
@@ -1179,6 +1271,7 @@ const CSS = `
 .search-bar input{
   flex:1;border:none;outline:none;font-size:14px;background:transparent;color:var(--ink);
 }
+.search-bar input::placeholder{color:var(--muted);}
 .search-icon{color:var(--muted);flex:none;}
 .search-count{font-size:12.5px;color:var(--muted);flex:none;}
 
@@ -1195,7 +1288,7 @@ const CSS = `
 }
 .avatar-sm{width:34px;height:34px;font-size:12.5px;}
 .member-info{flex:1;min-width:0;}
-.member-name{font-weight:600;font-size:14.5px;}
+.member-name{font-weight:600;font-size:14.5px;color:var(--ink);}
 .member-meta{display:flex;gap:16px;font-size:12.5px;color:var(--muted);margin-top:3px;flex-wrap:wrap;}
 .member-meta span{display:inline-flex;align-items:center;gap:5px;}
 
@@ -1209,7 +1302,7 @@ const CSS = `
   background:var(--primary);color:#fff;border:none;border-radius:10px;
   padding:10px 16px;font-size:13.5px;font-weight:600;cursor:pointer;transition:background .15s;
 }
-.btn-activate:hover{background:var(--primary-dark);}
+.btn-activate:hover{background:#256F84;}
 .empty{padding:40px;text-align:center;color:var(--muted);font-size:14px;}
 
 /* Stepper */
@@ -1221,7 +1314,7 @@ const CSS = `
   border:2px solid var(--border);display:flex;align-items:center;justify-content:center;
   font-size:12px;font-weight:700;color:var(--muted);flex:none;
 }
-.step-active .step-circle{border-color:var(--primary);color:var(--primary);background:var(--primary-light);}
+.step-active .step-circle{border-color:var(--primary);color:var(--primary-dark);background:var(--primary-light);}
 .step-active span{color:var(--ink);font-weight:700;}
 .step-done .step-circle{background:var(--primary);border-color:var(--primary);color:#fff;}
 .step-done span{color:var(--ink);}
@@ -1232,7 +1325,7 @@ const CSS = `
 @media (max-width:820px){.layout{grid-template-columns:1fr;}}
 .layout-main{min-width:0;}
 .card{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:22px;}
-.card-head-title{font-size:16px;font-weight:700;margin-bottom:4px;}
+.card-head-title{font-size:16px;font-weight:700;margin-bottom:4px;color:var(--ink);}
 .card-head-sub{font-size:13px;color:var(--muted);margin-bottom:20px;}
 
 /* Package — chuyển đổi gói + timeline */
@@ -1240,7 +1333,7 @@ const CSS = `
 .pkg-switch-box{flex:1;background:var(--bg);border:1px solid var(--border);border-radius:12px;padding:14px 16px;min-width:0;}
 .pkg-switch-new.filled{border-color:var(--primary);background:var(--primary-light);}
 .pkg-switch-label{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px;}
-.pkg-switch-value{font-weight:700;font-size:14.5px;overflow-wrap:anywhere;}
+.pkg-switch-value{font-weight:700;font-size:14.5px;overflow-wrap:anywhere;color:var(--ink);}
 .pkg-switch-duration{font-size:12px;color:var(--primary-dark);margin-top:3px;}
 .pkg-switch-arrow{display:flex;align-items:center;justify-content:center;color:var(--muted);flex:none;}
 
@@ -1276,7 +1369,7 @@ const CSS = `
 }
 .package-row.active .package-row-radio{background:var(--primary);border-color:var(--primary);}
 .package-row-info{flex:1;min-width:0;}
-.package-row-name{font-weight:700;font-size:13.5px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+.package-row-name{font-weight:700;font-size:13.5px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;color:var(--ink);}
 .package-row-tag{font-size:10px;font-weight:700;color:var(--primary-dark);background:var(--primary-light);padding:2px 8px;border-radius:999px;}
 .package-row-duration{font-size:12px;color:var(--muted);margin-top:2px;}
 .package-row-price{font-weight:700;font-size:14px;color:var(--primary-dark);flex:none;}
@@ -1292,11 +1385,11 @@ const CSS = `
   width:32px;height:32px;border-radius:9px;display:flex;align-items:center;justify-content:center;flex:none;
 }
 .voucher-row.voucher-days{border-left-color:var(--bonus);background:var(--bonus-bg);}
-.voucher-row.voucher-days .voucher-row-icon{background:#fff;color:var(--bonus);}
+.voucher-row.voucher-days .voucher-row-icon{background:var(--surface);color:var(--bonus);}
 .voucher-row.voucher-discount{border-left-color:var(--discount);background:var(--discount-bg);}
-.voucher-row.voucher-discount .voucher-row-icon{background:#fff;color:var(--discount);}
+.voucher-row.voucher-discount .voucher-row-icon{background:var(--surface);color:var(--discount);}
 .voucher-row-info{flex:1;min-width:0;}
-.voucher-row-name{font-weight:700;font-size:13.5px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+.voucher-row-name{font-weight:700;font-size:13.5px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;color:var(--ink);}
 .voucher-row-code{
   font-size:10px;font-weight:700;color:var(--muted);background:var(--surface);
   border:1px solid var(--border);padding:2px 7px;border-radius:999px;letter-spacing:.03em;
@@ -1311,7 +1404,7 @@ const CSS = `
 
 .pkg-total{
   display:flex;justify-content:space-between;align-items:center;
-  padding-top:16px;margin-top:22px;border-top:1px dashed var(--border);font-size:14px;
+  padding-top:16px;margin-top:22px;border-top:1px dashed var(--border);font-size:14px;color:var(--ink);
 }
 .pkg-total strong{font-size:18px;color:var(--primary-dark);}
 .pkg-total-price{display:flex;flex-direction:column;align-items:flex-end;gap:2px;}
@@ -1327,7 +1420,7 @@ const CSS = `
 }
 .payment-method-btn:hover{border-color:var(--primary);}
 .payment-method-btn.active{border-color:var(--primary);background:var(--primary-light);color:var(--primary-dark);}
-.payment-method-check{margin-left:auto;color:var(--primary);}
+.payment-method-check{margin-left:auto;color:var(--primary-dark);}
 
 /* Face ID */
 .faceid-wrap{display:flex;gap:24px;}
@@ -1335,6 +1428,7 @@ const CSS = `
 .faceid-frame{
   position:relative;width:320px;height:320px;border-radius:20px;overflow:hidden;
   background:linear-gradient(160deg,var(--navy-light),var(--navy));flex:none;
+  border:1px solid var(--border);
 }
 .faceid-media{width:100%;height:100%;object-fit:cover;}
 .faceid-video{transform:scaleX(-1);}
@@ -1344,24 +1438,24 @@ const CSS = `
 }
 .faceid-placeholder{
   width:100%;height:100%;display:flex;align-items:center;justify-content:center;
-  background:linear-gradient(160deg,var(--navy-light),var(--navy));color:rgba(255,255,255,0.65);
+  background:linear-gradient(160deg,var(--navy-light),var(--navy));color:rgba(231,236,243,0.55);
 }
 .faceid-placeholder.small{width:100%;height:100%;border-radius:12px;}
-.faceid-loading{font-size:12.5px;color:rgba(255,255,255,0.7);}
+.faceid-loading{font-size:12.5px;color:rgba(231,236,243,0.7);}
 .faceid-error{
   display:flex;flex-direction:column;align-items:center;gap:6px;
-  font-size:12px;color:#ffd8d8;text-align:center;padding:0 20px;
+  font-size:12px;color:#ffb4ae;text-align:center;padding:0 20px;
 }
 .scan-corners{position:absolute;inset:22px;pointer-events:none;}
-.corner{position:absolute;width:22px;height:22px;border:2.5px solid rgba(34,211,238,0.9);}
+.corner{position:absolute;width:22px;height:22px;border:2.5px solid rgba(63,180,206,0.85);}
 .corner.tl{top:0;left:0;border-right:none;border-bottom:none;border-top-left-radius:6px;}
 .corner.tr{top:0;right:0;border-left:none;border-bottom:none;border-top-right-radius:6px;}
 .corner.bl{bottom:0;left:0;border-right:none;border-top:none;border-bottom-left-radius:6px;}
 .corner.br{bottom:0;right:0;border-left:none;border-top:none;border-bottom-right-radius:6px;}
 .scan-line{
   position:absolute;left:22px;right:22px;height:2px;
-  background:linear-gradient(90deg,transparent,#22d3ee,transparent);
-  box-shadow:0 0 8px 1px #22d3ee;
+  background:linear-gradient(90deg,transparent,#3FB4CE,transparent);
+  box-shadow:0 0 8px 1px rgba(63,180,206,0.6);
   animation:scanmove 2.2s ease-in-out infinite;
 }
 @keyframes scanmove{
@@ -1381,8 +1475,8 @@ const CSS = `
   padding:11px 18px;font-size:13.5px;font-weight:700;cursor:pointer;
   display:inline-flex;align-items:center;justify-content:center;gap:7px;transition:background .15s;
 }
-.btn-primary:hover{background:var(--primary-dark);}
-.btn-primary:disabled{background:#a9b7c4;cursor:not-allowed;}
+.btn-primary:hover{background:#256F84;}
+.btn-primary:disabled{background:#3B4658;color:#8B96A8;cursor:not-allowed;}
 .btn-block{width:100%;}
 .btn-secondary{
   background:var(--surface);color:var(--ink);border:1.5px solid var(--border);border-radius:10px;
@@ -1401,7 +1495,7 @@ const CSS = `
   border-radius:50%;padding:3px;display:flex;
 }
 .confirm-info{flex:1;display:flex;flex-direction:column;gap:11px;min-width:0;}
-.confirm-row{display:flex;justify-content:space-between;gap:10px;font-size:13.5px;border-bottom:1px dashed var(--border);padding-bottom:8px;}
+.confirm-row{display:flex;justify-content:space-between;gap:10px;font-size:13.5px;border-bottom:1px dashed var(--border);padding-bottom:8px;color:var(--ink);}
 .confirm-label{color:var(--muted);}
 .confirm-value{font-weight:600;text-align:right;}
 .confirm-value-ok{color:var(--primary-dark);display:inline-flex;align-items:center;gap:5px;}
@@ -1424,8 +1518,8 @@ const CSS = `
 }
 .success-icon{
   width:84px;height:84px;border-radius:50%;background:var(--primary-light);
-  color:var(--primary);display:flex;align-items:center;justify-content:center;
+  color:var(--primary-dark);display:flex;align-items:center;justify-content:center;
 }
-.success-wrap h2{font-size:21px;margin:6px 0 0;}
+.success-wrap h2{font-size:21px;margin:6px 0 0;color:var(--ink);}
 .success-wrap p{color:var(--muted);font-size:14px;margin:0 0 10px;max-width:360px;}
 `;

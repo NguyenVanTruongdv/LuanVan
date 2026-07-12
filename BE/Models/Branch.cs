@@ -29,11 +29,6 @@ public partial class Branch
     public string? Phone { get; set; }
 
     /// <summary>
-    /// Quản lý phụ trách chi nhánh — FK tới employees.employee_id
-    /// </summary>
-    public long ManagerId { get; set; }
-
-    /// <summary>
     /// Trạng thái hoạt động: Active = đang mở, Inactive = đã đóng
     /// </summary>
     public string Status { get; set; } = null!;
@@ -47,13 +42,15 @@ public partial class Branch
 
     public virtual ICollection<CheckIn> CheckIns { get; set; } = new List<CheckIn>();
 
+    public virtual ICollection<EmployeeBranch> EmployeeBranches { get; set; } = new List<EmployeeBranch>();
+
     public virtual ICollection<Equipment> Equipment { get; set; } = new List<Equipment>();
 
     public virtual ICollection<GymDensity> GymDensities { get; set; } = new List<GymDensity>();
 
     public virtual ICollection<Incident> Incidents { get; set; } = new List<Incident>();
 
-    public virtual Employee Manager { get; set; } = null!;
+    public virtual ICollection<MemberPackage> MemberPackages { get; set; } = new List<MemberPackage>();
 
-    public virtual ICollection<Member> Members { get; set; } = new List<Member>();
+    public virtual ICollection<Transaction> Transactions { get; set; } = new List<Transaction>();
 }

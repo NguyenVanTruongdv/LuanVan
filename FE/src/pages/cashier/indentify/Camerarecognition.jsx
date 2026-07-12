@@ -17,43 +17,24 @@ import cashierApi from "../../../api/cashierApi";
 
 /* =========================================================================
  * TRANG GỘP CHECK-IN + CHECK-OUT
- * - Check-in: camera CHỈ quét khuôn mặt theo từng đợt lấy mẫu (poll), KHÔNG
- *   quét liên tục mỗi khung hình:
- *   1) Ưu tiên dùng Shape Detection API (`window.FaceDetector`) có sẵn
- *      trong trình duyệt (Chrome/Edge) — chạy native, rất nhẹ, KHÔNG cần
- *      tải thêm thư viện ngoài (đỡ tốn dữ liệu mạng). Lưu ý: API này hiện
- *      vẫn nằm sau cờ thử nghiệm (chrome://flags/#enable-experimental-web-
- *      platform-features) nên hầu hết trình duyệt của người dùng thường sẽ
- *      KHÔNG có sẵn — nhánh này chỉ là "ăn may" khi có, không phải chỗ
- *      dựa chính.
- *   2) Nếu trình duyệt không có FaceDetector (gần như luôn luôn đúng với
- *      Chrome/Edge/Firefox mặc định), dùng MediaPipe Tasks Vision
- *      (`FaceDetector` model BlazeFace của Google) làm phương án dự
- *      phòng chính. Đây là model học sâu nhẹ (~200KB), chạy hoàn toàn cục
- *      bộ trong trình duyệt bằng WASM/GPU, độ chính xác cao hơn nhiều so
- *      với thư viện Viola-Jones kiểu cũ (tracking.js) — vốn rất dễ ra 0
- *      kết quả khi ảnh nhỏ, ánh sáng yếu, hoặc mặt hơi nghiêng.
- *   Dù dùng cách nào, cả hai đều được lấy mẫu theo chu kỳ CK_POLL_INTERVAL_MS
- *   (mặc định 300ms) thay vì chạy liên tục — khi không có khuôn mặt nào,
- *   trang KHÔNG làm gì thêm cho tới lần lấy mẫu kế tiếp. Chỉ khi phát hiện
- *   được MỘT khuôn mặt và khuôn mặt đó đứng yên (tâm + kích thước không đổi
- *   nhiều) liên tục tối thiểu CK_STABLE_HOLD_MS (mặc định 500ms) thì mới
- *   chụp khung hình đầy đủ & gửi lên BE để nhận diện.
- * - CHECK-IN — sau khi gọi BE xong (dù thành công/lỗi/không nhận diện
- *   được), trang giữ NGUYÊN kết quả (thành công/lỗi) hiển thị nổi bật ngay
- *   trên khung camera cho tới khi người đó RỜI KHỎI khung hình (không còn
- *   phát hiện khuôn mặt nào nữa) — không tự động biến mất theo một mốc
- *   thời gian cố định nữa. Nhờ vậy nhân viên luôn thấy rõ lý do khi có
- *   người không thể check-in, và tránh việc BE bị gọi lặp lại liên tục
- *   cho cùng 1 người còn đứng yên trước camera.
+ * - Camera CHỈ quét khuôn mặt theo từng đợt lấy mẫu (poll) mỗi
+ *   CK_POLL_INTERVAL_MS (mặc định 300ms), KHÔNG quét liên tục theo từng
+ *   khung hình. Ưu tiên dùng Shape Detection API (`window.FaceDetector`)
+ *   có sẵn trong trình duyệt (hiếm khi có, nằm sau cờ thử nghiệm); nếu
+ *   không có thì dùng MediaPipe Tasks Vision (model BlazeFace của Google)
+ *   làm phương án dự phòng chính — chạy hoàn toàn cục bộ bằng WASM/GPU,
+ *   độ chính xác cao hơn nhiều so với các thư viện kiểu cũ (tracking.js).
+ * - Chỉ khi phát hiện ĐÚNG 1 khuôn mặt và khuôn mặt đó đứng yên (tâm +
+ *   kích thước không đổi nhiều) liên tục tối thiểu CK_STABLE_HOLD_MS
+ *   (mặc định 500ms) thì mới chụp khung hình đầy đủ & gửi lên BE để
+ *   nhận diện.
+ * - Sau khi gọi BE xong (dù thành công/lỗi/không nhận diện được), trang
+ *   giữ kết quả hiển thị trên khung camera trong CK_PAUSE_AFTER_CALL_MS
+ *   (mặc định 1.2s) rồi mới dọn overlay & quét tiếp — áp dụng GIỐNG HỆT
+ *   nhau cho cả Check-in lẫn Check-out.
  * - LOG: chỉ ghi console.log ở các mốc quan trọng (phát hiện đủ điều kiện
  *   gửi BE, gọi API, nhận kết quả) — KHÔNG log ở mỗi vòng poll (300ms/lần)
  *   để tránh console phình to khi camera chạy 24/7.
- * - Check-out: dùng LẠI đúng cơ chế quét tự động như Check-in (cùng
- *   FaceDetector/MediaPipe, cùng nhịp poll + kiểm tra đứng yên), chỉ khác
- *   ở chỗ gọi cashierApi.identifyAttendance(frame, "checkout", ...) thay vì
- *   "checkin". Check-out vẫn dùng cơ chế tạm dừng theo CK_PAUSE_AFTER_CALL_MS
- *   như trước (không đổi).
  * - QUAN TRỌNG — khớp với BE (bảng `check_ins` + `RekognitionFaceService`):
  *   Check-in và Check-out CÙNG dùng 1 bảng `check_ins`: 1 dòng = 1 lượt
  *   "vào tập" (check_in_time bắt buộc) và có thể được CẬP NHẬT thêm
@@ -65,11 +46,9 @@ import cashierApi from "../../../api/cashierApi";
  *   FE, FE chỉ gửi ẢNH) -> map ra memberId -> kiểm tra điều kiện -> nếu
  *   action=checkin thì INSERT dòng check_ins mới; nếu action=checkout thì
  *   tìm dòng check_ins đang mở (check_out_time IS NULL) của hội viên đó và
- *   UPDATE check_out_time/check_out_method. FE không còn tự gọi
- *   recognizeFace + getMemberById + checkin/checkoutByCamera riêng lẻ nữa.
+ *   UPDATE check_out_time/check_out_method.
  * - Toàn bộ lời gọi dữ liệu dùng chung `cashierApi` (import từ ./cashierApi,
- *   vốn đã bọc authApi để tự đính kèm Authorization header) — không còn
- *   object `api` cục bộ gọi fetch() trực tiếp trong file này nữa.
+ *   vốn đã bọc authApi để tự đính kèm Authorization header).
  * ======================================================================= */
 
 const MANUAL_REASON_OPTIONS = [
@@ -105,20 +84,15 @@ const CK_BOX_MOVE_THRESHOLD = 0.02;
 const CK_POLL_INTERVAL_MS = 300;
 /* Sau khi đã gọi BE xong (bất kể kết quả gì), tạm dừng quét trong khoảng
  * thời gian này rồi mới quét tiếp cho lượt kế tiếp. Cũng là thời gian giữ
- * hiển thị kết quả (thành công/lỗi) trên camera.
- * LƯU Ý: hằng số này giờ chỉ còn được camera CHECK-OUT dùng. Camera
- * CHECK-IN không dùng mốc thời gian cố định nữa — nó giữ nguyên kết quả
- * cho tới khi người đó rời khỏi khung hình (xem handleCkPoll). */
+ * hiển thị kết quả (thành công/lỗi) trên camera. Dùng chung cho CẢ
+ * Check-in lẫn Check-out. */
 const CK_PAUSE_AFTER_CALL_MS = 1200;
 
 /* MediaPipe Tasks Vision — FaceDetector (model BlazeFace) của Google.
  * Đây là phương án dự phòng khi trình duyệt không có Shape Detection API
  * native (`window.FaceDetector`, vốn luôn bị tắt mặc định trừ khi người
- * dùng tự bật cờ thử nghiệm chrome://flags). Khác với tracking.js
- * (Viola-Jones, thuật toán cũ từ ~2014, độ chính xác thấp với ảnh nhỏ/
- * ánh sáng yếu), MediaPipe dùng model học sâu nhẹ, chạy WASM/GPU ngay
- * trong trình duyệt, độ chính xác cao hơn nhiều và không cần bật cờ gì
- * cả. Tải qua ESM CDN bằng dynamic import(), không cần thẻ <script> UMD. */
+ * dùng tự bật cờ thử nghiệm chrome://flags). Tải qua ESM CDN bằng dynamic
+ * import(), không cần thẻ <script> UMD. */
 const MEDIAPIPE_VISION_URL = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs";
 const MEDIAPIPE_WASM_BASE = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm";
 const MEDIAPIPE_FACE_MODEL_URL = "https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite";
@@ -182,9 +156,9 @@ function getIneligibleReason(member) {
 }
 /* Lưu ý: điều kiện được phép check-out (vd. tài khoản bị khoá/hết hạn vẫn
  * cho check-out vì đang có mặt trong gym, chỉ chặn tài khoản chưa kích
- * hoạt) giờ do BE tự kiểm tra trong endpoint cashierApi.identifyAttendance
- * và trả về status "ineligible"/"no_open_session" kèm `reason` — FE không
- * cần hàm canCheckout/getCheckoutIneligibleReason phía client nữa. */
+ * hoạt) do BE tự kiểm tra trong endpoint cashierApi.identifyAttendance và
+ * trả về status "ineligible"/"no_open_session" kèm `reason` — FE không
+ * cần hàm canCheckout/getCheckoutIneligibleReason phía client. */
 
 /* =========================================================================
  * Hàm dùng chung cho cả 2 camera (check-in & check-out) để khởi tạo cơ chế
@@ -508,20 +482,16 @@ export default function CameraRecognition() {
     const [ckRecognizeStatus, setCkRecognizeStatus] = useState(null); // "loading" | "success" | "error"
     const [ckRecognizeReason, setCkRecognizeReason] = useState(""); // lý do không check-in được, hiển thị ngay trên khung camera
 
-    /* Cờ điều khiển vòng lặp quét tự động của camera check-in:
-     * - ckProcessingRef: đang có 1 request nhận diện đang bay, tránh gửi chồng
-     * - ckPausedRef: đang GIỮ hiển thị kết quả (thành công/lỗi) cho người
-     *   vừa được nhận diện. Trong lúc này, poll vẫn chạy nhưng CHỈ để kiểm
-     *   tra xem người đó đã rời khỏi khung hình hay chưa (faces.length === 0)
-     *   — nếu còn ở đó thì cứ giữ nguyên overlay, KHÔNG gọi lại BE. Chỉ khi
-     *   không còn phát hiện khuôn mặt nào nữa mới dọn overlay và quét bình
-     *   thường trở lại. Nhờ vậy kết quả (đặc biệt là lý do không thể
-     *   check-in) luôn hiển thị rõ ràng, nổi bật ngay trên khung camera cho
-     *   tới khi người đó thực sự rời đi, thay vì tự tắt sau một khoảng thời
-     *   gian cố định rồi lặp lại việc gọi BE liên tục cho cùng 1 người.
+    /* Cờ điều khiển vòng lặp quét tự động của camera check-in (giống hệt
+     * check-out):
+     * - ckProcessingRef: đang có 1 request nhận diện đang bay, tránh gửi
+     *   chồng
+     * - ckPausedRef: đang tạm dừng quét trong CK_PAUSE_AFTER_CALL_MS sau
+     *   khi vừa gọi BE xong, để giữ hiển thị kết quả (thành công/lỗi) đủ
+     *   lâu cho nhân viên nhìn thấy trước khi quét tiếp
      * - ckLastBoxRef / ckStableStartRef: theo dõi vị trí khuôn mặt (phát
-     *   hiện THẬT bằng FaceDetector/MediaPipe, không phải suy đoán qua
-     *   độ lệch pixel) qua các lần lấy mẫu để chỉ gửi ảnh lên BE khi khuôn
+     *   hiện THẬT bằng FaceDetector/MediaPipe, không phải suy đoán qua độ
+     *   lệch pixel) qua các lần lấy mẫu để chỉ gửi ảnh lên BE khi khuôn
      *   mặt đứng yên đủ CK_STABLE_HOLD_MS
      */
     const ckProcessingRef = useRef(false);
@@ -543,25 +513,7 @@ export default function CameraRecognition() {
      * chạy 24/7). Chỉ log tại đúng 2 mốc: (1) xác nhận đứng yên đủ lâu và
      * chuẩn bị gửi BE, (2) nhận được kết quả từ BE. */
     const handleCkPoll = useCallback(async (video) => {
-        if (ckProcessingRef.current) return;
-
-        if (ckPausedRef.current) {
-            // Đang giữ hiển thị kết quả (thành công/lỗi) của lượt trước —
-            // chỉ kiểm tra xem người đó đã rời khỏi khung hình chưa, KHÔNG
-            // gọi lại BE. Overlay (và lý do không thể check-in, nếu có) vẫn
-            // hiển thị nguyên trên camera cho tới khi không còn khuôn mặt
-            // nào trong khung hình nữa.
-            const stillThere = await detectFacesOnce(video);
-            if (stillThere.length === 0) {
-                ckPausedRef.current = false;
-                setCkRecognizeStatus(null);
-                setCkRecognizeResult(null);
-                setCkRecognizeReason("");
-                ckStableStartRef.current = null;
-                ckLastBoxRef.current = null;
-            }
-            return;
-        }
+        if (ckProcessingRef.current || ckPausedRef.current) return;
 
         const faces = await detectFacesOnce(video);
 
@@ -611,8 +563,11 @@ export default function CameraRecognition() {
 
         console.log("[CheckIn] Phát hiện khuôn mặt đứng yên — gửi ảnh lên BE để nhận diện...");
 
-        // Khoá vòng poll ngay lập tức để tránh gửi chồng request.
+        // Khoá vòng poll ngay lập tức để tránh gửi chồng request, và tạm
+        // dừng quét — dù kết quả là gì, hàm finally bên dưới sẽ mở khoá lại
+        // sau đúng CK_PAUSE_AFTER_CALL_MS.
         ckProcessingRef.current = true;
+        ckPausedRef.current = true;
         setCkRecognizeStatus("loading");
         setCkRecognizeResult(null);
         setCkRecognizeReason("");
@@ -626,11 +581,8 @@ export default function CameraRecognition() {
 
             if (result.status === "no_face" || result.status === "not_recognized") {
                 // Không có khuôn mặt rõ ràng, hoặc có mặt nhưng không khớp hội
-                // viên nào -> im lặng bỏ qua, quét tiếp cho lượt sau ngay (không
-                // có kết quả gì để giữ hiển thị nên không cần tạm dừng).
+                // viên nào -> im lặng bỏ qua.
                 setCkRecognizeStatus(null);
-                ckStableStartRef.current = null;
-                ckLastBoxRef.current = null;
                 return;
             }
 
@@ -640,9 +592,6 @@ export default function CameraRecognition() {
                 setCkRecognizeReason(result.reason || "");
                 showToast("error", `${result.member.fullName} — không thể check-in`);
                 recordCheckin(result.member, "camera", "error", result.reason);
-                // Giữ nguyên overlay lỗi trên camera cho tới khi người này rời
-                // khỏi khung hình (xử lý ở nhánh ckPausedRef phía trên).
-                ckPausedRef.current = true;
                 console.log("[CheckIn] Không đủ điều kiện check-in:", result.reason);
                 return;
             }
@@ -652,13 +601,22 @@ export default function CameraRecognition() {
             setCkRecognizeStatus("success");
             showToast("success", `Check-in thành công — ${result.member.fullName}`);
             recordCheckin(result.member, "camera", "success");
-            ckPausedRef.current = true;
             console.log("[CheckIn] Check-in thành công cho:", result.member.fullName);
         } catch (err) {
             console.error("[CheckIn] Lỗi nhận diện khuôn mặt (check-in):", err);
             setCkRecognizeStatus(null);
         } finally {
             ckProcessingRef.current = false;
+            // Giữ overlay kết quả trên camera trong CK_PAUSE_AFTER_CALL_MS
+            // rồi mới dọn dẹp & cho phép quét lượt kế tiếp.
+            setTimeout(() => {
+                setCkRecognizeStatus(null);
+                setCkRecognizeResult(null);
+                setCkRecognizeReason("");
+                ckPausedRef.current = false;
+                ckStableStartRef.current = null;
+                ckLastBoxRef.current = null;
+            }, CK_PAUSE_AFTER_CALL_MS);
         }
     }, []);
 
@@ -666,9 +624,9 @@ export default function CameraRecognition() {
     // thái sẵn sàng của cơ chế dò khuôn mặt. Đây là một `setInterval` đơn
     // giản, KHÔNG phải vòng lặp requestAnimationFrame liên tục — giữa 2 lần
     // gọi (CK_POLL_INTERVAL_MS), trang hoàn toàn rảnh, không tốn CPU/dữ liệu.
-    // Nếu đang xử lý 1 lượt nhận diện (ckProcessingRef) thì lượt poll đó bị
-    // bỏ qua ngay từ đầu hàm handleCkPoll; nếu đang giữ hiển thị kết quả
-    // (ckPausedRef) thì chỉ kiểm tra xem người đó đã rời đi chưa.
+    // Nếu đang xử lý 1 lượt nhận diện (ckProcessingRef) hoặc đang trong thời
+    // gian tạm dừng sau khi gọi BE (ckPausedRef), lượt poll đó bị bỏ qua
+    // ngay từ đầu hàm handleCkPoll.
     useEffect(() => {
         if (!ckCameraOn || ckLibStatus !== "ready") return;
         const video = ckVideoRef.current;
@@ -775,25 +733,17 @@ export default function CameraRecognition() {
 
     /* ============================ CHECK-OUT: logic nghiệp vụ ============================
      * Giống hệt Check-in: camera tự động quét theo poll, chỉ gửi ảnh lên
-     * BE khi phát hiện đúng 1 khuôn mặt đứng yên đủ lâu. Khác biệt DUY
-     * NHẤT so với Check-in là gọi cashierApi.identifyAttendance(frame,
-     * "checkout", ...) thay vì "checkin" — BE tự xét điều kiện (đủ điều
-     * kiện hay không, có phiên check-in nào đang mở để đóng lại hay
-     * không) và trả về qua các status "ineligible" / "no_open_session"
-     * kèm `reason`. Camera check-out vẫn dùng cơ chế tạm dừng theo
-     * CK_PAUSE_AFTER_CALL_MS (không đổi so với trước).
+     * BE khi phát hiện đúng 1 khuôn mặt đứng yên đủ lâu, rồi tạm dừng
+     * CK_PAUSE_AFTER_CALL_MS trước khi quét tiếp. Khác biệt DUY NHẤT so
+     * với Check-in là gọi cashierApi.identifyAttendance(frame, "checkout",
+     * ...) thay vì "checkin" — BE tự xét điều kiện (đủ điều kiện hay
+     * không, có phiên check-in nào đang mở để đóng lại hay không) và trả
+     * về qua các status "ineligible" / "no_open_session" kèm `reason`.
      */
     const [lastCheckout, setLastCheckout] = useState(null); // { member, result, at }
     const [coRecognizeResult, setCoRecognizeResult] = useState(null);
     const [coRecognizeStatus, setCoRecognizeStatus] = useState(null); // "loading" | "success" | "error"
     const [coRecognizeReason, setCoRecognizeReason] = useState(""); // lý do không check-out được, hiển thị ngay trên khung camera
-
-    /* Nhật ký các lượt check-out (thành công & thất bại) do CAMERA phát
-     * hiện, hiển thị trực tiếp ngay trong khung camera check-out. */
-    const [coLog, setCoLog] = useState([]);
-    const addCoLog = (entry) => {
-        setCoLog(prev => [{ id: `${Date.now()}-${Math.random()}`, at: new Date(), ...entry }, ...prev].slice(0, 8));
-    };
 
     const coProcessingRef = useRef(false);
     const coPausedRef = useRef(false);
@@ -874,8 +824,7 @@ export default function CameraRecognition() {
                 setCoRecognizeStatus("error");
                 setCoRecognizeReason(result.reason || "Hội viên chưa check-in nên không thể check-out.");
                 showToast("error", `${result.member.fullName} — chưa check-in nên không thể check-out`);
-                setLastCheckout({ member: result.member, result: "error", at: new Date() });
-                addCoLog({ name: result.member.fullName, photoUrl: result.member.photoUrl, success: false, reason: result.reason || "Chưa check-in nên không thể check-out" });
+                setLastCheckout({ member: result.member, result: "error", reason: result.reason || "Chưa check-in nên không thể check-out", at: new Date() });
                 console.log("[CheckOut] Hội viên không có phiên check-in nào đang mở:", result.member.fullName);
                 return;
             }
@@ -885,8 +834,7 @@ export default function CameraRecognition() {
                 setCoRecognizeStatus("error");
                 setCoRecognizeReason(result.reason || "");
                 showToast("error", `${result.member.fullName} — không thể check-out`);
-                setLastCheckout({ member: result.member, result: "error", at: new Date() });
-                addCoLog({ name: result.member.fullName, photoUrl: result.member.photoUrl, success: false, reason: result.reason });
+                setLastCheckout({ member: result.member, result: "error", reason: result.reason, at: new Date() });
                 console.log("[CheckOut] Không đủ điều kiện check-out:", result.reason);
                 return;
             }
@@ -896,7 +844,6 @@ export default function CameraRecognition() {
             setCoRecognizeStatus("success");
             showToast("success", `Check-out thành công — ${result.member.fullName}`);
             setLastCheckout({ member: result.member, result: "success", at: new Date() });
-            addCoLog({ name: result.member.fullName, photoUrl: result.member.photoUrl, success: true });
             console.log("[CheckOut] Check-out thành công cho:", result.member.fullName);
         } catch (err) {
             console.error("[CheckOut] Lỗi nhận diện khuôn mặt (check-out):", err);
@@ -947,7 +894,7 @@ export default function CameraRecognition() {
         :root {
           --bg: #ffffff; --surface: #f8fafc; --surface-alt: #eef2f5; --border: #e2e8f0;
           --text: #0f172a; --text-muted: #64748b;
-          --primary: #0ea975; --primary-dark: #067a56; --primary-light: #e3f8ef;
+          --primary: #0891b2; --primary-dark: #0e5a6b; --primary-light: #e0f7fb;
           --warning: #d97706; --warning-light: #fef3c7;
           --danger: #dc2626; --danger-light: #fee2e2;
           --indigo: #6366f1; --indigo-light: #eef2ff;
@@ -1022,7 +969,7 @@ export default function CameraRecognition() {
         .rec-dot { width: 7px; height: 7px; border-radius: 50%; background: #94a3b8; }
         .rec-dot.on.checkin  { background: var(--primary); animation: rec-pulse-g 1.6s infinite; }
         .rec-dot.on.checkout { background: var(--cko-primary); animation: rec-pulse-r 1.6s infinite; }
-        @keyframes rec-pulse-g { 0%,100% { box-shadow: 0 0 0 0 rgba(14,169,117,.45);} 50% { box-shadow: 0 0 0 5px rgba(14,169,117,0);} }
+        @keyframes rec-pulse-g { 0%,100% { box-shadow: 0 0 0 0 rgba(8,145,178,.45);} 50% { box-shadow: 0 0 0 5px rgba(8,145,178,0);} }
         @keyframes rec-pulse-r { 0%,100% { box-shadow: 0 0 0 0 rgba(220,38,38,.45);} 50% { box-shadow: 0 0 0 5px rgba(220,38,38,0);} }
 
         .rec-face-api-note {
@@ -1079,8 +1026,8 @@ export default function CameraRecognition() {
           align-items: center; justify-content: center; gap: 8px; backdrop-filter: blur(2px);
           padding: 12px;
         }
+        .rec-viewport-overlay.transparent { background: transparent; backdrop-filter: none; }
         .rec-viewport-overlay.loading { background: rgba(15,23,42,.5); }
-        .rec-viewport-overlay.success.checkin  { background: rgba(6,122,86,.7); }
         .rec-viewport-overlay.success.checkout { background: rgba(185,28,28,.7); }
         .rec-viewport-overlay.error   { background: rgba(220,38,38,.7); }
         .rec-viewport-overlay p { margin: 0; color: #fff; font-weight: 700; font-size: 13px; text-align: center; padding: 0 12px; }
@@ -1095,8 +1042,13 @@ export default function CameraRecognition() {
         .rec-overlay-note-text { font-size: 12.5px; font-weight: 700; color: var(--danger); line-height: 1.42; word-break: break-word; }
         .rec-overlay-note-label { display: block; font-size: 10px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; color: var(--danger); margin-bottom: 2px; }
 
+        .rec-overlay-note.success { border-color: #a7e3ee; box-shadow: 0 6px 18px rgba(0,0,0,.2); }
+        .rec-overlay-note.success svg { color: var(--primary-dark); }
+        .rec-overlay-note.success .rec-overlay-note-text,
+        .rec-overlay-note.success .rec-overlay-note-label { color: var(--primary-dark); }
+
         /* Đẩy nội dung overlay (icon + tên) xuống sát mép dưới của khung
-         * camera thay vì canh giữa — dùng cho overlay "Không thể check-in" */
+         * camera thay vì canh giữa — dùng cho overlay kết quả check-in */
         .rec-viewport-overlay.bottom-align {
           justify-content: flex-end;
           padding-bottom: 22px;
@@ -1132,33 +1084,6 @@ export default function CameraRecognition() {
         .rec-btn-danger:hover:not(:disabled) { background: var(--danger-light); }
         .rec-btn-indigo { background: #fff; border-color: #c7d2fe; color: var(--indigo); }
         .rec-btn-indigo:hover:not(:disabled) { background: var(--indigo-light); }
-
-        .rec-cam-log { margin-top: 8px; flex-shrink: 0; }
-        .rec-cam-log-title {
-          font-size: 10.5px; font-weight: 700; color: var(--text-muted);
-          text-transform: uppercase; letter-spacing: .04em; margin: 0 0 5px;
-        }
-        .rec-cam-log-list {
-          display: flex; flex-direction: column; gap: 4px;
-          max-height: 148px; overflow-y: auto; padding-right: 2px;
-        }
-        .rec-cam-log-item {
-          display: flex; align-items: center; gap: 7px;
-          padding: 5px 8px; border-radius: var(--radius-sm);
-          background: #fff; border: 1px solid var(--border); font-size: 11.5px;
-        }
-        .rec-cam-log-item.success { border-color: #bbf0d8; background: var(--primary-light); }
-        .rec-cam-log-item.error   { border-color: #fecaca; background: var(--danger-light); }
-        .rec-cam-log-item.success svg { color: var(--primary-dark); flex-shrink: 0; }
-        .rec-cam-log-item.error svg   { color: var(--danger); flex-shrink: 0; }
-        .rec-cam-log-avatar {
-          width: 20px; height: 20px; border-radius: 6px; flex-shrink: 0; object-fit: cover;
-          cursor: pointer; border: 1px solid rgba(0,0,0,.08);
-        }
-        .rec-cam-log-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
-        .rec-cam-log-name { font-weight: 700; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .rec-cam-log-reason { font-weight: 500; color: var(--danger); font-size: 10.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .rec-cam-log-time { flex-shrink: 0; color: var(--text-muted); font-weight: 600; font-size: 10.5px; }
 
         .rec-side-panel { display: flex; flex-direction: column; gap: 8px; height: 100%; min-height: 0; }
         .rec-phone-input-block { display: flex; gap: 8px; align-items: stretch; flex-wrap: wrap; flex-shrink: 0; }
@@ -1208,8 +1133,6 @@ export default function CameraRecognition() {
         .rec-lc-card.lookup-ok              { border-color: var(--primary); }
         .rec-lc-card.lookup-blocked         { border-color: var(--danger); }
 
-        .rec-lc-card.checkout-minimal { align-items: stretch; justify-content: center; }
-
         .rec-lc-top {
           position: relative; display: flex; flex-direction: column; align-items: center; gap: 8px;
           padding: 12px 10px 10px; background: var(--surface-alt); text-align: center; flex-shrink: 0;
@@ -1219,7 +1142,6 @@ export default function CameraRecognition() {
         .rec-lc-card.success.checkout .rec-lc-top { background: var(--cko-primary-light); }
         .rec-lc-card.error .rec-lc-top,
         .rec-lc-card.lookup-blocked .rec-lc-top { background: var(--danger-light); }
-        .rec-lc-card.checkout-minimal .rec-lc-top { flex: 1; justify-content: center; padding: 16px 10px; }
 
         .rec-lc-avatar {
           width: 34%; aspect-ratio: 1 / 1; max-width: 130px; min-width: 64px; border-radius: 20%;
@@ -1234,12 +1156,10 @@ export default function CameraRecognition() {
         .rec-lc-card.success.checkout .rec-lc-avatar { background: var(--cko-primary-dark); }
 
         .rec-lc-name { font-weight: 700; font-size: 13.5px; margin: 0; word-break: break-word; }
-        .rec-lc-card.checkout-minimal .rec-lc-name { font-size: 16px; margin-bottom: 2px; }
         .rec-lc-result-line { display: flex; align-items: center; justify-content: center; gap: 5px; font-size: 11.5px; font-weight: 700; }
         .rec-lc-result-line.success.checkin  { color: var(--primary-dark); }
         .rec-lc-result-line.success.checkout { color: var(--cko-primary-dark); }
         .rec-lc-result-line.error   { color: var(--danger); }
-        .rec-lc-checkout-time { margin: 6px 0 0; font-size: 11px; color: var(--text-muted); font-weight: 600; }
 
         .rec-lc-source {
           position: absolute; top: 10px; right: 10px; flex-shrink: 0;
@@ -1429,15 +1349,26 @@ export default function CameraRecognition() {
                                     </div>
                                 )}
                                 {ckRecognizeStatus === "success" && ckRecognizeResult && (
-                                    <div className="rec-viewport-overlay success checkin">
-                                        <CheckCircle2 size={40} color="#fff" />
-                                        <p>Check-in thành công!<br />{ckRecognizeResult.fullName}</p>
+                                    <div className="rec-viewport-overlay transparent bottom-align">
+                                        <div className="rec-overlay-note success">
+                                            <CheckCircle2 size={18} />
+                                            <div className="rec-overlay-note-text">
+                                                <span className="rec-overlay-note-label">Check-in thành công</span>
+                                                {ckRecognizeResult.fullName}
+                                            </div>
+                                        </div>
                                     </div>
                                 )}
                                 {ckRecognizeStatus === "error" && ckRecognizeResult && (
-                                    <div className="rec-viewport-overlay error bottom-align">
-                                        <XCircle size={40} color="#fff" />
-                                        <p>Không thể check-in<br />{ckRecognizeResult.fullName}</p>
+                                    <div className="rec-viewport-overlay transparent bottom-align">
+                                        <div className="rec-overlay-note">
+                                            <XCircle size={18} />
+                                            <div className="rec-overlay-note-text">
+                                                <span className="rec-overlay-note-label">Không thể check-in</span>
+                                                {ckRecognizeResult.fullName}
+                                                {ckRecognizeReason ? ` — ${ckRecognizeReason}` : ""}
+                                            </div>
+                                        </div>
                                     </div>
                                 )}
                             </div>
@@ -1697,35 +1628,9 @@ export default function CameraRecognition() {
                                 <DoorOpen size={13} /> Mở cửa
                             </button>
                         </div>
-
-                        {coLog.length > 0 && (
-                            <div className="rec-cam-log">
-                                <p className="rec-cam-log-title">Nhật ký check-out gần đây</p>
-                                <div className="rec-cam-log-list">
-                                    {coLog.map(item => (
-                                        <div key={item.id} className={`rec-cam-log-item ${item.success ? "success" : "error"}`}>
-                                            {item.photoUrl ? (
-                                                <img
-                                                    src={item.photoUrl}
-                                                    alt={item.name}
-                                                    className="rec-cam-log-avatar"
-                                                    onClick={() => setPhotoViewMember({ photoUrl: item.photoUrl, fullName: item.name })}
-                                                    title="Bấm để xem ảnh"
-                                                />
-                                            ) : (item.success ? <CheckCircle2 size={14} /> : <XCircle size={14} />)}
-                                            <div className="rec-cam-log-text">
-                                                <span className="rec-cam-log-name">{item.name}</span>
-                                                {!item.success && item.reason && <span className="rec-cam-log-reason">{item.reason}</span>}
-                                            </div>
-                                            <span className="rec-cam-log-time">{item.at.toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" })}</span>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                        )}
                     </div>
 
-                    {/* Chỉ tên người vừa check-out — tối giản */}
+                    {/* Thông tin đầy đủ của người vừa check-out — giống Check-in */}
                     <div className="rec-card checkout rec-side-panel">
                         <div className="rec-panel-header row-out">
                             <div className="rec-card-title"><h3>Người vừa check-out</h3></div>
@@ -1736,10 +1641,10 @@ export default function CameraRecognition() {
                                 <div className="rec-lastcheckin-empty">
                                     <UserRound size={22} />
                                     <p>Chưa có lượt check-out nào</p>
-                                    <span>Camera sẽ tự nhận diện — tên hội viên sẽ hiện tại đây</span>
+                                    <span>Camera sẽ tự nhận diện — thông tin hội viên sẽ hiện tại đây</span>
                                 </div>
                             ) : (
-                                <div className={`rec-lc-card ${lastCheckout.result} checkout checkout-minimal`}>
+                                <div className={`rec-lc-card ${lastCheckout.result} checkout`}>
                                     <MemberTop
                                         member={coInfoMember}
                                         onViewPhoto={setPhotoViewMember}
@@ -1749,12 +1654,42 @@ export default function CameraRecognition() {
                                                 <div className={`rec-lc-result-line checkout ${lastCheckout.result}`}>
                                                     {lastCheckout.result === "success" ? <><CheckCircle2 size={13} /> Check-out thành công</> : <><XCircle size={13} /> Không thể check-out</>}
                                                 </div>
-                                                <p className="rec-lc-checkout-time">
-                                                    {lastCheckout.at.toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" })}
-                                                </p>
+                                                <div className="rec-lc-badges">
+                                                    <StatusBadge status={coInfoMember.packageStatus} />
+                                                    <AccountStatusBadge status={coInfoMember.accountStatus} />
+                                                </div>
                                             </>
                                         }
                                     />
+                                    <div className="rec-lc-body">
+                                        <div className="rec-lc-row"><span className="rec-lc-row-label">Mã hội viên</span><span className="rec-lc-row-value">#{coInfoMember.memberId}</span></div>
+                                        <div className="rec-lc-row"><span className="rec-lc-row-label">Số điện thoại</span><span className="rec-lc-row-value">{coInfoMember.phone}</span></div>
+                                        <div className="rec-lc-row"><span className="rec-lc-row-label">Gói tập</span><span className="rec-lc-row-value">{coInfoMember.package}</span></div>
+                                        <div className="rec-lc-row"><span className="rec-lc-row-label">Hết hạn gói</span><span className="rec-lc-row-value">{coInfoMember.expiryDate}</span></div>
+                                        <div className="rec-lc-row"><span className="rec-lc-row-label">Giờ check-out</span><span className="rec-lc-row-value">{lastCheckout.at.toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" })}</span></div>
+
+                                        {lastCheckout.reason && lastCheckout.result === "error" && (
+                                            <div className="rec-lc-internal-note">
+                                                <AlertCircle size={15} />
+                                                <div className="rec-lc-internal-note-text">
+                                                    <span className="rec-lc-internal-note-label">Lý do không thể check-out</span>
+                                                    {lastCheckout.reason}
+                                                </div>
+                                            </div>
+                                        )}
+                                        {coInfoMember.accountStatus === "Suspended" && coInfoMember.suspendReason && (
+                                            <div className="rec-lc-suspend-note"><ShieldAlert size={13} /><span>Lý do khoá: {coInfoMember.suspendReason}</span></div>
+                                        )}
+                                        {coInfoMember.internalNotes && (
+                                            <div className="rec-lc-internal-note">
+                                                <AlertCircle size={15} />
+                                                <div className="rec-lc-internal-note-text">
+                                                    <span className="rec-lc-internal-note-label">Ghi chú nội bộ</span>
+                                                    {coInfoMember.internalNotes}
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
                                 </div>
                             )}
                         </div>

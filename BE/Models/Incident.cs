@@ -24,11 +24,6 @@ public partial class Incident
     public string Description { get; set; } = null!;
 
     /// <summary>
-    /// URL ảnh minh chứng sự cố lưu trên S3, có thể NULL
-    /// </summary>
-    public string? ImageUrl { get; set; }
-
-    /// <summary>
     /// Chi nhánh xảy ra sự cố — FK tới branches.branch_id
     /// </summary>
     public int BranchId { get; set; }
@@ -48,15 +43,7 @@ public partial class Incident
     /// </summary>
     public long? ReportedByEmployeeId { get; set; }
 
-    /// <summary>
-    /// Trạng thái: PendingApproval=chờ duyệt, Assigned=đã phân công, Rejected=bị từ chối
-    /// </summary>
     public string Status { get; set; } = null!;
-
-    /// <summary>
-    /// Nhân viên/kỹ thuật được phân công xử lý — FK tới employees.employee_id. Bắt buộc điền khi status = Assigned
-    /// </summary>
-    public long? AssignedTo { get; set; }
 
     /// <summary>
     /// Lý do từ chối sự cố — bắt buộc điền khi status = Rejected
@@ -79,8 +66,6 @@ public partial class Incident
     public DateTime UpdatedAt { get; set; }
 
     public virtual Employee? ApprovedByNavigation { get; set; }
-
-    public virtual Employee? AssignedToNavigation { get; set; }
 
     public virtual Branch Branch { get; set; } = null!;
 

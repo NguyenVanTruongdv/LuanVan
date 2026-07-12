@@ -1,6 +1,22 @@
-  import { useState } from "react";
+import { useState } from "react";
   import { useNavigate } from "react-router-dom";
   import authApi from "../../../api/authApi";
+
+  // Map role trả về từ BE -> route tương ứng sau khi đăng nhập.
+  // ⚠️ Kiểm tra lại đúng giá trị chuỗi role mà BE trả (vd: "Manager", "MANAGER",
+  // "manager"...) rồi chỉnh key cho khớp. Có thể để so sánh không phân biệt hoa/thường
+  // bằng cách .toLowerCase() như bên dưới cho an toàn.
+  const ROLE_HOME_ROUTES = {
+    manager: "/manager",
+    admin: "/admin",
+    staff: "/cashier",
+  };
+
+  function getHomeRouteByRole(role) {
+    if (!role) return "/cashier";
+    const key = String(role).toLowerCase();
+    return ROLE_HOME_ROUTES[key] || "/cashier";
+  }
 
   export default function StaffLogin() {
     const navigate = useNavigate();
@@ -22,12 +38,16 @@
       setLoading(true);
       try {
         // ⚠️ Kiểm tra lại tên field backend yêu cầu (phoneNumber/phone/username...)
-        await authApi.loginEmployee({
+        // authApi.loginEmployee() trả thẳng data JSON từ BE (không phải response
+        // axios), dạng { accessToken, refreshToken, fullName, role, entityType, status }
+        // — saveTokens() bên trong authApi đã lưu role vào localStorage rồi, ở đây
+        // chỉ cần đọc thẳng data.role để điều hướng.
+        const data = await authApi.loginEmployee({
             phone,
              password,
         });
 
-        navigate("/cashier"); // đăng nhập xong -> vào dashboard
+        navigate(getHomeRouteByRole(data?.role));
       } catch (err) {
         setError(err.message || "Đăng nhập thất bại");
       } finally {

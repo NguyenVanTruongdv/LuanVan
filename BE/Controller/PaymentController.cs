@@ -12,10 +12,12 @@ namespace BE.Controllers
     public class PaymentController : ControllerBase
     {
         private readonly PaymentService _paymentService;
+        private readonly MemberService _memberService; // [MỚI]
 
-        public PaymentController(PaymentService paymentService)
+        public PaymentController(PaymentService paymentService, MemberService memberService)
         {
             _paymentService = paymentService;
+            _memberService = memberService; // [MỚI]
         }
         [Authorize(Roles = "Member")]
         [HttpPost("create")]
@@ -28,6 +30,7 @@ namespace BE.Controllers
 
             return Ok(result);
         }
+        [Authorize(Roles = "Member")]
         [HttpGet("status/{orderCode}")]
         public async Task<IActionResult> GetPaymentStatus(string orderCode)
         {
@@ -73,6 +76,27 @@ namespace BE.Controllers
                 User.FindFirstValue(ClaimTypes.NameIdentifier)!);
             await _paymentService.CancelPaymentAsync(memberId, orderCode);
             return Ok();
+        }
+
+        // ===================== [MỚI] KIỂM TRA ĐIỀU KIỆN MUA GÓI ONLINE =====================
+        // Dùng cho trang mua gói online: FE gọi trước khi tạo giao dịch (bấm "Chọn mua").
+        // memberId LUÔN lấy từ JWT (ClaimTypes.NameIdentifier), không nhận từ FE, để tránh
+        // 1 member truyền id của người khác vào và dò được trạng thái gói của họ.
+        //
+        // Trả về:
+        //   isPendingActivation : tài khoản chưa từng ra quầy kích hoạt
+        //   hasPendingPackage   : đã có sẵn 1 gói PendingActivation (mua online trước đó)
+        //   canPurchasePackage  : false CHỈ KHI đang Pending VÀ đã có sẵn gói Pending
+        //                         -> FE dùng cờ này để chặn nút "Chọn mua" + hiện thông báo
+        //                         yêu cầu ra quầy kích hoạt trước khi mua thêm.
+        [HttpGet("pending-purchase-status")]
+        public async Task<IActionResult> CheckPendingPurchaseStatus()
+        {
+            var memberId = long.Parse(
+                User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+
+            var result = await _memberService.CheckPendingPurchaseStatusAsync(memberId);
+            return Ok(result);
         }
     }
 }

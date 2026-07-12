@@ -29,6 +29,8 @@ public partial class Transaction
 
     public int? PromotionId { get; set; }
 
+    public int BranchId { get; set; }
+
     /// <summary>
     /// Phương thức thanh toán: Cash = tiền mặt, BankTransfer = chuyển khoản
     /// </summary>
@@ -69,6 +71,8 @@ public partial class Transaction
     /// </summary>
     public long? EmployeeId { get; set; }
 
+    public virtual Branch Branch { get; set; } = null!;
+
     public virtual Employee? Employee { get; set; }
 
     public virtual Member Member { get; set; } = null!;
@@ -78,4 +82,6 @@ public partial class Transaction
     public virtual MembershipPlan Plan { get; set; } = null!;
 
     public virtual Promotion? Promotion { get; set; }
+
+    public virtual ICollection<TransactionAdjustmentLog> TransactionAdjustmentLogs { get; set; } = new List<TransactionAdjustmentLog>();
 }

@@ -13,41 +13,42 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 // Đường dẫn từ src/pages/cashier/member/ListMember.jsx tới src/api/cashierApi.js
 import cashierApi from "../../../api/cashierApi";
 
-/* ── DESIGN TOKENS – nền sáng, tông cyan/navy đồng bộ với Cashier Portal,
-      xanh lá riêng cho các hành động liên quan FaceID ── */
+/* ── DESIGN TOKENS – nền tối (dark navy), tông teal trầm/xanh lá dịu mắt,
+      đồng bộ với layout Cashier Portal trong ảnh mẫu. Màu nút được hạ độ
+      bão hoà so với bản cyan sáng trước đây để đỡ chói. ── */
 const C = {
-    bg: "#F1F5F9",
-    surface: "#FFFFFF",
-    card: "#FFFFFF",
-    cardAlt: "#F8FAFC",
-    border: "#E2E8F0",
-    borderDark: "#CBD5E1",
-    ink: "#0F172A",
-    inkSoft: "#1E293B",
-    inkMuted: "#64748B",
-    accent: "#0891B2",
-    accentDark: "#0E7490",
-    accentRGB: "8,145,178",
-    accentSoft: "rgba(34,211,238,0.10)",
-    accentGradient: "linear-gradient(135deg, #0E7490 0%, #0891B2 45%, #22D3EE 100%)",
-    accentRing: "rgba(34,211,238,0.28)",
-    // ── Xanh lá hiện đại, dùng riêng cho các hành động liên quan FaceID ──
-    faceGreen: "#059669",
-    faceGreenRGB: "5,150,105",
-    faceGreenGradient: "linear-gradient(135deg, #059669 0%, #10B981 55%, #34D399 100%)",
-    faceGreenSoft: "rgba(16,185,129,0.10)",
-    faceGreenRing: "rgba(16,185,129,0.22)",
-    green: "#15803D",
-    greenBg: "#F0FDF4",
-    greenBorder: "#BBF7D0",
-    amber: "#B45309",
-    amberBg: "#FFFBEB",
-    amberBorder: "#FDE68A",
-    red: "#B91C1C",
-    redBg: "#FEF2F2",
-    redBorder: "#FECACA",
-    shadow: "0 1px 4px rgba(15,23,42,0.06), 0 4px 16px rgba(15,23,42,0.05)",
-    shadowMd: "0 2px 8px rgba(15,23,42,0.08), 0 8px 26px rgba(15,23,42,0.07)",
+    bg: "#0B1220",
+    surface: "#111827",
+    card: "#111827",
+    cardAlt: "#0F1830",
+    border: "#223049",
+    borderDark: "#32405C",
+    ink: "#E7ECF3",
+    inkSoft: "#C7D0DE",
+    inkMuted: "#8B96A8",
+    accent: "#2C8FA8",
+    accentDark: "#5EC8E0",
+    accentRGB: "44,143,168",
+    accentSoft: "rgba(44,143,168,0.16)",
+    accentGradient: "linear-gradient(135deg, #1F6E82 0%, #2C8FA8 55%, #4FA9C4 100%)",
+    accentRing: "rgba(63,180,206,0.30)",
+    // ── Xanh lá trầm, dùng riêng cho các hành động liên quan FaceID ──
+    faceGreen: "#3FBE8E",
+    faceGreenRGB: "63,190,142",
+    faceGreenGradient: "linear-gradient(135deg, #1F7A5B 0%, #2F9E76 55%, #4FBE95 100%)",
+    faceGreenSoft: "rgba(63,190,142,0.14)",
+    faceGreenRing: "rgba(63,190,142,0.28)",
+    green: "#3FBE8E",
+    greenBg: "rgba(63,190,142,0.12)",
+    greenBorder: "rgba(63,190,142,0.35)",
+    amber: "#D9A441",
+    amberBg: "rgba(217,164,65,0.12)",
+    amberBorder: "rgba(217,164,65,0.35)",
+    red: "#F1685E",
+    redBg: "rgba(241,104,94,0.12)",
+    redBorder: "rgba(241,104,94,0.35)",
+    shadow: "0 1px 3px rgba(0,0,0,0.35), 0 4px 14px rgba(0,0,0,0.28)",
+    shadowMd: "0 2px 8px rgba(0,0,0,0.40), 0 10px 30px rgba(0,0,0,0.35)",
 };
 
 // Danh sách chi nhánh mặc định — chỉ dùng khi chưa tải được dữ liệu hội viên nào.
@@ -157,12 +158,12 @@ function avatarPalette(id) {
 }
 
 const GOI_STYLE = {
-    "Basic": { bg: "#E2E8F0", fg: "#1E293B", border: "#94A3B8" },
-    "Silver": { bg: "#E2E8F0", fg: "#0F172A", border: "#64748B" },
-    "Gold": { bg: "#FEF3C7", fg: "#78350F", border: "#F59E0B" },
-    "Platinum": { bg: "#CFFAFE", fg: "#0C4A6E", border: "#22D3EE" },
+    "Basic": { bg: "rgba(148,163,184,0.14)", fg: "#CBD5E1", border: "rgba(148,163,184,0.35)" },
+    "Silver": { bg: "rgba(148,163,184,0.14)", fg: "#E2E8F0", border: "rgba(148,163,184,0.4)" },
+    "Gold": { bg: "rgba(245,158,11,0.14)", fg: "#FCD34D", border: "rgba(245,158,11,0.4)" },
+    "Platinum": { bg: "rgba(34,211,238,0.14)", fg: "#67E8F9", border: "rgba(34,211,238,0.4)" },
 };
-const DEFAULT_GOI_STYLE = { bg: "#E0F2FE", fg: C.accentDark, border: "#BAE6FD" };
+const DEFAULT_GOI_STYLE = { bg: C.accentSoft, fg: C.accentDark, border: C.accentRing };
 
 const STATUS_STYLE = {
     "Đang hoạt động": { bg: C.greenBg, fg: C.green, border: C.greenBorder, dot: C.green },
@@ -173,7 +174,7 @@ const STATUS_STYLE = {
 
 // ── Badge phân biệt loại phiên trong lịch sử cập nhật: INFO (thông tin) vs FACEID (khuôn mặt) ──
 const SESSION_TYPE_STYLE = {
-    INFO: { label: "Cập nhật thông tin", bg: C.accentSoft, fg: C.accentDark, border: "rgba(34,211,238,0.3)", icon: Pencil },
+    INFO: { label: "Cập nhật thông tin", bg: C.accentSoft, fg: C.accentDark, border: "rgba(63,180,206,0.3)", icon: Pencil },
     FACEID: { label: "Cập nhật FaceID", bg: C.faceGreenSoft, fg: C.faceGreen, border: C.faceGreenRing, icon: Camera },
 };
 
@@ -209,7 +210,7 @@ function Avatar({ name, src, id, size = 40 }) {
             backgroundImage: src ? `url(${src})` : undefined, backgroundSize: "cover", backgroundPosition: "center",
             display: "flex", alignItems: "center", justifyContent: "center",
             color: "#fff", fontWeight: 800, fontSize: size * 0.34,
-            boxShadow: `0 0 0 2.5px #fff, 0 0 0 4px ${c1}66`,
+            boxShadow: `0 0 0 2.5px ${C.card}, 0 0 0 4px ${c1}66`,
         }}>
             {!src && initials(name)}
         </div>
@@ -219,12 +220,12 @@ function Avatar({ name, src, id, size = 40 }) {
 const inp = {
     fontSize: 14.5, padding: "10px 13px", borderRadius: 10,
     border: `1.5px solid ${C.border}`, outline: "none", color: C.ink,
-    background: C.surface, fontFamily: "inherit", width: "100%", boxSizing: "border-box",
+    background: C.bg, fontFamily: "inherit", width: "100%", boxSizing: "border-box",
     transition: "border-color .15s",
 };
-const btnAccent = { display: "inline-flex", alignItems: "center", gap: 7, fontSize: 13.5, fontWeight: 700, padding: "10px 18px", borderRadius: 10, cursor: "pointer", fontFamily: "inherit", border: "none", background: C.accentGradient, color: "#fff", boxShadow: `0 3px 12px rgba(${C.accentRGB},0.32)` };
-// ── Nút xanh lá hiện đại, dùng cho các hành động liên quan FaceID ──
-const btnGreen = { display: "inline-flex", alignItems: "center", gap: 7, fontSize: 13.5, fontWeight: 700, padding: "10px 18px", borderRadius: 10, cursor: "pointer", fontFamily: "inherit", border: "none", background: C.faceGreenGradient, color: "#fff", boxShadow: `0 3px 12px rgba(${C.faceGreenRGB},0.32)` };
+const btnAccent = { display: "inline-flex", alignItems: "center", gap: 7, fontSize: 13.5, fontWeight: 700, padding: "10px 18px", borderRadius: 10, cursor: "pointer", fontFamily: "inherit", border: "none", background: C.accentGradient, color: "#fff", boxShadow: `0 3px 12px rgba(${C.accentRGB},0.28)` };
+// ── Nút xanh lá trầm, dùng cho các hành động liên quan FaceID ──
+const btnGreen = { display: "inline-flex", alignItems: "center", gap: 7, fontSize: 13.5, fontWeight: 700, padding: "10px 18px", borderRadius: 10, cursor: "pointer", fontFamily: "inherit", border: "none", background: C.faceGreenGradient, color: "#fff", boxShadow: `0 3px 12px rgba(${C.faceGreenRGB},0.28)` };
 const btnOutline = { display: "inline-flex", alignItems: "center", gap: 7, fontSize: 13.5, fontWeight: 700, padding: "10px 16px", borderRadius: 10, cursor: "pointer", fontFamily: "inherit", background: C.surface, color: C.inkSoft, border: `1.5px solid ${C.border}` };
 const btnDanger = { display: "inline-flex", alignItems: "center", gap: 7, fontSize: 13.5, fontWeight: 700, padding: "10px 16px", borderRadius: 10, cursor: "pointer", fontFamily: "inherit", background: C.redBg, color: C.red, border: `1.5px solid ${C.redBorder}` };
 // ── Nút "Hủy" tông trung tính nhạt, dùng khi đứng cạnh nút Lưu để không lấn át hành động chính ──
@@ -248,10 +249,10 @@ function GlobalStyles() {
                 position: sticky;
                 top: 0;
                 z-index: 2;
-                background: #EEF6FA;
+                background: #16213A;
             }
             .gw-modal-backdrop {
-                position: fixed; inset: 0; background: rgba(15,23,42,0.5);
+                position: fixed; inset: 0; background: rgba(0,0,0,0.6);
                 display: flex; align-items: center; justify-content: center;
                 z-index: 50; padding: 20px;
             }
@@ -626,7 +627,7 @@ function ListPage({ members, onView, onEdit, loading = false }) {
             </div>
 
             <div style={{ display: "flex", gap: 14, marginBottom: 22, flexWrap: "wrap" }}>
-                <StatCard icon={Users} label="Tổng hội viên" value={members.length} color={C.accent} bgColor={C.accentSoft} />
+                <StatCard icon={Users} label="Tổng hội viên" value={members.length} color={C.accentDark} bgColor={C.accentSoft} />
                 <StatCard icon={Activity} label="Đang hoạt động" value={active} color={C.green} bgColor={C.greenBg} />
                 <StatCard icon={TrendingUp} label="Chờ hoạt động" value={pending} color={C.amber} bgColor={C.amberBg} />
                 <StatCard icon={TrendingUp} label="Hết hạn" value={expired} color={C.red} bgColor={C.redBg} />
@@ -669,7 +670,7 @@ function ListPage({ members, onView, onEdit, loading = false }) {
                         <tbody>
                             {filtered.map(m => (
                                 <tr key={m.id} style={{ borderBottom: `1px solid ${C.border}`, transition: "background .1s" }}
-                                    onMouseEnter={e => e.currentTarget.style.background = "#F0F9FF"}
+                                    onMouseEnter={e => e.currentTarget.style.background = "rgba(44,143,168,0.07)"}
                                     onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
                                     <td style={{ padding: "13px 16px" }}>
                                         <div style={{ display: "flex", alignItems: "center", gap: 11 }}>
@@ -920,7 +921,7 @@ function DetailPage({ memberId, listSnapshot, onBack, onSave, initialEditingInfo
                                             {["Nam", "Nữ", "Khác"].map(g => (
                                                 <label key={g} style={{
                                                     display: "flex", alignItems: "center", gap: 7, fontSize: 14, cursor: "pointer",
-                                                    color: draft.gioiTinh === g ? C.accent : C.inkSoft, fontWeight: draft.gioiTinh === g ? 800 : 600
+                                                    color: draft.gioiTinh === g ? C.accentDark : C.inkSoft, fontWeight: draft.gioiTinh === g ? 800 : 600
                                                 }}>
                                                     <input type="radio" name="gt-detail" checked={draft.gioiTinh === g} onChange={() => setDraft(d => ({ ...d, gioiTinh: g }))} style={{ accentColor: C.accent, width: 15, height: 15 }} />
                                                     {g}
@@ -1004,11 +1005,9 @@ export default function ListMember() {
     };
 
     return (
-        <div style={{ minHeight: "100vh", background: C.bg, fontFamily: "'Inter',-apple-system,BlinkMacSystemFont,sans-serif", color: C.ink }}>
+        <div style={{ minHeight: "100%", background: "transparent", fontFamily: "'Inter',-apple-system,BlinkMacSystemFont,sans-serif", color: C.ink }}>
             <GlobalStyles />
-            <div style={{ borderBottom: `1px solid ${C.border}`, background: C.surface, boxShadow: "0 1px 4px rgba(15,23,42,0.06)" }} />
-
-            <div style={{ maxWidth: 1180, margin: "0 auto", padding: "32px 28px 80px" }}>
+            <div style={{ maxWidth: 1180, margin: "0 auto" }}>
                 {route.page === "list" && (
                     <>
                         {listError && (

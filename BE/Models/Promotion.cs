@@ -13,6 +13,8 @@ public partial class Promotion
     /// </summary>
     public int PromotionId { get; set; }
 
+    public int PlanId { get; set; }
+
     /// <summary>
     /// Tên hiển thị chương trình, VD: Giảm 50% Gói PRO tháng 6
     /// </summary>
@@ -97,9 +99,13 @@ public partial class Promotion
 
     public virtual Employee NguoiTaoNavigation { get; set; } = null!;
 
-    public virtual ICollection<PromotionPlan> PromotionPlans { get; set; } = new List<PromotionPlan>();
+    public virtual MembershipPlan Plan { get; set; } = null!;
 
     public virtual ICollection<PromotionUsage> PromotionUsages { get; set; } = new List<PromotionUsage>();
+
+    public virtual ICollection<TransactionAdjustmentLog> TransactionAdjustmentLogNewPromotions { get; set; } = new List<TransactionAdjustmentLog>();
+
+    public virtual ICollection<TransactionAdjustmentLog> TransactionAdjustmentLogOldPromotions { get; set; } = new List<TransactionAdjustmentLog>();
 
     public virtual ICollection<Transaction> Transactions { get; set; } = new List<Transaction>();
 }

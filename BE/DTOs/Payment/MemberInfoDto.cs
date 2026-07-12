@@ -3,8 +3,8 @@ public class CurrentPackageDto
     public long MemberPackageId { get; set; }
     public int PlanId { get; set; }
     public string PlanName { get; set; }
-    public DateOnly StartDate { get; set; }
-    public DateOnly ExpiryDate { get; set; }
+    public DateOnly? StartDate { get; set; }
+    public DateOnly? ExpiryDate { get; set; }
     public string PackageStatus { get; set; }
 }
 

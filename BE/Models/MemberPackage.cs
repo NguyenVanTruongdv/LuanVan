@@ -13,6 +13,8 @@ public partial class MemberPackage
     /// </summary>
     public long MemberPackageId { get; set; }
 
+    public int BranchId { get; set; }
+
     /// <summary>
     /// Hội viên sở hữu gói — FK tới members.member_id
     /// </summary>
@@ -48,15 +50,9 @@ public partial class MemberPackage
     /// </summary>
     public short SoNgayTangThucTe { get; set; }
 
-    /// <summary>
-    /// Ngày bắt đầu có hiệu lực của gói
-    /// </summary>
-    public DateOnly StartDate { get; set; }
+    public DateOnly? StartDate { get; set; }
 
-    /// <summary>
-    /// Ngày hết hạn = start_date + duration_days + so_ngay_tang_thuc_te
-    /// </summary>
-    public DateOnly ExpiryDate { get; set; }
+    public DateOnly? ExpiryDate { get; set; }
 
     public string PackageStatus { get; set; } = null!;
 
@@ -69,6 +65,8 @@ public partial class MemberPackage
     /// Thời điểm cập nhật gần nhất
     /// </summary>
     public DateTime UpdatedAt { get; set; }
+
+    public virtual Branch Branch { get; set; } = null!;
 
     public virtual ICollection<CheckIn> CheckIns { get; set; } = new List<CheckIn>();
 

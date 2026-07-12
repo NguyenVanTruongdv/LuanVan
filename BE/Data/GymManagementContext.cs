@@ -2,16 +2,11 @@
 using System.Collections.Generic;
 using BE.Models;
 using Microsoft.EntityFrameworkCore;
-using Pomelo.EntityFrameworkCore.MySql.Scaffolding.Internal;
 
 namespace BE.Data;
 
 public partial class GymManagementContext : DbContext
 {
-    public GymManagementContext()
-    {
-    }
-
     public GymManagementContext(DbContextOptions<GymManagementContext> options)
         : base(options)
     {
@@ -26,6 +21,8 @@ public partial class GymManagementContext : DbContext
     public virtual DbSet<CheckIn> CheckIns { get; set; }
 
     public virtual DbSet<Employee> Employees { get; set; }
+
+    public virtual DbSet<EmployeeBranch> EmployeeBranches { get; set; }
 
     public virtual DbSet<Equipment> Equipment { get; set; }
 
@@ -53,6 +50,8 @@ public partial class GymManagementContext : DbContext
 
     public virtual DbSet<Incident> Incidents { get; set; }
 
+    public virtual DbSet<IncidentMedia> IncidentMedias { get; set; }
+
     public virtual DbSet<Member> Members { get; set; }
 
     public virtual DbSet<MemberPackage> MemberPackages { get; set; }
@@ -69,8 +68,6 @@ public partial class GymManagementContext : DbContext
 
     public virtual DbSet<Promotion> Promotions { get; set; }
 
-    public virtual DbSet<PromotionPlan> PromotionPlans { get; set; }
-
     public virtual DbSet<PromotionUsage> PromotionUsages { get; set; }
 
     public virtual DbSet<RefreshToken> RefreshTokens { get; set; }
@@ -79,10 +76,7 @@ public partial class GymManagementContext : DbContext
 
     public virtual DbSet<Transaction> Transactions { get; set; }
 
-    protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
-    {
-        
-    }
+    public virtual DbSet<TransactionAdjustmentLog> TransactionAdjustmentLogs { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -148,8 +142,6 @@ public partial class GymManagementContext : DbContext
 
             entity.ToTable("branches", tb => tb.HasComment("Chi nhánh phòng gym"));
 
-            entity.HasIndex(e => e.ManagerId, "fk_branch_manager");
-
             entity.Property(e => e.BranchId)
                 .HasComment("Mã chi nhánh — khóa chính tự tăng")
                 .HasColumnName("branch_id");
@@ -166,9 +158,6 @@ public partial class GymManagementContext : DbContext
                 .HasComment("Thời điểm thêm chi nhánh vào hệ thống")
                 .HasColumnType("datetime")
                 .HasColumnName("created_at");
-            entity.Property(e => e.ManagerId)
-                .HasComment("Quản lý phụ trách chi nhánh — FK tới employees.employee_id")
-                .HasColumnName("manager_id");
             entity.Property(e => e.Phone)
                 .HasMaxLength(15)
                 .HasComment("Số điện thoại liên hệ của chi nhánh, có thể NULL")
@@ -178,11 +167,6 @@ public partial class GymManagementContext : DbContext
                 .HasComment("Trạng thái hoạt động: Active = đang mở, Inactive = đã đóng")
                 .HasColumnType("enum('Active','Inactive')")
                 .HasColumnName("status");
-
-            entity.HasOne(d => d.Manager).WithMany(p => p.Branches)
-                .HasForeignKey(d => d.ManagerId)
-                .OnDelete(DeleteBehavior.ClientSetNull)
-                .HasConstraintName("fk_branch_manager");
         });
 
         modelBuilder.Entity<BranchImage>(entity =>
@@ -378,6 +362,31 @@ public partial class GymManagementContext : DbContext
                 .HasForeignKey(d => d.RoleId)
                 .OnDelete(DeleteBehavior.ClientSetNull)
                 .HasConstraintName("fk_employee_role");
+        });
+
+        modelBuilder.Entity<EmployeeBranch>(entity =>
+        {
+            entity.HasKey(e => new { e.EmployeeId, e.BranchId })
+                .HasName("PRIMARY")
+                .HasAnnotation("MySql:IndexPrefixLength", new[] { 0, 0 });
+
+            entity.ToTable("employee_branches");
+
+            entity.HasIndex(e => e.BranchId, "fk_employee_branches_branch");
+
+            entity.Property(e => e.EmployeeId).HasColumnName("employee_id");
+            entity.Property(e => e.BranchId).HasColumnName("branch_id");
+            entity.Property(e => e.BranchRole)
+                .HasColumnType("enum('Manager','Staff')")
+                .HasColumnName("branch_role");
+
+            entity.HasOne(d => d.Branch).WithMany(p => p.EmployeeBranches)
+                .HasForeignKey(d => d.BranchId)
+                .HasConstraintName("fk_employee_branches_branch");
+
+            entity.HasOne(d => d.Employee).WithMany(p => p.EmployeeBranches)
+                .HasForeignKey(d => d.EmployeeId)
+                .HasConstraintName("fk_employee_branches_employee");
         });
 
         modelBuilder.Entity<Equipment>(entity =>
@@ -926,8 +935,6 @@ public partial class GymManagementContext : DbContext
 
             entity.HasIndex(e => e.ApprovedBy, "fk_su_co_approved");
 
-            entity.HasIndex(e => e.AssignedTo, "fk_su_co_assigned");
-
             entity.HasIndex(e => e.BranchId, "fk_su_co_cn");
 
             entity.HasIndex(e => e.ReportedByMemberId, "fk_su_co_hv");
@@ -942,9 +949,6 @@ public partial class GymManagementContext : DbContext
             entity.Property(e => e.ApprovedBy)
                 .HasComment("Nhân viên (Manager/Admin) duyệt hoặc từ chối sự cố — FK tới employees.employee_id")
                 .HasColumnName("approved_by");
-            entity.Property(e => e.AssignedTo)
-                .HasComment("Nhân viên/kỹ thuật được phân công xử lý — FK tới employees.employee_id. Bắt buộc điền khi status = Assigned")
-                .HasColumnName("assigned_to");
             entity.Property(e => e.BranchId)
                 .HasComment("Chi nhánh xảy ra sự cố — FK tới branches.branch_id")
                 .HasColumnName("branch_id");
@@ -960,10 +964,6 @@ public partial class GymManagementContext : DbContext
             entity.Property(e => e.EquipmentId)
                 .HasComment("Thiết bị liên quan — FK tới equipment.equipment_id. NULL nếu sự cố không liên quan thiết bị cụ thể")
                 .HasColumnName("equipment_id");
-            entity.Property(e => e.ImageUrl)
-                .HasComment("URL ảnh minh chứng sự cố lưu trên S3, có thể NULL")
-                .HasColumnType("text")
-                .HasColumnName("image_url");
             entity.Property(e => e.RejectReason)
                 .HasComment("Lý do từ chối sự cố — bắt buộc điền khi status = Rejected")
                 .HasColumnType("text")
@@ -976,8 +976,7 @@ public partial class GymManagementContext : DbContext
                 .HasColumnName("reported_by_member_id");
             entity.Property(e => e.Status)
                 .HasDefaultValueSql("'PendingApproval'")
-                .HasComment("Trạng thái: PendingApproval=chờ duyệt, Assigned=đã phân công, Rejected=bị từ chối")
-                .HasColumnType("enum('PendingApproval','Assigned','Rejected')")
+                .HasColumnType("enum('PendingApproval','Approved','Completed','Cancelled')")
                 .HasColumnName("status");
             entity.Property(e => e.Title)
                 .HasMaxLength(255)
@@ -993,10 +992,6 @@ public partial class GymManagementContext : DbContext
             entity.HasOne(d => d.ApprovedByNavigation).WithMany(p => p.IncidentApprovedByNavigations)
                 .HasForeignKey(d => d.ApprovedBy)
                 .HasConstraintName("fk_su_co_approved");
-
-            entity.HasOne(d => d.AssignedToNavigation).WithMany(p => p.IncidentAssignedToNavigations)
-                .HasForeignKey(d => d.AssignedTo)
-                .HasConstraintName("fk_su_co_assigned");
 
             entity.HasOne(d => d.Branch).WithMany(p => p.Incidents)
                 .HasForeignKey(d => d.BranchId)
@@ -1016,13 +1011,33 @@ public partial class GymManagementContext : DbContext
                 .HasConstraintName("fk_su_co_hv");
         });
 
+        modelBuilder.Entity<IncidentMedia>(entity =>
+        {
+            entity.HasKey(e => e.MediaId).HasName("PRIMARY");
+
+            entity.ToTable("incident_medias");
+
+            entity.HasIndex(e => e.IncidentId, "fk_incident_media_incident");
+
+            entity.Property(e => e.MediaId).HasColumnName("media_id");
+            entity.Property(e => e.CreatedAt)
+                .HasDefaultValueSql("CURRENT_TIMESTAMP")
+                .HasColumnType("datetime")
+                .HasColumnName("created_at");
+            entity.Property(e => e.IncidentId).HasColumnName("incident_id");
+            entity.Property(e => e.MediaType)
+                .HasColumnType("enum('Image','Video')")
+                .HasColumnName("media_type");
+            entity.Property(e => e.MediaUrl)
+                .HasMaxLength(1000)
+                .HasColumnName("media_url");
+        });
+
         modelBuilder.Entity<Member>(entity =>
         {
             entity.HasKey(e => e.MemberId).HasName("PRIMARY");
 
             entity.ToTable("members", tb => tb.HasComment("Hội viên phòng gym"));
-
-            entity.HasIndex(e => e.BranchId, "fk_member_branch");
 
             entity.HasIndex(e => e.CreatedBy, "fk_member_creator");
 
@@ -1031,9 +1046,6 @@ public partial class GymManagementContext : DbContext
             entity.Property(e => e.MemberId)
                 .HasComment("Mã hội viên — khóa chính tự tăng")
                 .HasColumnName("member_id");
-            entity.Property(e => e.BranchId)
-                .HasComment("Chi nhánh hội viên đăng ký — FK tới branches.branch_id, NULL nếu chưa gán")
-                .HasColumnName("branch_id");
             entity.Property(e => e.CreatedAt)
                 .HasDefaultValueSql("CURRENT_TIMESTAMP")
                 .HasComment("Thời điểm tạo tài khoản")
@@ -1078,10 +1090,6 @@ public partial class GymManagementContext : DbContext
                 .HasColumnType("datetime")
                 .HasColumnName("updated_at");
 
-            entity.HasOne(d => d.Branch).WithMany(p => p.Members)
-                .HasForeignKey(d => d.BranchId)
-                .HasConstraintName("fk_member_branch");
-
             entity.HasOne(d => d.CreatedByNavigation).WithMany(p => p.Members)
                 .HasForeignKey(d => d.CreatedBy)
                 .HasConstraintName("fk_member_creator");
@@ -1092,6 +1100,8 @@ public partial class GymManagementContext : DbContext
             entity.HasKey(e => e.MemberPackageId).HasName("PRIMARY");
 
             entity.ToTable("member_packages", tb => tb.HasComment("Gói tập đã mua của từng hội viên, lưu ngày hiệu lực và trạng thái"));
+
+            entity.HasIndex(e => e.BranchId, "fk_member_packages_branch");
 
             entity.HasIndex(e => e.MemberId, "fk_mp_member");
 
@@ -1108,14 +1118,13 @@ public partial class GymManagementContext : DbContext
                 .HasPrecision(12)
                 .HasComment("Số tiền thực thu sau khuyến mãi (VNĐ), sao chép từ transactions.amount")
                 .HasColumnName("amount");
+            entity.Property(e => e.BranchId).HasColumnName("branch_id");
             entity.Property(e => e.CreatedAt)
                 .HasDefaultValueSql("CURRENT_TIMESTAMP")
                 .HasComment("Thời điểm tạo bản ghi")
                 .HasColumnType("datetime")
                 .HasColumnName("created_at");
-            entity.Property(e => e.ExpiryDate)
-                .HasComment("Ngày hết hạn = start_date + duration_days + so_ngay_tang_thuc_te")
-                .HasColumnName("expiry_date");
+            entity.Property(e => e.ExpiryDate).HasColumnName("expiry_date");
             entity.Property(e => e.GiaGoc)
                 .HasPrecision(12)
                 .HasComment("Giá niêm yết của gói tại thời điểm mua (VNĐ)")
@@ -1124,7 +1133,8 @@ public partial class GymManagementContext : DbContext
                 .HasComment("Hội viên sở hữu gói — FK tới members.member_id")
                 .HasColumnName("member_id");
             entity.Property(e => e.PackageStatus)
-                .HasColumnType("enum('Active','Expired','Cancelled')")
+                .HasDefaultValueSql("'PendingActivation'")
+                .HasColumnType("enum('PendingActivation','Active','Expired','Cancelled')")
                 .HasColumnName("package_status");
             entity.Property(e => e.PlanId)
                 .HasComment("Gói tập được mua — FK tới membership_plans.plan_id")
@@ -1135,9 +1145,7 @@ public partial class GymManagementContext : DbContext
             entity.Property(e => e.SoNgayTangThucTe)
                 .HasComment("Số ngày tặng thêm đã quy đổi thực tế: TangNgay=so_ngay_tang, TangChuKy=so_chu_ky_tang×duration_days, không KM=0")
                 .HasColumnName("so_ngay_tang_thuc_te");
-            entity.Property(e => e.StartDate)
-                .HasComment("Ngày bắt đầu có hiệu lực của gói")
-                .HasColumnName("start_date");
+            entity.Property(e => e.StartDate).HasColumnName("start_date");
             entity.Property(e => e.TransactionId)
                 .HasComment("Giao dịch thanh toán tương ứng — FK tới transactions.transaction_id")
                 .HasColumnName("transaction_id");
@@ -1147,6 +1155,11 @@ public partial class GymManagementContext : DbContext
                 .HasComment("Thời điểm cập nhật gần nhất")
                 .HasColumnType("datetime")
                 .HasColumnName("updated_at");
+
+            entity.HasOne(d => d.Branch).WithMany(p => p.MemberPackages)
+                .HasForeignKey(d => d.BranchId)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("fk_member_packages_branch");
 
             entity.HasOne(d => d.Member).WithMany(p => p.MemberPackages)
                 .HasForeignKey(d => d.MemberId)
@@ -1420,6 +1433,8 @@ public partial class GymManagementContext : DbContext
 
             entity.HasIndex(e => e.NguoiTao, "fk_km_nguoi_tao");
 
+            entity.HasIndex(e => e.PlanId, "fk_promotions_plan");
+
             entity.HasIndex(e => new { e.TrangThai, e.NgayBatDau, e.NgayKetThuc }, "idx_km_trangthai_thoigian");
 
             entity.Property(e => e.PromotionId)
@@ -1456,6 +1471,7 @@ public partial class GymManagementContext : DbContext
                 .HasPrecision(5, 2)
                 .HasComment("[GiamPhanTram] Phần trăm giảm, VD: 50.00 = giảm 50%. NULL nếu không phải loại này")
                 .HasColumnName("phan_tram_giam");
+            entity.Property(e => e.PlanId).HasColumnName("plan_id");
             entity.Property(e => e.PromoType)
                 .HasComment("Loại khuyến mãi: GiamPhanTram=giảm %, GiamTienMat=giảm tiền cố định, TangNgay=tặng N ngày, TangChuKy=tặng N chu kỳ")
                 .HasColumnType("enum('GiamPhanTram','GiamTienMat','TangNgay','TangChuKy')")
@@ -1493,36 +1509,11 @@ public partial class GymManagementContext : DbContext
                 .HasForeignKey(d => d.NguoiTao)
                 .OnDelete(DeleteBehavior.ClientSetNull)
                 .HasConstraintName("fk_km_nguoi_tao");
-        });
 
-        modelBuilder.Entity<PromotionPlan>(entity =>
-        {
-            entity.HasKey(e => e.Id).HasName("PRIMARY");
-
-            entity.ToTable("promotion_plans", tb => tb.HasComment("Liên kết nhiều-nhiều giữa khuyến mãi và gói tập. Mỗi gói chỉ có 1 KM active tại 1 thời điểm — kiểm tra qua stored procedure"));
-
-            entity.HasIndex(e => e.PlanId, "idx_pp_goi");
-
-            entity.HasIndex(e => new { e.PromotionId, e.PlanId }, "uq_km_goi").IsUnique();
-
-            entity.Property(e => e.Id)
-                .HasComment("Mã bản ghi — khóa chính tự tăng")
-                .HasColumnName("id");
-            entity.Property(e => e.PlanId)
-                .HasComment("Mã gói tập được gắn vào khuyến mãi — FK tới membership_plans.plan_id")
-                .HasColumnName("plan_id");
-            entity.Property(e => e.PromotionId)
-                .HasComment("Mã khuyến mãi — FK tới promotions.promotion_id")
-                .HasColumnName("promotion_id");
-
-            entity.HasOne(d => d.Plan).WithMany(p => p.PromotionPlans)
+            entity.HasOne(d => d.Plan).WithMany(p => p.Promotions)
                 .HasForeignKey(d => d.PlanId)
                 .OnDelete(DeleteBehavior.ClientSetNull)
-                .HasConstraintName("fk_pp_goi_tap");
-
-            entity.HasOne(d => d.Promotion).WithMany(p => p.PromotionPlans)
-                .HasForeignKey(d => d.PromotionId)
-                .HasConstraintName("fk_pp_khuyen_mai");
+                .HasConstraintName("fk_promotions_plan");
         });
 
         modelBuilder.Entity<PromotionUsage>(entity =>
@@ -1661,6 +1652,8 @@ public partial class GymManagementContext : DbContext
 
             entity.HasIndex(e => e.PromotionId, "fk_transaction_promotion");
 
+            entity.HasIndex(e => e.BranchId, "fk_transactions_branch");
+
             entity.HasIndex(e => e.EmployeeId, "fk_transactions_employee");
 
             entity.HasIndex(e => e.OrderCode, "order_code").IsUnique();
@@ -1675,6 +1668,7 @@ public partial class GymManagementContext : DbContext
             entity.Property(e => e.BankReferenceCode)
                 .HasMaxLength(100)
                 .HasColumnName("bank_reference_code");
+            entity.Property(e => e.BranchId).HasColumnName("branch_id");
             entity.Property(e => e.CreatedAt)
                 .HasDefaultValueSql("CURRENT_TIMESTAMP")
                 .HasComment("Thời điểm tạo giao dịch")
@@ -1717,6 +1711,11 @@ public partial class GymManagementContext : DbContext
                 .HasColumnType("datetime")
                 .HasColumnName("updated_at");
 
+            entity.HasOne(d => d.Branch).WithMany(p => p.Transactions)
+                .HasForeignKey(d => d.BranchId)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("fk_transactions_branch");
+
             entity.HasOne(d => d.Employee).WithMany(p => p.Transactions)
                 .HasForeignKey(d => d.EmployeeId)
                 .OnDelete(DeleteBehavior.SetNull)
@@ -1735,6 +1734,82 @@ public partial class GymManagementContext : DbContext
             entity.HasOne(d => d.Promotion).WithMany(p => p.Transactions)
                 .HasForeignKey(d => d.PromotionId)
                 .HasConstraintName("fk_transaction_promotion");
+        });
+
+        modelBuilder.Entity<TransactionAdjustmentLog>(entity =>
+        {
+            entity.HasKey(e => e.AdjustmentId).HasName("PRIMARY");
+
+            entity
+                .ToTable("transaction_adjustment_logs")
+                .UseCollation("utf8mb4_0900_ai_ci");
+
+            entity.HasIndex(e => e.AdjustedBy, "fk_adjustment_employee");
+
+            entity.HasIndex(e => e.NewPlanId, "fk_adjustment_new_plan");
+
+            entity.HasIndex(e => e.NewPromotionId, "fk_adjustment_new_promotion");
+
+            entity.HasIndex(e => e.OldPlanId, "fk_adjustment_old_plan");
+
+            entity.HasIndex(e => e.OldPromotionId, "fk_adjustment_old_promotion");
+
+            entity.HasIndex(e => e.TransactionId, "fk_adjustment_transaction");
+
+            entity.Property(e => e.AdjustmentId).HasColumnName("adjustment_id");
+            entity.Property(e => e.AdjustedAt)
+                .HasDefaultValueSql("CURRENT_TIMESTAMP")
+                .HasColumnType("datetime")
+                .HasColumnName("adjusted_at");
+            entity.Property(e => e.AdjustedBy).HasColumnName("adjusted_by");
+            entity.Property(e => e.NewAmount)
+                .HasPrecision(18, 2)
+                .HasColumnName("new_amount");
+            entity.Property(e => e.NewGiaGoc)
+                .HasPrecision(18, 2)
+                .HasColumnName("new_gia_goc");
+            entity.Property(e => e.NewPlanId).HasColumnName("new_plan_id");
+            entity.Property(e => e.NewPromotionId).HasColumnName("new_promotion_id");
+            entity.Property(e => e.OldAmount)
+                .HasPrecision(18, 2)
+                .HasColumnName("old_amount");
+            entity.Property(e => e.OldGiaGoc)
+                .HasPrecision(18, 2)
+                .HasColumnName("old_gia_goc");
+            entity.Property(e => e.OldPlanId).HasColumnName("old_plan_id");
+            entity.Property(e => e.OldPromotionId).HasColumnName("old_promotion_id");
+            entity.Property(e => e.Reason)
+                .HasMaxLength(500)
+                .HasColumnName("reason");
+            entity.Property(e => e.TransactionId).HasColumnName("transaction_id");
+
+            entity.HasOne(d => d.AdjustedByNavigation).WithMany(p => p.TransactionAdjustmentLogs)
+                .HasForeignKey(d => d.AdjustedBy)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("fk_adjustment_employee");
+
+            entity.HasOne(d => d.NewPlan).WithMany(p => p.TransactionAdjustmentLogNewPlans)
+                .HasForeignKey(d => d.NewPlanId)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("fk_adjustment_new_plan");
+
+            entity.HasOne(d => d.NewPromotion).WithMany(p => p.TransactionAdjustmentLogNewPromotions)
+                .HasForeignKey(d => d.NewPromotionId)
+                .HasConstraintName("fk_adjustment_new_promotion");
+
+            entity.HasOne(d => d.OldPlan).WithMany(p => p.TransactionAdjustmentLogOldPlans)
+                .HasForeignKey(d => d.OldPlanId)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("fk_adjustment_old_plan");
+
+            entity.HasOne(d => d.OldPromotion).WithMany(p => p.TransactionAdjustmentLogOldPromotions)
+                .HasForeignKey(d => d.OldPromotionId)
+                .HasConstraintName("fk_adjustment_old_promotion");
+
+            entity.HasOne(d => d.Transaction).WithMany(p => p.TransactionAdjustmentLogs)
+                .HasForeignKey(d => d.TransactionId)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("fk_adjustment_transaction");
         });
 
         OnModelCreatingPartial(modelBuilder);

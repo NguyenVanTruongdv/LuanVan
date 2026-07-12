@@ -16,7 +16,7 @@ public class AuthService
     private readonly JwtHelper _jwt;
     private readonly SmsService _smsService;
 
-    public AuthService(GymManagementContext db, JwtHelper jwt, SmsService  smsService)
+    public AuthService(GymManagementContext db, JwtHelper jwt, SmsService smsService)
     {
         _db = db;
         _jwt = jwt;
@@ -38,7 +38,13 @@ public class AuthService
         if (!PasswordHelper.VerifyPassword(req.Password, emp.PasswordHash))
             throw new UnauthorizedException("Sai tài khoản hoặc mật khẩu");
 
-        return await IssueTokens(emp.EmployeeId, emp.FullName, emp.Role.RoleName, "Employee");
+        return await IssueTokens(
+    emp.EmployeeId,
+    emp.FullName,
+    emp.Role.RoleName,
+    "Employee",
+    emp.Status
+);
     }
 
     // Đăng nhập hội viên
@@ -55,7 +61,13 @@ public class AuthService
         if (!PasswordHelper.VerifyPassword(req.Password, member.PasswordHash))
             throw new UnauthorizedException("Sai tài khoản hoặc mật khẩu");
 
-        return await IssueTokens(member.MemberId, member.FullName, "Member", "Member");
+        return await IssueTokens(
+    member.MemberId,
+    member.FullName,
+    "Member",
+    "Member",
+    member.Status
+);
     }
 
     // ───────────────────────────────────────────────
@@ -140,7 +152,6 @@ public class AuthService
             PasswordHash = BCrypt.Net.BCrypt.HashPassword(req.Password),
             Gender = req.Gender,
             Status = MemberStatus.PendingActivation.ToString(),
-            BranchId = req.BranchId,
         });
 
         await _db.SaveChangesAsync();
@@ -304,26 +315,29 @@ public class AuthService
         if (stored.RevokedAt != null || stored.ExpiresAt < DateTime.UtcNow)
             throw new UnauthorizedAccessException("Phiên đã hết hạn, vui lòng đăng nhập lại");
 
-        // Thu hồi token cũ ngay lập tức (chống Replay Attack)
+        // Thu hồi refresh token cũ
         stored.RevokedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync();
 
         string fullName;
         string role = stored.Role;
+        string? status = null;
 
         if (stored.EntityType == "Employee")
         {
             var emp = await _db.Employees
                 .Include(e => e.Role)
-                .FirstOrDefaultAsync(e => e.EmployeeId == stored.EntityId && e.Status == "Active")
+                .FirstOrDefaultAsync(e =>
+                    e.EmployeeId == stored.EntityId &&
+                    e.Status == "Active")
                 ?? throw new UnauthorizedAccessException("Tài khoản không còn hoạt động");
 
             fullName = emp.FullName;
             role = emp.Role.RoleName;
+            status = emp.Status;
         }
         else
         {
-            // Cho phép PendingActivation refresh, chặn Suspended
             var member = await _db.Members
                 .FirstOrDefaultAsync(m =>
                     m.MemberId == stored.EntityId &&
@@ -331,11 +345,17 @@ public class AuthService
                 ?? throw new UnauthorizedAccessException("Tài khoản không còn hoạt động");
 
             fullName = member.FullName;
+            status = member.Status;
         }
 
-        return await IssueTokens(stored.EntityId, fullName, role, stored.EntityType);
+        return await IssueTokens(
+            stored.EntityId,
+            fullName,
+            role,
+            stored.EntityType,
+            status
+        );
     }
-
     // Đăng xuất
     public async Task LogoutAsync(RefreshRequestDto req)
     {
@@ -353,14 +373,19 @@ public class AuthService
 
     // Tạo cặp access + refresh token rồi lưu vào DB
     private async Task<LoginResponseDto> IssueTokens(
-        long entityId, string fullName, string role, string entityType)
+    long entityId,
+    string fullName,
+    string role,
+    string entityType,
+    string? status = null)
     {
         var userInfo = new JwtUserInfo
         {
             Id = entityId,
             FullName = fullName,
             Role = role,
-            EntityType = entityType
+            EntityType = entityType,
+            Status = status
         };
 
         var accessToken = _jwt.GenerateAccessToken(userInfo);
@@ -375,6 +400,7 @@ public class AuthService
             TokenHash = hash,
             ExpiresAt = DateTime.UtcNow.AddDays(ttlDays)
         });
+
         await _db.SaveChangesAsync();
 
         return new LoginResponseDto
@@ -383,7 +409,8 @@ public class AuthService
             AccessToken = accessToken,
             RefreshToken = rawRefresh,
             Role = role,
-            EntityType = entityType
+            EntityType = entityType,
+            Status = status
         };
     }
 }

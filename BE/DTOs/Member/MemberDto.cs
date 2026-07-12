@@ -20,7 +20,7 @@ namespace BE.Dtos.Member
         [Required(ErrorMessage = "Vui lòng chọn giới tính")]
         public string Gender { get; set; } = null!;
 
-        public int? BranchId { get; set; }
+
         public string? InternalNotes { get; set; }
 
         // FaceIdAws KHÔNG còn ở đây nữa — BE tự sinh bằng cách gửi ProfileImage
@@ -59,7 +59,8 @@ namespace BE.Dtos.Member
         public string FullName { get; set; } = null!;
         public string Phone { get; set; } = null!;
         public string Gender { get; set; } = null!;
-        public string? BranchName { get; set; }
+        public string? BranchName { get; set; } 
+         public string? ActivatedByEmployeeName { get; set; }
         public string Status { get; set; } = null!;
         public string? SuspendReason { get; set; }
         public string? InternalNotes { get; set; }
@@ -73,7 +74,7 @@ namespace BE.Dtos.Member
         public DateOnly? PackageExpiryDate { get; set; }
         public string? PackageStatus { get; set; }
 
-        public string? GeneratedPassword { get; set; }
+        public string? GeneratedPassword { get; set; } 
     }
 
     // ===================== DANH SÁCH HỘI VIÊN (kèm ảnh + gói tập đang dùng hôm nay) =====================
@@ -94,8 +95,8 @@ namespace BE.Dtos.Member
         public long MemberPackageId { get; set; }
         public int PlanId { get; set; }
         public string? PlanName { get; set; }
-        public DateOnly StartDate { get; set; }
-        public DateOnly ExpiryDate { get; set; }
+        public DateOnly? StartDate { get; set; }
+        public DateOnly? ExpiryDate { get; set; }
         public string PackageStatus { get; set; } = null!;
     }
 
@@ -178,12 +179,72 @@ namespace BE.Dtos.Member
 
         // ĐÃ BỎ: SoNgayTangThucTe, StartDate, ExpiryDate — BE tự tính toàn bộ.
 
-        public IFormFile? ReceiptImage { get; set; }
     }
 
     public class ActivateMemberFaceIdOnlyRequest
     {
         [Required(ErrorMessage = "Vui lòng chụp ảnh khuôn mặt để đăng ký Face ID")]
         public IFormFile ProfileImage { get; set; } = null!;
+    }
+    //DTO DÙNG CHO GIA HẠN GÓI TẬP CỦA THU NGÂN 
+       public class RenewMembershipRequest
+    {
+        public int PlanId { get; set; }                 // Cho phép khác PlanId của gói hiện tại
+        public int? PromotionId { get; set; }            // NULL = không dùng khuyến mãi
+        public string PaymentMethod { get; set; } = "Cash"; // "Cash" | "BankTransfer"
+        public string? BankReferenceCode { get; set; }   // Mã GD/nội dung CK, optional // Ảnh biên lai/UNC, optional
+    }
+    public class RenewMembershipResponse
+    {
+        public long MemberId { get; set; }
+        public string MemberName { get; set; } = null!;
+
+        public long MemberPackageId { get; set; }
+        public int PlanId { get; set; }
+        public string PlanName { get; set; } = null!;
+
+        public decimal GiaGoc { get; set; }
+        public decimal DiscountAmount { get; set; }
+        public decimal Amount { get; set; }
+        public short BonusDays { get; set; }
+
+        public DateOnly StartDate { get; set; }
+        public DateOnly ExpiryDate { get; set; }
+        public bool IsExtending { get; set; } // true nếu nối tiếp gói cũ còn hạn
+
+        public string PaymentMethod { get; set; } = null!;
+        public string PaymentStatus { get; set; } = null!;
+
+        public long TransactionId { get; set; }
+        public string OrderCode { get; set; } = null!;
+        public string? BankReferenceCode { get; set; }
+        public string? InvoiceUrl { get; set; }
+    }
+      public class MemberSearchItem
+    {
+        public long MemberId { get; set; }
+        public string FullName { get; set; } = null!;
+        public string Phone { get; set; } = null!;
+        public string Status { get; set; } = null!;
+        public string? ProfileImage { get; set; }
+
+        // Gói gần nhất theo ExpiryDate (không lọc theo ngày — PackageStatus lấy nguyên từ DB,
+        // vì bạn đã có job/trigger SQL tự cập nhật Active/Expired)
+        public string? CurrentPlanName { get; set; }
+        public DateOnly? CurrentStartDate { get; set; }
+        public DateOnly? CurrentExpiryDate { get; set; }
+        public string? CurrentPackageStatus { get; set; }
+    }
+     public class PendingPurchaseStatusDto
+    {
+        // Tài khoản đang ở trạng thái PendingActivation (chưa từng ra quầy kích hoạt)
+        public bool IsPendingActivation { get; set; }
+ 
+        // Đã có sẵn 1 gói tập PendingActivation (đã mua online rồi) hay chưa
+        public bool HasPendingPackage { get; set; }
+ 
+        // FE dùng cờ này để show/ẩn nút "Mua gói tập".
+        // = false CHỈ KHI: đang PendingActivation VÀ đã có sẵn 1 gói Pending rồi.
+        public bool CanPurchasePackage { get; set; }
     }
 }

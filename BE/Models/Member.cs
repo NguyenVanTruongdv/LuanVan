@@ -34,11 +34,6 @@ public partial class Member
     public string Gender { get; set; } = null!;
 
     /// <summary>
-    /// Chi nhánh hội viên đăng ký — FK tới branches.branch_id, NULL nếu chưa gán
-    /// </summary>
-    public int? BranchId { get; set; }
-
-    /// <summary>
     /// Trạng thái tài khoản: PendingActivation=chờ kích hoạt, Active=đang hoạt động, Expired=hết hạn, Suspended=bị khóa
     /// </summary>
     public string Status { get; set; } = null!;
@@ -69,8 +64,6 @@ public partial class Member
     public DateTime UpdatedAt { get; set; }
 
     public virtual ICollection<AccountLockLog> AccountLockLogs { get; set; } = new List<AccountLockLog>();
-
-    public virtual Branch? Branch { get; set; }
 
     public virtual ICollection<CheckIn> CheckIns { get; set; } = new List<CheckIn>();
 

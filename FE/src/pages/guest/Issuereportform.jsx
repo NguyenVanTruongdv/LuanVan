@@ -2,20 +2,33 @@ import {
     AlertTriangle,
     CheckCircle2,
     ImageIcon,
-    RotateCcw,
+    Loader2,
     Upload,
     Video as VideoIcon,
     X
 } from "lucide-react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 
 // Adjust these two paths if this file doesn't sit next to the "component" folder
+import memberApi from "../../api/memberApi"; // chỉnh lại path cho đúng vị trí thật
 import Footer from "../../component/Footer";
 import Header from "../../component/Header";
 
 const MAX_IMAGES = 3;
 const MAX_IMAGE_SIZE_MB = 5;
 const MAX_VIDEO_SIZE_MB = 50;
+
+// authApi trả thẳng body (không có wrapper axios .data), nhưng để an toàn
+// vẫn kiểm tra cả trường hợp có .data. Đồng thời chuẩn hoá 3 shape phổ biến:
+// mảng thẳng, { items: [...] }, hoặc { data: [...] }.
+function extractList(res) {
+    const body = res?.data !== undefined ? res.data : res;
+    if (Array.isArray(body)) return body;
+    if (Array.isArray(body?.items)) return body.items;
+    if (Array.isArray(body?.data)) return body.data;
+    return [];
+}
 
 // Scoped styles — reuses the design tokens (--bg, --accent, --line, etc.)
 // that Header.jsx already injects into :root, so this page stays visually
@@ -77,6 +90,8 @@ const STYLES = `
     .vt-issue-section { margin-bottom: 20px; }
     .vt-issue-section:last-child { margin-bottom: 0; }
 
+    .vt-issue-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+
     .vt-issue-label {
         display: block; font-size: 12.5px; font-weight: 600;
         color: var(--text); margin-bottom: 7px;
@@ -90,19 +105,21 @@ const STYLES = `
         text-transform: uppercase;
     }
 
-    .vt-issue-input, .vt-issue-textarea {
+    .vt-issue-input, .vt-issue-textarea, .vt-issue-select {
         width: 100%; background: var(--bg-elevated); border: 1.5px solid var(--line);
         border-radius: 10px; padding: 11px 14px; font-size: 14px; color: var(--text);
         outline: none; transition: border-color .15s, box-shadow .15s;
         font-family: var(--font-body); font-weight: 500;
     }
+    .vt-issue-select { cursor: pointer; }
+    .vt-issue-select:disabled { cursor: not-allowed; opacity: .6; }
     .vt-issue-textarea { resize: vertical; min-height: 130px; line-height: 1.6; }
     .vt-issue-input::placeholder, .vt-issue-textarea::placeholder { color: var(--text-dim); font-weight: 400; }
-    .vt-issue-input:focus, .vt-issue-textarea:focus {
+    .vt-issue-input:focus, .vt-issue-textarea:focus, .vt-issue-select:focus {
         border-color: var(--accent);
         box-shadow: 0 0 0 3px var(--accent-soft);
     }
-    .vt-issue-input.has-error, .vt-issue-textarea.has-error {
+    .vt-issue-input.has-error, .vt-issue-textarea.has-error, .vt-issue-select.has-error {
         border-color: var(--accent); background: var(--accent-soft);
     }
     .vt-issue-error {
@@ -168,6 +185,10 @@ const STYLES = `
     }
     .vt-issue-submit:hover { filter: brightness(1.1); }
     .vt-issue-submit:active { transform: translateY(1px); }
+    .vt-issue-submit:disabled { opacity: .65; cursor: not-allowed; }
+
+    .vt-issue-spin { animation: vt-spin 0.8s linear infinite; }
+    @keyframes vt-spin { to { transform: rotate(360deg); } }
 
     /* ── Success ── */
     .vt-issue-success-wrap {
@@ -195,6 +216,7 @@ const STYLES = `
 
     @media (max-width: 900px) {
         .vt-issue-grid { grid-template-columns: 1fr; }
+        .vt-issue-row { grid-template-columns: 1fr; }
         .vt-issue-page { padding: 16px 16px 48px; }
         .vt-issue-hero { padding: 28px 16px 4px; }
         .vt-issue-title { font-size: 27px; }
@@ -206,7 +228,7 @@ const STYLES = `
 `;
 
 // ─── Success screen ────────────────────────────────────────────────────────────
-function SuccessScreen({ data, onReset }) {
+function SuccessScreen({ data, onBackHome }) {
     return (
         <div className="vt-issue">
             <style>{STYLES}</style>
@@ -218,7 +240,7 @@ function SuccessScreen({ data, onReset }) {
                         Cảm ơn bạn đã phản hồi!
                     </h2>
                     <p style={{ fontSize: 13.5, color: "var(--text-dim)", marginTop: 8, lineHeight: 1.6 }}>
-                        Chúng tôi đã ghi nhận báo cáo của bạn. Đội ngũ hỗ trợ sẽ kiểm tra và xử lý trong thời gian nhanh nhất có thể.
+                        Chúng tôi đã tiếp nhận vấn đề bạn gặp phải và sẽ xử lý trong thời gian sớm nhất.
                     </p>
                     <div className="vt-issue-summary">
                         <div className="vt-issue-summary-row"><span className="key">Tiêu đề</span><span className="val">{data.title}</span></div>
@@ -227,7 +249,7 @@ function SuccessScreen({ data, onReset }) {
                             <span className="val">{data.imageCount > 0 || data.hasVideo ? `${data.imageCount} ảnh${data.hasVideo ? " • 1 video" : ""}` : "Không có"}</span>
                         </div>
                     </div>
-                    <button className="vt-issue-submit" onClick={onReset}><RotateCcw size={14} /> Gửi báo cáo khác</button>
+                    <button className="vt-issue-submit" onClick={onBackHome}>Quay về trang chủ</button>
                 </div>
             </div>
             <Footer />
@@ -237,8 +259,19 @@ function SuccessScreen({ data, onReset }) {
 
 // ─── Main page ─────────────────────────────────────────────────────────────────
 export default function IssueReport() {
+    const navigate = useNavigate();
+
     const [title, setTitle] = useState("");
     const [description, setDescription] = useState("");
+
+    const [branchId, setBranchId] = useState("");
+    const [branches, setBranches] = useState([]);
+    const [branchesLoading, setBranchesLoading] = useState(true);
+
+    const [equipmentId, setEquipmentId] = useState("");
+    const [equipments, setEquipments] = useState([]);
+    const [equipmentsLoading, setEquipmentsLoading] = useState(false);
+
     const [images, setImages] = useState([]);
     const [video, setVideo] = useState(null);
     const [imageError, setImageError] = useState("");
@@ -248,14 +281,58 @@ export default function IssueReport() {
     const [imgDragActive, setImgDragActive] = useState(false);
     const [vidDragActive, setVidDragActive] = useState(false);
 
+    const [submitting, setSubmitting] = useState(false);
+    const [submitError, setSubmitError] = useState("");
+
     const imageInputRef = useRef(null);
     const videoInputRef = useRef(null);
+
+    // Lấy danh sách chi nhánh khi vào trang
+    useEffect(() => {
+        let mounted = true;
+        (async () => {
+            try {
+                const res = await memberApi.getBranches({ status: "Active" });
+                if (mounted) setBranches(extractList(res));
+            } catch (err) {
+                if (mounted) setBranches([]);
+            } finally {
+                if (mounted) setBranchesLoading(false);
+            }
+        })();
+        return () => { mounted = false; };
+    }, []);
+
+    // Lấy danh sách thiết bị theo chi nhánh đã chọn (optional field)
+    // Lấy danh sách thiết bị theo chi nhánh đã chọn (optional field)
+    useEffect(() => {
+        if (!branchId) {
+            setEquipments([]);
+            setEquipmentId("");
+            return;
+        }
+        let mounted = true;
+        setEquipmentsLoading(true);
+        setEquipmentId("");
+        (async () => {
+            try {
+                const res = await memberApi.getAll({ branchId, pageSize: 100 });
+                if (mounted) setEquipments(extractList(res));
+            } catch (err) {
+                if (mounted) setEquipments([]);
+            } finally {
+                if (mounted) setEquipmentsLoading(false);
+            }
+        })();
+        return () => { mounted = false; };
+    }, [branchId]);
 
     const errors = {
         title: !title.trim() ? "Vui lòng nhập tiêu đề vấn đề" : "",
         description: !description.trim() ? "Vui lòng mô tả chi tiết vấn đề" : "",
+        branchId: !branchId ? "Vui lòng chọn chi nhánh" : "",
     };
-    const isValid = !errors.title && !errors.description;
+    const isValid = !errors.title && !errors.description && !errors.branchId;
 
     function addImages(fileList) {
         const list = Array.from(fileList || []).filter((f) => f.type.startsWith("image/"));
@@ -286,22 +363,40 @@ export default function IssueReport() {
 
     function removeVideo() { if (video) URL.revokeObjectURL(video.url); setVideo(null); setVideoError(""); }
 
-    function handleSubmit(e) {
+    async function handleSubmit(e) {
         e.preventDefault();
-        setTouched({ title: true, description: true });
+        setTouched({ title: true, description: true, branchId: true });
+        setSubmitError("");
         if (!isValid) return;
-        setSubmitted({ title: title.trim(), imageCount: images.length, hasVideo: !!video });
+
+        setSubmitting(true);
+        try {
+            const formData = new FormData();
+            formData.append("Title", title.trim());
+            formData.append("Description", description.trim());
+            formData.append("BranchId", branchId);
+            if (equipmentId) formData.append("EquipmentId", equipmentId);
+            images.forEach((img) => formData.append("Images", img.file));
+            if (video) formData.append("Video", video.file);
+
+            await memberApi.createIncident(formData);
+
+            setSubmitted({ title: title.trim(), imageCount: images.length, hasVideo: !!video });
+        } catch (err) {
+            const msg = err?.response?.data?.message || err?.response?.data || "Gửi báo cáo thất bại, vui lòng thử lại.";
+            setSubmitError(typeof msg === "string" ? msg : "Gửi báo cáo thất bại, vui lòng thử lại.");
+        } finally {
+            setSubmitting(false);
+        }
     }
 
-    function resetForm() {
+    function handleBackHome() {
         images.forEach((i) => URL.revokeObjectURL(i.url));
         if (video) URL.revokeObjectURL(video.url);
-        setTitle(""); setDescription("");
-        setImages([]); setVideo(null);
-        setImageError(""); setVideoError(""); setTouched({}); setSubmitted(null);
+        navigate("/");
     }
 
-    if (submitted) return <SuccessScreen data={submitted} onReset={resetForm} />;
+    if (submitted) return <SuccessScreen data={submitted} onBackHome={handleBackHome} />;
 
     // Image grid slots
     const imageSlots = [];
@@ -349,6 +444,57 @@ export default function IssueReport() {
                         <div className="vt-issue-col">
                             <div className="vt-issue-col-title">
                                 <AlertTriangle size={13} /> Thông tin vấn đề
+                            </div>
+
+                            <div className="vt-issue-section">
+                                <div className="vt-issue-row">
+                                    <div>
+                                        <label className="vt-issue-label">Chi nhánh <span className="vt-issue-required">*</span></label>
+                                        <select
+                                            className={`vt-issue-select ${touched.branchId && errors.branchId ? "has-error" : ""}`}
+                                            value={branchId}
+                                            disabled={branchesLoading}
+                                            onChange={(e) => setBranchId(e.target.value)}
+                                            onBlur={() => setTouched((t) => ({ ...t, branchId: true }))}
+                                        >
+                                            <option value="">
+                                                {branchesLoading ? "Đang tải..." : "-- Chọn chi nhánh --"}
+                                            </option>
+                                            {branches.map((b) => (
+                                                <option key={b.branchId} value={b.branchId}>
+                                                    {b.branchName}
+                                                </option>
+                                            ))}
+                                        </select>
+                                        {touched.branchId && errors.branchId && <p className="vt-issue-error"><AlertTriangle size={12} /> {errors.branchId}</p>}
+                                    </div>
+
+                                    <div>
+                                        <label className="vt-issue-label">
+                                            Thiết bị liên quan
+                                            <span className="vt-issue-optional">Không bắt buộc</span>
+                                        </label>
+                                        <select
+                                            className="vt-issue-select"
+                                            value={equipmentId}
+                                            disabled={!branchId || equipmentsLoading}
+                                            onChange={(e) => setEquipmentId(e.target.value)}
+                                        >
+                                            <option value="">
+                                                {!branchId
+                                                    ? "-- Chọn chi nhánh trước --"
+                                                    : equipmentsLoading
+                                                        ? "Đang tải..."
+                                                        : "-- Không chọn --"}
+                                            </option>
+                                            {equipments.map((eq) => (
+                                                <option key={eq.equipmentId ?? eq.id} value={eq.equipmentId ?? eq.id}>
+                                                    {eq.equipmentName ?? eq.name}
+                                                </option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                </div>
                             </div>
 
                             <div className="vt-issue-section">
@@ -436,9 +582,17 @@ export default function IssueReport() {
 
                     </div>
 
+                    {submitError && (
+                        <p className="vt-issue-error" style={{ marginTop: 16, justifyContent: "center", display: "flex" }}>
+                            <AlertTriangle size={12} /> {submitError}
+                        </p>
+                    )}
+
                     <div className="vt-issue-submit-row">
-                        <button type="submit" className="vt-issue-submit">
-                            <CheckCircle2 size={15} /> Gửi báo cáo
+                        <button type="submit" className="vt-issue-submit" disabled={submitting}>
+                            {submitting
+                                ? <><Loader2 size={15} className="vt-issue-spin" /> Đang gửi...</>
+                                : <><CheckCircle2 size={15} /> Gửi báo cáo</>}
                         </button>
                     </div>
                 </form>

@@ -1,0 +1,98 @@
+namespace BE.DTOs.Identify;
+
+public class MemberDto
+{
+    public long MemberId { get; set; }
+    public string FullName { get; set; } = null!;
+    public string Phone { get; set; } = null!;
+    public string? PhotoUrl { get; set; }
+
+    public string AccountStatus { get; set; } = null!;
+    public string? SuspendReason { get; set; }
+    public string? InternalNotes { get; set; }
+
+
+    public string? Package { get; set; }
+    public string PackageStatus { get; set; } = "expired";
+    public string? ExpiryDate { get; set; }
+}
+
+public class IdentifyAttendanceRequestDto
+{
+    public string Image { get; set; } = null!;
+    public string Action { get; set; } = null!; // "checkin" | "checkout"
+    public int BranchId { get; set; }
+}
+
+public class IdentifyAttendanceResponseDto
+{
+    public string Status { get; set; } = null!;
+    public MemberDto? Member { get; set; }
+    public long? CheckInId { get; set; }
+    public string? Reason { get; set; }
+}
+
+public class PhoneLookupResponseDto
+{
+    public MemberDto? Member { get; set; }
+}
+
+public class ManualCheckinRequestDto
+{
+    public long MemberId { get; set; }
+    public string ManualReason { get; set; } = null!;
+    public int BranchId { get; set; }
+}
+
+public class ManualCheckinResponseDto
+{
+    public long CheckInId { get; set; }
+    public MemberDto Member { get; set; } = null!;
+}
+
+public class OpenDoorRequestDto
+{
+    public string Side { get; set; } = null!; // "checkin" | "checkout"
+}
+public class CheckInHistoryQueryDto
+{
+    public DateTime? FromDate { get; set; }
+    public DateTime? ToDate { get; set; } 
+
+    public int? branchId {get; set; }
+
+    /// <summary>Tìm theo tên hoặc SĐT hội viên (không bắt buộc)</summary>
+    public string? Keyword { get; set; }
+
+    public int Page { get; set; } = 1;
+    public int PageSize { get; set; } = 20;
+}
+
+public class CheckInHistoryItemDto
+{
+    public long CheckInId { get; set; }
+
+    public long MemberId { get; set; }
+    public string MemberName { get; set; } = null!;
+    public string? MemberPhone { get; set; }
+    public string? MemberAvatar { get; set; }   // <-- thêm
+
+    public int BranchId { get; set; }
+    public string? BranchName { get; set; }
+
+    public DateTime CheckInTime { get; set; }
+    public string CheckInMethod { get; set; } = null!;
+    public string? CheckInStaffName { get; set; }
+
+    public DateTime? CheckOutTime { get; set; }
+    public string? CheckOutMethod { get; set; }
+    public string? CheckOutStaffName { get; set; }
+}
+
+public class CheckInHistoryResponseDto
+{
+    public List<CheckInHistoryItemDto> Items { get; set; } = new();
+    public int TotalCount { get; set; }
+    public int Page { get; set; }
+    public int PageSize { get; set; }
+}

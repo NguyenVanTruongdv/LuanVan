@@ -11,13 +11,21 @@ public class BranchDto
     public string BranchName { get; set; } = null!;
     public string Address { get; set; } = null!;
     public string? Phone { get; set; }
-    public long ManagerId { get; set; }
-    public string? ManagerName { get; set; }
     public string Status { get; set; } = null!;
     public DateTime CreatedAt { get; set; }
+
+    /// <summary>Danh sách quản lý của chi nhánh (có thể nhiều người cùng giữ vai trò Manager)</summary>
+    public List<BranchManagerDto> Managers { get; set; } = new();
+
     public List<BranchImageDto> Images { get; set; } = new();
 }
 
+public class BranchManagerDto
+{
+    public long EmployeeId { get; set; }
+    public string FullName { get; set; } = null!;
+    public string? Phone { get; set; }
+}
 /// <summary>
 /// Thông tin ảnh của chi nhánh trả về cho client
 /// </summary>
@@ -35,39 +43,32 @@ public class BranchImageDto
 /// Dữ liệu tạo mới chi nhánh — cho phép up kèm nhiều ảnh cùng lúc.
 /// Images và ImageTypes được map theo index (ảnh thứ i tương ứng loại thứ i);
 /// nếu ImageTypes không đủ số lượng, các ảnh dư sẽ nhận loại mặc định "Khác".
-/// </summary>
+/// </summary>// CreateBranchDto / UpdateBranchDto — bỏ ManagerId, thay bằng ManagerIds (list)
 public class CreateBranchDto
 {
     public string BranchName { get; set; } = null!;
     public string Address { get; set; } = null!;
     public string? Phone { get; set; }
-    public long ManagerId { get; set; }
 
-    /// <summary>
-    /// Danh sách ảnh up kèm lúc tạo chi nhánh (không bắt buộc)
-    /// </summary>
+    /// <summary>Danh sách EmployeeId sẽ được gán làm quản lý chi nhánh này ngay khi tạo (không bắt buộc)</summary>
+    public List<long>? ManagerIds { get; set; }
+
     public List<IFormFile>? Images { get; set; }
-
-    /// <summary>
-    /// Loại ảnh tương ứng theo index với Images, VD: "Lễ tân", "Phòng tập"
-    /// </summary>
     public List<string>? ImageTypes { get; set; }
 }
 
-/// <summary>
-/// Dữ liệu cập nhật thông tin chi nhánh (không bao gồm ảnh — ảnh có API riêng)
-/// </summary>
 public class UpdateBranchDto
 {
     public string BranchName { get; set; } = null!;
     public string Address { get; set; } = null!;
     public string? Phone { get; set; }
-    public long ManagerId { get; set; }
+    public string Status { get; set; } = null!;
 
     /// <summary>
-    /// Active / Inactive
+    /// Danh sách EmployeeId sẽ là quản lý chi nhánh sau khi cập nhật.
+    /// Service sẽ đồng bộ lại EmployeeBranch (BranchRole = Manager) theo danh sách này.
     /// </summary>
-    public string Status { get; set; } = null!;
+    public List<long>? ManagerIds { get; set; }
 }
 
 /// <summary>

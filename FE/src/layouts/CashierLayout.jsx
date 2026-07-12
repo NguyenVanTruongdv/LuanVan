@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
+import authApi from "../api/authApi"; // dùng để gọi API logout thật (clear token + hủy refresh token ở BE)
 import cashierApi from "../api/cashierApi"; // đổi lại path cho khớp cấu trúc thư mục thực tế
 import logo from "../assets/logo.png";
 
@@ -84,11 +85,6 @@ const Icons = {
             <polyline points="6 9 12 15 18 9" />
         </svg>
     ),
-    bell: (
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.73 21a2 2 0 0 1-3.46 0" />
-        </svg>
-    ),
     chevronSmall: (
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <polyline points="6 9 12 15 18 9" />
@@ -158,7 +154,11 @@ const C = {
     danger: "#F87171",
     dangerBg: "rgba(248, 113, 113, 0.1)",
     dangerBorder: "rgba(248, 113, 113, 0.28)",
-    surfaceLight: "#F4F6F8",
+    // Trước đây main content dùng nền sáng (#F4F6F8) trong khi các trang con giờ
+    // đều đã chuyển sang tông tối -> phần padding của khối main lộ ra thành viền
+    // sáng bao quanh nội dung tối. Đổi sang panel kính tối cùng tông sidebar/topbar
+    // để không còn viền sáng lạc tông nữa.
+    surfaceLight: "#0B121F",
 };
 
 function getInitials(fullName) {
@@ -191,8 +191,10 @@ export default function CashierLayout() {
     const [profileLoading, setProfileLoading] = useState(true);
     const [profileError, setProfileError] = useState(false);
 
+    // branches: [{ branchId, branchName }]
     const [branches, setBranches] = useState([]);
-    const [selectedBranch, setSelectedBranch] = useState("");
+    // selectedBranch: { branchId, branchName } | null
+    const [selectedBranch, setSelectedBranch] = useState(null);
     const [branchMenuOpen, setBranchMenuOpen] = useState(false);
 
     useEffect(() => {
@@ -209,9 +211,41 @@ export default function CashierLayout() {
                 if (cancelled) return;
 
                 setProfile(data);
-                const branchList = Array.isArray(data.branches) ? data.branches : [];
+
+                // Chuẩn hóa dữ liệu chi nhánh: phòng trường hợp BE trả về
+                // PascalCase (BranchId/BranchName) thay vì camelCase, hoặc vẫn
+                // còn trả mảng string cũ (["Chi nhánh 1", ...]) — nếu không
+                // chuẩn hóa thì branchId/branchName sẽ undefined và UI luôn
+                // rơi vào nhánh "Chưa có chi nhánh" dù BE có dữ liệu.
+                const rawBranches = data.branches ?? data.Branches ?? [];
+                const branchList = Array.isArray(rawBranches)
+                    ? rawBranches.map((b) =>
+                        typeof b === "string"
+                            ? { branchId: b, branchName: b }
+                            : {
+                                branchId: b.branchId ?? b.BranchId,
+                                branchName: b.branchName ?? b.BranchName ?? "",
+                            }
+                    )
+                    : [];
+
+                if (import.meta.env.DEV && branchList.length === 0) {
+                    console.warn(
+                        "[CashierLayout] Không tìm thấy chi nhánh nào trong response profile:",
+                        data
+                    );
+                }
+
                 setBranches(branchList);
-                setSelectedBranch(branchList[0] || "");
+
+                // Ưu tiên chi nhánh mặc định BE trả về (defaultBranchId),
+                // nếu không có thì lấy chi nhánh đầu tiên trong danh sách.
+                const defaultBranchId = data.defaultBranchId ?? data.DefaultBranchId;
+                const defaultBranch =
+                    branchList.find((b) => b.branchId === defaultBranchId) ||
+                    branchList[0] ||
+                    null;
+                setSelectedBranch(defaultBranch);
             } catch (err) {
                 if (!cancelled) setProfileError(true);
                 console.error("Không thể tải thông tin nhân viên:", err);
@@ -254,6 +288,34 @@ export default function CashierLayout() {
         }
         navigate(child.path);
         setSidebarOpen(false);
+    };
+
+    const [loggingOut, setLoggingOut] = useState(false);
+
+    const handleLogout = async () => {
+        if (loggingOut) return;
+        setLoggingOut(true);
+        try {
+            // authApi.logout() tự gọi API /api/auth/logout để hủy refreshToken
+            // ở BE, đồng thời luôn clearTokens() ở finally của chính nó dù API
+            // lỗi hay không (xem authApi.js) — nên FE không cần tự clear thêm.
+            await authApi.logout();
+        } catch (err) {
+            console.error("Đăng xuất lỗi:", err);
+        } finally {
+            setLoggingOut(false);
+            // Đổi lại route đăng nhập cho khớp thực tế (vd: /employee/login)
+            navigate("/staff/login", { replace: true });
+        }
+    };
+
+    const handleSelectBranch = (branch) => {
+        setSelectedBranch(branch);
+        setBranchMenuOpen(false);
+        // TODO: nếu các trang con (danh sách hội viên, gói tập, sự cố...) cần lọc
+        // dữ liệu theo chi nhánh, dùng branch.branchId khi gọi API tương ứng.
+        // Có thể lưu thêm vào localStorage/BranchContext nếu muốn giữ lựa chọn
+        // xuyên suốt phiên làm việc.
     };
 
     const staffName = profile?.fullName || (profileLoading ? "Đang tải..." : "Nhân viên");
@@ -356,10 +418,6 @@ export default function CashierLayout() {
                     </div>
 
                     <div style={S.topbarRight}>
-                        <button className="icon-btn" style={S.iconBtn} aria-label="Thông báo">
-                            <span style={{ color: C.textSecondary }}>{Icons.bell}</span>
-                        </button>
-
                         {/* Branch selector */}
                         <div style={{ position: "relative" }}>
                             <button
@@ -372,7 +430,8 @@ export default function CashierLayout() {
                                     <span className="skeleton" style={{ width: 110, height: 14 }} />
                                 ) : (
                                     <span className="branch-name-text" style={S.branchName}>
-                                        {selectedBranch || (profileError ? "Không tải được chi nhánh" : "Chưa có chi nhánh")}
+                                        {selectedBranch?.branchName ||
+                                            (profileError ? "Không tải được chi nhánh" : "Chưa có chi nhánh")}
                                     </span>
                                 )}
                                 {branches.length > 1 && (
@@ -384,18 +443,17 @@ export default function CashierLayout() {
                                 <div style={S.branchMenu}>
                                     {branches.map((b) => (
                                         <button
-                                            key={b}
+                                            key={b.branchId}
                                             className="branch-menu-item"
                                             style={{
                                                 ...S.branchMenuItem,
-                                                ...(b === selectedBranch ? { color: C.cyan, fontWeight: 700, background: C.cyanSoft } : {}),
+                                                ...(b.branchId === selectedBranch?.branchId
+                                                    ? { color: C.cyan, fontWeight: 700, background: C.cyanSoft }
+                                                    : {}),
                                             }}
-                                            onClick={() => {
-                                                setSelectedBranch(b);
-                                                setBranchMenuOpen(false);
-                                            }}
+                                            onClick={() => handleSelectBranch(b)}
                                         >
-                                            {b}
+                                            {b.branchName}
                                         </button>
                                     ))}
                                 </div>
@@ -506,18 +564,19 @@ export default function CashierLayout() {
                             {/* Logout */}
                             <button
                                 className="logout-btn"
-                                style={S.logoutBtn}
-                                onClick={() => alert("Đăng xuất")}
+                                style={{ ...S.logoutBtn, opacity: loggingOut ? 0.6 : 1, cursor: loggingOut ? "default" : "pointer" }}
+                                onClick={handleLogout}
+                                disabled={loggingOut}
                             >
                                 <span style={{ color: C.danger }}>{Icons.logout}</span>
-                                <span style={S.logoutLabel}>Đăng xuất</span>
+                                <span style={S.logoutLabel}>{loggingOut ? "Đang đăng xuất..." : "Đăng xuất"}</span>
                             </button>
                         </nav>
                     </aside>
 
                     {/* ── PAGE CONTENT ── */}
                     <main style={S.main}>
-                        <Outlet context={{ profile }} />
+                        <Outlet context={{ profile, branches, selectedBranch }} />
                     </main>
                 </div>
             </div>
@@ -872,6 +931,9 @@ const S = {
         color: C.danger,
     },
 
+    // Panel nội dung chính — trước dùng nền sáng, giờ chuyển sang panel tối
+    // cùng tông với sidebar/topbar để không còn viền sáng lộ ra quanh các
+    // trang con (đã chuyển sang theme tối).
     main: {
         flex: 1,
         background: C.surfaceLight,

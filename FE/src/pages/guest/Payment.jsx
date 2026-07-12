@@ -113,6 +113,19 @@ const styles = `
   .co-plan-opt-price{ font-size:13px; font-weight:700; color:var(--accent-2); white-space:nowrap; }
   .co-plan-badge{ font-size:9.5px; font-weight:700; text-transform:uppercase; letter-spacing:.4px; color:var(--accent-2); background:rgba(255,90,46,0.12); border-radius:5px; padding:2px 6px; margin-left:6px; }
 
+  .co-select-wrap{ display:flex; flex-direction:column; gap:6px; margin-top:14px; }
+  .co-select-label{ font-size:11.5px; color:var(--text-dim); font-weight:600; text-transform:uppercase; letter-spacing:.4px; }
+  .co-select{
+    width:100%; padding:11px 13px; border-radius:10px; border:1px solid var(--border-hi);
+    background:var(--bg-soft); color:var(--text); font-size:13.5px; font-weight:500; cursor:pointer;
+    appearance:none; -webkit-appearance:none;
+    background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%239a9aa4' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'></polyline></svg>");
+    background-repeat:no-repeat; background-position:right 13px center;
+  }
+  .co-select:focus{ outline:none; border-color:var(--accent); }
+  .co-select.error{ border-color:var(--accent); }
+  .co-select:disabled{ opacity:.55; cursor:not-allowed; }
+
   .co-btn{ width:100%; border:none; border-radius:12px; padding:14px 16px; font-weight:700; font-size:14.5px; cursor:pointer; transition:transform .15s, box-shadow .15s; display:flex; align-items:center; justify-content:center; gap:8px; }
   .co-btn-primary{ background:linear-gradient(135deg, var(--accent), #e64a1f); color:#fff; box-shadow:0 8px 22px -8px rgba(255,90,46,0.55); }
   .co-btn-primary:hover{ transform:translateY(-1px); }
@@ -220,6 +233,16 @@ function parseQrInfo(qrImageUrl, fallbackOrderCode) {
     return { bankName, accountNumber, accountName, transferContent };
 }
 
+// Chuẩn hoá response /api/branches: BE trả { items: [...] } có phân trang,
+// nhưng phòng thêm các trường hợp trả thẳng mảng hoặc bọc { data: [...] }.
+function extractBranchList(raw) {
+    if (Array.isArray(raw)) return raw;
+    if (Array.isArray(raw?.items)) return raw.items;
+    if (Array.isArray(raw?.data)) return raw.data;
+    if (Array.isArray(raw?.data?.items)) return raw.data.items;
+    return [];
+}
+
 export default function Payment() {
     const location = useLocation();
     const navigate = useNavigate();
@@ -241,6 +264,12 @@ export default function Payment() {
     const [availablePlans, setAvailablePlans] = useState([]);
     const [loadingInfo, setLoadingInfo] = useState(true);
     const [infoError, setInfoError] = useState(null);
+
+    // Danh sách chi nhánh đang hoạt động để khách chọn nơi thanh toán/kích hoạt gói.
+    // API thật: memberApi.getBranches({ status: "Active" }) -> GET /api/branches?status=Active
+    const [branches, setBranches] = useState([]);
+    const [selectedBranchId, setSelectedBranchId] = useState("");
+    const [branchError, setBranchError] = useState(null);
 
     // Đơn thanh toán tạo ra sau khi bấm "Xác nhận & Thanh toán", hoặc được khôi phục lại
     // từ transaction Pending có sẵn khi trang Gói tập điều hướng qua với resumePending.
@@ -266,7 +295,7 @@ export default function Payment() {
         window.scrollTo({ top: 0, left: 0, behavior: "auto" });
     }, [step]);
 
-    // Lấy thông tin cá nhân + gói hiện tại, danh sách gói đang mở bán.
+    // Lấy thông tin cá nhân + gói hiện tại, danh sách gói đang mở bán, danh sách chi nhánh.
     // Không tự kiểm tra transaction Pending ở đây nữa -- việc đó do trang Gói tập làm
     // trước khi điều hướng qua trang này (đã hỏi khách và truyền sẵn state phù hợp).
     useEffect(() => {
@@ -276,9 +305,10 @@ export default function Payment() {
                 setLoadingInfo(true);
                 setInfoError(null);
 
-                const [infoRes, plansRes] = await Promise.all([
+                const [infoRes, plansRes, branchesRes] = await Promise.all([
                     memberApi.getMyinfoToPayment(),
                     memberApi.getAllPackage(),
+                    memberApi.getBranches({ status: "Active", pageSize: 100 }),
                 ]);
 
                 if (!mounted) return;
@@ -305,11 +335,17 @@ export default function Payment() {
                 const plans = Array.isArray(rawPlans) ? rawPlans : [];
                 setAvailablePlans(plans);
 
+                const rawBranches = branchesRes?.data ?? branchesRes ?? [];
+                const branchList = extractBranchList(rawBranches).filter(
+                    (b) => b.status === "Active"
+                );
+                setBranches(branchList);
+
                 const state = location.state;
 
                 if (state?.resumePending && state?.pending) {
                     // Khách chọn tiếp tục giao dịch Pending có sẵn -> khôi phục state và vào thẳng
-                    // màn QR, không gọi createPayment.
+                    // màn QR, không gọi createPayment (nên không cần chọn chi nhánh ở đây).
                     const pending = state.pending;
                     setSelectedPlan({
                         planId: pending.planId,
@@ -347,14 +383,22 @@ export default function Payment() {
     }, []);
 
     // Tạo đơn thanh toán khi bước sang màn hình QR
-    // API thật: memberApi.createPayment(planId) -> POST /api/payment/create { planId }
+    // API thật: memberApi.createPayment(planId, branchId) -> POST /api/payment/create { planId, branchId }
     const handleConfirmPayment = async () => {
         if (!selectedPlan) return;
+
+        // Bắt buộc phải chọn chi nhánh trước khi tạo đơn (BE trả lỗi "Không tìm thấy chi nhánh"
+        // nếu thiếu branchId).
+        if (!selectedBranchId) {
+            setBranchError("Vui lòng chọn chi nhánh thanh toán.");
+            return;
+        }
+
         try {
             setCreatingOrder(true);
             setOrderError(null);
 
-            const res = await memberApi.createPayment(selectedPlan.planId);
+            const res = await memberApi.createPayment(selectedPlan.planId, selectedBranchId);
             const raw = res?.data ?? res;
 
             if (!raw) throw new Error("Không nhận được dữ liệu thanh toán từ server");
@@ -453,6 +497,11 @@ export default function Payment() {
     const handleSelectPlan = (plan) => {
         setSelectedPlan(plan);
         setOrderError(null);
+    };
+
+    const handleSelectBranch = (e) => {
+        setSelectedBranchId(e.target.value);
+        setBranchError(null);
     };
 
     return (
@@ -618,7 +667,7 @@ export default function Payment() {
                                                 <span>{myInfo?.phone || "—"}</span>
                                             </div>
                                             <div className="co-info-line">
-                                                <span>Chi nhánh</span>
+                                                <span>Chi nhánh đăng ký ban đầu</span>
                                                 <span>{myInfo?.initialBranchName || "—"}</span>
                                             </div>
                                         </div>
@@ -630,6 +679,30 @@ export default function Payment() {
                                             <span>Tổng cộng</span>
                                             <span className="co-disp" style={{ fontSize: 17, color: "#ff8a50" }}>{formatVnd(selectedPlan.price)}</span>
                                         </div>
+
+                                        {/* Chọn chi nhánh thanh toán / kích hoạt gói -> gửi kèm branchId khi tạo đơn */}
+                                        <div className="co-select-wrap">
+                                            <div className="co-select-label">Chi nhánh thanh toán</div>
+                                            <select
+                                                className={`co-select${branchError ? " error" : ""}`}
+                                                value={selectedBranchId}
+                                                onChange={handleSelectBranch}
+                                                disabled={branches.length === 0}
+                                            >
+                                                <option value="">
+                                                    {branches.length === 0 ? "Không có chi nhánh khả dụng" : "-- Chọn chi nhánh --"}
+                                                </option>
+                                                {branches.map((b) => (
+                                                    <option key={b.branchId} value={b.branchId}>
+                                                        {b.branchName}
+                                                    </option>
+                                                ))}
+                                            </select>
+                                        </div>
+
+                                        {branchError && (
+                                            <div className="co-fine" style={{ color: "var(--accent-2)", marginTop: 8 }}>{branchError}</div>
+                                        )}
 
                                         {orderError && (
                                             <div className="co-fine" style={{ color: "var(--accent-2)", marginTop: 10 }}>{orderError}</div>
@@ -734,7 +807,11 @@ export default function Payment() {
                                             </div>
                                             <div className="co-info-line">
                                                 <span>Chi nhánh</span>
-                                                <span>{myInfo?.initialBranchName || "—"}</span>
+                                                <span>
+                                                    {branches.find((b) => String(b.branchId) === String(selectedBranchId))?.branchName
+                                                        || myInfo?.initialBranchName
+                                                        || "—"}
+                                                </span>
                                             </div>
                                             {currentPackage && (
                                                 <div className="co-info-line">

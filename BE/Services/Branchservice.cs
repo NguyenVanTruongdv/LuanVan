@@ -1,37 +1,29 @@
 using BE.Data;
 using BE.DTOs.Branches;
 using BE.Models;
-using BE.Services.Storage;
 using Microsoft.EntityFrameworkCore;
 
 namespace BE.Services;
 
-/// <summary>
-/// Xử lý nghiệp vụ cho chi nhánh: danh sách, lọc, tạo (kèm ảnh), cập nhật, soft delete,
-/// và quản lý ảnh chi nhánh (thêm / sửa / xóa, đồng bộ xóa file cũ trên S3).
-/// Lưu ý: giả định DbContext tên là AppDbContext với DbSet Branches, BranchImages, Employees.
-/// Điều chỉnh lại tên cho khớp với DbContext thực tế của bạn nếu khác.
-/// </summary>
-public class BranchService 
+public class BranchService
 {
     private readonly GymManagementContext _context;
-    private readonly S3StorageService _s3Service;
+    private readonly BranchImageService _branchImageService;
 
-    private const string DefaultImageType = "Khác";
-    private const string StatusDeleted = "Deleted";
+    private const string ManagerRole = "Manager";
 
-    public BranchService(GymManagementContext context, S3StorageService s3Service)
+    public BranchService(GymManagementContext context, BranchImageService branchImageService)
     {
         _context = context;
-        _s3Service = s3Service;
+        _branchImageService = branchImageService;
     }
 
     public async Task<BranchListResultDto> GetListAsync(BranchFilterDto filter)
     {
         var query = _context.Branches
-            .Include(b => b.Manager)
             .Include(b => b.BranchImages)
-            .Where(b => b.Status != StatusDeleted)
+            .Include(b => b.EmployeeBranches).ThenInclude(eb => eb.Employee)
+            .Where(b => b.Status != BranchSatusEnum.Inactive.ToString())
             .AsQueryable();
 
         if (!string.IsNullOrWhiteSpace(filter.Name))
@@ -68,9 +60,9 @@ public class BranchService
     public async Task<BranchDto?> GetByIdAsync(int branchId)
     {
         var branch = await _context.Branches
-            .Include(b => b.Manager)
             .Include(b => b.BranchImages)
-            .FirstOrDefaultAsync(b => b.BranchId == branchId && b.Status != StatusDeleted);
+            .Include(b => b.EmployeeBranches).ThenInclude(eb => eb.Employee)
+            .FirstOrDefaultAsync(b => b.BranchId == branchId && b.Status != BranchSatusEnum.Inactive.ToString());
 
         return branch is null ? null : MapToDto(branch);
     }
@@ -82,22 +74,36 @@ public class BranchService
             BranchName = dto.BranchName,
             Address = dto.Address,
             Phone = dto.Phone,
-            ManagerId = dto.ManagerId,
             Status = "Active",
             CreatedAt = DateTime.UtcNow
         };
 
         _context.Branches.Add(branch);
-        await _context.SaveChangesAsync(); // cần BranchId trước khi upload ảnh (đặt tên folder theo id)
+        await _context.SaveChangesAsync(); // cần BranchId trước khi upload ảnh / gán manager
+
+        if (dto.ManagerIds is { Count: > 0 })
+        {
+            await AssignManagersAsync(branch.BranchId, dto.ManagerIds);
+        }
 
         if (dto.Images is { Count: > 0 })
         {
-            await UploadAndAttachImagesAsync(branch.BranchId, dto.Images, dto.ImageTypes);
-            await _context.SaveChangesAsync();
+            var add = new AddBranchImagesDto
+            {
+                Images = dto.Images,
+                ImageTypes = dto.ImageTypes
+            };
+            await _branchImageService.AddImagesAsync(branch.BranchId, add);
         }
 
-        await _context.Entry(branch).Reference(b => b.Manager).LoadAsync();
+        await _context.SaveChangesAsync();
+
         await _context.Entry(branch).Collection(b => b.BranchImages).LoadAsync();
+        await _context.Entry(branch).Collection(b => b.EmployeeBranches).LoadAsync();
+        foreach (var eb in branch.EmployeeBranches)
+        {
+            await _context.Entry(eb).Reference(x => x.Employee).LoadAsync();
+        }
 
         return MapToDto(branch);
     }
@@ -105,17 +111,22 @@ public class BranchService
     public async Task<BranchDto?> UpdateAsync(int branchId, UpdateBranchDto dto)
     {
         var branch = await _context.Branches
-            .Include(b => b.Manager)
             .Include(b => b.BranchImages)
-            .FirstOrDefaultAsync(b => b.BranchId == branchId && b.Status != StatusDeleted);
+            .Include(b => b.EmployeeBranches).ThenInclude(eb => eb.Employee)
+            .FirstOrDefaultAsync(b => b.BranchId == branchId && b.Status != BranchSatusEnum.Inactive.ToString());
 
         if (branch is null) return null;
 
         branch.BranchName = dto.BranchName;
         branch.Address = dto.Address;
         branch.Phone = dto.Phone;
-        branch.ManagerId = dto.ManagerId;
         branch.Status = dto.Status;
+
+        // Nếu FE có gửi ManagerIds thì đồng bộ lại danh sách quản lý của chi nhánh này
+        if (dto.ManagerIds != null)
+        {
+            await SyncManagersAsync(branch, dto.ManagerIds);
+        }
 
         await _context.SaveChangesAsync();
 
@@ -125,13 +136,11 @@ public class BranchService
     public async Task<bool> SoftDeleteAsync(int branchId)
     {
         var branch = await _context.Branches
-            .FirstOrDefaultAsync(b => b.BranchId == branchId && b.Status != StatusDeleted);
+            .FirstOrDefaultAsync(b => b.BranchId == branchId && b.Status != BranchSatusEnum.Inactive.ToString());
 
         if (branch is null) return false;
 
-        // Soft delete: không xóa dữ liệu, chỉ đánh dấu trạng thái để loại khỏi danh sách hiển thị.
-        // Ảnh trên S3 được giữ nguyên (không xóa) phòng trường hợp cần khôi phục chi nhánh.
-        branch.Status = StatusDeleted;
+        branch.Status = BranchSatusEnum.Inactive.ToString();
         await _context.SaveChangesAsync();
 
         return true;
@@ -140,145 +149,105 @@ public class BranchService
     public async Task<BranchDto?> RestoreAsync(int branchId)
     {
         var branch = await _context.Branches
-            .Include(b => b.Manager)
             .Include(b => b.BranchImages)
-            .FirstOrDefaultAsync(b => b.BranchId == branchId && b.Status == StatusDeleted);
+            .Include(b => b.EmployeeBranches).ThenInclude(eb => eb.Employee)
+            .FirstOrDefaultAsync(b => b.BranchId == branchId && b.Status == BranchSatusEnum.Inactive.ToString());
 
-        if (branch is null) return null; // không tồn tại hoặc chưa từng bị xóa
+        if (branch is null) return null;
 
-        // Khôi phục về Active — có thể đổi thành Inactive nếu muốn giữ nguyên trạng thái trước khi xóa
         branch.Status = "Active";
         await _context.SaveChangesAsync();
 
         return MapToDto(branch);
     }
 
-    public async Task<List<BranchImageDto>> AddImagesAsync(int branchId, AddBranchImagesDto dto)
+    // ===================== QUẢN LÝ CHI NHÁNH (EmployeeBranch.BranchRole = Manager) =====================
+
+    /// <summary>Gán thêm các nhân viên làm quản lý cho 1 chi nhánh (dùng khi tạo mới, chưa có record nào)</summary>
+    private async Task AssignManagersAsync(int branchId, List<long> employeeIds)
     {
-        var branchExists = await _context.Branches
-            .AnyAsync(b => b.BranchId == branchId && b.Status != StatusDeleted);
-
-        if (!branchExists)
-            throw new KeyNotFoundException($"Không tìm thấy chi nhánh có id = {branchId}");
-
-        var newImages = await UploadAndAttachImagesAsync(branchId, dto.Images, dto.ImageTypes);
-        await _context.SaveChangesAsync();
-
-        return newImages.Select(MapImageToDto).ToList();
-    }
-
-    public async Task<BranchImageDto?> UpdateImageAsync(int imageId, UpdateBranchImageDto dto)
-    {
-        var image = await _context.BranchImages.FirstOrDefaultAsync(i => i.ImageId == imageId);
-        if (image is null) return null;
-
-        // Nếu có ảnh mới: xóa ảnh cũ trên S3 trước, rồi upload ảnh mới thay thế
-        if (dto.Image is not null)
+        foreach (long employeeId in employeeIds.Distinct())
         {
-            var oldUrl = image.ImageUrl;
-            var newUrl = await _s3Service.UploadFileAsync(dto.Image, $"branches/{image.BranchId}");
-            image.ImageUrl = newUrl;
+            bool exists = await _context.EmployeeBranches
+                .AnyAsync(eb => eb.BranchId == branchId && eb.EmployeeId == employeeId);
 
-            await _s3Service.DeleteFileAsync(oldUrl);
+            if (!exists)
+            {
+                _context.EmployeeBranches.Add(new EmployeeBranch
+                {
+                    BranchId = branchId,
+                    EmployeeId = employeeId,
+                    BranchRole = ManagerRole
+                });
+            }
         }
-
-        if (!string.IsNullOrWhiteSpace(dto.ImageType))
-        {
-            image.ImageType = dto.ImageType;
-        }
-
-        if (dto.SortOrder.HasValue)
-        {
-            image.SortOrder = dto.SortOrder.Value;
-        }
-
-        await _context.SaveChangesAsync();
-
-        return MapImageToDto(image);
-    }
-
-    public async Task<bool> DeleteImageAsync(int imageId)
-    {
-        var image = await _context.BranchImages.FirstOrDefaultAsync(i => i.ImageId == imageId);
-        if (image is null) return false;
-
-        await _s3Service.DeleteFileAsync(image.ImageUrl);
-
-        _context.BranchImages.Remove(image);
-        await _context.SaveChangesAsync();
-
-        return true;
     }
 
     /// <summary>
-    /// Upload danh sách file lên S3 và tạo entity BranchImage tương ứng (chưa SaveChanges).
-    /// SortOrder được tính tiếp theo giá trị lớn nhất hiện có trong cùng ImageType.
+    /// Đồng bộ danh sách quản lý của 1 chi nhánh theo đúng danh sách employeeIds truyền vào:
+    /// - Ai không còn trong danh sách -> xóa record (hoặc hạ role, tùy nghiệp vụ)
+    /// - Ai mới có trong danh sách -> thêm record mới với BranchRole = Manager
+    /// - Nhân viên với BranchRole khác (VD "Staff") tại chi nhánh này không bị ảnh hưởng
     /// </summary>
-    private async Task<List<BranchImage>> UploadAndAttachImagesAsync(
-        int branchId, List<IFormFile> images, List<string>? imageTypes)
+    private async Task SyncManagersAsync(Branch branch, List<long> employeeIds)
     {
-        var result = new List<BranchImage>();
+        List<EmployeeBranch> currentManagers = branch.EmployeeBranches
+            .Where(eb => eb.BranchRole == ManagerRole)
+            .ToList();
 
-        // Lấy sort order hiện tại theo từng loại ảnh để nối tiếp thay vì ghi đè
-        var currentMaxSortOrders = await _context.BranchImages
-            .Where(i => i.BranchId == branchId)
-            .GroupBy(i => i.ImageType)
-            .Select(g => new { ImageType = g.Key, Max = g.Max(i => i.SortOrder) })
-            .ToDictionaryAsync(x => x.ImageType, x => x.Max);
-
-        for (var i = 0; i < images.Count; i++)
+        // Xóa quản lý không còn trong danh sách mới
+        foreach (var eb in currentManagers)
         {
-            var file = images[i];
-            var imageType = imageTypes is not null && i < imageTypes.Count && !string.IsNullOrWhiteSpace(imageTypes[i])
-                ? imageTypes[i]
-                : DefaultImageType;
-
-            var url = await _s3Service.UploadFileAsync(file, $"branches/{branchId}");
-
-            currentMaxSortOrders.TryGetValue(imageType, out var currentMax);
-            var nextOrder = (sbyte)(currentMax + 1);
-            currentMaxSortOrders[imageType] = nextOrder;
-
-            var entity = new BranchImage
+            if (!employeeIds.Contains(eb.EmployeeId))
             {
-                BranchId = branchId,
-                ImageUrl = url,
-                ImageType = imageType,
-                SortOrder = nextOrder,
-                UploadedAt = DateTime.UtcNow
-            };
-
-            _context.BranchImages.Add(entity);
-            result.Add(entity);
+                _context.EmployeeBranches.Remove(eb);
+            }
         }
 
-        return result;
+        // Thêm quản lý mới chưa có record tại chi nhánh này
+        var existingEmployeeIds = branch.EmployeeBranches.Select(eb => eb.EmployeeId).ToHashSet();
+
+        foreach (long employeeId in employeeIds.Distinct())
+        {
+            if (!existingEmployeeIds.Contains(employeeId))
+            {
+                _context.EmployeeBranches.Add(new EmployeeBranch
+                {
+                    BranchId = branch.BranchId,
+                    EmployeeId = employeeId,
+                    BranchRole = ManagerRole
+                });
+            }
+            else
+            {
+                // Đã có record (có thể trước đó là Staff) -> nâng lên Manager
+                var eb = branch.EmployeeBranches.First(x => x.EmployeeId == employeeId);
+                eb.BranchRole = ManagerRole;
+            }
+        }
     }
 
-    private static BranchDto MapToDto(Branch b) => new()
+    internal static BranchDto MapToDto(Branch b) => new()
     {
         BranchId = b.BranchId,
         BranchName = b.BranchName,
         Address = b.Address,
         Phone = b.Phone,
-        ManagerId = b.ManagerId,
-        ManagerName = b.Manager?.FullName, // đổi lại tên field cho khớp với Employee thực tế
         Status = b.Status,
         CreatedAt = b.CreatedAt,
+        Managers = b.EmployeeBranches
+            .Where(eb => eb.BranchRole == ManagerRole)
+            .Select(eb => new BranchManagerDto
+            {
+                EmployeeId = eb.EmployeeId,
+                FullName = eb.Employee?.FullName ?? "",
+                Phone = eb.Employee?.Phone
+            })
+            .ToList(),
         Images = b.BranchImages
             .OrderBy(i => i.ImageType)
             .ThenBy(i => i.SortOrder)
-            .Select(MapImageToDto)
+            .Select(BranchImageService.MapImageToDto)
             .ToList()
-    };
-
-    private static BranchImageDto MapImageToDto(BranchImage i) => new()
-    {
-        ImageId = i.ImageId,
-        BranchId = i.BranchId,
-        ImageUrl = i.ImageUrl,
-        ImageType = i.ImageType,
-        SortOrder = i.SortOrder,
-        UploadedAt = i.UploadedAt
     };
 }

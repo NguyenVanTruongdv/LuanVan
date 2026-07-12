@@ -1,4 +1,3 @@
-
 import { Navigate, Route, Routes } from "react-router-dom";
 import ProtectedRoute from "./ProtectedRoute";
 
@@ -35,10 +34,15 @@ import GymMemberRegistration from "../pages/cashier/member/RegisterMember";
 import LichSuDangKyGoiTap from "../pages/cashier/packages/History";
 import RenewPage from "../pages/cashier/packages/Renewpage";
 
+import ManagerLayout from "../layouts/ManagerLayout";
+import CheckinHistoryOfManager from "../pages/manager/Member/CheckinHistory";
+import ListMemberOfManager from "../pages/manager/Member/ListMember";
+import AdjustTransactionPlan from "../pages/manager/Member/Package/Adjusttransaction";
+import LichSuDangKyGoiTapOfManager from "../pages/manager/Member/Package/HistoryRegis";
+
 function AppRoutes() {
     return (
         <Routes>
-
             {/* ================= PUBLIC ================= */}
 
             <Route path="/" element={<Home />} />
@@ -69,19 +73,7 @@ function AppRoutes() {
 
             {/* ================= STAFF ================= */}
 
-            <Route
-                element={
-                    <ProtectedRoute
-                        allowedRoles={[
-                            "Admin",
-                            "Manager",
-                            "Staff",
-                            "Technician",
-                        ]}
-                        loginPath="/staff/login"
-                    />
-                }
-            >
+            <Route element={<ProtectedRoute allowedRoles={["Staff",]} loginPath="/staff/login" />}  >
                 <Route path="/indentify" element={<CameraRecognition />} />
                 <Route path="/cashier" element={<CashierLayout />}>
                     <Route index element={<Dashboard />} />
@@ -96,6 +88,25 @@ function AppRoutes() {
                 </Route>
             </Route>
 
+            {/* ================= MANAGER ================= */}
+            {/* 1) ProtectedRoute chặn user chưa đăng nhập / sai role vào thẳng /manager
+                2) BranchProvider bọc bên trong, chỉ tồn tại khi ở khu Manager */}
+            <Route element={<ProtectedRoute allowedRoles={["Manager"]} loginPath="/staff/login" />} >
+                <Route
+                    path="/manager"
+                    element={
+
+                        <ManagerLayout />
+
+                    }
+                >
+                    <Route index element={<Dashboard />} />
+                    <Route path="member/member-list" element={<ListMemberOfManager />} />
+                    <Route path="member/checkin-history" element={<CheckinHistoryOfManager />} />
+                    <Route path="members/packages/history" element={<LichSuDangKyGoiTapOfManager />} />
+                    <Route path="members/packages/adjust" element={<AdjustTransactionPlan />} />
+                </Route>
+            </Route>
         </Routes>
     );
 }

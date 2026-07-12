@@ -22,23 +22,18 @@ const cashierApi = {
         ).toString();
         return authApi.get(`/api/members${query ? `?${query}` : ""}`);
     },
-
     getMemberDetail(id) {
         return authApi.get(`/api/members/${id}`);
     },
-
     checkPhoneExists(phone) {
         return authApi.get(`/api/members/check-phone?phone=${encodeURIComponent(phone)}`);
     },
-
     createMember(formData) {
         return authApi.post(`/api/members`, formData);
     },
-
     updateMember(id, data) {
         return authApi.put(`/api/members/${id}`, data);
     },
-
     getUpdateHistory(id) {
         return authApi.get(`/api/members/${id}/update-history`);
     },
@@ -54,7 +49,6 @@ const cashierApi = {
         ).toString();
         return authApi.get(`/api/members/pending${query ? `?${query}` : ""}`);
     },
-
     // GET /api/members/{id}/has-package -> trả về boolean THÔ (Ok(hasPackage)),
     // KHÔNG phải { hasPackage: bool }. Nơi gọi phải dùng thẳng giá trị trả về.
     // LƯU Ý NGHIỆP VỤ: hàm BE Haspackage() chỉ kiểm tra gói đang PendingActivation
@@ -63,7 +57,6 @@ const cashierApi = {
     hasPackage(id) {
         return authApi.get(`/api/members/${id}/has-package`);
     },
-
     // POST /api/members/{id}/activate-with-package -> MemberService.ActivateWithPackageAsync
     // Dùng khi hội viên CHƯA có gói (kể cả Pending): chọn gói + đăng ký FaceID cùng lúc.
     // formData cần: PlanId, PromotionId (optional), GiaGoc, Amount, PaymentMethod, ProfileImage.
@@ -71,7 +64,6 @@ const cashierApi = {
     activateWithPackage(id, formData) {
         return authApi.post(`/api/members/${id}/activate-with-package`, formData);
     },
-
     // POST /api/members/{id}/activate-face-id -> MemberService.ActivateFaceIdOnlyAsync
     // Dùng khi hội viên ĐÃ có gói (Pending mua online, hoặc gói cũ còn hạn): chỉ đăng ký FaceID.
     // BE tự kích hoạt gói Pending (nếu có) hoặc dùng gói còn hạn hiện tại.
@@ -79,11 +71,9 @@ const cashierApi = {
     activateFaceIdOnly(id, formData) {
         return authApi.post(`/api/members/${id}/activate-face-id`, formData);
     },
-
     lockMember(id, data) {
         return authApi.put(`/api/members/${id}/lock`, data);
     },
-
     unlockMember(id, data) {
         return authApi.put(`/api/members/${id}/unlock`, data);
     },
@@ -103,17 +93,14 @@ const cashierApi = {
     getCurrentMemberPack(id) {
         return authApi.get(`/api/members/${id}/packages`);
     },
-
     getAllPackage() {
         return authApi.get("/api/packages", false);
     },
-
     // POST /api/members/{memberId}/packages/renew — dùng chung cho cả "gia hạn"
     // lẫn "gán gói lần đầu" (hội viên activate chưa có gói cũ nào để gia hạn).
     renewMembership(memberId, formData) {
         return authApi.post(`/api/members/${memberId}/packages/renew`, formData);
     },
-
     getHisRegisPack(formData = {}) {
         const query = new URLSearchParams(
             Object.entries(formData).filter(
@@ -121,6 +108,9 @@ const cashierApi = {
             )
         ).toString();
         return authApi.get(`/api/packages/history${query ? `?${query}` : ""}`);
+    },
+    getApplicablePromotions(planId) {
+        return authApi.get(`/api/plans/${planId}/applicable-promotions`);
     },
 
     // =========================================================================
@@ -156,11 +146,18 @@ const cashierApi = {
     lookupMemberByPhone(phone) {
         return authApi.get(`/api/members/lookup?phone=${encodeURIComponent(phone)}`);
     },
-
     // POST /api/checkins   body: { memberId, manualReason, branchId }
     // Check-in thủ công do nhân viên thực hiện (method = "Manual")
     checkinManual(memberId, manualReason, branchId) {
-        return authApi.post(`/api/checkins`, { memberId, manualReason, branchId });
+        return authApi.post(`/api/identify/checkins`, { memberId, manualReason, branchId });
+    },
+    getIdentifyHistory(params = {}) {
+        const query = new URLSearchParams(
+            Object.entries(params).filter(
+                ([, v]) => v !== undefined && v !== null && v !== ""
+            )
+        ).toString();
+        return authApi.get(`/api/identify${query ? `?${query}` : ""}`);
     },
 
     // =========================================================================
@@ -168,11 +165,56 @@ const cashierApi = {
     // =========================================================================
     // POST /api/doors/open   body: { side: "checkin" | "checkout", branchId }
     openDoor(side, branchId) {
-        return authApi.post(`/api/doors/open`, { side, branchId });
+        return authApi.post(`/api/identify/doors/open`, { side, branchId });
     },
 
-     getApplicablePromotions(planId) {
-        return authApi.get(`/api/plans/${planId}/applicable-promotions`);
+    // =========================================================================
+    // THIẾT BỊ (Equipment)
+    // =========================================================================
+    getAllEquipment(params = {}) {
+        const query = new URLSearchParams(
+            Object.entries(params).filter(
+                ([, v]) => v !== undefined && v !== null && v !== ""
+            )
+        ).toString();
+        const url = query ? `/api/equipment?${query}` : "/api/equipment";
+        return authApi.get(url, true);
+    },
+
+    // =========================================================================
+    // SỰ CỐ (Incidents)
+    // =========================================================================
+    // GET /api/incidents — TẤT CẢ báo cáo sự cố (Manager/Admin).
+    // params: { keyword, branchId, equipmentId, status, page, pageSize }
+    getIncidents(params = {}) {
+        const query = new URLSearchParams(
+            Object.entries(params).filter(
+                ([, v]) => v !== undefined && v !== null && v !== ""
+            )
+        ).toString();
+        return authApi.get(`/api/incidents${query ? `?${query}` : ""}`);
+    },
+    // GET /api/incidents/my — chỉ báo cáo do CHÍNH nhân viên đang đăng nhập gửi
+    // (IncidentController.GetMyList -> IncidentService.GetMyListAsync).
+    // params giống getIncidents: { keyword, branchId, equipmentId, status, page, pageSize },
+    // GET /api/incidents/{id}
+    getIncidentDetail(id) {
+        return authApi.get(`/api/incidents/${id}`);
+    },
+    // POST /api/incidents (multipart/form-data: Title, Description, BranchId,
+    // EquipmentId, Images[], Video)
+    createIncident(formData) {
+        return authApi.post(`/api/incidents`, formData);
+    },
+    // PUT /api/incidents/{id} — dùng để cập nhật báo cáo, và cũng dùng để HỦY
+    // (gửi Status: "Cancelled" kèm RejectReason bắt buộc). BE yêu cầu đủ các field
+    // UpdateIncidentDto: title, description, branchId, equipmentId, status, rejectReason
+    // -> phải lấy chi tiết báo cáo (getIncidentDetail) trước để có đủ dữ liệu cũ.
+    updateIncident(id, data) {
+        return authApi.put(`/api/incidents/${id}`, data);
+    },
+    deleteIncident(id) {
+        return authApi.delete(`/api/incidents/${id}`);
     },
 };
 
