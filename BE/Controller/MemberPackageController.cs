@@ -1,5 +1,6 @@
 //Controller này dùng cho MemberPackage, tách ra khỏi package
 using BE.Dtos.Member;
+using BE.Dtos.MemberPackage;
 using BE.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -14,14 +15,16 @@ namespace BE.Controllers
     [Route("api/members/{memberId:long}/packages")]
     [Authorize]
     public class MemberPackagesController : ApiControllerBase
-    {
+    {   
+        private readonly MemberPackageService _memberPackageService;
         private readonly MemberService _memberService;
         private readonly PromotionService _promotionService;
 
-        public MemberPackagesController(MemberService memberService, PromotionService promotionService)
+        public MemberPackagesController(MemberService memberService, PromotionService promotionService, MemberPackageService memberPackageService)
         {
             _memberService = memberService;
             _promotionService = promotionService;
+            _memberPackageService= memberPackageService;
         }
 
         [HttpGet()]
@@ -77,5 +80,25 @@ namespace BE.Controllers
             var result = await _promotionService.GetApplicablePromotionsAsync(planId);
             return Ok(result);
         }
+         [HttpGet("~/api/member-packages/history")]
+        [Authorize(Roles = "Staff,Manager,Admin")]
+        public async Task<IActionResult> GetHistory([FromQuery] MemberPackageHistoryQuery query)
+        {
+            var employeeId = GetCurrentUserId();
+            List<int>? allowedBranchIds = null;
+
+            if (!User.IsInRole("Admin"))
+            {
+                allowedBranchIds = await _memberPackageService.GetManagedBranchIdsAsync(employeeId);
+
+                if (query.BranchId.HasValue && !allowedBranchIds.Contains(query.BranchId.Value))
+                    throw new UnauthorizedAccessException(
+                        "Bạn không có quyền xem lịch sử đăng ký của chi nhánh này.");
+            }
+
+            var result = await _memberPackageService.GetPackageHistoryAsync(query, allowedBranchIds);
+            return Ok(result);
+        }
     }
+    
 }

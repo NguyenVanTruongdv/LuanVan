@@ -42,17 +42,54 @@ namespace BE.Services
     // Để FE xem trước kết quả BE sẽ tính ra sao (giá, KM, ngày hết hạn mới) trước khi bấm xác
     // nhận, dùng PreviewAdjustTransactionPlanAsync bên dưới — chỉ tính, KHÔNG lưu DB.
     //
-    // [MỚI - THAY ĐỔI QUAN TRỌNG] Luồng điều chỉnh (Preview + Adjust thật) giờ CÓ kiểm tra
-    // GioiHanLuot/SoLuotDaDung của khuyến mãi TẠI THỜI ĐIỂM HIỆN TẠI (checkUsageLimit=true,
-    // giống hệt luồng tạo giao dịch mới). Lý do nghiệp vụ: nếu gói mới đáng lẽ có KM áp dụng
-    // tại thời điểm giao dịch gốc, nhưng KM đó đến giờ đã bị người khác dùng hết lượt, thì
-    // KHÔNG cho phép điều chỉnh sang gói đó nữa — chặn đứng toàn bộ thao tác điều chỉnh
-    // (ném lỗi, không phải chỉ âm thầm bỏ qua KM), coi như phạt nhân viên vì đã chọn nhầm gói
-    // ngay từ đầu, khiến giờ không "cứu" lại được ưu đãi cho khách nữa.
-    // Nếu gói mới KHÔNG có KM nào áp dụng được (newPromotionId == null) thì không bị chặn bởi
-    // rule này — vẫn điều chỉnh bình thường, không tính KM.
+    // [13/07/2026 - FIX HIỂU LẦM "NGÀY TẠO" vs "NGÀY BẮT ĐẦU"] PreviewAdjustTransactionPlanAsync
+    // trả thêm StartDate (= memberPackage.StartDate, mốc gốc thực sự dùng để cộng ra NewExpiryDate),
+    // vì trước đây FE chỉ có transaction.CreatedAt để đối chiếu, dễ hiểu nhầm là NewExpiryDate được
+    // tính từ CreatedAt trong khi thực chất tính từ StartDate của MemberPackage (có thể khác
+    // CreatedAt nếu là gói gia hạn nối tiếp hoặc kích hoạt trễ).
+    //
+    // [MỚI] KHÔNG cho điều chỉnh nếu gói tập mới trùng với gói tập hiện tại của giao dịch
+    // (newPlanId == transaction.PlanId) — coi như không có gì để sửa, chặn ngay từ đầu (cả ở
+    // bước Preview lẫn Adjust thật) trước khi đụng tới tra cứu khuyến mãi/tính toán.
+    //
+    // [MỚI] Sau khi điều chỉnh THÀNH CÔNG, hàm AdjustTransactionPlanAsync giờ tự LẬP LẠI hóa đơn
+    // PDF (gọi GenerateAndAttachInvoiceAsync ngay bên trong, không cần Controller gọi riêng nữa).
+    // Hóa đơn mới:
+    //   - Dùng ĐÚNG chi nhánh gốc của giao dịch (transaction.Branch) — vì điều chỉnh chỉ đổi
+    //     gói tập/khuyến mãi, KHÔNG đổi chi nhánh đã bán, nên địa chỉ/số điện thoại in trên hóa
+    //     đơn mới vẫn là chi nhánh mà khách đã thực hiện giao dịch gốc.
+    //   - Có thêm 1 dòng lưu ý (IsAdjustmentReissue = true) cho biết đây là hóa đơn được lập lại
+    //     sau khi điều chỉnh thông tin giao dịch, kèm thời điểm điều chỉnh.
+    //   - ReceiptImage cũ (nếu có) sẽ bị ghi đè bằng URL hóa đơn mới.
+    //
+    // [FIX - 13/07/2026 - LẦN 3 - THỐNG NHẤT LẠI CÔNG THỨC "CHU KỲ"] Các lần sửa trước (LẦN 1, LẦN 2
+    // — xem lịch sử comment cũ bên dưới CalculateNewExpiryDate trước khi sửa) đã đưa TangChuKy về
+    // hướng "1 chu kỳ = 1 THÁNG LỊCH", dùng AddMonths + suy ngược planDurationDays -> planMonths
+    // (kèm lớp phòng vệ dung sai 5 ngày). Cách làm đó SAI với định nghĩa nghiệp vụ thực tế:
+    // "1 chu kỳ = 30 NGÀY CỐ ĐỊNH" (không phải tháng lịch, không AddMonths) — ĐÃ được áp dụng và
+    // xác nhận trong MemberPackageService.CalculateBonusDays (CYCLE_DAYS = 30, cộng bằng AddDays).
+    //
+    // Hậu quả của việc có 2 công thức khác nhau cho cùng loại KM "TangChuKy": ngày hết hạn khi
+    // TẠO MỚI/GIA HẠN gói (qua MemberPackageService, 30 ngày/chu kỳ) sẽ LỆCH với ngày hết hạn khi
+    // ĐIỀU CHỈNH lại giao dịch (qua CalculateNewExpiryDate cũ ở đây, dùng AddMonths theo lịch) —
+    // cùng 1 khuyến mãi nhưng ra 2 kết quả khác nhau tùy đi qua luồng nào.
+    //
+    // FIX: Bỏ hẳn cách quy đổi planMonths/AddMonths + lớp phòng vệ dung sai DurationDays (không
+    // còn cần thiết vì không còn suy ngược gì từ DurationDays nữa). CalculateNewExpiryDate giờ
+    // dùng ĐÚNG 1 công thức duy nhất, khớp 100% với MemberPackageService:
+    //     ExpiryDate = StartDate + planDurationDays (ngày) + bonusDays (ngày)
+    //     bonusDays: TangNgay = SoNgayTang; TangChuKy = SoChuKyTang * 30; còn lại = 0.
+    // Toàn bộ cộng bằng AddDays, KHÔNG dùng AddMonths ở bất kỳ đâu trong file này nữa.
     public class TransactionService
     {
+        // ===================== ĐỘ DÀI 1 CHU KỲ = 30 NGÀY CỐ ĐỊNH =====================
+        // PHẢI khớp với MemberPackageService.CYCLE_DAYS — đây là nguồn công thức thứ 2 cho cùng
+        // 1 khái niệm nghiệp vụ vì TransactionService không có tham chiếu tới MemberPackageService.
+        // Nếu sau này đổi định nghĩa "1 chu kỳ", phải sửa ĐỒNG THỜI ở cả 2 nơi (MemberPackageService
+        // và đây), và tốt nhất nên gom về 1 chỗ dùng chung (vd tiêm MemberPackageService vào đây)
+        // để tránh 2 hằng số bị lệch nhau trong tương lai.
+        private const int CYCLE_DAYS = 30;
+
         private readonly GymManagementContext _context;
         private readonly S3StorageService _storageService;
         private readonly InvoiceService _invoiceService;
@@ -248,6 +285,12 @@ namespace BE.Services
         // Ở luồng tạo giao dịch mới: check ở HIỆN TẠI là đúng nghĩa (KM hết lượt thì không cho mua).
         // Ở luồng điều chỉnh: cũng giữ true — nếu KM của gói mới đã hết lượt Ở HIỆN TẠI thì
         // KHÔNG cho điều chỉnh sang gói đó nữa (xem giải thích ở đầu file).
+        //
+        // [FIX - LẦN 3] bonusDays trả về ở đây giờ là SỐ NGÀY THẬT SỰ được dùng để cộng ra ngày
+        // hết hạn (qua CalculateNewExpiryDate / CalculateExpiryDate) — KHÔNG còn là giá trị "chỉ
+        // để tham khảo/hiển thị" như comment cũ. Với "TangNgay": bonusDays = SoNgayTang (cộng
+        // thẳng). Với "TangChuKy": bonusDays = SoChuKyTang * CYCLE_DAYS (= SoChuKyTang * 30, CỐ
+        // ĐỊNH — không phải AddMonths theo lịch, không phụ thuộc DurationDays của gói).
         public async Task<(decimal GiaGoc, decimal DiscountAmount, decimal Amount, short BonusDays, Promotion? Promo)>
             CalculatePromotionEffectAsync(
                 int? promotionId, int planId, decimal planPrice, int planDurationDays,
@@ -303,12 +346,31 @@ namespace BE.Services
                     break;
 
                 case "TangChuKy":
-                    bonusDays = (short)((promotion.SoChuKyTang ?? 0) * planDurationDays);
+                    // [FIX - LẦN 3] 1 chu kỳ = 30 ngày CỐ ĐỊNH, KHÔNG phải plan.DurationDays (bug
+                    // gốc: "1 * 90 = 90 ngày" cho gói 3 tháng thay vì đúng ra "1 * 30 = 30 ngày").
+                    bonusDays = (short)((promotion.SoChuKyTang ?? 0) * CYCLE_DAYS);
                     break;
             }
 
             var amount = planPrice - discount;
             return (planPrice, discount, amount, bonusDays, promotion);
+        }
+
+        // ===================== TÍNH NGÀY HẾT HẠN MỚI (dùng cho Preview + Adjust) =====================
+        // [FIX - 13/07/2026 - LẦN 3] Trước đây hàm này dùng AddMonths + suy ngược planDurationDays
+        // ra "số tháng" (kèm lớp phòng vệ dung sai 5 ngày) — cách này SAI so với định nghĩa nghiệp
+        // vụ "1 chu kỳ = 30 ngày cố định" và KHÔNG khớp với công thức đang dùng ở
+        // MemberPackageService.CalculateExpiryDate (cộng thẳng bằng AddDays). Hậu quả: điều chỉnh
+        // giao dịch cho ra ngày hết hạn khác với lúc tạo/gia hạn ban đầu cho cùng 1 khuyến mãi.
+        //
+        // FIX: Bỏ hẳn AddMonths + toàn bộ lớp phòng vệ suy luận planMonths (không còn cần thiết).
+        // Dùng ĐÚNG 1 công thức, khớp 100% MemberPackageService:
+        //     ExpiryDate = StartDate + planDurationDays (ngày) + bonusDays (ngày), cộng bằng AddDays.
+        // bonusDays lấy thẳng từ CalculatePromotionEffectAsync ở trên (đã đúng: TangNgay=SoNgayTang,
+        // TangChuKy=SoChuKyTang*30), KHÔNG tự suy luận lại promo.SoChuKyTang/SoNgayTang ở đây nữa.
+        private static DateOnly CalculateNewExpiryDate(DateOnly startDate, int planDurationDays, short bonusDays)
+        {
+            return startDate.AddDays(planDurationDays + bonusDays);
         }
 
         // ===================== [MỚI] TRA KHUYẾN MÃI ĐANG HIỆU LỰC CHO 1 GÓI TẠI 1 THỜI ĐIỂM =====================
@@ -319,6 +381,14 @@ namespace BE.Services
         // giải thích ở trên) — nếu hết lượt, hàm đó sẽ tự ném lỗi chặn đứng cả điều chỉnh.
         // Nếu tại asOf có nhiều hơn 1 KM cùng hiệu lực cho gói này, đang lấy KM đầu tiên tìm được —
         // báo lại nếu cần quy tắc ưu tiên khác (ví dụ giảm nhiều nhất / mới tạo nhất).
+        //
+        // LƯU Ý: asOf (transaction.CreatedAt) đang lưu theo UTC (CreateTransactionAsync dùng
+        // DateTime.UtcNow), trong khi NgayBatDau/NgayKetThuc của Promotion RẤT CÓ THỂ đang được
+        // nhập/lưu theo giờ địa phương (VN, UTC+7) mà không convert. Nếu đúng vậy, một khuyến mãi
+        // "còn hiệu lực" theo mắt người dùng có thể bị so sánh lệch tới 7 tiếng và bị loại nhầm ở
+        // đây (biểu hiện: ô "Khuyến mãi tự động áp dụng" ở FE không hiện dù ô tham khảo bên cạnh
+        // vẫn thấy KM). Cần kiểm tra lại quy ước lưu giờ của 2 cột NgayBatDau/NgayKetThuc trong DB
+        // và đồng bộ cùng 1 múi giờ (khuyến nghị: lưu UTC xuyên suốt) để loại trừ khả năng này.
         private async Task<int?> GetActivePromotionIdAtAsync(int planId, DateTime asOf)
         {
             var promo = await _context.Promotions
@@ -374,7 +444,8 @@ namespace BE.Services
 
         // ===================== [MỚI] KIỂM TRA QUYỀN ĐIỀU CHỈNH (dùng chung cho Adjust + Preview) =====================
         // Ném KeyNotFoundException nếu không tìm thấy nhân viên, UnauthorizedAccessException nếu
-        // không đủ quyền. Trả về Employee để chỗ gọi dùng tiếp nếu cần (hiện chưa cần).
+        // không đủ quyền. Trả về Employee để chỗ gọi dùng tiếp (vd lấy FullName in lên hóa đơn
+        // lập lại sau khi điều chỉnh).
         //   - RoleId == 3 (Admin): qua mọi chi nhánh.
         //   - RoleId == 2 (Manager): chỉ qua nếu transaction.BranchId nằm trong chi nhánh quản lý.
         //   - Role khác: từ chối thẳng.
@@ -408,8 +479,12 @@ namespace BE.Services
         // gói mới giá bao nhiêu, KM nào (nếu có) sẽ được áp dụng, ngày hết hạn mới — và quan
         // trọng nhất: nếu KM của gói mới đã hết lượt Ở HIỆN TẠI thì hàm này sẽ NÉM LỖI ngay,
         // chặn nhân viên trước khi họ kịp bấm "Lưu thay đổi" (xem CalculatePromotionEffectAsync).
+        // Hàm này KHÔNG lập hóa đơn — chỉ hàm AdjustTransactionPlanAsync (lưu DB thật) mới lập.
+        //
+        // Trả thêm StartDate (= memberPackage.StartDate, mốc gốc thực sự được dùng để cộng ra
+        // NewExpiryDate) để FE hiển thị đúng mốc tính toán bên cạnh NewExpiryDate.
         public async Task<(int PlanId, string PlanName, decimal GiaGoc, decimal DiscountAmount, decimal Amount,
-            short BonusDays, int? PromotionId, string? PromotionName, DateOnly NewExpiryDate)>
+            short BonusDays, int? PromotionId, string? PromotionName, DateOnly StartDate, DateOnly NewExpiryDate)>
             PreviewAdjustTransactionPlanAsync(long transactionId, int newPlanId, long employeeId)
         {
             var transaction = await _context.Transactions
@@ -426,6 +501,11 @@ namespace BE.Services
 
             if (transaction.PaymentStatus != "Paid")
                 throw new InvalidOperationException("Chỉ điều chỉnh được giao dịch đã thanh toán.");
+
+            // [MỚI] Không cho "điều chỉnh" sang đúng gói tập đang có của giao dịch — trùng gói
+            // nghĩa là không có gì để sửa, chặn ngay trước khi tra KM/tính toán gì thêm.
+            if (newPlanId == transaction.PlanId)
+                throw new InvalidOperationException("Gói tập mới trùng với gói tập hiện tại của giao dịch, không thể điều chỉnh.");
 
             var memberPackage = transaction.MemberPackages
                 .OrderByDescending(mp => mp.CreatedAt)
@@ -446,15 +526,18 @@ namespace BE.Services
 
             var newPromotionId = await GetActivePromotionIdAtAsync(newPlanId, transaction.CreatedAt);
 
-            // [MỚI] checkUsageLimit mặc định true -> nếu KM này đã hết lượt Ở HIỆN TẠI,
-            // dòng dưới sẽ tự throw InvalidOperationException, chặn đứng cả preview lẫn adjust thật.
+            // [MỚI] checkUsageLimit mặc định true -> nếu KM này đã hết lượt Ở HIỆN TẠI, dòng dưới
+            // sẽ tự throw InvalidOperationException, chặn đứng cả preview lẫn adjust thật.
             var (giaGoc, discount, amount, bonusDays, promo) = await CalculatePromotionEffectAsync(
                 newPromotionId, newPlanId, newPlan.Price, newPlan.DurationDays, transaction.CreatedAt);
 
-            var newExpiryDate = memberPackage.StartDate!.Value.AddDays(newPlan.DurationDays + bonusDays);
+            // [FIX - LẦN 3] Dùng bonusDays đã tính đúng ở trên (30 ngày/chu kỳ cố định), cộng bằng
+            // AddDays — khớp 100% công thức với MemberPackageService, không còn AddMonths.
+            var startDate = memberPackage.StartDate!.Value;
+            var newExpiryDate = CalculateNewExpiryDate(startDate, newPlan.DurationDays, bonusDays);
 
             return (newPlan.PlanId, newPlan.PlanName, giaGoc, discount, amount,
-                bonusDays, promo?.PromotionId, promo?.TenKhuyenMai, newExpiryDate);
+                bonusDays, promo?.PromotionId, promo?.TenKhuyenMai, startDate, newExpiryDate);
         }
 
         // ===================== [MỚI] ĐIỀU CHỈNH LẠI GÓI TẬP DO NHÂN VIÊN THAO TÁC NHẦM =====================
@@ -467,34 +550,48 @@ namespace BE.Services
         // phạt việc chọn nhầm gói ban đầu. Muốn xem trước kết quả này, gọi
         // PreviewAdjustTransactionPlanAsync ở trên.
         //
+        // [MỚI] Cũng KHÔNG cho điều chỉnh nếu gói mới trùng với gói hiện tại của giao dịch — chặn
+        // ngay từ đầu, trước cả bước tra KM.
+        //
         // Việc điều chỉnh sẽ:
         //   1. Tự tra KM cho GÓI MỚI tại transaction.CreatedAt, kiểm tra còn lượt Ở HIỆN TẠI không.
         //   2. Cập nhật lại Transaction (PlanId, PromotionId, GiaGoc, Amount).
         //   3. Cập nhật lại MemberPackage tương ứng (PlanId, ExpiryDate tính lại theo gói mới).
         //   4. Ghi log vào TransactionAdjustmentLogs: ai sửa, lý do, cũ -> mới.
-        //
-        // KHÔNG tự sinh lại hóa đơn PDF ở đây — gọi GenerateAndAttachInvoiceAsync riêng sau khi
-        // hàm này chạy xong, với InvoiceData mới (gói/tiền mới).
-       public async Task<Transaction> AdjustTransactionPlanAsync(
+        //   5. [MỚI] LẬP LẠI hóa đơn PDF ngay sau khi lưu DB thành công — hóa đơn mới dùng ĐÚNG
+        //      chi nhánh gốc của giao dịch (transaction.Branch, KHÔNG đổi theo lần điều chỉnh),
+        //      và có thêm dòng lưu ý "hóa đơn được lập lại sau khi điều chỉnh thông tin giao dịch"
+        //      kèm thời điểm điều chỉnh. ReceiptImage cũ sẽ bị ghi đè bằng URL hóa đơn mới.
+        //      Nếu việc lập hóa đơn thất bại (lỗi mạng/S3...), KHÔNG rollback dữ liệu đã điều chỉnh
+        //      — GenerateAndAttachInvoiceAsync tự bắt lỗi và trả về null, không ném exception ra
+        //      ngoài (xem cài đặt bên dưới).
+        public async Task<Transaction> AdjustTransactionPlanAsync(
             long transactionId,
             int newPlanId,
             long adjustedByEmployeeId,
             string? reason)
         {
             var transaction = await _context.Transactions
+                .Include(t => t.Member)
+                .Include(t => t.Branch)
                 .Include(t => t.MemberPackages)
                 .FirstOrDefaultAsync(t => t.TransactionId == transactionId);
 
             if (transaction == null)
                 throw new KeyNotFoundException("Không tìm thấy giao dịch.");
 
-            await EnsureAdjustPermissionAsync(adjustedByEmployeeId, transaction);
+            var adjustingEmployee = await EnsureAdjustPermissionAsync(adjustedByEmployeeId, transaction);
 
             if (transaction.EmployeeId == null)
                 throw new InvalidOperationException("Không thể điều chỉnh giao dịch mua online qua chức năng này.");
 
             if (transaction.PaymentStatus != "Paid")
                 throw new InvalidOperationException("Chỉ điều chỉnh được giao dịch đã thanh toán.");
+
+            // [MỚI] Không cho "điều chỉnh" sang đúng gói tập đang có của giao dịch — trùng gói
+            // nghĩa là không có gì để sửa, chặn ngay trước khi tra KM/hoàn lượt dùng/ghi log.
+            if (newPlanId == transaction.PlanId)
+                throw new InvalidOperationException("Gói tập mới trùng với gói tập hiện tại của giao dịch, không thể điều chỉnh.");
 
             var memberPackage = transaction.MemberPackages
                 .OrderByDescending(mp => mp.CreatedAt)
@@ -561,7 +658,11 @@ namespace BE.Services
             memberPackage.GiaGoc = giaGoc;
             memberPackage.Amount = amount;
             memberPackage.SoNgayTangThucTe = bonusDays;
-            memberPackage.ExpiryDate = memberPackage.StartDate!.Value.AddDays(newPlan.DurationDays + bonusDays);
+
+            // [FIX - LẦN 3] Cùng 1 công thức (AddDays, bonusDays = 30/chu kỳ) với
+            // PreviewAdjustTransactionPlanAsync, đảm bảo số hiển thị lúc xem trước và số lưu thật
+            // xuống DB luôn khớp nhau. StartDate KHÔNG đổi khi điều chỉnh — chỉ đổi gói/KM/ExpiryDate.
+            memberPackage.ExpiryDate = CalculateNewExpiryDate(memberPackage.StartDate!.Value, newPlan.DurationDays, bonusDays);
             memberPackage.UpdatedAt = DateTime.UtcNow;
 
             // [MỚI] Ghi nhận lượt dùng khuyến mãi MỚI (nếu gói mới có KM áp dụng được).
@@ -571,6 +672,8 @@ namespace BE.Services
                     promo, transaction.MemberId, memberPackage.MemberPackageId,
                     newPlanId, bonusDays, discountAmount);
             }
+
+            var adjustedAt = DateTime.UtcNow;
 
             _context.TransactionAdjustmentLogs.Add(new TransactionAdjustmentLog
             {
@@ -585,10 +688,38 @@ namespace BE.Services
                 NewPromotionId = promo?.PromotionId,
                 Reason = reason,
                 AdjustedBy = adjustedByEmployeeId,
-                AdjustedAt = DateTime.UtcNow
+                AdjustedAt = adjustedAt
             });
 
             await _context.SaveChangesAsync();
+
+            // ===== [MỚI] LẬP LẠI HÓA ĐƠN sau khi điều chỉnh thành công =====
+            // Chi nhánh in trên hóa đơn mới LUÔN lấy từ transaction.Branch (chi nhánh gốc đã bán
+            // gói tập cho khách) — điều chỉnh không đổi chi nhánh nên không cần hỏi lại FE.
+            var invoiceData = new InvoiceData
+            {
+                OrderCode = transaction.OrderCode,
+                MemberName = transaction.Member.FullName,
+                MemberPhone = transaction.Member.Phone,
+                PlanName = newPlan.PlanName,
+                GiaGoc = giaGoc,
+                DiscountAmount = discountAmount,
+                Amount = amount,
+                BonusDays = bonusDays,
+                StartDate = memberPackage.StartDate!.Value,
+                ExpiryDate = memberPackage.ExpiryDate!.Value,
+                PaymentMethod = transaction.PaymentMethod,
+                CreatedAt = transaction.CreatedAt, // giữ ngày lập hóa đơn gốc để hội viên đối chiếu
+                EmployeeName = adjustingEmployee.FullName, // người vừa thực hiện điều chỉnh
+                PromotionName = promo?.TenKhuyenMai,
+                BranchName = transaction.Branch.BranchName,
+                BranchAddress = transaction.Branch.Address,
+                BranchPhone = transaction.Branch.Phone,
+                IsAdjustmentReissue = true,
+                AdjustedAt = adjustedAt
+            };
+
+            await GenerateAndAttachInvoiceAsync(transaction, invoiceData);
 
             return transaction;
         }

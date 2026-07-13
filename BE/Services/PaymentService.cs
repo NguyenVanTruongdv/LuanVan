@@ -18,6 +18,41 @@ namespace BE.Services
     // [SỬA] Đã bỏ bảng PromotionPlans (quan hệ many-to-many giữa Promotion và MembershipPlan).
     // Promotion giờ gắn trực tiếp 1-1 với 1 MembershipPlan qua cột Promotion.PlanId, nên mọi chỗ
     // trước đây join qua PromotionPlans giờ chỉ cần lọc thẳng Promotions.Where(p => p.PlanId == ...).
+    //
+    // [FIX - 13/07/2026] 2 lỗi liên quan tới khuyến mãi phát hiện trong file này (đã sửa ở lần
+    // trước, giữ nguyên):
+    //
+    // 1) HandleWebhookAsync: tính bonus ngày cho loại "TangChuKy" từng dùng
+    //        soNgayTang = (short)((promotion.SoChuKyTang ?? 0) * plan.DurationDays);
+    //    -> bug gốc "1 chu kỳ = DurationDays của gói" thay vì 30 ngày cố định.
+    //
+    // 2) CreatePaymentAsync: điều kiện lọc khuyến mãi trước đây thiếu check null cho NgayKetThuc,
+    //    khiến khuyến mãi "vĩnh viễn" (NgayKetThuc == null) bị loại oan khỏi kết quả.
+    //
+    // [MỚI - 13/07/2026] GOM CÔNG THỨC VỀ MemberPackageService — trước đây PaymentService tự viết
+    // riêng cả 2 công thức (tính giá sau giảm ở CreatePaymentAsync bằng switch thủ công, và tính
+    // bonus ngày ở HandleWebhookAsync bằng hằng CYCLE_DAYS riêng của chính file này) vì không có
+    // tham chiếu logic dùng chung — đây chính là "nguồn công thức thứ 3" từng được ghi chú ở trên.
+    // Giờ PaymentService đã có sẵn _packageService (MemberPackageService) tiêm vào constructor, nên
+    // dùng thẳng:
+    //   - _packageService.CalculateDiscountedAmount(promotion, giaGoc) thay cho switch tính giảm giá
+    //     thủ công trong CreatePaymentAsync.
+    //   - _packageService.CalculateBonusDays(promotion, plan) thay cho if/else + CYCLE_DAYS thủ công
+    //     trong HandleWebhookAsync.
+    // Xóa hằng CYCLE_DAYS cục bộ của file này — không còn "3 nguồn công thức" nữa, chỉ còn đúng 1
+    // nguồn duy nhất ở MemberPackageService, khớp với TransactionService cũng đang dùng chung.
+    //
+    // [FIX - 13/07/2026] HandleWebhookAsync, nhánh member.Status == "PendingActivation": trước đây
+    // vẫn còn SÓT 1 chỗ tự viết lại công thức cộng ngày bằng tay để tính paidExpiryDate ước tính
+    // cho hóa đơn (todayForInvoice.AddDays(plan.DurationDays + soNgayTang)), dù comment đầu file
+    // đã khẳng định "gom về 1 nguồn công thức duy nhất". Giá trị ra vẫn ĐÚNG vì công thức viết tay
+    // giống hệt bên trong CalculateExpiryDate, nhưng đây vẫn là 1 điểm trùng lặp: nếu sau này
+    // MemberPackageService.CalculateExpiryDate đổi cách tính (VD đổi quy tắc làm tròn, đổi cách xử
+    // lý ngày lễ...) mà quên sửa chỗ này thì số hiển thị trên hóa đơn (paidExpiryDate) sẽ LỆCH so
+    // với ExpiryDate thật được lưu khi khách kích hoạt gói (ActivatePendingPackageAsync). Đổi sang
+    // gọi thẳng _packageService.CalculateExpiryDate(...) để chỉ còn đúng 1 nguồn công thức, không
+    // đổi kết quả tính toán, chỉ đổi chỗ viết công thức — cùng nguyên tắc đã áp dụng cho
+    // ActivatePendingPackageAsync/CreateActivePackageForCustomerAsync bên MemberPackageService.
     public class PaymentService
     {
         private readonly GymManagementContext _db;
@@ -77,49 +112,30 @@ namespace BE.Services
             }
 
             decimal giaGoc = pac.Price;
-            decimal amount = giaGoc;
 
             // [SỬA] Trước đây join PromotionPlans để tìm khuyến mãi áp cho gói pac.PlanId.
             // Giờ Promotion có sẵn cột PlanId nên query thẳng bảng Promotions, không cần join nữa.
+            //
+            // [FIX] Check "p.NgayKetThuc == null" TRƯỚC khi so sánh >= DateTime.Now — thiếu điều
+            // kiện này khiến khuyến mãi KHÔNG giới hạn ngày kết thúc (vĩnh viễn) bị loại khỏi kết
+            // quả oan (NULL >= x luôn unknown/false trong SQL), giống hệt cách các nơi khác trong
+            // hệ thống (PromotionService, TransactionService) đã xử lý.
+            var now = DateTime.Now;
             var promotion = await _db.Promotions
                 .FirstOrDefaultAsync(p =>
                     p.PlanId == pac.PlanId
                     && p.TrangThai == "HoatDong"
-                    && p.NgayBatDau <= DateTime.Now
-                    && p.NgayKetThuc >= DateTime.Now
+                    && p.NgayBatDau <= now
+                    && (p.NgayKetThuc == null || p.NgayKetThuc >= now) // [FIX]
                     && (
                         p.GioiHanLuot == null
                         || p.SoLuotDaDung < p.GioiHanLuot
                     ));
-            if (promotion != null)
-            {
-                switch (promotion.PromoType)
-                {
-                    case "GiamPhanTram":
 
-                        decimal discount =
-                            giaGoc * promotion.PhanTramGiam!.Value / 100;
-
-                        if (promotion.MucGiamToiDa.HasValue &&
-                            discount > promotion.MucGiamToiDa.Value)
-                        {
-                            discount = promotion.MucGiamToiDa.Value;
-                        }
-
-                        amount -= discount;
-
-                        break;
-
-                    case "GiamTienMat":
-
-                        amount -= promotion.SoTienGiam ?? 0;
-
-                        break;
-                }
-
-                if (amount < 0)
-                    amount = 0;
-            }
+            // [MỚI] Dùng thẳng công thức DUY NHẤT ở MemberPackageService thay vì tự switch tính
+            // giảm giá thủ công ở đây. Với promotion == null hoặc promotion là loại TangNgay/
+            // TangChuKy (không giảm giá), hàm này tự trả về giaGoc, khỏi cần if riêng.
+            decimal amount = _packageService.CalculateDiscountedAmount(promotion, giaGoc);
 
             var OrderCode = GenerateOrderCode();
 
@@ -333,7 +349,6 @@ namespace BE.Services
                     if (plan == null)
                         throw new Exception("Không tìm thấy gói tập.");
 
-                    short soNgayTang = 0;
                     Promotion? promotion = null;
 
                     if (transaction.PromotionId.HasValue)
@@ -343,18 +358,15 @@ namespace BE.Services
 
                         if (promotion != null)
                         {
-                            if (promotion.PromoType == "TangNgay")
-                            {
-                                soNgayTang = promotion.SoNgayTang ?? 0;
-                            }
-                            else if (promotion.PromoType == "TangChuKy")
-                            {
-                                soNgayTang = (short)((promotion.SoChuKyTang ?? 0) * plan.DurationDays);
-                            }
-
                             promotion.SoLuotDaDung++;
                         }
                     }
+
+                    // [MỚI] Dùng thẳng công thức DUY NHẤT ở MemberPackageService.CalculateBonusDays
+                    // thay cho if/else + hằng CYCLE_DAYS thủ công trước đây trong chính file này.
+                    // Với promotion == null hoặc là loại GiamPhanTram/GiamTienMat (không tặng
+                    // ngày), hàm này tự trả về 0, khỏi cần if riêng.
+                    short soNgayTang = _packageService.CalculateBonusDays(promotion, plan);
 
                     MemberPackage memberPackage;
 
@@ -365,9 +377,14 @@ namespace BE.Services
                             transaction.GiaGoc, transaction.Amount, soNgayTang,
                             transaction.TransactionId, branchId);
 
+                        // [FIX] Trước đây tự viết tay: todayForInvoice.AddDays(plan.DurationDays + soNgayTang).
+                        // Gói này chưa có StartDate/ExpiryDate thật (PackageStatus = PendingActivation),
+                        // nên đây CHỈ là ngày ước tính để in lên hóa đơn ngay lúc thanh toán — nhưng vẫn
+                        // phải đi qua đúng 1 nguồn công thức duy nhất (_packageService.CalculateExpiryDate)
+                        // như mọi luồng khác, để không có nguy cơ lệch nếu công thức đổi sau này.
                         var todayForInvoice = DateOnly.FromDateTime(DateTime.Today);
                         paidStartDate = todayForInvoice;
-                        paidExpiryDate = todayForInvoice.AddDays(plan.DurationDays + soNgayTang);
+                        paidExpiryDate = _packageService.CalculateExpiryDate(todayForInvoice, plan, soNgayTang);
                     }
                     else
                     {

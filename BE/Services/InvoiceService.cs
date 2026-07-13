@@ -27,9 +27,24 @@ namespace BE.Services
         // "VT GYM, 241 Nguyễn Gia Trí..." như trước. Luôn nên có giá trị vì
         // Transaction.BranchId / MemberPackage.BranchId giờ là bắt buộc, nhưng vẫn có
         // fallback ở InvoiceService phòng trường hợp thiếu dữ liệu.
+        //
+        // [LƯU Ý] Khi hóa đơn được LẬP LẠI sau điều chỉnh giao dịch (IsAdjustmentReissue = true),
+        // 3 field BranchName/BranchAddress/BranchPhone PHẢI được TransactionService truyền vào
+        // từ đúng transaction.Branch GỐC (chi nhánh khách đã thực hiện giao dịch ban đầu) —
+        // điều chỉnh chỉ đổi gói tập/khuyến mãi, KHÔNG đổi chi nhánh, nên hóa đơn mới vẫn phải
+        // in địa chỉ/số điện thoại của đúng chi nhánh đó, không được đổi sang chi nhánh khác.
         public string? BranchName { get; set; }
         public string? BranchAddress { get; set; }
         public string? BranchPhone { get; set; }
+
+        // [MỚI] Đánh dấu đây là hóa đơn được LẬP LẠI sau khi nhân viên/quản lý điều chỉnh lại
+        // thông tin giao dịch (đổi gói tập do chọn nhầm lúc bán...) — khi true, InvoiceService
+        // sẽ in thêm 1 dòng lưu ý nổi bật ngay dưới tiêu đề hóa đơn.
+        public bool IsAdjustmentReissue { get; set; }
+
+        // Thời điểm thực hiện điều chỉnh — chỉ có ý nghĩa khi IsAdjustmentReissue = true,
+        // dùng để hiển thị trong dòng lưu ý ("...vào lúc dd/MM/yyyy HH:mm").
+        public DateTime? AdjustedAt { get; set; }
     }
 
     public class InvoiceService
@@ -43,6 +58,9 @@ namespace BE.Services
         public byte[] GenerateInvoicePdf(InvoiceData data)
         {
             // [MỚI] Ưu tiên thông tin chi nhánh đã bán gói; fallback về tên mặc định nếu thiếu.
+            // Với hóa đơn lập lại sau điều chỉnh, các giá trị này PHẢI là chi nhánh GỐC của giao
+            // dịch (xem ghi chú tại InvoiceData.BranchName ở trên) — InvoiceService không tự suy
+            // luận được chi nhánh, chỉ in đúng những gì được truyền vào.
             var branchName = string.IsNullOrWhiteSpace(data.BranchName) ? "VT GYM" : data.BranchName;
             var branchAddress = data.BranchAddress; // có thể null nếu thiếu dữ liệu
             var branchPhone = data.BranchPhone;
@@ -80,6 +98,20 @@ namespace BE.Services
 
                         if (!string.IsNullOrEmpty(data.EmployeeName))
                             col.Item().Text($"Thu ngân: {data.EmployeeName}").FontSize(10).AlignCenter();
+
+                        // ===== [MỚI] Dòng lưu ý khi hóa đơn được lập lại sau điều chỉnh giao dịch =====
+                        if (data.IsAdjustmentReissue)
+                        {
+                            col.Item().PaddingTop(8).Background(Colors.Amber.Lighten4).Padding(6).Text(t =>
+                            {
+                                t.Span("Lưu ý: ").Bold().FontColor(Colors.Red.Darken1).FontSize(9);
+                                t.Span(
+                                    data.AdjustedAt.HasValue
+                                        ? $"Hóa đơn này được lập lại sau khi điều chỉnh thông tin giao dịch, vào lúc {data.AdjustedAt.Value:dd/MM/yyyy HH:mm}."
+                                        : "Hóa đơn này được lập lại sau khi điều chỉnh thông tin giao dịch."
+                                ).FontSize(9).FontColor(Colors.Grey.Darken2);
+                            });
+                        }
 
                         col.Item().PaddingTop(8).LineHorizontal(1);
                     });

@@ -87,15 +87,6 @@ public class MembershipPlansController : ApiControllerBase
 
     // GET: api/packages/history
     // Lịch sử đăng ký gói — bản chất là lịch sử Transaction, nên gọi TransactionService.
-    [HttpGet("history")]
-    public async Task<IActionResult> GetHistory(
-            [FromQuery] string? keyword,
-            [FromQuery] string? status,
-            [FromQuery] int? branchId,
-            [FromQuery] string? channel)
-    {
-        var employeeId = GetCurrentUserId();
-        var data = await _transactionService.GetHistoryRegisPac(keyword, status, channel,branchId, employeeId);
-        return Ok(data);
-    }
+    
+   
 }

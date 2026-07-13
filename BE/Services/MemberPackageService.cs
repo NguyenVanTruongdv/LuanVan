@@ -1,4 +1,5 @@
 using BE.Data;
+using BE.Dtos.MemberPackage;
 using BE.DTOs.Payment;
 using BE.Models;
 using Microsoft.EntityFrameworkCore;
@@ -14,29 +15,54 @@ namespace BE.Services;
 // GHI CHÚ VỀ MODEL: MemberPackage.StartDate và MemberPackage.ExpiryDate phải là DateOnly? (nullable)
 // vì gói mua online trước khi kích hoạt chưa có ngày bắt đầu/kết thúc.
 //
-// [MỚI] BranchId chuyển từ Member sang MemberPackage — hội viên không cần chi nhánh cố định,
-// nhưng MỖI GÓI TẬP đều gắn với 1 chi nhánh cụ thể (bắt buộc, not null):
-//   - Bán tại quầy (CreateActivePackageAsync): branchId = chi nhánh của nhân viên thu ngân.
-//   - Mua online (CreatePendingPackageAsync / CreateActivePackageForCustomerAsync): branchId
-//     do FE gửi lên bắt buộc lúc khách bấm mua (PaymentService validate rồi truyền xuống đây).
+// [MỚI - 13/07/2026] Gom công thức tính "Số ngày tặng thêm đã quy đổi thực tế" (đúng như comment
+// trên cột MemberPackage.SoNgayTangThucTe: TangNgay=so_ngay_tang, TangChuKy=so_chu_ky_tang×30,
+// không KM=0) về 2 hàm dùng chung CalculateBonusDays / CalculateExpiryDate bên dưới. Trước đây
+// công thức này bị viết lặp lại y hệt ở nhiều nơi (CreateMemberAsync, ActivateWithPackageAsync
+// trong MemberService, và ActivatePendingPackageAsync/CreateActivePackageForCustomerAsync ở chính
+// file này) — chỉ cần 1 chỗ viết sai/quên cập nhật là ngày hết hạn tính lệch giữa các luồng.
 //
-// QUY TẮC NGHIỆP VỤ (áp dụng từ bản này):
-//   - Tài khoản đang PendingActivation: mua online -> gói mới luôn ở trạng thái PendingActivation,
-//     và CHỈ được có TỐI ĐA 1 gói Pending tại 1 thời điểm (xem CreatePendingPackageAsync).
-//   - Sau khi thu ngân kích hoạt (tạo gói+FaceID hoặc chỉ tạo FaceID), tài khoản chuyển Active,
-//     gói Pending (nếu có) được chuyển Active với StartDate = ngày kích hoạt.
-//     BranchId của gói Pending GIỮ NGUYÊN chi nhánh khách đã chọn lúc mua online, KHÔNG bị ghi đè
-//     bởi chi nhánh của nhân viên thu ngân đứng kích hoạt (2 chi nhánh có thể khác nhau).
-//   - Tài khoản đã Active: mua thêm gói online hoặc gia hạn tại quầy -> luôn được phép, gói mới
-//     tự động cộng dồn/nối hạn dựa trên gói gần nhất (xem DetermineStartDate).
+// [FIX - 13/07/2026] BUG: CalculateBonusDays trước đây tính TangChuKy = SoChuKyTang * plan.DurationDays
+// (dùng thời hạn của GÓI ĐANG MUA làm độ dài 1 chu kỳ). Điều này SAI vì:
+//   - Theo đúng định nghĩa nghiệp vụ, 1 CHU KỲ = 30 NGÀY CỐ ĐỊNH, không phụ thuộc gói tập đang
+//     mua là gói 1/3/6/12 tháng.
+//   - Với công thức cũ, cùng 1 khuyến mãi "tặng 1 chu kỳ" sẽ cho ra số ngày tặng KHÁC NHAU tùy
+//     khách mua gói nào (gói 3 tháng -> tặng 90 ngày, gói 6 tháng -> tặng 180 ngày...), trong khi
+//     ý định thực tế chỉ là tặng thêm đúng 1 tháng (30 ngày) cho mỗi chu kỳ.
+//   - Ví dụ thực tế gây lỗi: KM "Mua 3 Tháng Tặng 1 Chu Kỳ" (SoChuKyTang=1) áp cho gói 3 tháng
+//     (DurationDays=90) -> hệ thống tính nhầm ra 90 ngày tặng thêm thay vì đúng ra phải là 30 ngày.
+// FIX: nhân SoChuKyTang với hằng số CYCLE_DAYS = 30, KHÔNG dùng plan.DurationDays nữa.
 //
-// TÁCH HÀM THEO NGƯỜI GỌI (để dễ bảo trì, tránh nhầm luồng):
-//   - [THU NGÂN]    CreateActivePackageAsync        — gói có ngày ngay lúc tạo (Active)
-//   - [THU NGÂN]    ActivatePendingPackageAsync      — kích hoạt gói Pending đã mua online
-//   - [KHÁCH HÀNG]  CreatePendingPackageAsync        — mua online lúc tài khoản còn Pending
-//   - [KHÁCH HÀNG]  CreateActivePackageForCustomerAsync — mua thêm online sau khi đã Active (tự nối hạn)
+// [MỚI - 13/07/2026] Thêm CalculateDiscountedAmount — công thức DUY NHẤT để tính GIÁ SAU GIẢM,
+// làm cặp song song với CalculateBonusDays (công thức DUY NHẤT để tính NGÀY TẶNG). Lý do gom về
+// đây: Promotion chỉ có 4 loại (GiamPhanTram/GiamTienMat/TangNgay/TangChuKy), và luôn CHỈ ẢNH
+// HƯỞNG 1 TRONG 2 THỨ — hoặc giá tiền, hoặc ngày hết hạn — không bao giờ cả hai (xem
+// PromotionService.ValidatePromotionData, 2 nhóm cột loại trừ nhau). Vì vậy 2 hàm này luôn đi cùng
+// nhau thành 1 cặp khi xử lý hiệu lực khuyến mãi cho 1 giao dịch:
+//   - CalculateDiscountedAmount(promotion, giaGoc)         -> ra "amount" (giá sau giảm)
+//   - CalculateBonusDays(promotion, plan)                  -> ra "bonusDays" (số ngày tặng thêm)
+// Nơi gọi vào (MemberService, TransactionService, PaymentService) nên gọi CẢ HAI cho mọi
+// Promotion, thay vì tự viết lại công thức giảm giá rải rác từng nơi — tránh lặp lại đúng kiểu
+// bug đã từng gặp với công thức tính ngày tặng.
+//
+// [FIX - 13/07/2026] CYCLE_DAYS chuyển từ private sang PUBLIC CONST. Trước đây PromotionService
+// tự khai báo một hằng số CYCLE_DAYS = 30 RIÊNG của chính nó (chỉ để phục vụ việc map SoNgayTang
+// tương đương cho FE hiển thị) — về mặt giá trị thì đang khớp với hằng số ở đây, nhưng là 2 khai
+// báo ĐỘC LẬP, không liên kết gì với nhau. Nếu sau này nghiệp vụ đổi định nghĩa "1 chu kỳ" (VD từ
+// 30 ngày sang 30.5 ngày, hoặc đổi hẳn cách tính), sửa ở đây mà quên sửa bên PromotionService thì
+// FE sẽ hiển thị SAI số ngày tương đương so với số ngày THẬT được cộng vào ExpiryDate — trong khi
+// bản chất đây phải là CÙNG MỘT con số. Public hoá hằng số này để PromotionService tham chiếu
+// thẳng MemberPackageService.CYCLE_DAYS thay vì tự khai báo lại, đưa về đúng 1 nguồn duy nhất cho
+// toàn bộ hệ thống (tính toán thật lẫn hiển thị FE).
 public class MemberPackageService
 {
+    // ===================== [FIX] ĐỘ DÀI 1 CHU KỲ = 30 NGÀY CỐ ĐỊNH =====================
+    // Theo đúng định nghĩa nghiệp vụ: TangChuKy không ăn theo DurationDays của gói đang mua.
+    // Nếu sau này nghiệp vụ đổi định nghĩa "1 chu kỳ", CHỈ cần sửa hằng số này ở 1 chỗ duy nhất.
+    // [FIX] Đổi private -> public để PromotionService (và bất kỳ nơi nào khác cần hiển thị/suy ra
+    // số ngày tương đương của 1 chu kỳ) tham chiếu thẳng, KHÔNG tự khai báo hằng số trùng lặp nữa.
+    public const int CYCLE_DAYS = 30;
+
     private readonly GymManagementContext _db;
 
     public MemberPackageService(GymManagementContext db)
@@ -44,24 +70,82 @@ public class MemberPackageService
         _db = db;
     }
 
-    // ===================== TÍNH SỐ NGÀY TẶNG (luồng cũ: tạo hội viên / kích hoạt tại quầy) =====================
-    // Chỉ hỗ trợ TangNgay/TangChuKy — dùng cho CreateMemberAsync & ActivateWithPackageAsync,
-    // 2 luồng này hiện chưa hỗ trợ giảm giá % nên giữ nguyên logic cũ, không đụng vào Amount/GiaGoc.
-    public async Task<short> CalculateSoNgayTangThucTeAsync(int? promotionId, short planDurationDays)
+    // ===================== TÍNH SoNgayTangThucTe — CÔNG THỨC DUY NHẤT =====================
+    // Nhận thẳng Promotion đã có sẵn (do MemberService đã validate + fetch trước đó) — tránh query
+    // DB thừa.
+    //   TangNgay    -> SoNgayTang                       (cộng thẳng số ngày đã khai)
+    //   TangChuKy   -> SoChuKyTang × CYCLE_DAYS (=30)    (cộng theo chu kỳ 30 ngày CỐ ĐỊNH,
+    //                                                     KHÔNG dùng plan.DurationDays)
+    //   còn lại/không KM (GiamPhanTram/GiamTienMat/null) -> 0, vì 2 loại giảm giá KHÔNG tặng ngày,
+    //   chỉ ảnh hưởng tới giá — xem CalculateDiscountedAmount bên dưới cho phần đó.
+    public short CalculateBonusDays(Promotion? promotion, MembershipPlan plan)
     {
-        if (promotionId == null)
-            return 0;
-
-        var promotion = await _db.Promotions.FirstOrDefaultAsync(p => p.PromotionId == promotionId);
         if (promotion == null)
-            throw new KeyNotFoundException("Không tìm thấy khuyến mãi.");
+            return 0;
 
         return promotion.PromoType switch
         {
             "TangNgay" => (short)(promotion.SoNgayTang ?? 0),
-            "TangChuKy" => (short)((promotion.SoChuKyTang ?? 0) * planDurationDays),
+            "TangChuKy" => (short)((promotion.SoChuKyTang ?? 0) * CYCLE_DAYS), // [FIX] 30 ngày/chu kỳ, không phải plan.DurationDays
             _ => 0
         };
+    }
+
+    // ===================== [MỚI] TÍNH GIÁ SAU GIẢM — CÔNG THỨC DUY NHẤT =====================
+    // Cặp song song với CalculateBonusDays ở trên: hàm đó lo phần "tặng ngày" (TangNgay/TangChuKy),
+    // hàm này lo phần "giảm giá" (GiamPhanTram/GiamTienMat). Vì 2 nhóm promo_type loại trừ nhau
+    // (theo PromotionService.ValidatePromotionData), 1 Promotion chỉ bao giờ đi vào ĐÚNG 1 trong 2
+    // hàm và có tác dụng thật.
+    //
+    //   GiamTienMat  -> giaGoc - SoTienGiam                       (giảm thẳng 1 số tiền cố định)
+    //   GiamPhanTram -> giaGoc - (giaGoc × PhanTramGiam / 100),
+    //                   nếu có MucGiamToiDa thì số tiền giảm KHÔNG được vượt quá mức này
+    //                   (áp trần giảm tối đa, ví dụ giảm 50% nhưng tối đa 500.000đ)
+    //   TangNgay/TangChuKy/null -> giữ nguyên giaGoc (2 loại này không giảm giá, chỉ tặng ngày —
+    //                   phần đó đã được CalculateBonusDays xử lý riêng)
+    //
+    // Kết quả luôn được chặn không cho âm (giảm nhiều hơn giá gốc thì amount = 0), tránh trường
+    // hợp KM cấu hình sai (VD SoTienGiam lớn hơn giá gói) làm giao dịch ra số tiền âm.
+    public decimal CalculateDiscountedAmount(Promotion? promotion, decimal giaGoc)
+    {
+        if (promotion == null)
+            return giaGoc;
+
+        decimal amount;
+
+        switch (promotion.PromoType)
+        {
+            case "GiamTienMat":
+                amount = giaGoc - (promotion.SoTienGiam ?? 0);
+                break;
+
+            case "GiamPhanTram":
+                var soTienGiam = giaGoc * (promotion.PhanTramGiam ?? 0) / 100m;
+                if (promotion.MucGiamToiDa.HasValue && soTienGiam > promotion.MucGiamToiDa.Value)
+                    soTienGiam = promotion.MucGiamToiDa.Value;
+                amount = giaGoc - soTienGiam;
+                break;
+
+            default:
+                // TangNgay / TangChuKy / loại lạ -> không giảm giá, giữ nguyên giá gốc.
+                return giaGoc;
+        }
+
+        return amount < 0 ? 0 : amount;
+    }
+
+    // ===================== TÍNH NGÀY HẾT HẠN — DÙNG CHUNG MỌI LUỒNG =====================
+    // expiryDate = startDate + plan.DurationDays + bonusDays (bonusDays lấy từ CalculateBonusDays).
+    // Gom lại để mọi nơi cộng ngày đều theo đúng 1 công thức, tránh chỗ này AddDays(a+b), chỗ kia
+    // AddDays(a).AddDays(b) rồi lỡ quên 1 phần.
+    //
+    // [LƯU Ý] Đây là hàm DUY NHẤT được phép cộng ngày kiểu này trong toàn hệ thống — kể cả những
+    // chỗ chỉ cần một con số ƯỚC TÍNH (VD dữ liệu in hóa đơn tạm cho gói PendingActivation, chưa
+    // có MemberPackage thật để gọi) cũng PHẢI gọi hàm này thay vì tự viết lại AddDays(a + b) inline,
+    // xem PaymentService.HandleWebhookAsync để biết ví dụ đã sửa theo đúng quy tắc này.
+    public DateOnly CalculateExpiryDate(DateOnly startDate, MembershipPlan plan, short bonusDays)
+    {
+        return startDate.AddDays(plan.DurationDays + bonusDays);
     }
 
     // ===================== [MỚI] KIỂM TRA CHI NHÁNH HỢP LỆ =====================
@@ -116,6 +200,10 @@ public class MemberPackageService
     // Luôn có StartDate/ExpiryDate ngay tại thời điểm tạo -> PackageStatus mặc định "Active".
     // KHÔNG đụng gói cũ — luôn insert mới, giữ nguyên lịch sử các gói trước.
     // branchId: chi nhánh của nhân viên thu ngân thực hiện (lấy từ Employee.Branches ở service gọi vào).
+    //
+    // LƯU Ý: amount và bonusDays truyền vào đây PHẢI đã được tính sẵn qua CalculateDiscountedAmount
+    // / CalculateBonusDays ở nơi gọi (MemberService/TransactionService) — hàm này không tự tính
+    // lại từ Promotion, chỉ nhận giá trị cuối để lưu, tránh phải query lại Promotion/Plan ở đây.
     public async Task<MemberPackage> CreateActivePackageAsync(
         long memberId, int planId, int? promotionId,
         decimal giaGoc, decimal amount, short bonusDays,
@@ -154,6 +242,11 @@ public class MemberPackageService
     // PaymentService (webhook xác nhận thanh toán) gọi hàm này khi Member.Status == "PendingActivation".
     // branchId: chi nhánh khách TỰ CHỌN lúc mua online (FE gửi lên, PaymentService lưu tạm vào
     // Transaction.BranchId ngay lúc tạo QR, rồi đọc lại và truyền xuống đây khi webhook báo Paid).
+    //
+    // LƯU Ý: amount/bonusDays cũng PHẢI tính sẵn qua CalculateDiscountedAmount/CalculateBonusDays
+    // ở nơi gọi, GIỐNG CreateActivePackageAsync ở trên — dù StartDate/ExpiryDate chưa xác định,
+    // giá và số ngày tặng vẫn phải CHỐT ngay lúc mua (không đợi tới lúc kích hoạt), vì đây là số
+    // tiền khách đã thanh toán thật.
     public async Task<MemberPackage> CreatePendingPackageAsync(
         long memberId, int planId, int? promotionId,
         decimal giaGoc, decimal amount, short bonusDays,
@@ -194,8 +287,12 @@ public class MemberPackageService
     // Chuyển gói PendingActivation (mua online) sang Active tại thời điểm khách đến quầy kích hoạt:
     // StartDate = ngày kích hoạt, ExpiryDate = StartDate + DurationDays (của Plan) + SoNgayTangThucTe
     // (số ngày tặng đã chốt lúc mua online, KHÔNG tính lại khuyến mãi ở đây).
+    // Dùng CalculateExpiryDate thay vì tự viết AddDays(...) inline, cho đồng nhất công thức
+    // với các luồng khác — KHÔNG đổi kết quả, chỉ đổi chỗ viết công thức.
     // KHÔNG đụng vào BranchId — giữ nguyên chi nhánh khách đã chọn lúc mua online, dù nhân viên
     // đứng kích hoạt thuộc chi nhánh khác.
+    // KHÔNG đụng vào Amount/GiaGoc — giá đã chốt xong lúc mua online (CreatePendingPackageAsync),
+    // kích hoạt chỉ xác định ngày, không tính lại giá.
     // Không tự SaveChanges — để MemberService gộp chung 1 lần SaveChanges với các thay đổi khác
     // (Member.Status, log kích hoạt...) trong cùng 1 giao dịch nghiệp vụ.
     public async Task<MemberPackage> ActivatePendingPackageAsync(MemberPackage pendingPackage, DateOnly activationDate)
@@ -207,7 +304,7 @@ public class MemberPackageService
             await _db.Entry(pendingPackage).Reference(p => p.Plan).LoadAsync();
 
         pendingPackage.StartDate = activationDate;
-        pendingPackage.ExpiryDate = activationDate.AddDays(pendingPackage.Plan!.DurationDays + pendingPackage.SoNgayTangThucTe);
+        pendingPackage.ExpiryDate = CalculateExpiryDate(activationDate, pendingPackage.Plan!, pendingPackage.SoNgayTangThucTe);
         pendingPackage.PackageStatus = "Active";
         pendingPackage.UpdatedAt = DateTime.UtcNow;
 
@@ -220,6 +317,11 @@ public class MemberPackageService
     // (MemberService.RenewMembershipAsync), chỉ khác là không cần request.PaymentMethod/BankReferenceCode
     // do controller khác xử lý. Tài khoản đã kích hoạt được phép mua nhiều gói, luôn cộng dồn/nối hạn.
     // branchId: chi nhánh khách chọn lúc mua online (đọc từ Transaction.BranchId, giống CreatePendingPackageAsync).
+    // Dùng CalculateExpiryDate thay vì AddDays(plan.DurationDays + bonusDays) inline.
+    //
+    // LƯU Ý: giaGoc/amount/bonusDays vẫn nhận từ nơi gọi (đã tính sẵn qua CalculateDiscountedAmount
+    // / CalculateBonusDays trước khi gọi vào đây) — hàm này chỉ lo phần NGÀY (xác định startDate
+    // theo nối hạn, rồi tính expiryDate), không tự tính lại giá.
     public async Task<MemberPackage> CreateActivePackageForCustomerAsync(
         long memberId, int planId, int? promotionId,
         decimal giaGoc, decimal amount, short bonusDays,
@@ -232,10 +334,91 @@ public class MemberPackageService
         var plan = await _db.MembershipPlans.FindAsync(planId)
             ?? throw new KeyNotFoundException("Không tìm thấy gói tập.");
 
-        var expiryDate = startDate.AddDays(plan.DurationDays + bonusDays);
+        var expiryDate = CalculateExpiryDate(startDate, plan, bonusDays);
 
         return await CreateActivePackageAsync(
             memberId, planId, promotionId, giaGoc, amount, bonusDays,
             startDate, expiryDate, transactionId, branchId);
     }
+// ===================== [MỚI] LẤY DANH SÁCH CHI NHÁNH NHÂN VIÊN ĐƯỢC QUẢN LÝ =====================
+    // Dùng để giới hạn phạm vi xem lịch sử đăng ký gói tập theo role:
+    //   - Staff: EmployeeBranches có đúng 1 dòng -> chỉ xem chi nhánh đó.
+    //   - Manager: có thể có nhiều dòng (VD 3 chi nhánh) -> xem được cả 3.
+    //   - Admin: KHÔNG gọi hàm này (xem GetPackageHistoryAsync bên dưới) -> xem toàn bộ.
+    public async Task<List<int>> GetManagedBranchIdsAsync(long employeeId)
+    {
+        return await _db.EmployeeBranches
+            .Where(eb => eb.EmployeeId == employeeId)
+            .Select(eb => eb.BranchId)
+            .ToListAsync();
+    }
+
+    // ===================== [MỚI] LỊCH SỬ ĐĂNG KÝ GÓI TẬP (CÓ LỌC) =====================
+    // allowedBranchIds:
+    //   - null  -> KHÔNG giới hạn chi nhánh (dùng cho Admin không truyền filter branchId).
+    //   - list  -> CHỈ lấy các MemberPackage thuộc những chi nhánh này (Staff/Manager, hoặc Admin
+    //              đã chọn 1 branchId cụ thể — Controller tự quyết định truyền gì vào đây).
+    // Sắp xếp mới nhất trước theo CreatedAt, không phân trang (theo yêu cầu nghiệp vụ hiện tại).
+    public async Task<List<MemberPackageHistoryItem>> GetPackageHistoryAsync(
+        MemberPackageHistoryQuery query, List<int>? allowedBranchIds)
+    {
+        var q = _db.MemberPackages
+            .Include(mp => mp.Member).ThenInclude(m => m.FaceDatum)
+            .Include(mp => mp.Plan)
+            .Include(mp => mp.Branch)
+            .Include(mp => mp.Transaction)
+            .AsQueryable();
+
+        // Giới hạn theo chi nhánh nhân viên được quản lý (Staff/Manager) — áp dụng TRƯỚC filter
+        // branchId của query, vì đây là ràng buộc quyền hạn, không phải lựa chọn của người dùng.
+        if (allowedBranchIds != null)
+            q = q.Where(mp => allowedBranchIds.Contains(mp.BranchId));
+
+        if (query.BranchId.HasValue)
+            q = q.Where(mp => mp.BranchId == query.BranchId.Value);
+
+        if (!string.IsNullOrWhiteSpace(query.keyword))
+        {
+            var keyword = query.keyword.Trim();
+
+            q = q.Where(mp =>
+                mp.Member.FullName.Contains(keyword) ||
+                mp.Member.Phone.Contains(keyword));
+        }
+        if (!string.IsNullOrWhiteSpace(query.Status))
+            q = q.Where(mp => mp.PackageStatus == query.Status);
+
+        if (!string.IsNullOrWhiteSpace(query.Channel))
+        {
+            if (query.Channel == "Online")
+                q = q.Where(mp => mp.Transaction.EmployeeId == null);
+            else if (query.Channel == "Offline")
+                q = q.Where(mp => mp.Transaction.EmployeeId != null);
+        }
+
+        var result = await q
+            .OrderByDescending(mp => mp.CreatedAt)
+            .Select(mp => new MemberPackageHistoryItem
+            {
+                MemberPackageId = mp.MemberPackageId,
+                MemberId = mp.MemberId,
+                MemberAvatarUrl = mp.Member.FaceDatum != null ? mp.Member.FaceDatum.ProfileImage : null,
+                MemberFullName = mp.Member.FullName,
+                MemberPhone = mp.Member.Phone,
+                PlanName = mp.Plan.PlanName,
+                BranchId = mp.BranchId,
+                BranchName = mp.Branch.BranchName,
+                TransactionId = mp.TransactionId,
+                TransactionCode = mp.Transaction.OrderCode,
+                Channel = mp.Transaction.EmployeeId == null ? "Online" : "Offline",
+                StartDate = mp.StartDate,
+                ExpiryDate = mp.ExpiryDate,
+                Amount = mp.Amount,
+                PackageStatus = mp.PackageStatus
+            })
+            .ToListAsync();
+
+        return result;
+    }
+
 }

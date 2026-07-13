@@ -9,6 +9,15 @@ namespace BE.Controllers
     // Mọi endpoint đọc thông tin giao dịch/hóa đơn, và điều chỉnh lại gói tập khi nhân viên
     // thao tác nhầm lúc bán tại quầy. Không có endpoint tạo giao dịch riêng — Transaction luôn
     // được tạo kèm theo tạo/gia hạn gói tập, đi qua MemberPackagesController.
+    //
+    // [MỚI - 13/07/2026 - PHÂN BIỆT RÕ "NGÀY TẠO" vs "NGÀY BẮT ĐẦU GÓI"] Trước đây cả GetById lẫn
+    // PreviewAdjustPlan chỉ trả CreatedAt (thời điểm tạo Transaction) mà KHÔNG trả StartDate của
+    // MemberPackage (mốc THẬT SỰ dùng để cộng AddMonths/AddDays ra NewExpiryDate trong
+    // TransactionService.CalculateNewExpiryDate). Hai giá trị này thường trùng ngày, nhưng có thể
+    // khác nhau với gói gia hạn nối tiếp một gói cũ hoặc gói kích hoạt trễ — khi đó FE chỉ có
+    // CreatedAt để đối chiếu khiến nhân viên tưởng hệ thống tính sai ngày hết hạn (vd: CreatedAt
+    // 11/07 nhưng NewExpiryDate lại rơi vào ngày 09 của tháng, vì StartDate thật là 09/xx).
+    // Từ giờ CẢ 3 endpoint dưới đây đều trả thêm StartDate để FE hiển thị đúng mốc tính toán.
     [ApiController]
     [Route("api/transactions")]
     [Authorize]
@@ -35,6 +44,13 @@ namespace BE.Controllers
             if (transaction == null)
                 return NotFound(new { message = "Không tìm thấy giao dịch." });
 
+            // [MỚI] Lấy MemberPackage mới nhất gắn với giao dịch này (cùng quy ước "mới nhất theo
+            // CreatedAt" như các nơi khác trong TransactionService — 1 giao dịch tại quầy thường
+            // chỉ có đúng 1 MemberPackage, nhưng lấy mới nhất để an toàn nếu có nhiều hơn 1).
+            var memberPackage = transaction.MemberPackages?
+                .OrderByDescending(mp => mp.CreatedAt)
+                .FirstOrDefault();
+
             return Ok(new
             {
                 transaction.TransactionId,
@@ -49,7 +65,12 @@ namespace BE.Controllers
                 transaction.PaymentStatus,
                 transaction.BankReferenceCode,
                 InvoiceUrl = transaction.ReceiptImage, // dùng lại cột receipt_image cho PDF hóa đơn
-                transaction.CreatedAt
+                transaction.CreatedAt,
+                // [MỚI] Ngày bắt đầu gói (mốc thật dùng để tính ngày hết hạn) — KHÁC với CreatedAt
+                // ở trên (thời điểm tạo giao dịch/hóa đơn). Có thể null nếu gói đang PendingActivation
+                // chưa có StartDate.
+                StartDate = memberPackage?.StartDate,
+                ExpiryDate = memberPackage?.ExpiryDate
             });
         }
 
@@ -107,6 +128,10 @@ namespace BE.Controllers
         // BE tự tra + tính KM hiệu lực cho gói mới tại thời điểm giao dịch GỐC được tạo và trả về
         // giá/KM/ngày hết hạn dự kiến để FE hiển thị — không còn cho FE tự chọn promotionId nữa.
         // Cùng quyền với adjust-plan (Manager chỉ xem được giao dịch chi nhánh mình quản lý).
+        //
+        // [MỚI] Trả thêm StartDate — mốc gốc mà BE dùng để cộng ra NewExpiryDate (xem
+        // TransactionService.PreviewAdjustTransactionPlanAsync). FE hiển thị field này cạnh
+        // NewExpiryDate để nhân viên tự đối chiếu số tháng cộng vào cho khớp.
         [HttpGet("{id:long}/adjust-plan-preview")]
         public async Task<IActionResult> PreviewAdjustPlan(long id, [FromQuery] int newPlanId)
         {
@@ -126,6 +151,7 @@ namespace BE.Controllers
                     BonusDays = preview.BonusDays,
                     PromotionId = preview.PromotionId,
                     PromotionName = preview.PromotionName,
+                    StartDate = preview.StartDate,
                     NewExpiryDate = preview.NewExpiryDate
                 });
             }
@@ -154,6 +180,12 @@ namespace BE.Controllers
         // adjust-plan-preview ở trên trước để hiển thị cho nhân viên xem, endpoint này chỉ để XÁC
         // NHẬN và LƯU thật.
         //
+        // [MỚI] Trả thêm StartDate/ExpiryDate lấy từ chính transaction.MemberPackages sau khi đã
+        // lưu — để màn hình "Điều chỉnh thành công" ở FE có thể hiển thị đúng số liệu đã lưu thật
+        // xuống DB, thay vì chỉ dựa vào kết quả Preview trước đó (Preview và Adjust luôn dùng
+        // chung 1 hàm tính CalculateNewExpiryDate nên 2 số liệu phải khớp nhau, nhưng trả thẳng từ
+        // đây vẫn chắc chắn hơn).
+        //
         // employeeId lấy từ GetCurrentUserId() — dùng chung 1 helper với GetMyHistory ở trên vì
         // cả 2 đều đọc claim NameIdentifier; token nhân viên và token member khác nhau về NỘI DUNG
         // (giá trị bên trong là EmployeeId hay MemberId) nhưng cùng CƠ CHẾ đọc claim.
@@ -170,6 +202,10 @@ namespace BE.Controllers
                     employeeId,
                     request.Reason);
 
+                var memberPackage = transaction.MemberPackages?
+                    .OrderByDescending(mp => mp.CreatedAt)
+                    .FirstOrDefault();
+
                 return Ok(new
                 {
                     transaction.TransactionId,
@@ -179,6 +215,8 @@ namespace BE.Controllers
                     transaction.GiaGoc,
                     transaction.Amount,
                     transaction.PromotionId,
+                    StartDate = memberPackage?.StartDate,
+                    ExpiryDate = memberPackage?.ExpiryDate,
                     transaction.UpdatedAt
                 });
             }
@@ -195,5 +233,18 @@ namespace BE.Controllers
                 return BadRequest(new { message = ex.Message });
             }
         }
+    
+        [HttpGet("history")]
+        public async Task<IActionResult> GetHistory(
+                [FromQuery] string? keyword,
+                [FromQuery] string? status,
+                [FromQuery] int? branchId,
+                [FromQuery] string? channel)
+        {
+            var employeeId = GetCurrentUserId();
+            var data = await _transactionService.GetHistoryRegisPac(keyword, status, channel,branchId, employeeId);
+            return Ok(data);
+        }
     }
+
 }

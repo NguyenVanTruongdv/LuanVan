@@ -10,7 +10,7 @@ namespace BE.Dtos.Promotion
         public decimal? SoTienGiam { get; set; }
         public decimal? MucGiamToiDa { get; set; }
         public int? SoNgayTang { get; set; }
-        public int? SoChuKyTang { get; set; }
+        public int? SoChuKyTang { get; set; } 
         public string? MoTa { get; set; }
     }
 }

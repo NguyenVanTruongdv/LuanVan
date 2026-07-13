@@ -20,6 +20,13 @@ namespace BE.Services
     //   BẤT KỲ chi nhánh nào, không bị ràng buộc phải trùng chi nhánh gói tập/chi nhánh cũ của
     //   hội viên. Cả 2 hàm đều ghi log tên nhân viên kích hoạt và trả về tên đó trong response
     //   (MemberResponse.ActivatedByEmployeeName).
+    // - [MỚI - 13/07/2026] KHÔNG còn tự viết switch(promotion.PromoType) + AddDays để tính
+    //   SoNgayTangThucTe/ExpiryDate ở đây nữa (trước đây bị lặp lại y hệt ở CreateMemberAsync VÀ
+    //   ActivateWithPackageAsync). Công thức GIỮ NGUYÊN 100% như cũ, chỉ gom về 2 hàm dùng chung
+    //   MemberPackageService.CalculateBonusDays / CalculateExpiryDate. Việc VALIDATE hiệu lực
+    //   khuyến mãi (TrangThai, NgayBatDau/NgayKetThuc, GioiHanLuot/SoLuotDaDung, PlanId có khớp
+    //   không) cũng được gom về 1 hàm private ValidateAndGetPromotionAsync bên dưới, vì trước đây
+    //   2 luồng trên copy y hệt khối validate này.
     public class MemberService
     {
         private readonly GymManagementContext _context;
@@ -126,6 +133,37 @@ namespace BE.Services
             return emp?.FullName;
         }
 
+        // ===================== [PRIVATE] VALIDATE + LẤY PROMOTION (dùng chung cho 2 luồng bên dưới) =====================
+        // [MỚI] Gom khối validate hiệu lực khuyến mãi — TRƯỚC ĐÂY bị copy y hệt ở CreateMemberAsync
+        // VÀ ActivateWithPackageAsync — về 1 chỗ duy nhất, tránh 2 nơi cùng sửa mà quên đồng bộ.
+        // Nội dung kiểm tra GIỮ NGUYÊN 100% như code gốc: đúng PlanId, đang HoatDong, còn trong
+        // khoảng NgayBatDau/NgayKetThuc, còn lượt dùng (GioiHanLuot/SoLuotDaDung).
+        // Việc quy đổi ra SoNgayTangThucTe do MemberPackageService.CalculateBonusDays đảm nhiệm,
+        // KHÔNG làm ở đây.
+        private async Task<Promotion?> ValidateAndGetPromotionAsync(int? promotionId, int planId, DateTime now)
+        {
+            if (!promotionId.HasValue)
+                return null;
+
+            var promotion = await _context.Promotions.FirstOrDefaultAsync(p => p.PromotionId == promotionId);
+            if (promotion == null)
+                throw new KeyNotFoundException("Không tìm thấy khuyến mãi.");
+
+            if (promotion.PlanId != planId)
+                throw new InvalidOperationException("Khuyến mãi không áp dụng cho gói tập này.");
+
+            if (promotion.TrangThai != "HoatDong")
+                throw new InvalidOperationException("Khuyến mãi hiện không hoạt động.");
+
+            if (promotion.NgayBatDau > now || (promotion.NgayKetThuc != null && promotion.NgayKetThuc < now))
+                throw new InvalidOperationException("Khuyến mãi chưa bắt đầu hoặc đã hết hạn.");
+
+            if (promotion.GioiHanLuot != null && promotion.SoLuotDaDung >= promotion.GioiHanLuot)
+                throw new InvalidOperationException("Khuyến mãi đã hết lượt sử dụng.");
+
+            return promotion;
+        }
+
         // ===================== [THU NGÂN] TẠO HỘI VIÊN MỚI (walk-in, Active ngay) =====================
         public async Task<MemberResponse> CreateMemberAsync(CreateMemberRequest request, long performedBy)
         {
@@ -143,39 +181,16 @@ namespace BE.Services
             if (plan == null)
                 throw new KeyNotFoundException("Không tìm thấy gói tập.");
 
-            // [MỚI] Tự lấy Promotion (nếu có) thay vì gọi CalculateSoNgayTangThucTeAsync, để:
-            //  (1) kiểm tra hiệu lực + GioiHanLuot/SoLuotDaDung (trước đây KHÔNG được kiểm tra ở luồng này),
-            //  (2) có sẵn đối tượng Promotion để ghi nhận lượt dùng (RecordPromotionUsage) sau khi tạo gói.
-            Promotion? promotion = null;
-            short soNgayTangThucTe = 0;
-            if (request.PromotionId.HasValue)
-            {
-                promotion = await _context.Promotions.FirstOrDefaultAsync(p => p.PromotionId == request.PromotionId);
-                if (promotion == null)
-                    throw new KeyNotFoundException("Không tìm thấy khuyến mãi.");
+            // [MỚI] Validate khuyến mãi (nếu có) qua hàm dùng chung — nội dung kiểm tra y hệt bản cũ.
+            var promotion = await ValidateAndGetPromotionAsync(request.PromotionId, request.PlanId, now);
 
-                if (promotion.PlanId != request.PlanId)
-                    throw new InvalidOperationException("Khuyến mãi không áp dụng cho gói tập này.");
-
-                if (promotion.TrangThai != "HoatDong")
-                    throw new InvalidOperationException("Khuyến mãi hiện không hoạt động.");
-
-                if (promotion.NgayBatDau > now || (promotion.NgayKetThuc != null && promotion.NgayKetThuc < now))
-                    throw new InvalidOperationException("Khuyến mãi chưa bắt đầu hoặc đã hết hạn.");
-
-                if (promotion.GioiHanLuot != null && promotion.SoLuotDaDung >= promotion.GioiHanLuot)
-                    throw new InvalidOperationException("Khuyến mãi đã hết lượt sử dụng.");
-
-                soNgayTangThucTe = promotion.PromoType switch
-                {
-                    "TangNgay" => (short)(promotion.SoNgayTang ?? 0),
-                    "TangChuKy" => (short)((promotion.SoChuKyTang ?? 0) * plan.DurationDays),
-                    _ => 0
-                };
-            }
+            // [MỚI] Quy đổi khuyến mãi ra SoNgayTangThucTe + tính ExpiryDate qua hàm dùng chung
+            // của MemberPackageService — công thức giữ nguyên y hệt bản cũ (TangNgay=SoNgayTang,
+            // TangChuKy=SoChuKyTang*plan.DurationDays), chỉ không viết lặp lại switch ở đây nữa.
+            var soNgayTangThucTe = _packageService.CalculateBonusDays(promotion, plan);
 
             var startDate = DateOnly.FromDateTime(now);
-            var expiryDate = startDate.AddDays(plan.DurationDays + soNgayTangThucTe);
+            var expiryDate = _packageService.CalculateExpiryDate(startDate, plan, soNgayTangThucTe);
 
             var member = new Member
             {
@@ -224,7 +239,7 @@ namespace BE.Services
                 giaGoc: request.GiaGoc,
                 discountAmount: request.GiaGoc - request.Amount,
                 amount: request.Amount,
-                bonusDays: (short)soNgayTangThucTe,
+                bonusDays: soNgayTangThucTe,
                 startDate: startDate,
                 expiryDate: expiryDate,
                 performedBy: performedBy,
@@ -449,38 +464,14 @@ namespace BE.Services
 
             var now = DateTime.UtcNow;
 
-            // [MỚI] Tự lấy Promotion (nếu có) — kiểm tra hiệu lực + GioiHanLuot/SoLuotDaDung, và giữ lại
-            // đối tượng để ghi nhận lượt dùng (RecordPromotionUsage) sau khi tạo gói tập thành công.
-            Promotion? promotion = null;
-            short soNgayTangThucTe = 0;
-            if (request.PromotionId.HasValue)
-            {
-                promotion = await _context.Promotions.FirstOrDefaultAsync(p => p.PromotionId == request.PromotionId);
-                if (promotion == null)
-                    throw new KeyNotFoundException("Không tìm thấy khuyến mãi.");
+            // [MỚI] Validate khuyến mãi (nếu có) qua hàm dùng chung — nội dung kiểm tra y hệt bản cũ.
+            var promotion = await ValidateAndGetPromotionAsync(request.PromotionId, request.PlanId, now);
 
-                if (promotion.PlanId != request.PlanId)
-                    throw new InvalidOperationException("Khuyến mãi không áp dụng cho gói tập này.");
-
-                if (promotion.TrangThai != "HoatDong")
-                    throw new InvalidOperationException("Khuyến mãi hiện không hoạt động.");
-
-                if (promotion.NgayBatDau > now || (promotion.NgayKetThuc != null && promotion.NgayKetThuc < now))
-                    throw new InvalidOperationException("Khuyến mãi chưa bắt đầu hoặc đã hết hạn.");
-
-                if (promotion.GioiHanLuot != null && promotion.SoLuotDaDung >= promotion.GioiHanLuot)
-                    throw new InvalidOperationException("Khuyến mãi đã hết lượt sử dụng.");
-
-                soNgayTangThucTe = promotion.PromoType switch
-                {
-                    "TangNgay" => (short)(promotion.SoNgayTang ?? 0),
-                    "TangChuKy" => (short)((promotion.SoChuKyTang ?? 0) * plan.DurationDays),
-                    _ => 0
-                };
-            }
+            // [MỚI] Quy đổi khuyến mãi ra SoNgayTangThucTe + tính ExpiryDate qua hàm dùng chung.
+            var soNgayTangThucTe = _packageService.CalculateBonusDays(promotion, plan);
 
             var startDate = DateOnly.FromDateTime(now);
-            var expiryDate = startDate.AddDays(plan.DurationDays + soNgayTangThucTe);
+            var expiryDate = _packageService.CalculateExpiryDate(startDate, plan, soNgayTangThucTe);
 
             var paymentStatus = string.IsNullOrWhiteSpace(request.PaymentStatus)
                 ? (request.PaymentMethod == "Cash" ? "Paid" : PaymentStatus.Paid.ToString())
@@ -510,7 +501,7 @@ namespace BE.Services
                 giaGoc: request.GiaGoc,
                 discountAmount: request.GiaGoc - request.Amount,
                 amount: request.Amount,
-                bonusDays: (short)soNgayTangThucTe,
+                bonusDays: soNgayTangThucTe,
                 startDate: startDate,
                 expiryDate: expiryDate,
                 performedBy: performedBy,
@@ -804,6 +795,11 @@ namespace BE.Services
         }
 
         // ===================== [THU NGÂN] GIA HẠN / MUA GÓI MỚI CHO HỘI VIÊN ĐÃ CÓ GÓI =====================
+        // [KHÔNG ĐỔI] Hàm này vẫn lấy bonusDays từ TransactionService.CalculatePromotionEffectAsync
+        // như bản gốc (không chuyển sang gọi _packageService.CalculateBonusDays), vì luồng này tính
+        // kèm cả giá/giảm giá — CalculatePromotionEffectAsync cần biết bonusDays để trả về đúng bộ
+        // (giaGoc, discountAmt, amount, bonusDays, appliedPromo) trong 1 lần, tránh phải validate
+        // + tính lại promotion ở 2 nơi khác nhau cho cùng 1 giao dịch.
         public async Task<RenewMembershipResponse> RenewMembershipAsync(long memberId, RenewMembershipRequest request, long performedBy)
         {
             var member = await _context.Members.FirstOrDefaultAsync(m => m.MemberId == memberId);
@@ -830,7 +826,9 @@ namespace BE.Services
             var (giaGoc, discountAmt, amount, bonusDays, appliedPromo) =
                 await _transactionService.CalculatePromotionEffectAsync(request.PromotionId, plan.PlanId, plan.Price, plan.DurationDays);
 
-            var expiryDate = startDate.AddDays(plan.DurationDays + bonusDays);
+            // [MỚI] Vẫn cộng ngày qua CalculateExpiryDate cho đồng nhất công thức với các luồng
+            // khác (kết quả giống hệt startDate.AddDays(plan.DurationDays + bonusDays) như bản cũ).
+            var expiryDate = _packageService.CalculateExpiryDate(startDate, plan, bonusDays);
 
             var transaction = await _transactionService.CreateTransactionAsync(
                 memberId, plan.PlanId, appliedPromo?.PromotionId,
