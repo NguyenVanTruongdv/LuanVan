@@ -107,7 +107,7 @@ const cashierApi = {
                 ([, v]) => v !== undefined && v !== null && v !== ""
             )
         ).toString();
-        return authApi.get(`/api/packages/history${query ? `?${query}` : ""}`);
+        return authApi.get(`/api/transactions/history${query ? `?${query}` : ""}`);
     },
     getApplicablePromotions(planId) {
         return authApi.get(`/api/plans/${planId}/applicable-promotions`);

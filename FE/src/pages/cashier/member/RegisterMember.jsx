@@ -31,6 +31,13 @@ const T = {
     amberBg: "rgba(245, 158, 11, 0.14)",
     amberBorder: "rgba(245, 158, 11, 0.4)",
     amberText: "#FBBF6D",
+    // Tông màu riêng cho khuyến mãi GIẢM GIÁ (GiamTienMat / GiamPhanTram) — xanh ngọc (mint),
+    // tách biệt với tông hổ phách (amber) dùng cho khuyến mãi TẶNG NGÀY (TangNgay / TangChuKy)
+    // để nhân viên phân biệt nhanh bằng màu sắc + icon mà không cần đọc kỹ mô tả.
+    discount: "#34D399",
+    discountBg: "rgba(52, 211, 153, 0.14)",
+    discountBorder: "rgba(52, 211, 153, 0.4)",
+    discountText: "#6EE7B7",
     danger: "#F87171",
     dangerBg: "rgba(220, 38, 38, 0.14)",
     dangerBorder: "rgba(248, 113, 113, 0.4)",
@@ -73,10 +80,10 @@ const fmt = (n) =>
 //   soNgayTang, soChuKyTang, moTa }
 //
 // LƯU Ý NGHIỆP VỤ:
-// - promoType "TangChuKy" (tặng chu kỳ): số ngày tặng thêm được tính THEO CHU KỲ của
-//   chính gói đang mua, tức bonusDays = soChuKyTang * durationDays của gói (planDurationDays).
-//   Ví dụ: gói 3 tháng (90 ngày) + soChuKyTang = 1 -> tặng thêm 90 ngày.
-// - Nếu BE trả thẳng soNgayTang (tặng theo số ngày cố định, không theo chu kỳ) thì ưu tiên dùng giá trị đó.
+// - Với CẢ "TangNgay" lẫn "TangChuKy": BE luôn tính sẵn số ngày tặng thực tế vào
+//   field soNgayTang (vd "mua 3 tháng tặng 1 chu kỳ" -> soNgayTang = 30) -> ưu tiên
+//   dùng thẳng giá trị này. soChuKyTang chỉ là fallback phòng khi BE không trả
+//   soNgayTang (giá trị null) — lúc đó mới tự nhân soChuKyTang * planDurationDays.
 // - Giảm giá: phanTramGiam (%) có thể bị giới hạn bởi mucGiamToiDa (số tiền giảm tối đa);
 //   soTienGiam là số tiền giảm cố định.
 function normalizePromotion(p, planDurationDays = 0) {
@@ -96,6 +103,30 @@ function normalizePromotion(p, planDurationDays = 0) {
         discountAmount: p.soTienGiam ?? 0,
         discountCap: p.mucGiamToiDa ?? null,
     };
+}
+
+// Khuyến mãi loại "tặng ngày sử dụng" (TangNgay / TangChuKy) — hiển thị tông hổ phách
+// + icon lịch. Các loại còn lại (GiamTienMat / GiamPhanTram) là giảm giá tiền —
+// hiển thị tông xanh ngọc + icon tương ứng (tiền mặt / phần trăm).
+function isBonusDaysPromo(type) {
+    return type === "TangNgay" || type === "TangChuKy";
+}
+
+// Nhãn ngắn gọn thể hiện giá trị khuyến mãi theo đúng loại, dùng ở khối tóm tắt
+// hội viên bên phải và ở từng dòng khuyến mãi.
+function promoShortLabel(promo) {
+    if (!promo) return "—";
+    switch (promo.promoType) {
+        case "TangNgay":
+        case "TangChuKy":
+            return `+${promo.bonusDays} ngày`;
+        case "GiamTienMat":
+            return `-${fmt(promo.discountAmount)}`;
+        case "GiamPhanTram":
+            return `-${promo.discountPercent}%`;
+        default:
+            return "—";
+    }
 }
 
 // ============================================================
@@ -306,6 +337,51 @@ function UploadSVG() {
         </svg>
     );
 }
+
+// ------------------------------------------------------------
+// Icon riêng cho từng loại khuyến mãi (dùng trong khối "Khuyến mãi áp dụng")
+// ------------------------------------------------------------
+// TangNgay / TangChuKy — tặng thêm ngày sử dụng -> icon lịch có dấu "+"
+function CalendarPlusIcon() {
+    return (
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="3" y="5" width="18" height="16" rx="2" />
+            <line x1="3" y1="10" x2="21" y2="10" />
+            <line x1="8" y1="3" x2="8" y2="7" />
+            <line x1="16" y1="3" x2="16" y2="7" />
+            <line x1="12" y1="14" x2="12" y2="19" />
+            <line x1="9.5" y1="16.5" x2="14.5" y2="16.5" />
+        </svg>
+    );
+}
+// GiamTienMat — giảm thẳng số tiền -> icon tờ tiền
+function BanknoteIcon() {
+    return (
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="2" y="6" width="20" height="12" rx="2" />
+            <circle cx="12" cy="12" r="3" />
+            <path d="M6 10v.01" />
+            <path d="M18 14v.01" />
+        </svg>
+    );
+}
+// GiamPhanTram — giảm theo % -> icon thẻ giá / tag phần trăm
+function PercentTagIcon() {
+    return (
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M20.59 13.41 11 3.83A2 2 0 0 0 9.59 3.24L3 3v6.59a2 2 0 0 0 .59 1.41l9.58 9.58a2 2 0 0 0 2.82 0l4.6-4.6a2 2 0 0 0 0-2.82Z" />
+            <circle cx="7.5" cy="7.5" r="1.4" fill="currentColor" stroke="none" />
+        </svg>
+    );
+}
+// Chọn icon phù hợp theo promoType — có fallback an toàn nếu BE trả loại lạ.
+function promoIconFor(type) {
+    if (type === "TangNgay" || type === "TangChuKy") return <CalendarPlusIcon />;
+    if (type === "GiamTienMat") return <BanknoteIcon />;
+    if (type === "GiamPhanTram") return <PercentTagIcon />;
+    return <CalendarPlusIcon />;
+}
+
 const cs = {
     wrap: { display: "flex", flexDirection: "column", gap: 10, height: "100%" },
     header: { display: "flex", alignItems: "center", gap: 8, marginBottom: 2 },
@@ -765,7 +841,11 @@ function StepPackage({ memberForm, memberPhoto, pkgData, setPkgData, onBack, onD
                         })}
                     </div>
 
-                    {/* Khuyến mãi áp dụng — từ getApplicablePromotions(planId) */}
+                    {/* Khuyến mãi áp dụng — từ getApplicablePromotions(planId).
+                        Mỗi dòng được tô màu + icon khác nhau tuỳ loại:
+                        - TangNgay / TangChuKy (tặng ngày): tông hổ phách, icon lịch.
+                        - GiamTienMat (giảm thẳng tiền): tông xanh ngọc, icon tờ tiền.
+                        - GiamPhanTram (giảm %): tông xanh ngọc, icon tag phần trăm. */}
                     {selectedPkg && (
                         <>
                             <p style={g.secLabel}>KHUYẾN MÃI ÁP DỤNG</p>
@@ -777,19 +857,30 @@ function StepPackage({ memberForm, memberPhoto, pkgData, setPkgData, onBack, onD
                             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                                 {promotions.map((promo) => {
                                     const sel = promo.id === pkgData.promotionId;
+                                    const bonus = isBonusDaysPromo(promo.promoType);
+                                    const boxBase = bonus ? g.promoBoxDays : g.promoBoxDiscount;
+                                    const iconWrapVariant = bonus ? g.promoIconWrapDays : g.promoIconWrapDiscount;
+                                    const accentColor = bonus ? T.amberText : T.discountText;
                                     return (
                                         <div
                                             key={promo.id}
-                                            style={{ ...g.promoBox, ...(sel ? {} : g.promoBoxInactive) }}
+                                            style={{ ...boxBase, ...(sel ? {} : g.promoBoxInactive) }}
                                             onClick={() => setPkgData((d) => ({ ...d, promotionId: promo.id }))}
                                         >
-                                            <span style={g.promoIcon}>🎁</span>
-                                            <div style={{ flex: 1 }}>
-                                                <div style={g.promoTitle}>{promo.name}</div>
-                                                {promo.description && <div style={g.promoDesc}>{promo.description}</div>}
+                                            <span style={{ ...g.promoIconWrap, ...iconWrapVariant }}>
+                                                {promoIconFor(promo.promoType)}
+                                            </span>
+                                            <div style={{ flex: 1, minWidth: 0 }}>
+                                                <div style={{ ...g.promoTitle, color: accentColor }}>{promo.name}</div>
+                                                {promo.description && (
+                                                    <div style={{ ...g.promoDesc, color: accentColor }}>{promo.description}</div>
+                                                )}
                                             </div>
+                                            <span style={{ ...g.promoValue, color: accentColor }}>
+                                                {promoShortLabel(promo)}
+                                            </span>
                                             {sel && (
-                                                <span style={g.promoCheck}>
+                                                <span style={{ ...g.promoCheck, background: bonus ? T.amber : T.discount }}>
                                                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#04222B" strokeWidth="3">
                                                         <polyline points="20 6 9 17 4 12" />
                                                     </svg>
@@ -855,7 +946,7 @@ function StepPackage({ memberForm, memberPhoto, pkgData, setPkgData, onBack, onD
                     {[
                         ["Gói tập", selectedPkg ? selectedPkg.planName : <span style={{ color: T.textMuted }}>Chưa chọn</span>],
                         ["Học phí", selectedPkg ? fmt(finalPrice) : "—"],
-                        ["Khuyến mãi", selectedPromotion ? `+${selectedPromotion.bonusDays} ngày` : "—"],
+                        ["Khuyến mãi", selectedPromotion ? promoShortLabel(selectedPromotion) : "—"],
                         ["Thanh toán", PAYMENT_METHODS.find((p) => p.id === payment)?.label || <span style={{ color: T.textMuted }}>Chưa chọn</span>],
                         ["Face ID", memberPhoto ? <span style={{ color: T.cyanLight, fontWeight: 700 }}>Đã chụp</span> : <span style={{ color: T.danger }}>Chưa chụp</span>],
                     ].map(([k, v]) => (
@@ -1159,18 +1250,31 @@ const g = {
     timelineSegBase: { background: T.cyan, height: "100%" },
     timelineSegBonus: { background: T.amber, height: "100%" },
 
-    // -------- Khuyến mãi áp dụng --------
-    promoBox: {
+    // -------- Khuyến mãi áp dụng — 2 biến thể màu theo loại KM --------
+    // TangNgay / TangChuKy (tặng ngày): tông hổ phách (amber)
+    promoBoxDays: {
         display: "flex", alignItems: "flex-start", gap: 10,
         background: T.amberBg, border: `1.5px solid ${T.amberBorder}`,
         borderRadius: 12, padding: "12px 14px", cursor: "pointer",
     },
+    // GiamTienMat / GiamPhanTram (giảm giá tiền): tông xanh ngọc (mint)
+    promoBoxDiscount: {
+        display: "flex", alignItems: "flex-start", gap: 10,
+        background: T.discountBg, border: `1.5px solid ${T.discountBorder}`,
+        borderRadius: 12, padding: "12px 14px", cursor: "pointer",
+    },
     promoBoxInactive: { background: T.panelDarkSoft, border: `1.5px solid ${T.border}`, opacity: 0.7 },
-    promoIcon: { fontSize: 18, flexShrink: 0 },
-    promoTitle: { fontSize: 13.5, fontWeight: 700, color: T.amberText },
-    promoDesc: { fontSize: 12, color: T.amberText, opacity: 0.85, marginTop: 2 },
+    promoIconWrap: {
+        width: 30, height: 30, borderRadius: 9, flexShrink: 0,
+        display: "flex", alignItems: "center", justifyContent: "center",
+    },
+    promoIconWrapDays: { background: "rgba(245,158,11,0.18)", color: T.amberText },
+    promoIconWrapDiscount: { background: "rgba(52,211,153,0.18)", color: T.discountText },
+    promoTitle: { fontSize: 13.5, fontWeight: 700 },
+    promoDesc: { fontSize: 12, opacity: 0.85, marginTop: 2 },
+    promoValue: { fontSize: 13, fontWeight: 800, flexShrink: 0, alignSelf: "center", whiteSpace: "nowrap" },
     promoCheck: {
-        width: 20, height: 20, borderRadius: "50%", background: T.amber,
+        width: 20, height: 20, borderRadius: "50%",
         display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
     },
 

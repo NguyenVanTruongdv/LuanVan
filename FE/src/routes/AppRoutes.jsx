@@ -35,11 +35,16 @@ import LichSuDangKyGoiTap from "../pages/cashier/packages/History";
 import RenewPage from "../pages/cashier/packages/Renewpage";
 
 import ManagerLayout from "../layouts/ManagerLayout";
+import EmployeeListPage from "../pages/manager/Employee/EmployeeListpage";
+import AddEquipmentPage from "../pages/manager/Equiment/Addequipmentpage";
+import EquipmentListPage from "../pages/manager/Equiment/Equipmentlistpage";
+import IncidentPage from "../pages/manager/Incident/Incidentlist";
 import CheckinHistoryOfManager from "../pages/manager/Member/CheckinHistory";
+import Invoice from "../pages/manager/Member/Invoice";
 import ListMemberOfManager from "../pages/manager/Member/ListMember";
-import AdjustTransactionPlan from "../pages/manager/Member/Package/Adjusttransaction";
 import LichSuDangKyGoiTapOfManager from "../pages/manager/Member/Package/HistoryRegis";
-
+import NewsCreate from "../pages/manager/News/Newscreate";
+import NewsList from "../pages/manager/News/Newslist";
 function AppRoutes() {
     return (
         <Routes>
@@ -103,8 +108,15 @@ function AppRoutes() {
                     <Route index element={<Dashboard />} />
                     <Route path="member/member-list" element={<ListMemberOfManager />} />
                     <Route path="member/checkin-history" element={<CheckinHistoryOfManager />} />
+                    <Route path="members/transactions/invoice" element={<Invoice />} />
                     <Route path="members/packages/history" element={<LichSuDangKyGoiTapOfManager />} />
-                    <Route path="members/packages/adjust" element={<AdjustTransactionPlan />} />
+                    <Route path="staff" element={<EmployeeListPage />} />
+                    <Route path="equipment" element={<EquipmentListPage />} />
+                    <Route path="equipment/add" element={<AddEquipmentPage />} />
+                    <Route path="news" element={<NewsList />} />
+                    <Route path="news/create" element={<NewsCreate />} />
+                    <Route path="incidents" element={<IncidentPage />} />
+
                 </Route>
             </Route>
         </Routes>

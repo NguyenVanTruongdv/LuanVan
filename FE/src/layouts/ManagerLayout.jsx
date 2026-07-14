@@ -148,10 +148,11 @@ const NAV_ITEMS = [
                 id: "members-packages",
                 icon: Icons.packages,
                 label: "Quản lý gói tập",
-                matchPrefix: "/manager/members/packages",
+                matchPrefix: "/manager/members",
                 children: [
                     { id: "packages-history", icon: Icons.history, label: "Lịch sử đăng ký gói tập", path: "/manager/members/packages/history" },
-                    { id: "packages-adjust", icon: Icons.edit, label: "Điều chỉnh gói tập", path: "/manager/members/packages/adjust" },
+                    { id: "invoice", icon: Icons.history, label: "Hóa đơn", path: "/manager/members/transactions/invoice" },
+
                 ],
             },
         ],

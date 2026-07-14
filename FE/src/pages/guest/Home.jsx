@@ -232,7 +232,8 @@ function AnnouncementPill({ a }) {
       <span className="h-annc__icon">📰</span>
       <div className="h-annc__body">
         <span className="h-annc__branch">{a.title}</span>
-        <span className="h-annc__text">{a.summary || a.content}</span>
+        <span className="h-annc__text">{a.summary}</span>
+        <span className="h-annc__text"> {a.content}</span>
       </div>
     </div>
   );

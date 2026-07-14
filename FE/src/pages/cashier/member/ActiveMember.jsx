@@ -54,9 +54,12 @@ function normalizePackage(p) {
 // mucGiamToiDa, soNgayTang, soChuKyTang, moTa } trong đó promoType là 1 trong 4
 // giá trị: "GiamPhanTram" (giảm % trên giá gói, tối đa mucGiamToiDa nếu có),
 // "GiamTienMat" (giảm thẳng soTienGiam đồng), "TangNgay" (tặng thêm soNgayTang
-// ngày sử dụng), "TangChuKy" (tặng thêm soChuKyTang chu kỳ sử dụng, tức
-// soChuKyTang lần thời hạn gốc của gói). Mỗi loại chỉ có đúng 1 field "value"
-// tương ứng khác null, các field còn lại đều null.
+// ngày sử dụng), "TangChuKy" (tặng thêm soChuKyTang chu kỳ sử dụng).
+// LƯU Ý QUAN TRỌNG: với cả "TangNgay" và "TangChuKy", BE đều đã TÍNH SẴN số
+// ngày thực tế được tặng vào field soNgayTang (vd: "mua 3 tháng tặng 1 chu kỳ"
+// -> soNgayTang = 30). soChuKyTang chỉ mang tính mô tả (để hiển thị "+1 chu kỳ"),
+// KHÔNG được dùng để tự nhân lại với durationDays của gói, nếu không sẽ ra sai
+// số ngày (1 chu kỳ x 90 ngày = 90 thay vì đúng 30 ngày BE đã tính).
 function normalizePromotion(p) {
   const {
     promotionId,
@@ -79,10 +82,10 @@ function normalizePromotion(p) {
       value = Number(soTienGiam) || 0;
       break;
     case "TangNgay":
-      value = Number(soNgayTang) || 0;
-      break;
     case "TangChuKy":
-      value = Number(soChuKyTang) || 0;
+      // BE đã tính sẵn số ngày thực tế được tặng trong soNgayTang, kể cả với
+      // TangChuKy -> luôn dùng trực tiếp giá trị này, không nhân thêm gì nữa.
+      value = Number(soNgayTang) || 0;
       break;
     default:
       break;
@@ -93,7 +96,8 @@ function normalizePromotion(p) {
     promotionId,
     name: tenKhuyenMai,
     type: promoType, // "GiamPhanTram" | "GiamTienMat" | "TangNgay" | "TangChuKy"
-    value,
+    value, // số ngày tặng thêm (TangNgay/TangChuKy) hoặc số tiền/% giảm
+    cycles: Number(soChuKyTang) || 0, // chỉ dùng để hiển thị nhãn "+N chu kỳ" cho TangChuKy, KHÔNG dùng để tính toán
     maxDiscount: Number(mucGiamToiDa) || 0, // chỉ áp dụng cho GiamPhanTram
     description: moTa || "", // mô tả gốc từ BE, ưu tiên hiển thị nếu có
   };
@@ -115,7 +119,7 @@ function promotionDescription(promotion) {
     case "TangNgay":
       return `Tặng ${promotion.value} ngày sử dụng`;
     case "TangChuKy":
-      return `Tặng ${promotion.value} chu kỳ sử dụng`;
+      return `Tặng ${promotion.cycles} chu kỳ sử dụng (${promotion.value} ngày)`;
     case "GiamTienMat":
       return `Giảm ${currency(promotion.value)}`;
     case "GiamPhanTram":
@@ -132,7 +136,7 @@ function promotionShortLabel(promotion) {
     case "TangNgay":
       return `+${promotion.value} ngày`;
     case "TangChuKy":
-      return `+${promotion.value} chu kỳ`;
+      return `+${promotion.cycles} chu kỳ (${promotion.value} ngày)`;
     case "GiamTienMat":
       return `-${currency(promotion.value)}`;
     case "GiamPhanTram":
@@ -158,11 +162,10 @@ function computePricing(pkg, promotion, today) {
 
   switch (promotion?.type) {
     case "TangNgay":
-      bonusDays = promoValue;
-      break;
     case "TangChuKy":
-      // N chu kỳ = N lần thời hạn gốc của gói
-      bonusDays = promoValue * durationDays;
+      // BE đã tính sẵn số ngày thực tế trong promotion.value (từ soNgayTang),
+      // kể cả với TangChuKy -> dùng trực tiếp, KHÔNG nhân với durationDays.
+      bonusDays = promoValue;
       break;
     case "GiamTienMat":
       discount = Math.min(promoValue, price);

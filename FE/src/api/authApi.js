@@ -90,7 +90,13 @@ async function request(method, path, body = null, auth = false) {
             });
         } catch {
             clearTokens();
-            window.location.href = "/member/login";
+            const entityType = localStorage.getItem("entityType");
+
+            if (entityType === "Employee") {
+                window.location.href = "/staff/login";
+            } else {
+                window.location.href = "/member/login";
+            }
             throw new Error("Phiên đăng nhập đã hết hạn");
         }
     }
@@ -274,6 +280,15 @@ const authApi = {
     put(path, body, auth = true) {
         return request(
             "PUT",
+            path,
+            body,
+            auth
+        );
+    },
+
+    patch(path, body, auth = true) {
+        return request(
+            "PATCH",
             path,
             body,
             auth
