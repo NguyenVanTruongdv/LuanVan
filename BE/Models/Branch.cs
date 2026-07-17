@@ -52,5 +52,7 @@ public partial class Branch
 
     public virtual ICollection<MemberPackage> MemberPackages { get; set; } = new List<MemberPackage>();
 
+    public virtual ICollection<News> News { get; set; } = new List<News>();
+
     public virtual ICollection<Transaction> Transactions { get; set; } = new List<Transaction>();
 }

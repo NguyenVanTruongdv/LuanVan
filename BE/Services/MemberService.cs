@@ -894,5 +894,27 @@ namespace BE.Services
                 InvoiceUrl = invoiceUrl
             };
         }
+
+        public async Task<MemberProfileDto?> GetMyProfileAsync(long memberId)
+        {
+            var member = await _context.Members
+                .Include(m => m.FaceDatum)
+                .FirstOrDefaultAsync(m => m.MemberId == memberId);
+
+            if (member is null) return null;
+
+            var postCount = await _context.ForumPosts
+                .CountAsync(p => p.MemberId == memberId && p.Status != "Deleted");
+
+            return new MemberProfileDto
+            {
+                MemberId = member.MemberId,
+                FullName = member.FullName,
+                Avatar = member.FaceDatum?.ProfileImage,
+                Phone = member.Phone,
+                JoinedAt = member.CreatedAt,
+                PostCount = postCount
+            };
+        }
     }
 }

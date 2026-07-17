@@ -59,8 +59,8 @@ namespace BE.Dtos.Member
         public string FullName { get; set; } = null!;
         public string Phone { get; set; } = null!;
         public string Gender { get; set; } = null!;
-        public string? BranchName { get; set; } 
-         public string? ActivatedByEmployeeName { get; set; }
+        public string? BranchName { get; set; }
+        public string? ActivatedByEmployeeName { get; set; }
         public string Status { get; set; } = null!;
         public string? SuspendReason { get; set; }
         public string? InternalNotes { get; set; }
@@ -74,7 +74,7 @@ namespace BE.Dtos.Member
         public DateOnly? PackageExpiryDate { get; set; }
         public string? PackageStatus { get; set; }
 
-        public string? GeneratedPassword { get; set; } 
+        public string? GeneratedPassword { get; set; }
     }
 
     // ===================== DANH SÁCH HỘI VIÊN (kèm ảnh + gói tập đang dùng hôm nay) =====================
@@ -187,7 +187,7 @@ namespace BE.Dtos.Member
         public IFormFile ProfileImage { get; set; } = null!;
     }
     //DTO DÙNG CHO GIA HẠN GÓI TẬP CỦA THU NGÂN 
-       public class RenewMembershipRequest
+    public class RenewMembershipRequest
     {
         public int PlanId { get; set; }                 // Cho phép khác PlanId của gói hiện tại
         public int? PromotionId { get; set; }            // NULL = không dùng khuyến mãi
@@ -220,7 +220,7 @@ namespace BE.Dtos.Member
         public string? BankReferenceCode { get; set; }
         public string? InvoiceUrl { get; set; }
     }
-      public class MemberSearchItem
+    public class MemberSearchItem
     {
         public long MemberId { get; set; }
         public string FullName { get; set; } = null!;
@@ -235,16 +235,25 @@ namespace BE.Dtos.Member
         public DateOnly? CurrentExpiryDate { get; set; }
         public string? CurrentPackageStatus { get; set; }
     }
-     public class PendingPurchaseStatusDto
+    public class PendingPurchaseStatusDto
     {
         // Tài khoản đang ở trạng thái PendingActivation (chưa từng ra quầy kích hoạt)
         public bool IsPendingActivation { get; set; }
- 
+
         // Đã có sẵn 1 gói tập PendingActivation (đã mua online rồi) hay chưa
         public bool HasPendingPackage { get; set; }
- 
+
         // FE dùng cờ này để show/ẩn nút "Mua gói tập".
         // = false CHỈ KHI: đang PendingActivation VÀ đã có sẵn 1 gói Pending rồi.
         public bool CanPurchasePackage { get; set; }
     }
+    public class MemberProfileDto
+{
+    public long MemberId { get; set; }
+    public string? FullName { get; set; }
+    public string? Avatar { get; set; }
+    public string? Phone { get; set; }
+    public DateTime? JoinedAt { get; set; }
+    public int PostCount { get; set; }
+}
 }

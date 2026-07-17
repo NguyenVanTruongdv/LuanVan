@@ -73,6 +73,8 @@ public partial class Member
 
     public virtual ICollection<FaceUpdateHistory> FaceUpdateHistories { get; set; } = new List<FaceUpdateHistory>();
 
+    public virtual ICollection<ForumCommentLike> ForumCommentLikes { get; set; } = new List<ForumCommentLike>();
+
     public virtual ICollection<ForumComment> ForumCommentMembers { get; set; } = new List<ForumComment>();
 
     public virtual ICollection<ForumComment> ForumCommentReplyToMembers { get; set; } = new List<ForumComment>();

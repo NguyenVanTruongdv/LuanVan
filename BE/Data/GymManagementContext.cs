@@ -2,11 +2,16 @@
 using System.Collections.Generic;
 using BE.Models;
 using Microsoft.EntityFrameworkCore;
+using Pomelo.EntityFrameworkCore.MySql.Scaffolding.Internal;
 
 namespace BE.Data;
 
 public partial class GymManagementContext : DbContext
 {
+    public GymManagementContext()
+    {
+    }
+
     public GymManagementContext(DbContextOptions<GymManagementContext> options)
         : base(options)
     {
@@ -34,7 +39,11 @@ public partial class GymManagementContext : DbContext
 
     public virtual DbSet<FaceUpdateHistory> FaceUpdateHistories { get; set; }
 
+    public virtual DbSet<ForumCategory> ForumCategories { get; set; }
+
     public virtual DbSet<ForumComment> ForumComments { get; set; }
+
+    public virtual DbSet<ForumCommentLike> ForumCommentLikes { get; set; }
 
     public virtual DbSet<ForumLike> ForumLikes { get; set; }
 
@@ -77,6 +86,10 @@ public partial class GymManagementContext : DbContext
     public virtual DbSet<Transaction> Transactions { get; set; }
 
     public virtual DbSet<TransactionAdjustmentLog> TransactionAdjustmentLogs { get; set; }
+
+    protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
+#warning To protect potentially sensitive information in your connection string, you should move it out of source code. You can avoid scaffolding the connection string by using the Name= syntax to read it from configuration - see https://go.microsoft.com/fwlink/?linkid=2131148. For more guidance on storing connection strings, see https://go.microsoft.com/fwlink/?LinkId=723263.
+        => optionsBuilder.UseMySql("server=localhost;port=3306;database=gym_management;user=root", Microsoft.EntityFrameworkCore.ServerVersion.Parse("9.1.0-mysql"));
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -593,72 +606,140 @@ public partial class GymManagementContext : DbContext
                 .HasConstraintName("fk_facehistory_staff");
         });
 
+        modelBuilder.Entity<ForumCategory>(entity =>
+        {
+            entity.HasKey(e => e.CategoryId).HasName("PRIMARY");
+
+            entity
+                .ToTable("forum_categories")
+                .UseCollation("utf8mb4_0900_ai_ci");
+
+            entity.Property(e => e.CategoryId).HasColumnName("category_id");
+            entity.Property(e => e.CategoryName)
+                .HasMaxLength(100)
+                .HasColumnName("category_name");
+            entity.Property(e => e.CreatedAt)
+                .HasDefaultValueSql("CURRENT_TIMESTAMP")
+                .HasColumnType("datetime")
+                .HasColumnName("created_at");
+            entity.Property(e => e.DisplayOrder).HasColumnName("display_order");
+            entity.Property(e => e.Icon)
+                .HasMaxLength(255)
+                .HasColumnName("icon");
+            entity.Property(e => e.Slug)
+                .HasMaxLength(100)
+                .HasColumnName("slug");
+            entity.Property(e => e.Status)
+                .HasDefaultValueSql("'Active'")
+                .HasColumnType("enum('Active','Inactive')")
+                .HasColumnName("status");
+        });
+
         modelBuilder.Entity<ForumComment>(entity =>
         {
             entity.HasKey(e => e.CommentId).HasName("PRIMARY");
 
-            entity.ToTable("forum_comments", tb => tb.HasComment("Bình luận trong bài đăng forum, hỗ trợ trả lời 1 cấp và @ đích danh người được trả lời"));
+            entity.ToTable("forum_comments", tb => tb.HasComment("Bình luận bài viết cộng đồng, hỗ trợ trả lời 2 cấp"));
 
-            entity.HasIndex(e => e.MemberId, "fk_comment_member");
+            entity.HasIndex(e => e.MemberId, "IX_forum_comments_member_id");
 
-            entity.HasIndex(e => e.ReplyToMemberId, "fk_comment_reply_to");
+            entity.HasIndex(e => e.ParentCommentId, "IX_forum_comments_parent_comment_id");
 
-            entity.HasIndex(e => e.ParentCommentId, "idx_comment_parent");
+            entity.HasIndex(e => e.PostId, "IX_forum_comments_post_id");
 
-            entity.HasIndex(e => new { e.PostId, e.CreatedAt }, "idx_comment_post");
+            entity.HasIndex(e => e.ReplyToMemberId, "IX_forum_comments_reply_to_member_id");
 
             entity.Property(e => e.CommentId)
                 .HasComment("Mã bình luận — khóa chính tự tăng")
                 .HasColumnName("comment_id");
             entity.Property(e => e.Content)
+                .HasMaxLength(2000)
                 .HasComment("Nội dung bình luận")
-                .HasColumnType("text")
                 .HasColumnName("content");
             entity.Property(e => e.CreatedAt)
                 .HasDefaultValueSql("CURRENT_TIMESTAMP")
-                .HasComment("Thời điểm bình luận")
+                .HasComment("Thời điểm tạo bình luận")
                 .HasColumnType("datetime")
                 .HasColumnName("created_at");
+            entity.Property(e => e.LikeCount)
+                .HasComment("Tổng số lượt tym bình luận này")
+                .HasColumnName("like_count");
             entity.Property(e => e.MemberId)
-                .HasComment("Hội viên bình luận — FK tới members.member_id")
+                .HasComment("Hội viên viết bình luận — FK tới members.member_id")
                 .HasColumnName("member_id");
             entity.Property(e => e.ParentCommentId)
-                .HasComment("Bình luận gốc của nhánh — FK tự tham chiếu tới forum_comments.comment_id, NULL nếu bản thân là bình luận gốc")
+                .HasComment("NULL = bình luận gốc (cấp 1). Có giá trị = trả lời, LUÔN trỏ về comment_id của bình luận GỐC (kể cả khi trả lời 1 reply khác) — FK tới forum_comments.comment_id")
                 .HasColumnName("parent_comment_id");
             entity.Property(e => e.PostId)
-                .HasComment("Bài đăng được bình luận — FK tới forum_posts.post_id")
+                .HasComment("Bài đăng chứa bình luận — FK tới forum_posts.post_id")
                 .HasColumnName("post_id");
             entity.Property(e => e.ReplyToMemberId)
-                .HasComment("Hội viên đang được trả lời đích danh — FK tới members.member_id. Bắt buộc điền khi là reply, NULL nếu là bình luận gốc")
+                .HasComment("Chỉ dùng để hiển thị \"Trả lời <tên>\" khi reply nhắm vào 1 reply khác, không ảnh hưởng cấu trúc cây — FK tới members.member_id")
                 .HasColumnName("reply_to_member_id");
             entity.Property(e => e.Status)
                 .HasDefaultValueSql("'Active'")
-                .HasComment("Trạng thái: Active=đang hiển thị, Deleted=đã xóa (soft delete)")
-                .HasColumnType("enum('Active','Deleted')")
+                .HasComment("Trạng thái: Active=hiển thị, Hidden=admin ẩn, Deleted=đã xóa")
+                .HasColumnType("enum('Active','Hidden','Deleted')")
                 .HasColumnName("status");
             entity.Property(e => e.UpdatedAt)
                 .ValueGeneratedOnAddOrUpdate()
                 .HasDefaultValueSql("CURRENT_TIMESTAMP")
-                .HasComment("Thời điểm chỉnh sửa gần nhất")
+                .HasComment("Thời điểm cập nhật gần nhất")
                 .HasColumnType("datetime")
                 .HasColumnName("updated_at");
 
             entity.HasOne(d => d.Member).WithMany(p => p.ForumCommentMembers)
                 .HasForeignKey(d => d.MemberId)
                 .OnDelete(DeleteBehavior.ClientSetNull)
-                .HasConstraintName("fk_comment_member");
+                .HasConstraintName("FK_forum_comments_member");
 
             entity.HasOne(d => d.ParentComment).WithMany(p => p.InverseParentComment)
                 .HasForeignKey(d => d.ParentCommentId)
-                .HasConstraintName("fk_comment_parent");
+                .OnDelete(DeleteBehavior.Cascade)
+                .HasConstraintName("FK_forum_comments_parent");
 
             entity.HasOne(d => d.Post).WithMany(p => p.ForumComments)
                 .HasForeignKey(d => d.PostId)
-                .HasConstraintName("fk_comment_post");
+                .HasConstraintName("FK_forum_comments_post");
 
             entity.HasOne(d => d.ReplyToMember).WithMany(p => p.ForumCommentReplyToMembers)
                 .HasForeignKey(d => d.ReplyToMemberId)
-                .HasConstraintName("fk_comment_reply_to");
+                .OnDelete(DeleteBehavior.SetNull)
+                .HasConstraintName("FK_forum_comments_reply_to");
+        });
+
+        modelBuilder.Entity<ForumCommentLike>(entity =>
+        {
+            entity.HasKey(e => e.LikeId).HasName("PRIMARY");
+
+            entity.ToTable("forum_comment_likes", tb => tb.HasComment("Lượt tym bình luận"));
+
+            entity.HasIndex(e => e.MemberId, "IX_forum_comment_likes_member_id");
+
+            entity.HasIndex(e => new { e.CommentId, e.MemberId }, "UQ_forum_comment_likes").IsUnique();
+
+            entity.Property(e => e.LikeId)
+                .HasComment("Mã lượt tym — khóa chính tự tăng")
+                .HasColumnName("like_id");
+            entity.Property(e => e.CommentId)
+                .HasComment("Bình luận được tym — FK tới forum_comments.comment_id")
+                .HasColumnName("comment_id");
+            entity.Property(e => e.CreatedAt)
+                .HasDefaultValueSql("CURRENT_TIMESTAMP")
+                .HasComment("Thời điểm tym")
+                .HasColumnType("datetime")
+                .HasColumnName("created_at");
+            entity.Property(e => e.MemberId)
+                .HasComment("Hội viên thực hiện tym — FK tới members.member_id")
+                .HasColumnName("member_id");
+
+            entity.HasOne(d => d.Comment).WithMany(p => p.ForumCommentLikes)
+                .HasForeignKey(d => d.CommentId)
+                .HasConstraintName("FK_comment_likes_comment");
+
+            entity.HasOne(d => d.Member).WithMany(p => p.ForumCommentLikes)
+                .HasForeignKey(d => d.MemberId)
+                .HasConstraintName("FK_comment_likes_member");
         });
 
         modelBuilder.Entity<ForumLike>(entity =>
@@ -700,15 +781,17 @@ public partial class GymManagementContext : DbContext
         {
             entity.HasKey(e => e.NotificationId).HasName("PRIMARY");
 
-            entity.ToTable("forum_notifications", tb => tb.HasComment("Thông báo cho hội viên khi bài viết của họ được tym hoặc bình luận"));
+            entity.ToTable("forum_notifications", tb => tb.HasComment("Thông báo tương tác trong cộng đồng"));
 
-            entity.HasIndex(e => e.ActorMemberId, "fk_forumnotif_actor");
+            entity.HasIndex(e => e.LikeId, "FK_notifications_like");
 
-            entity.HasIndex(e => e.CommentId, "fk_forumnotif_comment");
+            entity.HasIndex(e => e.ActorMemberId, "IX_forum_notifications_actor");
 
-            entity.HasIndex(e => e.PostId, "fk_forumnotif_post");
+            entity.HasIndex(e => e.CommentId, "IX_forum_notifications_comment");
 
-            entity.HasIndex(e => new { e.RecipientMemberId, e.IsRead, e.CreatedAt }, "idx_forumnotif_recipient");
+            entity.HasIndex(e => e.PostId, "IX_forum_notifications_post");
+
+            entity.HasIndex(e => new { e.RecipientMemberId, e.IsRead }, "IX_forum_notifications_recipient");
 
             entity.Property(e => e.NotificationId)
                 .HasComment("Mã thông báo — khóa chính tự tăng")
@@ -717,7 +800,7 @@ public partial class GymManagementContext : DbContext
                 .HasComment("Hội viên thực hiện hành động (người tym/bình luận/trả lời) — FK tới members.member_id")
                 .HasColumnName("actor_member_id");
             entity.Property(e => e.CommentId)
-                .HasComment("Bình luận liên quan — FK tới forum_comments.comment_id. Bắt buộc điền khi notify_type = Comment, NULL khi notify_type = Like")
+                .HasComment("Bình luận liên quan — FK tới forum_comments.comment_id. Bắt buộc điền khi notify_type = Comment/Reply, NULL khi notify_type = Like")
                 .HasColumnName("comment_id");
             entity.Property(e => e.CreatedAt)
                 .HasDefaultValueSql("CURRENT_TIMESTAMP")
@@ -727,6 +810,7 @@ public partial class GymManagementContext : DbContext
             entity.Property(e => e.IsRead)
                 .HasComment("0 = chưa đọc, 1 = đã đọc")
                 .HasColumnName("is_read");
+            entity.Property(e => e.LikeId).HasColumnName("like_id");
             entity.Property(e => e.NotifyType)
                 .HasComment("Loại thông báo: Like=có người tym bài, Comment=có người bình luận bài, Reply=có người trả lời đích danh bình luận của mình")
                 .HasColumnType("enum('Like','Comment','Reply')")
@@ -740,21 +824,25 @@ public partial class GymManagementContext : DbContext
 
             entity.HasOne(d => d.ActorMember).WithMany(p => p.ForumNotificationActorMembers)
                 .HasForeignKey(d => d.ActorMemberId)
-                .OnDelete(DeleteBehavior.ClientSetNull)
-                .HasConstraintName("fk_forumnotif_actor");
+                .HasConstraintName("FK_notifications_actor");
 
             entity.HasOne(d => d.Comment).WithMany(p => p.ForumNotifications)
                 .HasForeignKey(d => d.CommentId)
-                .HasConstraintName("fk_forumnotif_comment");
+                .OnDelete(DeleteBehavior.Cascade)
+                .HasConstraintName("FK_notifications_comment");
+
+            entity.HasOne(d => d.Like).WithMany(p => p.ForumNotifications)
+                .HasForeignKey(d => d.LikeId)
+                .OnDelete(DeleteBehavior.Cascade)
+                .HasConstraintName("FK_notifications_like");
 
             entity.HasOne(d => d.Post).WithMany(p => p.ForumNotifications)
                 .HasForeignKey(d => d.PostId)
-                .HasConstraintName("fk_forumnotif_post");
+                .HasConstraintName("FK_notifications_post");
 
             entity.HasOne(d => d.RecipientMember).WithMany(p => p.ForumNotificationRecipientMembers)
                 .HasForeignKey(d => d.RecipientMemberId)
-                .OnDelete(DeleteBehavior.ClientSetNull)
-                .HasConstraintName("fk_forumnotif_recipient");
+                .HasConstraintName("FK_notifications_recipient");
         });
 
         modelBuilder.Entity<ForumPost>(entity =>
@@ -763,6 +851,8 @@ public partial class GymManagementContext : DbContext
 
             entity.ToTable("forum_posts", tb => tb.HasComment("Bài đăng trên forum của hội viên, gồm cả bài gốc và bài đăng lại"));
 
+            entity.HasIndex(e => e.CategoryId, "idx_forum_posts_category");
+
             entity.HasIndex(e => new { e.MemberId, e.Status, e.CreatedAt }, "idx_post_member");
 
             entity.HasIndex(e => e.OriginalPostId, "idx_post_original");
@@ -770,6 +860,7 @@ public partial class GymManagementContext : DbContext
             entity.Property(e => e.PostId)
                 .HasComment("Mã bài đăng — khóa chính tự tăng")
                 .HasColumnName("post_id");
+            entity.Property(e => e.CategoryId).HasColumnName("category_id");
             entity.Property(e => e.CommentCount)
                 .HasComment("Số lượt bình luận — đồng bộ mỗi khi forum_comments thay đổi")
                 .HasColumnName("comment_count");
@@ -804,12 +895,20 @@ public partial class GymManagementContext : DbContext
                 .HasComment("Trạng thái: Active=đang hiển thị, Hidden=bị Admin ẩn do vi phạm, Deleted=hội viên tự xóa (soft delete)")
                 .HasColumnType("enum('Active','Hidden','Deleted')")
                 .HasColumnName("status");
+            entity.Property(e => e.Title)
+                .HasMaxLength(255)
+                .HasColumnName("title");
             entity.Property(e => e.UpdatedAt)
                 .ValueGeneratedOnAddOrUpdate()
                 .HasDefaultValueSql("CURRENT_TIMESTAMP")
                 .HasComment("Thời điểm chỉnh sửa gần nhất")
                 .HasColumnType("datetime")
                 .HasColumnName("updated_at");
+
+            entity.HasOne(d => d.Category).WithMany(p => p.ForumPosts)
+                .HasForeignKey(d => d.CategoryId)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("fk_forum_posts_category");
 
             entity.HasOne(d => d.Member).WithMany(p => p.ForumPosts)
                 .HasForeignKey(d => d.MemberId)
@@ -1274,13 +1373,16 @@ public partial class GymManagementContext : DbContext
 
             entity.ToTable("news", tb => tb.HasComment("Tin tức / bài viết hiển thị cho hội viên"));
 
+            entity.HasIndex(e => e.BranchId, "FK_news_branch");
+
             entity.HasIndex(e => e.CreatedBy, "fk_news_nv");
 
-            entity.HasIndex(e => new { e.Status, e.PublishedAt }, "idx_news_status");
+            entity.HasIndex(e => e.Status, "idx_news_status");
 
             entity.Property(e => e.NewsId)
                 .HasComment("Mã tin tức — khóa chính tự tăng")
                 .HasColumnName("news_id");
+            entity.Property(e => e.BranchId).HasColumnName("branch_id");
             entity.Property(e => e.Content)
                 .HasComment("Nội dung đầy đủ của bài tin tức")
                 .HasColumnType("text")
@@ -1293,10 +1395,6 @@ public partial class GymManagementContext : DbContext
             entity.Property(e => e.CreatedBy)
                 .HasComment("Nhân viên soạn bài — FK tới employees.employee_id")
                 .HasColumnName("created_by");
-            entity.Property(e => e.PublishedAt)
-                .HasComment("Thời điểm bài viết được đăng — điền khi status = Published")
-                .HasColumnType("datetime")
-                .HasColumnName("published_at");
             entity.Property(e => e.Status)
                 .HasDefaultValueSql("'Active'")
                 .HasColumnType("enum('Active','Hidden')")
@@ -1315,6 +1413,11 @@ public partial class GymManagementContext : DbContext
                 .HasComment("Thời điểm cập nhật gần nhất")
                 .HasColumnType("datetime")
                 .HasColumnName("updated_at");
+
+            entity.HasOne(d => d.Branch).WithMany(p => p.News)
+                .HasForeignKey(d => d.BranchId)
+                .OnDelete(DeleteBehavior.SetNull)
+                .HasConstraintName("FK_news_branch");
 
             entity.HasOne(d => d.CreatedByNavigation).WithMany(p => p.News)
                 .HasForeignKey(d => d.CreatedBy)

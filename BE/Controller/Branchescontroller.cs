@@ -1,5 +1,6 @@
 using BE.DTOs.Branches;
 using BE.Services;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace BE.Controllers;
@@ -40,7 +41,7 @@ public class BranchesController : ControllerBase
     // POST: api/branches
     // Không nhận ảnh ở đây — tạo chi nhánh xong, thêm ảnh qua POST /api/branches/{id}/images
     [HttpPost]
-    public async Task<IActionResult> Create([FromBody] CreateBranchDto dto)
+    public async Task<IActionResult> Create([FromForm] CreateBranchDto dto)
     {
         var created = await _branchService.CreateAsync(dto);
 
@@ -82,4 +83,11 @@ public class BranchesController : ControllerBase
 
         return Ok(restored);
     }
+         [HttpGet("available-managers")]
+        [Authorize(Roles = "Admin")]
+        public async Task<IActionResult> GetAvailableManagers()
+        {
+            var result = await _branchService.GetAvailableManagersAsync();
+            return Ok(result);
+        }
 }

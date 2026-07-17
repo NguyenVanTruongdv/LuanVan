@@ -18,6 +18,10 @@ public partial class ForumPost
     /// </summary>
     public long MemberId { get; set; }
 
+    public string Title { get; set; } = null!;
+
+    public int CategoryId { get; set; }
+
     /// <summary>
     /// Nội dung bài viết. Có thể NULL nếu là Repost không kèm lời bình
     /// </summary>
@@ -62,6 +66,8 @@ public partial class ForumPost
     /// Thời điểm chỉnh sửa gần nhất
     /// </summary>
     public DateTime UpdatedAt { get; set; }
+
+    public virtual ForumCategory Category { get; set; } = null!;
 
     public virtual ICollection<ForumComment> ForumComments { get; set; } = new List<ForumComment>();
 

@@ -4,7 +4,6 @@ using Amazon.S3;
 using BE.Data;
 using BE.Models;
 using BE.Services;
-using BE.Services.Equipments;
 using BE.Services.FaceRecognition;
 using BE.Services.GymDensity;
 using BE.Services.Identify;
@@ -94,6 +93,14 @@ builder.Services.AddScoped<EmployeeService>();
 builder.Services.AddScoped<IncidentService>();
 builder.Services.AddScoped<S3StorageService>(); // chỗ lưu file và ảnh trên s3
 builder.Services.AddScoped<InvoiceService>(); // tạo hóa pdf
+builder.Services.AddScoped<ReportService>();
+builder.Services.AddScoped<ThongKeService>();
+// forum 
+builder.Services.AddScoped<ForumCategoryService>();
+builder.Services.AddScoped<ForumPostService>();
+builder.Services.AddScoped<ForumLikeService>();
+builder.Services.AddScoped<ForumCommentService>();
+builder.Services.AddScoped<ForumNotificationService>();
 
 builder.Services.AddHttpClient();
 builder.Services.AddScoped<TransactionService>();

@@ -35,10 +35,7 @@ public partial class News
     /// </summary>
     public long CreatedBy { get; set; }
 
-    /// <summary>
-    /// Thời điểm bài viết được đăng — điền khi status = Published
-    /// </summary>
-    public DateTime? PublishedAt { get; set; }
+    public int? BranchId { get; set; }
 
     /// <summary>
     /// Thời điểm tạo bài viết
@@ -49,6 +46,8 @@ public partial class News
     /// Thời điểm cập nhật gần nhất
     /// </summary>
     public DateTime UpdatedAt { get; set; }
+
+    public virtual Branch? Branch { get; set; }
 
     public virtual Employee CreatedByNavigation { get; set; } = null!;
 }

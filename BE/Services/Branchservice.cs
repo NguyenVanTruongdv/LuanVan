@@ -250,4 +250,20 @@ public class BranchService
             .Select(BranchImageService.MapImageToDto)
             .ToList()
     };
+        public async Task<List<ManagerLookupDto>> GetAvailableManagersAsync()
+        {
+            return await _context.Employees.Include(e=>e.Role)
+                .Where(e => e.Role.RoleId==2
+                            && e.Status == "Active")
+                .Select(e => new ManagerLookupDto
+                {
+                    EmployeeId = e.EmployeeId,
+                    FullName = e.FullName,
+                    TotalBranches = e.EmployeeBranches.Count(eb => eb.BranchRole == "Manager")
+                })
+                .Where(x => x.TotalBranches < 3)
+                .OrderBy(x => x.TotalBranches)
+                .ThenBy(x => x.FullName)
+                .ToListAsync();
+        }
 }

@@ -125,3 +125,9 @@ public class BranchFilterDto
     public int Page { get; set; } = 1;
     public int PageSize { get; set; } = 20;
 }
+public class ManagerLookupDto
+{
+    public long EmployeeId { get; set; }
+    public string FullName { get; set; } = null!;
+    public int TotalBranches { get; set; }
+}

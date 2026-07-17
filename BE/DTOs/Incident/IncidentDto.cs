@@ -32,24 +32,13 @@ public class UpdateIncidentDto
     [StringLength(2000)]
     public string Description { get; set; } = null!;
 
-    [Required]
-    public int BranchId { get; set; }
-
-    public int? EquipmentId { get; set; }
-
-    [Required]
-    public string Status { get; set; } = null!;
-
-    public string? RejectReason { get; set; }
 }
 
 public class IncidentFilterDto
 {
     public string? Keyword { get; set; }
-
-    public int? EquipmentId { get; set; }
-    public int? BranchId {get; set; }
-
+    public int? BranchId { get; set; }
+    public string? ReportRole {get; set; }
     public string? Status { get; set; }
 
     public int Page { get; set; } = 1;
@@ -121,4 +110,9 @@ public class IncidentMediaDto
     public string MediaType { get; set; } = null!;
 
     public string MediaUrl { get; set; } = null!;
+}
+public class UpdateIncidentStatusDto
+{
+    public string Status { get; set; } = null!;
+    public string? RejectReason { get; set; }
 }

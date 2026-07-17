@@ -24,7 +24,7 @@ namespace BE.Controllers
     //     hội viên A đổi số trên URL rồi đọc/sửa được dữ liệu của hội viên B.
     [ApiController]
     [Route("api/members")]
-    [Authorize(Roles = "Manager,Staff")]
+    [Authorize]
     public class MembersController : ApiControllerBase
     {
         private readonly MemberService _memberService;
@@ -235,5 +235,18 @@ namespace BE.Controllers
             var member = await _identifyService.LookupMemberByPhoneAsync(phone);
             return Ok(new { member = member });
         }
+        // GET: api/members/me — hồ sơ hội viên đang đăng nhập (dùng cho avatar/tên ở header)
+             [Authorize(Roles = "Member,Manager,Staff")]
+            [HttpGet("me")]
+            public async Task<IActionResult> GetMe()
+            {
+                var memberId = GetCurrentUserId();
+                var profile = await _memberService.GetMyProfileAsync(memberId);
+
+                if (profile is null)
+                    return NotFound(new { message = "Không tìm thấy hội viên" });
+
+                return Ok(profile);
+            }
     }
 }

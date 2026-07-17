@@ -1,250 +1,394 @@
-using BE.Data; // TODO: sửa lại namespace chứa DbContext của bạn nếu khác
-using BE.Dtos.Equipments;
+using BE.Data; // TODO: sửa namespace DbContext nếu khác
+using BE.DTOs.Equipment;
 using BE.Models;
-// using BE.Enums; // TODO: thêm using đúng namespace chứa enum EqmEnumStatus của bạn
+// using BE.Enums; // TODO: using đúng namespace enum EqmEnumStatus
 using BE.Services.Storage;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 
-namespace BE.Services.Equipments;
-
-public class EquipmentService 
+namespace BE.Services
 {
-    private const string ImageFolder = "equipments";
-
-    private readonly GymManagementContext _context; // TODO: sửa lại tên DbContext nếu khác
-    private readonly S3StorageService _fileStorageService;
-
-    public EquipmentService(GymManagementContext context, S3StorageService fileStorageService)
+    public class EquipmentService
     {
-        _context = context;
-        _fileStorageService = fileStorageService;
-    }
+        private const string ImageFolder = "equipments";
 
-    public async Task<List<EquipmentDto>> GetAllAsync(EquipmentFilterDto filter)
-    {
-        var query = _context.Equipment
-            .Include(e => e.Category)
-            .Include(e => e.Branch)
-            .Include(e => e.EquipmentImages)
-            .AsQueryable();
+        private const string RoleAdmin = "Admin";
+        private const string RoleManager = "Manager";
+        private const string RoleStaff = "Staff";
+        private const string RoleGuest = "Guest"; // không đăng nhập
 
-        if (!filter.IncludeDeleted)
+        // Map với bảng `roles` trong DB: 1 = Staff, 2 = Manager, 3 = Admin
+        private const int RoleIdStaff = 1;
+        private const int RoleIdManager = 2;
+        private const int RoleIdAdmin = 3;
+
+        private readonly GymManagementContext _context; // TODO: sửa tên DbContext nếu khác
+        private readonly S3StorageService _fileStorageService;
+
+        public EquipmentService(GymManagementContext context, S3StorageService fileStorageService)
         {
-            query = query.Where(e => e.Status != EqmEnumStatus.Deleted.ToString());
+            _context = context;
+            _fileStorageService = fileStorageService;
         }
 
-        if (filter.BranchId.HasValue)
+        /// <summary>
+        /// Khách + Admin: xem full, lọc tự do theo name/category/branch.
+        /// Manager: chỉ xem thiết bị của các chi nhánh mình quản lý, branchId trong filter bị bỏ qua.
+        /// </summary>
+        public async Task<List<EquipmentDto>> GetListAsync(EquipmentFilterDto filter, long? currentEmployeeId)
         {
-            query = query.Where(e => e.BranchId == filter.BranchId.Value);
+            var (role, managedBranchIds) = await ResolveContextAsync(currentEmployeeId);
+
+            var query = _context.Equipment
+                .Include(e => e.Category)
+                .Include(e => e.Branch)
+                .Include(e => e.EquipmentImages)
+                .AsQueryable();
+
+            if (!filter.IncludeDeleted)
+            {
+                query = query.Where(e => e.Status != EqmEnumStatus.Deleted.ToString());
+            }
+
+            if (role == RoleManager)
+            {
+                query = query.Where(e => managedBranchIds.Contains(e.BranchId));
+            }
+            else if (filter.BranchId.HasValue)
+            {
+                query = query.Where(e => e.BranchId == filter.BranchId.Value);
+            }
+
+            if (filter.CategoryId.HasValue)
+            {
+                query = query.Where(e => e.CategoryId == filter.CategoryId.Value);
+            }
+
+            if (!string.IsNullOrWhiteSpace(filter.Name))
+            {
+                var keyword = filter.Name.Trim();
+                query = query.Where(e => EF.Functions.Like(e.EquipmentName, $"%{keyword}%"));
+            }
+
+            var equipments = await query
+                .OrderByDescending(e => e.AddedAt)
+                .ToListAsync();
+
+            return equipments.Select(MapToDto).ToList();
         }
 
-        if (filter.CategoryId.HasValue)
+        /// <summary>
+        /// Khách + Admin xem được mọi thiết bị. Manager chỉ xem chi nhánh mình quản lý.
+        /// </summary>
+        public async Task<EquipmentDto?> GetByIdAsync(int equipmentId, long? currentEmployeeId)
         {
-            query = query.Where(e => e.CategoryId == filter.CategoryId.Value);
+            var (role, managedBranchIds) = await ResolveContextAsync(currentEmployeeId);
+
+            var equipment = await _context.Equipment
+                .Include(e => e.Category)
+                .Include(e => e.Branch)
+                .Include(e => e.EquipmentImages)
+                .FirstOrDefaultAsync(e => e.EquipmentId == equipmentId);
+
+            if (equipment == null)
+            {
+                return null;
+            }
+
+            if (role == RoleManager && !managedBranchIds.Contains(equipment.BranchId))
+            {
+                throw new UnauthorizedAccessException("Bạn không có quyền xem thiết bị của chi nhánh khác");
+            }
+
+            return MapToDto(equipment);
         }
 
-        if (!string.IsNullOrWhiteSpace(filter.Name))
+        /// <summary>
+        /// Thêm mới thiết bị. Admin: branchId tự do (vẫn phải hợp lệ). 
+        /// Manager: branchId phải nằm trong danh sách chi nhánh mình quản lý.
+        /// </summary>
+        public async Task<EquipmentDto> CreateAsync(CreateEquipmentDto dto, long currentEmployeeId)
         {
-            var keyword = filter.Name.Trim();
-            query = query.Where(e => EF.Functions.Like(e.EquipmentName, $"%{keyword}%"));
-        }
+            var (role, managedBranchIds) = await ResolveContextAsync(currentEmployeeId);
 
-        var equipments = await query
-            .OrderByDescending(e => e.AddedAt)
-            .ToListAsync();
+            if (role == RoleManager)
+            {
+                if (managedBranchIds.Count == 0)
+                {
+                    throw new UnauthorizedAccessException("Tài khoản manager chưa được gán chi nhánh quản lý");
+                }
+                if (!managedBranchIds.Contains(dto.BranchId))
+                {
+                    throw new UnauthorizedAccessException("Bạn không có quyền thêm thiết bị cho chi nhánh này");
+                }
+            }
+            else if (role != RoleAdmin)
+            {
+                throw new UnauthorizedAccessException("Bạn không có quyền thêm thiết bị");
+            }
 
-        return equipments.Select(MapToDto).ToList();
-    }
-
-    public async Task<EquipmentDto?> GetByIdAsync(int equipmentId)
-    {
-        var equipment = await _context.Equipment
-            .Include(e => e.Category)
-            .Include(e => e.Branch)
-            .Include(e => e.EquipmentImages)
-            .FirstOrDefaultAsync(e => e.EquipmentId == equipmentId);
-
-        return equipment == null ? null : MapToDto(equipment);
-    }
-
-    public async Task<EquipmentDto> CreateAsync(CreateEquipmentDto dto)
-    {
-        // Kiểm tra category và branch có tồn tại không
-        var categoryExists = await _context.EquipmentCategories.AnyAsync(c => c.CategoryId == dto.CategoryId);
-        if (!categoryExists)
-        {
-            throw new ArgumentException($"Danh mục thiết bị với id {dto.CategoryId} không tồn tại");
-        }
-
-        var branchExists = await _context.Branches.AnyAsync(b => b.BranchId == dto.BranchId);
-        if (!branchExists)
-        {
-            throw new ArgumentException($"Chi nhánh với id {dto.BranchId} không tồn tại");
-        }
-
-        var equipment = new Equipment
-        {
-            EquipmentName = dto.EquipmentName,
-            CategoryId = dto.CategoryId,
-            BranchId = dto.BranchId,
-            Description = dto.Description,
-            Status = EqmEnumStatus.Active.ToString(),
-            AddedAt = DateTime.UtcNow
-        };
-
-        _context.Equipment.Add(equipment);
-        await _context.SaveChangesAsync(); // Cần EquipmentId trước khi gắn ảnh
-
-        // Ảnh có thể null (bổ sung sau qua API update) — chỉ upload nếu có truyền lên
-        if (dto.Image is { Length: > 0 })
-        {
-            await AddImageAsync(equipment.EquipmentId, dto.Image);
-        }
-
-        // Load lại kèm navigation properties để trả về đầy đủ thông tin
-        return (await GetByIdAsync(equipment.EquipmentId))!;
-    }
-
-    public async Task<EquipmentDto?> UpdateAsync(int equipmentId, UpdateEquipmentDto dto)
-    {
-        var equipment = await _context.Equipment
-            .FirstOrDefaultAsync(e => e.EquipmentId == equipmentId && e.Status != EqmEnumStatus.Deleted.ToString());
-
-        if (equipment == null)
-        {
-            return null;
-        }
-
-        if (!string.IsNullOrWhiteSpace(dto.EquipmentName))
-        {
-            equipment.EquipmentName = dto.EquipmentName;
-        }
-
-        if (dto.CategoryId.HasValue)
-        {
-            var categoryExists = await _context.EquipmentCategories.AnyAsync(c => c.CategoryId == dto.CategoryId.Value);
+            var categoryExists = await _context.EquipmentCategories.AnyAsync(c => c.CategoryId == dto.CategoryId);
             if (!categoryExists)
             {
-                throw new ArgumentException($"Danh mục thiết bị với id {dto.CategoryId} không tồn tại");
+                throw new InvalidOperationException($"Danh mục thiết bị với id {dto.CategoryId} không tồn tại");
             }
-            equipment.CategoryId = dto.CategoryId.Value;
-        }
 
-        if (dto.BranchId.HasValue)
-        {
-            var branchExists = await _context.Branches.AnyAsync(b => b.BranchId == dto.BranchId.Value);
-            if (!branchExists)
+            // Admin cũng phải qua bước kiểm tra branchId hợp lệ này, không được miễn trừ
+            await EnsureBranchValidAsync(dto.BranchId);
+
+            var equipment = new Equipment
             {
-                throw new ArgumentException($"Chi nhánh với id {dto.BranchId} không tồn tại");
+                EquipmentName = dto.EquipmentName,
+                CategoryId = dto.CategoryId,
+                BranchId = dto.BranchId,
+                Description = dto.Description,
+                Status = EqmEnumStatus.Active.ToString(),
+                AddedAt = DateTime.UtcNow
+            };
+
+            _context.Equipment.Add(equipment);
+            await _context.SaveChangesAsync(); // cần EquipmentId trước khi gắn ảnh
+
+            if (dto.Image is { Length: > 0 })
+            {
+                await AddImageAsync(equipment.EquipmentId, dto.Image);
             }
-            equipment.BranchId = dto.BranchId.Value;
+
+            return (await GetByIdAsync(equipment.EquipmentId, currentEmployeeId))!;
         }
 
-        if (dto.Description != null)
+        /// <summary>
+        /// Sửa thiết bị. Manager chỉ sửa được thiết bị thuộc chi nhánh mình quản lý,
+        /// và chỉ được chuyển sang chi nhánh khác nếu chi nhánh đó cũng do mình quản lý.
+        /// </summary>
+        public async Task<bool> UpdateAsync(int equipmentId, UpdateEquipmentDto dto, long currentEmployeeId)
         {
-            equipment.Description = dto.Description;
+            var (role, managedBranchIds) = await ResolveContextAsync(currentEmployeeId);
+
+            var equipment = await _context.Equipment
+                .FirstOrDefaultAsync(e => e.EquipmentId == equipmentId && e.Status != EqmEnumStatus.Deleted.ToString());
+
+            if (equipment == null)
+            {
+                return false;
+            }
+
+            if (role == RoleManager)
+            {
+                if (!managedBranchIds.Contains(equipment.BranchId))
+                {
+                    throw new UnauthorizedAccessException("Bạn không có quyền chỉnh sửa thiết bị của chi nhánh khác");
+                }
+                if (dto.BranchId.HasValue && !managedBranchIds.Contains(dto.BranchId.Value))
+                {
+                    throw new UnauthorizedAccessException("Bạn không có quyền chuyển thiết bị sang chi nhánh mình không quản lý");
+                }
+            }
+            else if (role != RoleAdmin)
+            {
+                throw new UnauthorizedAccessException("Bạn không có quyền sửa thiết bị");
+            }
+
+            if (!string.IsNullOrWhiteSpace(dto.EquipmentName))
+            {
+                equipment.EquipmentName = dto.EquipmentName;
+            }
+
+            if (dto.CategoryId.HasValue)
+            {
+                var categoryExists = await _context.EquipmentCategories.AnyAsync(c => c.CategoryId == dto.CategoryId.Value);
+                if (!categoryExists)
+                {
+                    throw new InvalidOperationException($"Danh mục thiết bị với id {dto.CategoryId} không tồn tại");
+                }
+                equipment.CategoryId = dto.CategoryId.Value;
+            }
+
+            if (dto.BranchId.HasValue)
+            {
+                // Manager đã bị chặn ở trên nếu branchId ngoài phạm vi quản lý; Admin vẫn phải qua validate tồn tại/active
+                await EnsureBranchValidAsync(dto.BranchId.Value);
+                equipment.BranchId = dto.BranchId.Value;
+            }
+
+            if (dto.Description != null)
+            {
+                equipment.Description = dto.Description;
+            }
+
+            await _context.SaveChangesAsync();
+
+            // Chỉ đụng vào ảnh khi có truyền ảnh mới lên. Không truyền (null) => giữ nguyên ảnh cũ.
+            if (dto.Image is { Length: > 0 })
+            {
+                await ReplaceImageAsync(equipment.EquipmentId, dto.Image);
+            }
+
+            return true;
         }
 
-        await _context.SaveChangesAsync();
-
-        // Chỉ đụng vào ảnh khi có truyền ảnh mới lên.
-        // Không truyền (null) => giữ nguyên ảnh cũ.
-        if (dto.Image is { Length: > 0 })
+        /// <summary>
+        /// Đổi status thiết bị (Hide -> Deleted, Activate -> Active).
+        /// Manager chỉ thao tác được thiết bị thuộc chi nhánh mình quản lý.
+        /// </summary>
+        public async Task<bool> SetStatusAsync(int equipmentId, string status, long currentEmployeeId)
         {
-            await ReplaceImageAsync(equipment.EquipmentId, dto.Image);
+            var (role, managedBranchIds) = await ResolveContextAsync(currentEmployeeId);
+
+            var equipment = await _context.Equipment.FirstOrDefaultAsync(e => e.EquipmentId == equipmentId);
+            if (equipment == null)
+            {
+                return false;
+            }
+
+            if (role == RoleManager && !managedBranchIds.Contains(equipment.BranchId))
+            {
+                throw new UnauthorizedAccessException("Bạn không có quyền thao tác với thiết bị của chi nhánh khác");
+            }
+            if (role != RoleManager && role != RoleAdmin)
+            {
+                throw new UnauthorizedAccessException("Bạn không có quyền thao tác với thiết bị");
+            }
+
+            var deletedStatus = EqmEnumStatus.Deleted.ToString();
+            var activeStatus = EqmEnumStatus.Active.ToString();
+
+            if (status == deletedStatus && equipment.Status == deletedStatus)
+            {
+                return false; // đã ẩn từ trước
+            }
+
+            if (status == activeStatus && equipment.Status != deletedStatus)
+            {
+                return false; // chưa từng bị ẩn thì không cần activate
+            }
+
+            equipment.Status = status;
+            await _context.SaveChangesAsync();
+
+            return true;
         }
 
-        return await GetByIdAsync(equipment.EquipmentId);
-    }
-
-    /// <summary>
-    /// Upload 1 ảnh và lưu vào bảng EquipmentImage cho thiết bị (dùng khi tạo mới)
-    /// </summary>
-    private async Task AddImageAsync(int equipmentId, IFormFile image)
-    {
-        var url = await _fileStorageService.UploadFileAsync(image, ImageFolder);
-
-        _context.EquipmentImages.Add(new EquipmentImage
+        /// <summary>
+        /// Validate branchId hợp lệ — dùng chung cho mọi role, kể cả Admin.
+        /// TODO: nếu entity Branch của bạn không có field trạng thái, bỏ điều kiện Status bên dưới.
+        /// </summary>
+        private async Task EnsureBranchValidAsync(int branchId)
         {
-            EquipmentId = equipmentId,
-            ImageUrl = url,
-            SortOrder = 0,
-            UploadedAt = DateTime.UtcNow
-        });
+            var branch = await _context.Branches
+                .AsNoTracking()
+                .FirstOrDefaultAsync(b => b.BranchId == branchId);
 
-        await _context.SaveChangesAsync();
-    }
+            if (branch == null)
+            {
+                throw new InvalidOperationException($"Chi nhánh với id {branchId} không tồn tại");
+            }
 
-    /// <summary>
-    /// Xóa ảnh cũ (nếu có, cả file trên storage lẫn record DB) và thay bằng ảnh mới (dùng khi update)
-    /// </summary>
-    private async Task ReplaceImageAsync(int equipmentId, IFormFile image)
-    {
-        var oldImages = await _context.EquipmentImages
-            .Where(i => i.EquipmentId == equipmentId)
-            .ToListAsync();
-
-        foreach (var oldImage in oldImages)
-        {
-            // DeleteFileAsync tự nuốt lỗi bên trong nên không cần try/catch ở đây nữa
-            await _fileStorageService.DeleteFileAsync(oldImage.ImageUrl);
+            // TODO: đổi cho khớp field/giá trị trạng thái Branch thật của bạn (nếu có)
+            if (branch.Status == "Deleted")
+            {
+                throw new InvalidOperationException($"Chi nhánh với id {branchId} đã ngừng hoạt động, không thể gán thiết bị");
+            }
         }
 
-        _context.EquipmentImages.RemoveRange(oldImages);
-        await _context.SaveChangesAsync();
-
-        await AddImageAsync(equipmentId, image);
-    }
-
-    public async Task<bool> DeleteAsync(int equipmentId)
-    {
-        var equipment = await _context.Equipment.FirstOrDefaultAsync(e => e.EquipmentId == equipmentId);
-
-        if (equipment == null || equipment.Status == EqmEnumStatus.Deleted.ToString())
+        private async Task AddImageAsync(int equipmentId, IFormFile image)
         {
-            return false;
+            var url = await _fileStorageService.UploadFileAsync(image, ImageFolder);
+
+            _context.EquipmentImages.Add(new EquipmentImage
+            {
+                EquipmentId = equipmentId,
+                ImageUrl = url,
+                SortOrder = 0,
+                UploadedAt = DateTime.UtcNow
+            });
+
+            await _context.SaveChangesAsync();
         }
 
-        // Soft delete: chỉ đổi status, không xóa record thật
-        equipment.Status = EqmEnumStatus.Deleted.ToString();
-        await _context.SaveChangesAsync();
-
-        return true;
-    }
-
-    public async Task<bool> RestoreAsync(int equipmentId)
-    {
-        var equipment = await _context.Equipment.FirstOrDefaultAsync(e => e.EquipmentId == equipmentId);
-
-        if (equipment == null || equipment.Status != EqmEnumStatus.Deleted.ToString())
+        private async Task ReplaceImageAsync(int equipmentId, IFormFile image)
         {
-            return false;
+            var oldImages = await _context.EquipmentImages
+                .Where(i => i.EquipmentId == equipmentId)
+                .ToListAsync();
+
+            foreach (var oldImage in oldImages)
+            {
+                // DeleteFileAsync tự nuốt lỗi bên trong nên không cần try/catch ở đây
+                await _fileStorageService.DeleteFileAsync(oldImage.ImageUrl);
+            }
+
+            _context.EquipmentImages.RemoveRange(oldImages);
+            await _context.SaveChangesAsync();
+
+            await AddImageAsync(equipmentId, image);
         }
 
-        equipment.Status = EqmEnumStatus.Active.ToString();
-        await _context.SaveChangesAsync();
-
-        return true;
-    }
-
-    private static EquipmentDto MapToDto(Equipment e)
-    {
-        return new EquipmentDto
+        /// <summary>
+        /// Tra role hệ thống (Employee.Role - int, map với bảng roles: 1=Staff, 2=Manager, 3=Admin)
+        /// + danh sách chi nhánh mà employee đang quản lý (qua EmployeeBranch.BranchRole == "Manager").
+        /// currentEmployeeId == null => Khách (không đăng nhập).
+        /// </summary>
+        private async Task<(string Role, List<int> ManagedBranchIds)> ResolveContextAsync(long? currentEmployeeId)
         {
-            EquipmentId = e.EquipmentId,
-            EquipmentName = e.EquipmentName,
-            CategoryId = e.CategoryId,
-            CategoryName = e.Category?.CategoryName,
-            BranchId = e.BranchId,
-            BranchName = e.Branch?.BranchName,
-            Status = e.Status,
-            Description = e.Description,
-            AddedAt = e.AddedAt,
-            ImageUrls = e.EquipmentImages
-                .OrderBy(img => img.SortOrder)
-                .Select(img => img.ImageUrl)
-                .ToList()
+            if (currentEmployeeId == null)
+            {
+                return (RoleGuest, new List<int>());
+            }
+
+            var employee = await _context.Employees
+                .AsNoTracking()
+                .Where(e => e.EmployeeId == currentEmployeeId.Value)
+                .Select(e => new { e.Role }) // e.Role là int (role_id trong bảng roles)
+                .FirstOrDefaultAsync();
+
+            if (employee == null)
+            {
+                throw new UnauthorizedAccessException("Không xác định được thông tin nhân viên hiện tại");
+            }
+
+            var role = MapRoleIdToName(employee.Role.RoleId);
+
+            var managedBranchIds = new List<int>();
+
+            if (role == RoleManager)
+            {
+                managedBranchIds = await _context.EmployeeBranches
+                    .AsNoTracking()
+                    .Where(eb => eb.EmployeeId == currentEmployeeId.Value && eb.BranchRole == RoleManager)
+                    .Select(eb => eb.BranchId)
+                    .ToListAsync();
+            }
+
+            return (role, managedBranchIds);
+        }
+
+        private static string MapRoleIdToName(int roleId) => roleId switch
+        {
+            RoleIdAdmin => RoleAdmin,
+            RoleIdManager => RoleManager,
+            RoleIdStaff => RoleStaff,
+            _ => throw new UnauthorizedAccessException("Vai trò nhân viên không hợp lệ")
         };
+
+        private static EquipmentDto MapToDto(Equipment e)
+        {
+            return new EquipmentDto
+            {
+                EquipmentId = e.EquipmentId,
+                EquipmentName = e.EquipmentName,
+                CategoryId = e.CategoryId,
+                CategoryName = e.Category?.CategoryName,
+                BranchId = e.BranchId,
+                BranchName = e.Branch?.BranchName,
+                Status = e.Status,
+                Description = e.Description,
+                AddedAt = e.AddedAt,
+                ImageUrls = e.EquipmentImages
+                    .OrderBy(img => img.SortOrder)
+                    .Select(img => img.ImageUrl)
+                    .ToList()
+            };
+        }
     }
 }

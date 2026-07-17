@@ -146,4 +146,39 @@ public class BranchImageService
         SortOrder = i.SortOrder,
         UploadedAt = i.UploadedAt
     };
+    // ==============================================================
+// Bổ sung vào class BranchImageService (BranchImageService.cs) đã có.
+// Thêm using: BE.DTOs.Branches (đã có sẵn ReorderBranchImagesDto ở đó).
+// ==============================================================
+
+/// <summary>
+/// Đổi thứ tự nhiều ảnh cùng lúc trong 1 chi nhánh (kéo thả, hoặc lưu hàng loạt từ nút +/-).
+/// Chỉ cập nhật SortOrder, không đụng tới ImageUrl / ImageType.
+/// </summary>
+    public async Task<List<BranchImageDto>> ReorderImagesAsync(int branchId, ReorderBranchImagesDto dto)
+    {
+        var imageIds = dto.Items.Select(x => x.ImageId).ToList();
+
+        var images = await _context.BranchImages
+            .Where(i => i.BranchId == branchId && imageIds.Contains(i.ImageId))
+            .ToListAsync();
+
+        if (images.Count != imageIds.Count)
+            throw new KeyNotFoundException("Một số ảnh không tồn tại hoặc không thuộc chi nhánh này");
+
+        var sortOrderByImageId = dto.Items.ToDictionary(x => x.ImageId, x => x.SortOrder);
+
+        foreach (var image in images)
+        {
+            image.SortOrder = sortOrderByImageId[image.ImageId];
+        }
+
+        await _context.SaveChangesAsync();
+
+        return images
+            .OrderBy(i => i.ImageType)
+            .ThenBy(i => i.SortOrder)
+            .Select(MapImageToDto)
+            .ToList();
+    }
 }

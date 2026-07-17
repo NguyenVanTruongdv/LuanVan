@@ -4,7 +4,7 @@ using System.Collections.Generic;
 namespace BE.Models;
 
 /// <summary>
-/// Thông báo cho hội viên khi bài viết của họ được tym hoặc bình luận
+/// Thông báo tương tác trong cộng đồng
 /// </summary>
 public partial class ForumNotification
 {
@@ -34,9 +34,11 @@ public partial class ForumNotification
     public long PostId { get; set; }
 
     /// <summary>
-    /// Bình luận liên quan — FK tới forum_comments.comment_id. Bắt buộc điền khi notify_type = Comment, NULL khi notify_type = Like
+    /// Bình luận liên quan — FK tới forum_comments.comment_id. Bắt buộc điền khi notify_type = Comment/Reply, NULL khi notify_type = Like
     /// </summary>
     public long? CommentId { get; set; }
+
+    public long? LikeId { get; set; }
 
     /// <summary>
     /// 0 = chưa đọc, 1 = đã đọc
@@ -51,6 +53,8 @@ public partial class ForumNotification
     public virtual Member ActorMember { get; set; } = null!;
 
     public virtual ForumComment? Comment { get; set; }
+
+    public virtual ForumLike? Like { get; set; }
 
     public virtual ForumPost Post { get; set; } = null!;
 

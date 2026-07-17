@@ -1,5 +1,6 @@
 using BE.Data;
 using BE.DTOs.Incidents;
+using BE.Exceptions;
 using BE.Models;
 using BE.Services.Storage;
 using Microsoft.EntityFrameworkCore;
@@ -133,122 +134,136 @@ public class IncidentService
     /// Lọc theo từ khóa, chi nhánh, thiết bị, trạng thái.
     /// </summary>
     public async Task<List<IncidentListDto>> GetListAsync(IncidentFilterDto filter, JwtUserInfo user)
+    {
+        var query = _db.Incidents
+            .Include(i => i.Branch)
+            .Include(i => i.Equipment)
+            .Include(i => i.ReportedByEmployee)
+            .Include(i => i.ReportedByMember)
+            .AsQueryable();
+        if (!string.IsNullOrWhiteSpace(filter.ReportRole))
         {
-            var query = _db.Incidents
-                .Include(i => i.Branch)
-                .Include(i => i.Equipment)
-                .Include(i => i.ReportedByEmployee)
-                .Include(i => i.ReportedByMember)
-                .AsQueryable();
-
-            // Lọc từ khóa (tiêu đề / mô tả)
-            if (!string.IsNullOrWhiteSpace(filter.Keyword))
+            if (filter.ReportRole.Equals("Member", StringComparison.OrdinalIgnoreCase))
             {
-                query = query.Where(i =>
-                    i.Title.Contains(filter.Keyword) ||
-                    i.Description.Contains(filter.Keyword));
+                query = query.Where(i => i.ReportedByMemberId != null && i.ReportedByEmployeeId == null);
             }
-
-            // Phân quyền xem theo role, chỉ áp dụng khi người gọi là Employee
-            if (user.EntityType == "Employee")
+            else if (filter.ReportRole.Equals("Staff", StringComparison.OrdinalIgnoreCase))
             {
-                var employee = await _db.Employees
-                    .Include(e => e.Role)
-                    .FirstOrDefaultAsync(e => e.EmployeeId == user.Id);
+                query = query.Where(i => i.ReportedByMemberId == null && i.ReportedByEmployeeId != null);
+            }
+            else
+            {
+                throw new BadRequestException ("Nguoi gui bao cáo không họp lệ");
+            }
+        }
+        // Lọc từ khóa (tiêu đề / mô tả)
+        if (!string.IsNullOrWhiteSpace(filter.Keyword))
+        {
+            query = query.Where(i =>
+                i.Title.Contains(filter.Keyword) ||
+                i.Description.Contains(filter.Keyword));
+        }
 
-                if (employee == null)
-                    throw new Exception("Nhân viên không tồn tại!");
+        // Phân quyền xem theo role, chỉ áp dụng khi người gọi là Employee
+        if (user.EntityType == "Employee")
+        {
+            var employee = await _db.Employees
+                .Include(e => e.Role)
+                .FirstOrDefaultAsync(e => e.EmployeeId == user.Id);
 
-                var isAdmin = employee.Role.RoleId == 3;
-                var isManager = employee.Role.RoleId == 2;
+            if (employee == null)
+                throw new Exception("Nhân viên không tồn tại!");
 
-                if (isAdmin)
+            var isAdmin = employee.Role.RoleId == 3;
+            var isManager = employee.Role.RoleId == 2;
+
+            if (isAdmin)
+            {
+                // Admin: xem toàn bộ, chỉ lọc branch nếu FE có truyền lên
+                if (filter.BranchId.HasValue)
+                    query = query.Where(i => i.BranchId == filter.BranchId);
+            }
+            else if (isManager)
+            {
+                // Manager: chỉ được xem trong phạm vi chi nhánh mình quản lý
+                var managedBranchIds = await _db.EmployeeBranches
+                    .Where(e => e.EmployeeId == user.Id)
+                    .Select(e => e.BranchId)
+                    .ToListAsync();
+
+                if (filter.BranchId.HasValue)
                 {
-                    // Admin: xem toàn bộ, chỉ lọc branch nếu FE có truyền lên
-                    if (filter.BranchId.HasValue)
-                        query = query.Where(i => i.BranchId == filter.BranchId);
-                }
-                else if (isManager)
-                {
-                    // Manager: chỉ được xem trong phạm vi chi nhánh mình quản lý
-                    var managedBranchIds = await _db.EmployeeBranches
-                        .Where(e => e.EmployeeId == user.Id)
-                        .Select(e => e.BranchId)
-                        .ToListAsync();
+                    if (!managedBranchIds.Contains(filter.BranchId.Value))
+                        throw new Exception("Bạn không có quyền xem chi nhánh này");
 
-                    if (filter.BranchId.HasValue)
-                    {
-                        if (!managedBranchIds.Contains(filter.BranchId.Value))
-                            throw new Exception("Bạn không có quyền xem chi nhánh này");
-
-                        query = query.Where(i => i.BranchId == filter.BranchId);
-                    }
-                    else
-                    {
-                        query = query.Where(i => managedBranchIds.Contains(i.BranchId));
-                    }
+                    query = query.Where(i => i.BranchId == filter.BranchId);
                 }
                 else
                 {
-                    // Thu ngân / nhân viên thường: chỉ xem báo cáo do chính mình gửi
-                    query = query.Where(i => i.ReportedByEmployeeId == user.Id);
+                    query = query.Where(i => managedBranchIds.Contains(i.BranchId));
                 }
             }
-            else if (filter.BranchId.HasValue)
+            else
             {
-                // Member (nếu có gọi tới endpoint này): lọc branch bình thường
-                query = query.Where(i => i.BranchId == filter.BranchId);
+                // Thu ngân / nhân viên thường: chỉ xem báo cáo do chính mình gửi
+                query = query.Where(i => i.ReportedByEmployeeId == user.Id);
             }
+        }
+        else if (filter.BranchId.HasValue)
+        {
+            // Member (nếu có gọi tới endpoint này): lọc branch bình thường
+            query = query.Where(i => i.BranchId == filter.BranchId);
+        }
 
-            // Lọc trạng thái
-            if (!string.IsNullOrWhiteSpace(filter.Status))
-                query = query.Where(i => i.Status == filter.Status);
+        // Lọc trạng thái
+        if (!string.IsNullOrWhiteSpace(filter.Status))
+            query = query.Where(i => i.Status == filter.Status);
 
-            // Sắp xếp: 1. ngày tạo mới nhất trước  2. trạng thái "chưa duyệt" ưu tiên lên đầu
-            var ordered = query
-                .OrderByDescending(i => i.CreatedAt)
-                .ThenBy(i => i.Status == "PendingApproval" ? 0 : 1);
+        // Sắp xếp: 1. ngày tạo mới nhất trước  2. trạng thái "chưa duyệt" ưu tiên lên đầu
+        var ordered = query
+            .OrderByDescending(i => i.CreatedAt)
+            .ThenBy(i => i.Status == "PendingApproval" ? 0 : 1);
 
-            var incidents = await ordered
-                .Skip((filter.Page - 1) * filter.PageSize)
-                .Take(filter.PageSize)
-                .ToListAsync();
+        var incidents = await ordered
+            .Skip((filter.Page - 1) * filter.PageSize)
+            .Take(filter.PageSize)
+            .ToListAsync();
 
-            var ids = incidents.Select(i => i.IncidentId).ToList();
+        var ids = incidents.Select(i => i.IncidentId).ToList();
 
-            var thumbnails = await _db.IncidentMedias
-                .Where(m => ids.Contains(m.IncidentId) && m.MediaType == "Image")
-                .OrderBy(m => m.MediaId)
-                .GroupBy(m => m.IncidentId)
-                .Select(g => new { IncidentId = g.Key, MediaUrl = g.First().MediaUrl })
-                .ToListAsync();
+        var thumbnails = await _db.IncidentMedias
+            .Where(m => ids.Contains(m.IncidentId) && m.MediaType == "Image")
+            .OrderBy(m => m.MediaId)
+            .GroupBy(m => m.IncidentId)
+            .Select(g => new { IncidentId = g.Key, MediaUrl = g.First().MediaUrl })
+            .ToListAsync();
 
-            var thumbnailMap = thumbnails.ToDictionary(x => x.IncidentId, x => x.MediaUrl);
+        var thumbnailMap = thumbnails.ToDictionary(x => x.IncidentId, x => x.MediaUrl);
 
-            return incidents.Select(i => new IncidentListDto
-            {
-                IncidentId = i.IncidentId,
-                Title = i.Title,
-                BranchName = i.Branch.BranchName,
-                EquipmentName = i.Equipment?.EquipmentName,
+        return incidents.Select(i => new IncidentListDto
+        {
+            IncidentId = i.IncidentId,
+            Title = i.Title,
+            BranchName = i.Branch.BranchName,
+            EquipmentName = i.Equipment?.EquipmentName,
 
-                ReporterName = i.ReportedByMember != null
-                    ? i.ReportedByMember.FullName
-                    : i.ReportedByEmployee!.FullName,
+            ReporterName = i.ReportedByMember != null
+                ? i.ReportedByMember.FullName
+                : i.ReportedByEmployee!.FullName,
 
-                ReporterPhone = i.ReportedByMember != null
-                    ? i.ReportedByMember.Phone
-                    : i.ReportedByEmployee!.Phone,
+            ReporterPhone = i.ReportedByMember != null
+                ? i.ReportedByMember.Phone
+                : i.ReportedByEmployee!.Phone,
 
-                ReporterRole = i.ReportedByMember != null ? "Member" : "Employee",
+            ReporterRole = i.ReportedByMember != null ? "Member" : "Employee",
 
-                Status = i.Status,
-                CreatedAt = i.CreatedAt,
+            Status = i.Status,
+            CreatedAt = i.CreatedAt,
 
-                Thumbnail = thumbnailMap.TryGetValue(i.IncidentId, out var url) ? url : null
-            }).ToList();
-}
-    
+            Thumbnail = thumbnailMap.TryGetValue(i.IncidentId, out var url) ? url : null
+        }).ToList();
+    }
+
 
 
 
@@ -310,55 +325,49 @@ public class IncidentService
 
     public async Task UpdateAsync(int incidentId, UpdateIncidentDto dto, JwtUserInfo user)
     {
+        // Chỉ Manager / Admin được cập nhật, bỏ hẳn kiểm tra chủ sở hữu báo cáo
+        if (user.Role != "Manager" && user.Role != "Admin")
+            throw new Exception("Chỉ Quản lý hoặc Quản trị viên mới được cập nhật báo cáo.");
+
         var incident = await _db.Incidents
             .FirstOrDefaultAsync(x => x.IncidentId == incidentId);
 
         if (incident == null)
             throw new Exception("Không tìm thấy báo cáo.");
 
-        // Chỉ chủ báo cáo (người đã tạo) mới được tự cập nhật/hủy báo cáo của mình
-        // qua endpoint này. (Trang duyệt của Manager/Admin nếu có sẽ dùng luồng khác.)
-        var isOwner = user.EntityType == "Member"
-            ? incident.ReportedByMemberId == user.Id
-            : incident.ReportedByEmployeeId == user.Id;
-
-        if (!isOwner)
-            throw new Exception("Bạn không có quyền cập nhật báo cáo này.");
-
-        var branch = await _db.Branches.FindAsync(dto.BranchId);
-        if (branch == null)
-            throw new Exception("Chi nhánh không tồn tại.");
-
-        if (dto.EquipmentId.HasValue)
-        {
-            var equipment = await _db.Equipment.FindAsync(dto.EquipmentId.Value);
-            if (equipment == null)
-                throw new Exception("Thiết bị không tồn tại.");
-        }
-
-        if (dto.Status == "Cancelled")
-        {
-            if (incident.Status != "PendingApproval")
-                throw new Exception("Chỉ được hủy báo cáo đang chờ duyệt.");
-
-            if (string.IsNullOrWhiteSpace(dto.RejectReason))
-                throw new Exception("Vui lòng nhập lý do hủy.");
-        }
+        if (incident.Status != "PendingApproval")
+            throw new Exception("Chỉ được sửa báo cáo đang chờ duyệt.");
 
         incident.Title = dto.Title;
         incident.Description = dto.Description;
-        incident.BranchId = dto.BranchId;
-        incident.EquipmentId = dto.EquipmentId;
-        incident.Status = dto.Status;
-        incident.RejectReason = dto.Status == "Cancelled"
-            ? dto.RejectReason
-            : null;
-
         incident.UpdatedAt = DateTime.UtcNow;
 
         await _db.SaveChangesAsync();
     }
+    public async Task UpdateStatusAsync(int incidentId, UpdateIncidentStatusDto dto, JwtUserInfo user)
+    {
+        var incident = await _db.Incidents
+            .FirstOrDefaultAsync(x => x.IncidentId == incidentId);
 
+        if (incident == null)
+            throw new Exception("Không tìm thấy báo cáo.");
+
+        var validStatuses = new[] { "PendingApproval", "Approved", "Completed", "Cancelled" };
+        if (!validStatuses.Contains(dto.Status))
+            throw new Exception("Trạng thái không hợp lệ.");
+
+        if (incident.Status == "Completed" || incident.Status == "Cancelled")
+            throw new Exception("Báo cáo đã kết thúc, không thể thay đổi trạng thái.");
+
+        if (dto.Status == "Cancelled" && string.IsNullOrWhiteSpace(dto.RejectReason))
+            throw new Exception("Vui lòng nhập lý do hủy.");
+
+        incident.Status = dto.Status;
+        incident.RejectReason = dto.Status == "Cancelled" ? dto.RejectReason : null;
+        incident.UpdatedAt = DateTime.UtcNow;
+
+        await _db.SaveChangesAsync();
+    }
     public async Task DeleteAsync(int incidentId)
     {
         var incident = await _db.Incidents

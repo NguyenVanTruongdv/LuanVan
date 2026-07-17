@@ -199,6 +199,7 @@ namespace BE.Services
                     UrlImg = t.Member.FaceDatum?.ProfileImage,
                     Phone = t.Member.Phone,
                     FullName = t.Member.FullName,
+                    OrderCode=t.OrderCode,
                     PlanName = t.Plan.PlanName,
                     BranchName = t.Branch.BranchName,
                     PurchaseChannel = t.EmployeeId != null ? "Tại quầy" : "Online",

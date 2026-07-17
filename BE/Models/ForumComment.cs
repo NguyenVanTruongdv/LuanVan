@@ -4,7 +4,7 @@ using System.Collections.Generic;
 namespace BE.Models;
 
 /// <summary>
-/// Bình luận trong bài đăng forum, hỗ trợ trả lời 1 cấp và @ đích danh người được trả lời
+/// Bình luận bài viết cộng đồng, hỗ trợ trả lời 2 cấp
 /// </summary>
 public partial class ForumComment
 {
@@ -14,22 +14,22 @@ public partial class ForumComment
     public long CommentId { get; set; }
 
     /// <summary>
-    /// Bài đăng được bình luận — FK tới forum_posts.post_id
+    /// Bài đăng chứa bình luận — FK tới forum_posts.post_id
     /// </summary>
     public long PostId { get; set; }
 
     /// <summary>
-    /// Hội viên bình luận — FK tới members.member_id
+    /// Hội viên viết bình luận — FK tới members.member_id
     /// </summary>
     public long MemberId { get; set; }
 
     /// <summary>
-    /// Bình luận gốc của nhánh — FK tự tham chiếu tới forum_comments.comment_id, NULL nếu bản thân là bình luận gốc
+    /// NULL = bình luận gốc (cấp 1). Có giá trị = trả lời, LUÔN trỏ về comment_id của bình luận GỐC (kể cả khi trả lời 1 reply khác) — FK tới forum_comments.comment_id
     /// </summary>
     public long? ParentCommentId { get; set; }
 
     /// <summary>
-    /// Hội viên đang được trả lời đích danh — FK tới members.member_id. Bắt buộc điền khi là reply, NULL nếu là bình luận gốc
+    /// Chỉ dùng để hiển thị &quot;Trả lời &lt;tên&gt;&quot; khi reply nhắm vào 1 reply khác, không ảnh hưởng cấu trúc cây — FK tới members.member_id
     /// </summary>
     public long? ReplyToMemberId { get; set; }
 
@@ -39,19 +39,26 @@ public partial class ForumComment
     public string Content { get; set; } = null!;
 
     /// <summary>
-    /// Trạng thái: Active=đang hiển thị, Deleted=đã xóa (soft delete)
+    /// Tổng số lượt tym bình luận này
+    /// </summary>
+    public int LikeCount { get; set; }
+
+    /// <summary>
+    /// Trạng thái: Active=hiển thị, Hidden=admin ẩn, Deleted=đã xóa
     /// </summary>
     public string Status { get; set; } = null!;
 
     /// <summary>
-    /// Thời điểm bình luận
+    /// Thời điểm tạo bình luận
     /// </summary>
     public DateTime CreatedAt { get; set; }
 
     /// <summary>
-    /// Thời điểm chỉnh sửa gần nhất
+    /// Thời điểm cập nhật gần nhất
     /// </summary>
     public DateTime UpdatedAt { get; set; }
+
+    public virtual ICollection<ForumCommentLike> ForumCommentLikes { get; set; } = new List<ForumCommentLike>();
 
     public virtual ICollection<ForumNotification> ForumNotifications { get; set; } = new List<ForumNotification>();
 

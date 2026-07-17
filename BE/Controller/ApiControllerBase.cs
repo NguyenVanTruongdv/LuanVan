@@ -17,9 +17,19 @@ namespace BE.Controllers
         }
 
         // TODO: đổi "Staff" cho đúng tên role bạn đang dùng khi tạo token (User.IsInRole).
-      protected bool IsEmployee() => User.IsInRole("Staff") || User.IsInRole("Manager") ||User.IsInRole("Admin");
+        protected bool IsEmployee() => User.IsInRole("Staff") || User.IsInRole("Manager") || User.IsInRole("Admin");
 
         // performedBy = id nhân viên nếu người gọi là nhân viên, null nếu là khách tự thao tác.
         protected long? GetPerformedByOrNull() => IsEmployee() ? GetCurrentUserId() : null;
+
+        // Lấy chi nhánh của nhân viên đang đăng nhập từ claim "BranchId" nhúng lúc login.
+        // TODO: đổi tên claim nếu bạn đặt tên khác lúc tạo token.
+        protected int? GetCurrentUserBranchId()
+        {
+            var claim = User.FindFirst("BranchId");
+            if (claim == null || !int.TryParse(claim.Value, out var branchId))
+                return null;
+            return branchId;
+        }
     }
 }

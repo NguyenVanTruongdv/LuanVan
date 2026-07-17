@@ -6,6 +6,7 @@ namespace BE.DTOs.Payment
         public string UrlImg { get; set; } = null!;
         public string Phone { get; set; } = null!;
         public string FullName { get; set; } = null!;
+         public string OrderCode { get; set; } = null!;
         public string PlanName { get; set; } = null!;
         public string BranchName {get; set; } =null!;
         public string PurchaseChannel { get; set; } = null!; // "Online" | "Tại quầy"

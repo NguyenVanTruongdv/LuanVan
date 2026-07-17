@@ -13,7 +13,7 @@ namespace BE.Controllers
     // MemberPackage) — chỉ phần đọc thuần khuyến mãi mới gọi trực tiếp PromotionService.
     [ApiController]
     [Route("api/members/{memberId:long}/packages")]
-    [Authorize]
+    // [Authorize]
     public class MemberPackagesController : ApiControllerBase
     {   
         private readonly MemberPackageService _memberPackageService;

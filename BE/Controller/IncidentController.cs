@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using BE.DTOs.Incidents;
 using BE.Services.Identify;
 using Microsoft.AspNetCore.Authorization;
@@ -54,6 +55,21 @@ public class IncidentController : ApiControllerBase
 
         return Ok(result);
     }
+    [HttpPut("{id}/status")]
+    public async Task<IActionResult> UpdateStatus(int id, [FromBody] UpdateIncidentStatusDto dto)
+    {
+        var user = GetCurrentUser(); // lấy theo cách bạn đang dùng để lấy JwtUserInfo
+
+        try
+        {
+            await _incidentService.UpdateStatusAsync(id, dto, user);
+            return Ok(new { message = "Cập nhật trạng thái thành công." });
+        }
+        catch (Exception ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+    }
 
     /// <summary>
     /// Tạo báo cáo sự cố
@@ -76,19 +92,19 @@ public class IncidentController : ApiControllerBase
     /// Cập nhật báo cáo
     /// </summary>
     [HttpPut("{id:int}")]
-    public async Task<IActionResult> Update(
-        int id,
-        [FromBody] UpdateIncidentDto dto)
-    {
-        var user = GetCurrentUser();
-
-        await _incidentService.UpdateAsync(id, dto, user);
-
-        return Ok(new
+        public async Task<IActionResult> Update(int id, [FromBody] UpdateIncidentDto dto)
         {
-            message = "Cập nhật thành công."
-        });
-    }
+            var user = GetCurrentUser();
+            try
+            {
+                await _incidentService.UpdateAsync(id, dto, user);
+                return Ok(new { message = "Cập nhật thành công." });
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+        }
 
     /// <summary>
     /// Xóa báo cáo
@@ -108,12 +124,13 @@ public class IncidentController : ApiControllerBase
     /// Lấy user hiện tại từ JWT claims, dùng chung cho Create/GetMyList
     /// để tránh lặp lại logic build JwtUserInfo ở nhiều action.
     /// </summary>
-    private JwtUserInfo GetCurrentUser()
+  private JwtUserInfo GetCurrentUser()
     {
         return new JwtUserInfo
         {
             Id = GetCurrentUserId(),
             EntityType = IsEmployee() ? "Employee" : "Member",
+            Role = User.FindFirst(ClaimTypes.Role)?.Value,
         };
     }
 }

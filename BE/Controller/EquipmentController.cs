@@ -1,123 +1,154 @@
-using BE.Dtos.Equipments;
-using BE.Services.Equipments;
+using System.Security.Claims;
+using BE.DTOs.Equipment;
+using BE.Services;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
-namespace BE.Controllers;
-
-[ApiController]
-[Route("api/[controller]")]
-public class EquipmentController : ControllerBase
+namespace BE.Controllers
 {
-    private readonly EquipmentService _equipmentService;
-
-    public EquipmentController(EquipmentService equipmentService)
+    [ApiController]
+    [Route("api/equipment")]
+    public class EquipmentController : ControllerBase
     {
-        _equipmentService = equipmentService;
-    }
+        private readonly EquipmentService _equipmentService;
 
-    /// <summary>
-    /// Lấy danh sách thiết bị. Có thể lọc theo branchId, categoryId.
-    /// Mặc định chỉ trả về thiết bị chưa bị xóa mềm.
-    /// </summary>
-    [HttpGet]
-    public async Task<ActionResult<List<EquipmentDto>>> GetAll([FromQuery] EquipmentFilterDto filter)
-    {
-        var result = await _equipmentService.GetAllAsync(filter);
-        return Ok(result);
-    }
-
-    /// <summary>
-    /// Lấy chi tiết 1 thiết bị theo id
-    /// </summary>
-    [HttpGet("{id:int}")]
-    public async Task<ActionResult<EquipmentDto>> GetById(int id)
-    {
-        var equipment = await _equipmentService.GetByIdAsync(id);
-
-        if (equipment == null)
+        public EquipmentController(EquipmentService equipmentService)
         {
-            return NotFound(new { message = $"Không tìm thấy thiết bị với id {id}" });
+            _equipmentService = equipmentService;
         }
 
-        return Ok(equipment);
-    }
-
-    /// <summary>
-    /// Thêm mới thiết bị
-    /// </summary>
-    [HttpPost]
-    [Consumes("multipart/form-data")]
-    public async Task<ActionResult<EquipmentDto>> Create([FromForm] CreateEquipmentDto dto)
-    {
-        if (!ModelState.IsValid)
+        /// <summary>Khách (không cần đăng nhập), Manager, Admin đều xem được — Service tự phân quyền theo role.</summary>
+        [HttpGet]
+        [AllowAnonymous]
+        public async Task<IActionResult> GetList([FromQuery] EquipmentFilterDto filter)
         {
-            return BadRequest(ModelState);
-        }
+            var currentEmployeeId = GetCurrentEmployeeId(); // null nếu là khách
 
-        try
-        {
-            var created = await _equipmentService.CreateAsync(dto);
-            return CreatedAtAction(nameof(GetById), new { id = created.EquipmentId }, created);
-        }
-        catch (ArgumentException ex)
-        {
-            return BadRequest(new { message = ex.Message });
-        }
-    }
-
-    /// <summary>
-    /// Cập nhật thông tin thiết bị
-    /// </summary>
-    [HttpPut("{id:int}")]
-    [Consumes("multipart/form-data")]
-    public async Task<ActionResult<EquipmentDto>> Update(int id, [FromForm] UpdateEquipmentDto dto)
-    {
-        try
-        {
-            var updated = await _equipmentService.UpdateAsync(id, dto);
-
-            if (updated == null)
+            try
             {
-                return NotFound(new { message = $"Không tìm thấy thiết bị với id {id} (hoặc đã bị xóa)" });
+                var result = await _equipmentService.GetListAsync(filter, currentEmployeeId);
+                return Ok(result);
             }
-
-            return Ok(updated);
+            catch (UnauthorizedAccessException ex)
+            {
+                return StatusCode(StatusCodes.Status403Forbidden, new { message = ex.Message });
+            }
         }
-        catch (ArgumentException ex)
+
+        [HttpGet("{id:int}")]
+        [AllowAnonymous]
+        public async Task<IActionResult> GetById(int id)
         {
-            return BadRequest(new { message = ex.Message });
+            var currentEmployeeId = GetCurrentEmployeeId();
+
+            try
+            {
+                var equipment = await _equipmentService.GetByIdAsync(id, currentEmployeeId);
+                return equipment == null ? NotFound() : Ok(equipment);
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return StatusCode(StatusCodes.Status403Forbidden, new { message = ex.Message });
+            }
         }
-    }
 
-    /// <summary>
-    /// Xóa mềm thiết bị (chuyển status sang Deleted, không xóa dữ liệu thật)
-    /// </summary>
-    [HttpDelete("{id:int}")]
-    public async Task<IActionResult> Delete(int id)
-    {
-        var success = await _equipmentService.DeleteAsync(id);
-
-        if (!success)
+        [HttpPost]
+        [Authorize(Roles = "Admin,Manager")]
+        [Consumes("multipart/form-data")]
+        public async Task<IActionResult> Create([FromForm] CreateEquipmentDto dto)
         {
-            return NotFound(new { message = $"Không tìm thấy thiết bị với id {id} (hoặc đã bị xóa trước đó)" });
+            var currentEmployeeId = GetCurrentEmployeeId();
+            if (currentEmployeeId == null)
+                return Unauthorized();
+
+            try
+            {
+                var result = await _equipmentService.CreateAsync(dto, currentEmployeeId.Value);
+                return CreatedAtAction(nameof(GetById), new { id = result.EquipmentId }, result);
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return StatusCode(StatusCodes.Status403Forbidden, new { message = ex.Message });
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
         }
 
-        return NoContent();
-    }
-
-    /// <summary>
-    /// Khôi phục thiết bị đã bị xóa mềm
-    /// </summary>
-    [HttpPatch("{id:int}/restore")]
-    public async Task<IActionResult> Restore(int id)
-    {
-        var success = await _equipmentService.RestoreAsync(id);
-
-        if (!success)
+        [HttpPut("{id:int}")]
+        [Authorize(Roles = "Admin,Manager")]
+        [Consumes("multipart/form-data")]
+        public async Task<IActionResult> Update(int id, [FromForm] UpdateEquipmentDto dto)
         {
-            return NotFound(new { message = $"Không tìm thấy thiết bị đã xóa với id {id}" });
+            var currentEmployeeId = GetCurrentEmployeeId();
+            if (currentEmployeeId == null)
+                return Unauthorized();
+
+            try
+            {
+                var success = await _equipmentService.UpdateAsync(id, dto, currentEmployeeId.Value);
+                return success ? NoContent() : NotFound();
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return StatusCode(StatusCodes.Status403Forbidden, new { message = ex.Message });
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
         }
 
-        return NoContent();
+        [HttpPatch("{id:int}/hide")]
+        [Authorize(Roles = "Admin,Manager")]
+        public async Task<IActionResult> Hide(int id)
+        {
+            var currentEmployeeId = GetCurrentEmployeeId();
+            if (currentEmployeeId == null)
+                return Unauthorized();
+
+            try
+            {
+                var success = await _equipmentService.SetStatusAsync(id, "Deleted", currentEmployeeId.Value);
+                return success ? NoContent() : NotFound();
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return StatusCode(StatusCodes.Status403Forbidden, new { message = ex.Message });
+            }
+        }
+
+        [HttpPatch("{id:int}/activate")]
+        [Authorize(Roles = "Admin,Manager")]
+        public async Task<IActionResult> Activate(int id)
+        {
+            var currentEmployeeId = GetCurrentEmployeeId();
+            if (currentEmployeeId == null)
+                return Unauthorized();
+
+            try
+            {
+                var success = await _equipmentService.SetStatusAsync(id, "Active", currentEmployeeId.Value);
+                return success ? NoContent() : NotFound();
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return StatusCode(StatusCodes.Status403Forbidden, new { message = ex.Message });
+            }
+        }
+
+        private long? GetCurrentEmployeeId()
+            {
+                var role = User.FindFirstValue(ClaimTypes.Role);
+
+                // Member không có EmployeeId
+                if (role == "Member")
+                    return null;
+
+                return long.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var id)
+                    ? id
+                    : null;
+            }
     }
 }

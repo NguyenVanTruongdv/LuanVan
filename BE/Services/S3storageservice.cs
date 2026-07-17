@@ -83,6 +83,13 @@ public class S3StorageService
         }
     }
 
+    /// <summary>Xóa nhiều file cùng lúc khỏi S3 — dùng khi Update bài viết có ảnh bị gỡ bỏ.</summary>
+    public async Task DeleteFilesAsync(IEnumerable<string> fileUrls)
+    {
+        foreach (var url in fileUrls)
+            await DeleteFileAsync(url);
+    }
+
     private string? ExtractS3Key(string imageUrl)
     {
         var prefix = $"https://{_bucketName}.s3.amazonaws.com/";
