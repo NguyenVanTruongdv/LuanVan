@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import adminApi from "../../../api/AdminApi";
+import adminApi from "../../../api/adminApi";
 function Icon({ name, size = 18 }) {
     const common = {
         width: size,

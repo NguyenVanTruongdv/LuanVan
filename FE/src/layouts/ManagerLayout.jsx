@@ -24,8 +24,8 @@ import {
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
-import managerApi from "../api/ManagerApi"; // đổi lại path cho khớp cấu trúc thư mục thực tế
 import authApi from "../api/authApi"; // dùng để gọi API đăng xuất
+import managerApi from "../api/managerApi"; // đổi lại path cho khớp cấu trúc thư mục thực tế
 import logo from "../assets/logo.png";
 
 /**

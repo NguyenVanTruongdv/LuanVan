@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useOutletContext } from "react-router-dom";
-import managerApi from "../../../api/ManagerApi";
+import managerApi from "../../../api/managerApi";
 
 /* ─────────────────────────────────────────────
    STYLES — tông tối, đồng bộ với sidebar (navy + cyan + green)

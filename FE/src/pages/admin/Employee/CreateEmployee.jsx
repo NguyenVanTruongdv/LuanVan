@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import adminApi from "../../../api/AdminApi";
+import adminApi from "../../../api/adminApi";
 
 const ROLE_LIMIT = { 1: 1, 2: 3, 3: Infinity }; // Staff / Manager / Admin
 const ROLE_NAME = { 1: "Staff", 2: "Manager", 3: "Admin" };

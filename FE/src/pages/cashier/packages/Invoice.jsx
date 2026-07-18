@@ -26,7 +26,7 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import authApi from "../../../api/AuthApi";
-import managerApi from "../../../api/ManagerApi";
+import managerApi from "../../../api/managerApi";
 
 const STATUS_CONFIG = {
     Pending: { label: "Chờ thanh toán", icon: Hourglass, bg: "rgba(180,83,9,0.16)", color: "#fbbf24" },

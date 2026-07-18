@@ -11,7 +11,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 // Đường dẫn từ src/pages/cashier/member/ListMember.jsx tới src/api/cashierApi.js
-import managerApi from "../../../api/ManagerApi";
+import managerApi from "../../../api/managerApi";
 
 /* ── DESIGN TOKENS – nền tối (dark navy), tông teal trầm/xanh lá dịu mắt,
       đồng bộ với layout Cashier Portal trong ảnh mẫu. Màu nút được hạ độ

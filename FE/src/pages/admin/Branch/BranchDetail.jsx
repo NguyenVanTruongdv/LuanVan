@@ -1,5 +1,4 @@
 import { useMemo, useState } from "react";
-import adminApi from "../../../api/AdminApi";
 function Icon({ name, size = 18 }) {
     const common = {
         width: size,

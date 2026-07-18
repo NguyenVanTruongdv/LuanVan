@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import adminApi from "../../../api/AdminApi";
+import adminApi from "../../../api/adminApi";
 
 function Icon({ name }) {
     const common = { width: 24, height: 24, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 2, strokeLinecap: "round", strokeLinejoin: "round" };
