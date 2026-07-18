@@ -26,7 +26,7 @@ import {
     XCircle
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import authApi from "../../../api/AuthApi";
+import authApi from "../../../api/authApi";
 import managerApi from "../../../api/managerApi";
 
 const STATUS_CONFIG = {
