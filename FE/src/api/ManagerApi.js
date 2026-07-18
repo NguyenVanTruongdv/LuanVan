@@ -18,7 +18,7 @@ function buildEquipmentFormData(payload = {}) {
     }
     if (payload.image instanceof File) {
         formData.append("Image", payload.image);
-    }
+    } 
     return formData;
 }
 
