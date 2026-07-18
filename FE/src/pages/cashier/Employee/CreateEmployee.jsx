@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from "react";
 import cashierApi from "../../../api/cashierApi";
-import memberApi from "../../../api/memberApi";
 
 // ============================================================
 // THEME — tông màu đồng bộ với trang đăng nhập (StaffLogin): nền navy
@@ -41,6 +40,7 @@ const T = {
     danger: "#F87171",
     dangerBg: "rgba(220, 38, 38, 0.14)",
     dangerBorder: "rgba(248, 113, 113, 0.4)",
+    success: "#34D399",
 };
 
 // ============================================================
@@ -66,6 +66,7 @@ function fmtDate(d) {
     if (!d) return "—";
     return new Date(d).toLocaleDateString("vi-VN");
 }
+const PHONE_REGEX = /^(0|\+84)\d{9}$/;
 const PAYMENT_METHODS = [
     { id: "Cash", label: "Tiền mặt", icon: "💵" },
     { id: "BankTransfer", label: "Chuyển khoản", icon: "🏦" },
@@ -113,7 +114,7 @@ function isBonusDaysPromo(type) {
 }
 
 // Nhãn ngắn gọn thể hiện giá trị khuyến mãi theo đúng loại, dùng ở khối tóm tắt
-// hội viên bên phải và ở từng dòng khuyến mãi.
+// nhân viên bên phải và ở từng dòng khuyến mãi.
 function promoShortLabel(promo) {
     if (!promo) return "—";
     switch (promo.promoType) {
@@ -247,7 +248,7 @@ function CameraPanel({ cam }) {
                 {camState === "captured" && photo && (
                     // Ảnh đã chụp hiển thị ĐÚNG CHIỀU THẬT (không mirror) — chính là ảnh
                     // sẽ được gửi lên BE, để nhân viên kiểm tra đúng những gì hệ thống nhận.
-                    <img src={photo} alt="Ảnh hội viên" style={cs.photo} />
+                    <img src={photo} alt="Ảnh Nhân viên" style={cs.photo} />
                 )}
                 {camState === "idle" && (
                     <div style={cs.placeholder}>
@@ -516,45 +517,72 @@ function PageBanner({ title, subtitle }) {
 }
 
 // ============================================================
-// STEP 1 — THÔNG TIN HỘI VIÊN
+// STEP 1 — THÔNG TIN NHÂN VIÊN
 // ============================================================
 function StepMemberInfo({ formData, setFormData, savedPhoto, onNext }) {
     const cam = useCamera(savedPhoto);
     const [errors, setErrors] = useState({});
-    const [checkingPhone, setCheckingPhone] = useState(false);
+    // Kiểm tra trùng SĐT TỰ ĐỘNG ngay khi nhập xong (debounce), không đợi bấm "Tiếp theo" nữa.
+    // status: idle | checking | ok | exists | error
+    const [phoneCheck, setPhoneCheck] = useState({ status: "idle" });
     const set = (k) => (ev) => {
         setFormData((f) => ({ ...f, [k]: ev.target.value }));
         setErrors((e) => ({ ...e, [k]: undefined }));
     };
+
+    // Tự động gọi checkPhoneExists mỗi khi SĐT hợp lệ đủ 10 số và người dùng ngừng gõ ~500ms.
+    useEffect(() => {
+        const phone = formData.phone.trim();
+        if (!PHONE_REGEX.test(phone)) {
+            setPhoneCheck({ status: "idle" });
+            return;
+        }
+        let cancelled = false;
+        setPhoneCheck({ status: "checking" });
+        const t = setTimeout(async () => {
+            try {
+                const res = await cashierApi.checkPhoneExists(phone);
+                if (cancelled) return;
+                const exists = res?.exists ?? res?.data?.exists ?? false;
+                if (exists) {
+                    setPhoneCheck({ status: "exists" });
+                    setErrors((e) => ({ ...e, phone: "Số điện thoại đã được sử dụng" }));
+                } else {
+                    setPhoneCheck({ status: "ok" });
+                    setErrors((e) => ({ ...e, phone: undefined }));
+                }
+            } catch (err) {
+                if (cancelled) return;
+                setPhoneCheck({ status: "error" });
+                setErrors((e) => ({ ...e, phone: "Không kiểm tra được số điện thoại, vui lòng thử lại" }));
+            }
+        }, 500);
+        return () => { cancelled = true; clearTimeout(t); };
+    }, [formData.phone]);
+
     const validate = () => {
         const e = {};
         if (!formData.fullName.trim()) e.fullName = "Vui lòng nhập họ tên";
-        if (!/^(0|\+84)\d{9}$/.test(formData.phone.trim())) e.phone = "Số điện thoại không hợp lệ";
+        if (!PHONE_REGEX.test(formData.phone.trim())) e.phone = "Số điện thoại không hợp lệ";
         if (!formData.gender) e.gender = "Vui lòng chọn giới tính";
-        if (!cam.photo) e.photo = "Vui lòng chụp ảnh hội viên";
+        if (!cam.photo) e.photo = "Vui lòng chụp ảnh nhân viên";
         return e;
     };
-    const handleNext = async () => {
+    const handleNext = () => {
         const e = validate();
         if (Object.keys(e).length) { setErrors(e); return; }
-        setCheckingPhone(true);
-        try {
-            const res = await cashierApi.checkPhoneExists(formData.phone.trim());
-            const exists = res?.exists ?? res?.data?.exists ?? false;
-            if (exists) {
-                setErrors((prev) => ({ ...prev, phone: "Số điện thoại đã được sử dụng" }));
-                return;
-            }
-            onNext({ photo: cam.photo });
-        } catch (err) {
-            setErrors((prev) => ({ ...prev, phone: "Không kiểm tra được số điện thoại, vui lòng thử lại" }));
-        } finally {
-            setCheckingPhone(false);
+        // SĐT hợp lệ nhưng vẫn đang kiểm tra trùng ở nền -> chặn lại, đợi kết quả.
+        if (phoneCheck.status === "checking") return;
+        if (phoneCheck.status === "exists") {
+            setErrors((prev) => ({ ...prev, phone: "Số điện thoại đã được sử dụng" }));
+            return;
         }
+        onNext({ photo: cam.photo });
     };
+    const isCheckingPhone = phoneCheck.status === "checking";
     return (
         <div style={g.card}>
-            <h2 style={g.cardTitle}>Đăng ký hội viên mới</h2>
+            <h2 style={g.cardTitle}>Đăng ký nhân viên mới</h2>
             <div style={g.twoCol}>
                 <div style={g.leftCol}>
                     <CameraPanel cam={cam} />
@@ -570,13 +598,34 @@ function StepMemberInfo({ formData, setFormData, savedPhoto, onNext }) {
                         />
                     </Field>
                     <Field label="Số điện thoại *" error={errors.phone}>
-                        <input
-                            style={{ ...g.input, ...(errors.phone ? g.inputErr : {}) }}
-                            placeholder="0901234567"
-                            value={formData.phone}
-                            onChange={set("phone")}
-                            inputMode="tel"
-                        />
+                        <div style={{ position: "relative" }}>
+                            <input
+                                style={{
+                                    ...g.input,
+                                    paddingRight: 36,
+                                    ...(errors.phone ? g.inputErr : {}),
+                                    ...(phoneCheck.status === "ok" ? { borderColor: T.success } : {}),
+                                }}
+                                placeholder="0901234567"
+                                value={formData.phone}
+                                onChange={set("phone")}
+                                inputMode="tel"
+                            />
+                            <span style={g.phoneStatusIcon}>
+                                {phoneCheck.status === "checking" && <span style={g.miniSpinner} />}
+                                {phoneCheck.status === "ok" && (
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={T.success} strokeWidth="3">
+                                        <polyline points="20 6 9 17 4 12" />
+                                    </svg>
+                                )}
+                            </span>
+                        </div>
+                        {!errors.phone && phoneCheck.status === "ok" && (
+                            <p style={{ color: T.success, fontSize: 11, marginTop: 3 }}>Số điện thoại hợp lệ, chưa được sử dụng</p>
+                        )}
+                        {!errors.phone && phoneCheck.status === "checking" && (
+                            <p style={{ color: T.textMuted, fontSize: 11, marginTop: 3 }}>Đang kiểm tra số điện thoại…</p>
+                        )}
                     </Field>
                     <Field label="Giới tính *" error={errors.gender}>
                         <div style={{ display: "flex", gap: 24, marginTop: 2 }}>
@@ -609,11 +658,11 @@ function StepMemberInfo({ formData, setFormData, savedPhoto, onNext }) {
             </div>
             <div style={g.footer}>
                 <button
-                    style={{ ...g.btnPrimary, opacity: checkingPhone ? 0.7 : 1 }}
+                    style={{ ...g.btnPrimary, opacity: isCheckingPhone ? 0.7 : 1 }}
                     onClick={handleNext}
-                    disabled={checkingPhone}
+                    disabled={isCheckingPhone}
                 >
-                    {checkingPhone ? "Đang kiểm tra số điện thoại…" : "Tiếp theo — Chọn gói tập →"}
+                    {isCheckingPhone ? "Đang kiểm tra số điện thoại…" : "Tiếp theo — Chọn gói tập →"}
                 </button>
             </div>
         </div>
@@ -621,7 +670,7 @@ function StepMemberInfo({ formData, setFormData, savedPhoto, onNext }) {
 }
 
 // ============================================================
-// STEP 2 — GÓI TẬP + THANH TOÁN (bố cục theo mẫu "Kích hoạt hội viên")
+// STEP 2 — GÓI TẬP + THANH TOÁN (bố cục theo mẫu "Kích hoạt nhân viên")
 // ============================================================
 function StepPackage({ memberForm, memberPhoto, pkgData, setPkgData, onBack, onDone }) {
     const [packages, setPackages] = useState([]);
@@ -638,8 +687,8 @@ function StepPackage({ memberForm, memberPhoto, pkgData, setPkgData, onBack, onD
     useEffect(() => {
         let cancelled = false;
         setLoadingPackages(true);
-        memberApi
-            .getAllPackage()
+        cashierApi
+            .getPackOfStaff()
             .then((res) => {
                 if (cancelled) return;
                 // API trả về mảng plan: { planId, planName, price, durationDays, description, status, isPopular, ... }
@@ -746,8 +795,8 @@ function StepPackage({ memberForm, memberPhoto, pkgData, setPkgData, onBack, onD
     return (
         <div>
             <PageBanner
-                title="Chọn gói tập cho hội viên"
-                subtitle="Hội viên chưa đăng ký gói tập. Vui lòng chọn một gói để tiếp tục kích hoạt."
+                title="Chọn gói cho nhân viên"
+                subtitle="Nhân viên chưa đăng ký gói . Vui lòng chọn một gói để tiếp tục kích hoạt."
             />
 
             <div style={g.pkgPageLayout}>
@@ -925,13 +974,13 @@ function StepPackage({ memberForm, memberPhoto, pkgData, setPkgData, onBack, onD
                     </div>
 
                     <div style={{ marginTop: 20 }}>
-                        <button style={g.btnGhost} onClick={onBack}>← Quay lại thông tin hội viên</button>
+                        <button style={g.btnGhost} onClick={onBack}>← Quay lại thông tin nhân viên</button>
                     </div>
                 </div>
 
-                {/* ============== CỘT PHẢI — TÓM TẮT HỘI VIÊN ============== */}
+                {/* ============== CỘT PHẢI — TÓM TẮT NHÂN VIÊN ============== */}
                 <div style={g.orderBox}>
-                    <p style={g.secLabel}>HỘI VIÊN</p>
+                    <p style={g.secLabel}>NHÂN VIÊN</p>
                     <div style={g.orderMember}>
                         {memberPhoto
                             ? <img src={memberPhoto} alt="" style={{ width: 44, height: 44, borderRadius: "50%", objectFit: "cover", border: `2px solid ${T.cyan}` }} />
@@ -979,10 +1028,10 @@ function StepSuccess({ result, onNew }) {
         <div style={{ ...g.card, textAlign: "center", padding: "64px 40px" }}>
             <div style={{ fontSize: 72 }}>🎉</div>
             <h2 style={{ fontSize: 26, fontWeight: 800, margin: "18px 0 10px", color: T.textPrimary }}>
-                Tạo hội viên thành công!
+                Tạo nhân viên thành công!
             </h2>
             <p style={{ color: T.textSecondary, fontSize: 15, marginBottom: 12 }}>
-                Hội viên <strong>{member?.fullName || "mới"}</strong> đã được đăng ký và kích hoạt gói tập.
+                Nhân viên <strong>{member?.fullName || "mới"}</strong> đã được đăng ký và kích hoạt gói/
             </p>
             {member?.generatedPassword && (
                 <div style={{ background: T.amberBg, border: `1px solid ${T.amberBorder}`, borderRadius: 12, padding: "10px 24px", display: "inline-block", marginBottom: 14, color: T.amberText, fontWeight: 700, fontSize: 14 }}>
@@ -992,12 +1041,12 @@ function StepSuccess({ result, onNew }) {
             <br />
             {member?.memberId && (
                 <div style={{ background: T.cyanSoft, border: `1px solid ${T.cyanBorder}`, borderRadius: 12, padding: "12px 28px", display: "inline-block", marginBottom: 28, color: T.cyanLight, fontWeight: 700, fontSize: 15 }}>
-                    Mã hội viên: #{member.memberId}
+                    Mã  viên: #{member.memberId}
                 </div>
             )}
             <br />
             <button style={{ ...g.btnPrimary, maxWidth: 260, margin: "0 auto" }} onClick={onNew}>
-                + Tạo hội viên mới
+                + Tạo nhân mới
             </button>
         </div>
     );
@@ -1032,7 +1081,7 @@ function ProgressBar({ step }) {
 // ============================================================
 // ROOT
 // ============================================================
-export default function GymMemberRegistration() {
+export default function GymMemberRegistrationStaff() {
     const [step, setStep] = useState(0);
     const [memberForm, setMemberForm] = useState({
         fullName: "", phone: "", gender: "", internalNotes: "",
@@ -1138,6 +1187,16 @@ const g = {
         fontFamily: "inherit",
     },
     inputErr: { borderColor: T.danger, background: T.dangerBg },
+    // -------- Icon trạng thái kiểm tra SĐT trùng (spinner / dấu tick) --------
+    phoneStatusIcon: {
+        position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)",
+        display: "flex", alignItems: "center", justifyContent: "center", pointerEvents: "none",
+    },
+    miniSpinner: {
+        width: 14, height: 14, borderRadius: "50%",
+        border: `2px solid ${T.borderSoft}`, borderTopColor: T.cyan,
+        animation: "spin .7s linear infinite",
+    },
     radioLabel: { display: "flex", alignItems: "center", fontSize: 14, cursor: "pointer", color: T.textSecondary },
     branchBadge: {
         display: "flex", alignItems: "center", gap: 8,

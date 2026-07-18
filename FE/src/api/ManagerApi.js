@@ -28,6 +28,21 @@ function toQuery(params = {}) {
     ).toString();
 }
 
+// Chuẩn hoá Date -> "yyyy-MM-dd" để khớp kiểu DateTime FromDate/ToDate ở BE
+// (ReportService.GetRevenueReportAsync/GetMemberReportAsync/GetEquipmentReportAsync).
+function toDateParam(date) {
+    if (!date) return undefined;
+    if (typeof date === "string") return date;
+    const d = new Date(date);
+    const pad = (n) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+// Build query { fromDate, toDate } chung cho mọi endpoint báo cáo
+function toReportQuery({ fromDate, toDate } = {}) {
+    return toQuery({ fromDate: toDateParam(fromDate), toDate: toDateParam(toDate) });
+}
+
 const managerApi = {
     // =========================================================================
     // NHÂN VIÊN
@@ -62,6 +77,9 @@ const managerApi = {
     getMemberDetail(id) {
         return authApi.get(`/api/members/${id}`);
     },
+    updateMember(id, data) {
+        return authApi.put(`/api/members/${id}`, data);
+    },
     getUpdateHistory(id) {
         return authApi.get(`/api/members/${id}/update-history`);
     },
@@ -95,18 +113,12 @@ const managerApi = {
     getApplicablePromotions(planId) {
         return authApi.get(`/api/plans/${planId}/applicable-promotions`);
     },
-
+    // cashierApi.js
+    cancelInternalPackage(memberId) {
+        return authApi.post(`/api/members/${memberId}/packages/cancel-internal`);
+    },
     // =========================================================================
-    // THIẾT BỊ — map 1-1 với EquipmentController (BE). Danh sách route thật sự
-    // tồn tại ở BE (đối chiếu lại để KHÔNG bao giờ gọi nhầm route nữa):
-    //   GET   /api/equipment
-    //   GET   /api/equipment/{id}
-    //   POST  /api/equipment                 (multipart/form-data)
-    //   PUT   /api/equipment/{id}             (multipart/form-data)
-    //   PATCH /api/equipment/{id}/hide
-    //   PATCH /api/equipment/{id}/activate
-    // KHÔNG có route /api/equipment/{id}/status — nếu sau này cần đổi, phải sửa
-    // ở BE (EquipmentController) trước rồi mới thêm hàm tương ứng ở đây.
+    // THIẾT BỊ — map 1-1 với EquipmentController (BE).
     // =========================================================================
     getListEquipments(params = {}) {
         const query = toQuery(params);
@@ -139,20 +151,7 @@ const managerApi = {
     },
 
     // =========================================================================
-    // TIN TỨC — map 1-1 với NewsController (BE):
-    //   GET   /api/news/manage          (GetStaffListAsync — dành riêng cho
-    //                                     Admin/Manager. Admin xem tất cả,
-    //                                     Manager chỉ xem tin mình tạo; hỗ trợ
-    //                                     query branchId, keyword)
-    //   POST  /api/news                 (CreateAsync — Admin/Manager)
-    //   PUT   /api/news/{id}            (UpdateAsync — Admin sửa tất cả,
-    //                                     Manager chỉ sửa bài mình tạo)
-    //   PATCH /api/news/{id}/hide       (HideAsync — soft delete, cùng quyền
-    //                                     như sửa)
-    // LƯU Ý: GET /api/news (không có /manage) là route CÔNG KHAI cho khách
-    // hàng (GetPublicListAsync) — không dùng route này ở trang quản lý.
-    // NẾU sau này cần đổi route, phải sửa NewsController/NewsService ở BE
-    // trước rồi mới thêm hàm tương ứng ở đây.
+    // TIN TỨC
     // =========================================================================
     getListNews(params = {}) {
         const query = toQuery(params);
@@ -167,13 +166,12 @@ const managerApi = {
     hideNews(newsId) {
         return authApi.patch(`/api/news/${newsId}/hide`);
     },
-    activateNews(newsId) {   // 👈 thêm hàm này
+    activateNews(newsId) {
         return authApi.patch(`/api/news/${newsId}/activate`);
     },
 
-
     // incident
-     getListIncidents(params = {}) {
+    getListIncidents(params = {}) {
         const query = toQuery(params);
         return authApi.get(`/api/incidents${query ? `?${query}` : ""}`);
     },
@@ -182,6 +180,57 @@ const managerApi = {
     },
     updateIncidentStatus(incidentId, payload) {
         return authApi.put(`/api/incidents/${incidentId}/status`, payload);
+    },
+    updateIncidentInfo(incidentId, payload) {
+        return authApi.put(`/api/incidents/${incidentId}`, payload);
+    },
+
+    // =========================================================================
+    // BÁO CÁO — map 1-1 với ReportsController (BE):
+    //   GET /api/reports/revenue                (tổng quan doanh thu, có sẵn
+    //                                             RevenueByDay/RevenueByMonth/
+    //                                             RevenueByBranch)
+    //   GET /api/reports/revenue/by-day
+    //   GET /api/reports/revenue/by-month
+    //   GET /api/reports/revenue/by-branch
+    //   GET /api/reports/members                (tổng quan hội viên)
+    //   GET /api/reports/members/summary        (tổng hội viên + check-in theo
+    //                                             chi nhánh)
+    //   GET /api/reports/equipment               (tổng quan thiết bị)
+    //   GET /api/reports/equipment/by-branch     (thiết bị theo chi nhánh)
+    // Tất cả đều nhận query { fromDate, toDate } dạng yyyy-MM-dd.
+    // =========================================================================
+    getRevenueReport(range = {}) {
+        const query = toReportQuery(range);
+        return authApi.get(`/api/reports/revenue${query ? `?${query}` : ""}`);
+    },
+    getRevenueByDay(range = {}) {
+        const query = toReportQuery(range);
+        return authApi.get(`/api/reports/revenue/by-day${query ? `?${query}` : ""}`);
+    },
+    getRevenueByMonth(range = {}) {
+        const query = toReportQuery(range);
+        return authApi.get(`/api/reports/revenue/by-month${query ? `?${query}` : ""}`);
+    },
+    getRevenueByBranch(range = {}) {
+        const query = toReportQuery(range);
+        return authApi.get(`/api/reports/revenue/by-branch${query ? `?${query}` : ""}`);
+    },
+    getMemberReport(range = {}) {
+        const query = toReportQuery(range);
+        return authApi.get(`/api/reports/members${query ? `?${query}` : ""}`);
+    },
+    getMemberSummary(range = {}) {
+        const query = toReportQuery(range);
+        return authApi.get(`/api/reports/members/summary${query ? `?${query}` : ""}`);
+    },
+    getEquipmentReport(range = {}) {
+        const query = toReportQuery(range);
+        return authApi.get(`/api/reports/equipment${query ? `?${query}` : ""}`);
+    },
+    getEquipmentByBranch(range = {}) {
+        const query = toReportQuery(range);
+        return authApi.get(`/api/reports/equipment/by-branch${query ? `?${query}` : ""}`);
     },
 };
 

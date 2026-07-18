@@ -1,33 +1,26 @@
 import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import authApi from "../../api/authApi";
+import memberApi from "../../api/memberApi";
 
-/* ─── Design tokens ─── */
+/* ─── Design tokens (đồng bộ tông cam-đỏ / nền tối như trang Đăng nhập) ─── */
 const C = {
-    bg: "#0c1520",
-    card: "#13202f",
-    panel: "#111e2d",
-    surface: "#162030",
-    surfaceFocus: "#1e2e42",
+    bg: "#0a0a0c",
+    card: "#161616",
+    panel: "#111113",
+    surface: "#eef2fa",       // nền input sáng
+    surfaceFocus: "#ffffff",
     border: "rgba(255,255,255,0.08)",
-    borderFocus: "#00c2cb",
-    accent: "#00c2cb",
-    accentDark: "#007b9e",
-    text: "#e0eaf2",
-    muted: "#5a7a94",
-    subtle: "#3d5a72",
-    dim: "#2d4459",
+    borderFocus: "#ff5a2e",
+    accent: "#ff5a2e",
+    accentDark: "#e6390f",
+    text: "#ffffff",
+    textInput: "#16202e",     // chữ trong input sáng
+    muted: "#8a94a6",
+    subtle: "#6b7688",
+    dim: "#3a3f47",
     error: "#f05050",
 };
-
-/* ─── Mock branches (sẽ thay bằng API sau) ─── */
-export const BRANCHES = [
-    { id: "6", name: "VTGYM Quận 1", address: "12 Nguyễn Huệ, Bến Nghé, Quận 1, TP.HCM" },
-    { id: "7", name: "VTGYM Quận 7", address: "88 Nguyễn Thị Thập, Tân Phú, Quận 7, TP.HCM" },
-    { id: "binh-thanh", name: "VTGYM Bình Thạnh", address: "245 Điện Biên Phủ, Bình Thạnh, TP.HCM" },
-    { id: "tan-binh", name: "VTGYM Tân Bình", address: "56 Cộng Hòa, Tân Bình, TP.HCM" },
-    { id: "thu-duc", name: "VTGYM Thủ Đức", address: "120 Võ Văn Ngân, Thủ Đức, TP.HCM" },
-];
 
 /* ─── Responsive helpers ─── */
 function useIsMobile() {
@@ -38,6 +31,21 @@ function useIsMobile() {
         return () => window.removeEventListener("resize", handler);
     }, []);
     return isMobile;
+}
+
+function useOnClickOutside(ref, handler) {
+    useEffect(() => {
+        const listener = (e) => {
+            if (!ref.current || ref.current.contains(e.target)) return;
+            handler();
+        };
+        document.addEventListener("mousedown", listener);
+        document.addEventListener("touchstart", listener);
+        return () => {
+            document.removeEventListener("mousedown", listener);
+            document.removeEventListener("touchstart", listener);
+        };
+    }, [ref, handler]);
 }
 
 /* ─── Styles (mobile-first, dynamic) ─── */
@@ -58,14 +66,14 @@ function getStyles(isMobile) {
             padding: isMobile ? "24px 20px" : "40px 36px",
             width: "100%",
             maxWidth: isMobile ? "100%" : "440px",
-            boxShadow: "0 24px 80px rgba(0,0,0,0.5)",
+            boxShadow: "0 24px 80px rgba(0,0,0,0.55)",
             border: `1px solid ${C.border}`,
         },
         badge: {
             display: "inline-flex",
             alignItems: "center",
             gap: "6px",
-            background: "rgba(0,194,203,0.1)",
+            background: "rgba(255,90,46,0.12)",
             color: C.accent,
             fontSize: "11px",
             fontWeight: "700",
@@ -73,7 +81,7 @@ function getStyles(isMobile) {
             padding: "5px 12px",
             borderRadius: "20px",
             marginBottom: "16px",
-            border: `1px solid rgba(0,194,203,0.2)`,
+            border: `1px solid rgba(255,90,46,0.25)`,
         },
         badgeDot: {
             width: "6px",
@@ -109,7 +117,7 @@ function getStyles(isMobile) {
         inputIcon: {
             position: "absolute",
             left: "13px",
-            color: C.subtle,
+            color: "#7c8798",
             fontSize: "15px",
             pointerEvents: "none",
             lineHeight: 1,
@@ -117,48 +125,25 @@ function getStyles(isMobile) {
         input: {
             width: "100%",
             padding: isMobile ? "12px 12px 12px 38px" : "13px 14px 13px 40px",
-            border: `1.5px solid ${C.border}`,
+            border: `1.5px solid transparent`,
             borderRadius: "12px",
             fontSize: isMobile ? "15px" : "14px",
-            color: C.text,
+            color: C.textInput,
             background: C.surface,
             outline: "none",
             boxSizing: "border-box",
             transition: "border-color .2s, box-shadow .2s, background .2s",
             fontFamily: "inherit",
             WebkitAppearance: "none",
-        },
-        select: {
-            width: "100%",
-            padding: isMobile ? "12px 36px 12px 38px" : "13px 36px 13px 40px",
-            border: `1.5px solid ${C.border}`,
-            borderRadius: "12px",
-            fontSize: isMobile ? "15px" : "14px",
-            color: C.text,
-            background: C.surface,
-            outline: "none",
-            boxSizing: "border-box",
-            transition: "border-color .2s, box-shadow .2s, background .2s",
-            fontFamily: "inherit",
-            WebkitAppearance: "none",
-            appearance: "none",
-            cursor: "pointer",
-        },
-        selectArrow: {
-            position: "absolute",
-            right: "13px",
-            color: C.subtle,
-            fontSize: "12px",
-            pointerEvents: "none",
         },
         inputFocus: {
             borderColor: C.borderFocus,
-            boxShadow: "0 0 0 3px rgba(0,194,203,0.15)",
+            boxShadow: "0 0 0 3px rgba(255,90,46,0.18)",
             background: C.surfaceFocus,
         },
         inputError: {
             borderColor: C.error,
-            background: "rgba(240,80,80,0.05)",
+            background: "#fdeceb",
         },
         eyeBtn: {
             position: "absolute",
@@ -166,7 +151,7 @@ function getStyles(isMobile) {
             background: "none",
             border: "none",
             cursor: "pointer",
-            color: C.muted,
+            color: "#7c8798",
             fontSize: "16px",
             padding: "4px",
             lineHeight: 1,
@@ -178,7 +163,7 @@ function getStyles(isMobile) {
         },
         errorMsg: {
             fontSize: "12px",
-            color: C.error,
+            color: "#ff8a7a",
             marginTop: "5px",
             display: "flex",
             alignItems: "center",
@@ -208,7 +193,7 @@ function getStyles(isMobile) {
             padding: isMobile ? "9px 4px" : "10px",
             border: `1.5px solid ${active ? C.accent : C.border}`,
             borderRadius: "10px",
-            background: active ? "rgba(0,194,203,0.12)" : C.surface,
+            background: active ? "rgba(255,90,46,0.14)" : "rgba(255,255,255,0.03)",
             color: active ? C.accent : C.muted,
             fontSize: isMobile ? "12px" : "13px",
             fontWeight: active ? "700" : "500",
@@ -221,8 +206,8 @@ function getStyles(isMobile) {
         btnPrimary: {
             width: "100%",
             padding: isMobile ? "14px" : "15px",
-            background: C.accent,
-            color: C.bg,
+            background: `linear-gradient(135deg, ${C.accent}, ${C.accentDark})`,
+            color: "#ffffff",
             border: "none",
             borderRadius: "12px",
             fontSize: isMobile ? "14px" : "15px",
@@ -231,7 +216,7 @@ function getStyles(isMobile) {
             cursor: "pointer",
             marginTop: "8px",
             transition: "all .2s",
-            boxShadow: "0 6px 20px rgba(0,194,203,0.35)",
+            boxShadow: "0 10px 28px rgba(255,90,46,0.35)",
             fontFamily: "inherit",
             WebkitAppearance: "none",
             touchAction: "manipulation",
@@ -300,18 +285,18 @@ function getStyles(isMobile) {
         otpCell: (active, filled) => ({
             width: isMobile ? "44px" : "52px",
             height: isMobile ? "54px" : "60px",
-            border: `2px solid ${active ? C.accent : filled ? "rgba(0,194,203,0.4)" : C.border}`,
+            border: `2px solid ${active ? C.accent : filled ? "rgba(255,90,46,0.45)" : "transparent"}`,
             borderRadius: "14px",
             fontSize: isMobile ? "20px" : "24px",
             fontWeight: "700",
-            color: C.text,
+            color: C.textInput,
             textAlign: "center",
-            background: active ? C.surfaceFocus : filled ? "rgba(0,194,203,0.08)" : C.surface,
+            background: active ? "#ffffff" : filled ? "#fff1ec" : C.surface,
             outline: "none",
             boxSizing: "border-box",
             caretColor: C.accent,
             transition: "border-color .18s, background .18s",
-            boxShadow: active ? "0 0 0 3px rgba(0,194,203,0.15)" : "none",
+            boxShadow: active ? "0 0 0 3px rgba(255,90,46,0.18)" : "none",
             fontFamily: "inherit",
             WebkitAppearance: "none",
         }),
@@ -355,9 +340,67 @@ function getStyles(isMobile) {
             justifyContent: "center",
             margin: "0 auto 20px",
             fontSize: "32px",
-            color: C.bg,
+            color: "#ffffff",
             fontWeight: 900,
-            boxShadow: "0 8px 28px rgba(0,194,203,0.35)",
+            boxShadow: "0 10px 30px rgba(255,90,46,0.35)",
+        },
+
+        /* Branch picker (custom select) */
+        branchTrigger: (open, hasError) => ({
+            width: "100%",
+            padding: isMobile ? "12px 14px" : "13px 16px",
+            border: `1.5px solid ${open ? C.borderFocus : hasError ? C.error : "transparent"}`,
+            borderRadius: "12px",
+            fontSize: isMobile ? "15px" : "14px",
+            color: C.textInput,
+            background: open ? "#ffffff" : C.surface,
+            outline: "none",
+            boxSizing: "border-box",
+            fontFamily: "inherit",
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: "8px",
+            boxShadow: open ? "0 0 0 3px rgba(255,90,46,0.18)" : "none",
+            transition: "border-color .2s, box-shadow .2s, background .2s",
+        }),
+        branchDropdown: {
+            position: "absolute",
+            top: "calc(100% + 6px)",
+            left: 0,
+            right: 0,
+            background: "#ffffff",
+            borderRadius: "14px",
+            boxShadow: "0 16px 40px rgba(0,0,0,0.35)",
+            border: "1px solid rgba(0,0,0,0.06)",
+            zIndex: 30,
+            overflow: "hidden",
+        },
+        branchList: {
+            maxHeight: "236px",
+            overflowY: "auto",
+            padding: "6px",
+        },
+        branchItem: (active) => ({
+            padding: "10px 12px",
+            borderRadius: "10px",
+            cursor: "pointer",
+            background: active ? "rgba(255,90,46,0.10)" : "transparent",
+            transition: "background .12s",
+        }),
+        branchItemName: (active) => ({
+            fontSize: "14px",
+            fontWeight: active ? "800" : "600",
+            color: active ? C.accentDark : C.textInput,
+            marginBottom: "2px",
+        }),
+        branchItemAddr: {
+            fontSize: "11.5px",
+            color: "#8892a0",
+            whiteSpace: "nowrap",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
         },
     };
 }
@@ -380,6 +423,15 @@ function useInputFocus() {
     };
 }
 
+/* ─── Chuẩn hoá dữ liệu chi nhánh từ API ─── */
+function mapBranch(b) {
+    return {
+        id: String(b.branchId),
+        name: b.branchName,
+        address: b.address,
+    };
+}
+
 /* ─── Logo ─── */
 function Logo() {
     return (
@@ -389,7 +441,7 @@ function Logo() {
                 background: `linear-gradient(135deg, ${C.accent}, ${C.accentDark})`,
                 borderRadius: "13px",
                 display: "flex", alignItems: "center", justifyContent: "center",
-                boxShadow: "0 6px 18px rgba(0,194,203,0.3)", flexShrink: 0,
+                boxShadow: "0 8px 22px rgba(255,90,46,0.35)", flexShrink: 0,
             }}>
                 <svg width="22" height="22" viewBox="0 0 32 32" fill="none">
                     <rect x="2" y="13" width="6" height="6" rx="1.5" fill="white" />
@@ -398,9 +450,94 @@ function Logo() {
                     <rect x="2" y="15" width="28" height="2" fill="rgba(255,255,255,0.4)" />
                 </svg>
             </div>
-            <span style={{ fontSize: "18px", fontWeight: "800", letterSpacing: "2px", color: "#e0eaf2" }}>
+            <span style={{ fontSize: "18px", fontWeight: "800", letterSpacing: "2px", color: "#ffffff" }}>
                 VT<span style={{ color: C.accent }}>GYM</span>
             </span>
+        </div>
+    );
+}
+
+/* ─── Branch select (custom, đẹp hơn <select> mặc định) ─── */
+function BranchSelect({ value, branches, loading, error, onChange, isFocused, onOpenChange, hasError }) {
+    const isMobile = useIsMobile();
+    const S = getStyles(isMobile);
+    const [open, setOpen] = useState(false);
+    const wrapRef = useRef(null);
+    useOnClickOutside(wrapRef, () => setOpen(false));
+
+    const selected = branches.find((b) => b.id === value);
+
+    const toggle = () => {
+        if (loading) return;
+        setOpen((o) => !o);
+        onOpenChange && onOpenChange(!open);
+    };
+
+    return (
+        <div style={{ position: "relative" }} ref={wrapRef}>
+            <div style={S.inputWrap}>
+                <span style={S.inputIcon}>📍</span>
+                <div
+                    style={{
+                        ...S.branchTrigger(open || isFocused, hasError),
+                        paddingLeft: "38px",
+                        opacity: loading ? 0.7 : 1,
+                    }}
+                    onClick={toggle}
+                    tabIndex={0}
+                    role="button"
+                    onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && toggle()}
+                >
+                    <span style={{
+                        overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                        color: selected ? C.textInput : "#8892a0", fontWeight: selected ? 600 : 400,
+                    }}>
+                        {loading
+                            ? "Đang tải chi nhánh…"
+                            : selected
+                                ? selected.name
+                                : "— Chọn chi nhánh gần bạn —"}
+                    </span>
+                    <span style={{
+                        color: "#8892a0", fontSize: "11px", flexShrink: 0,
+                        transform: open ? "rotate(180deg)" : "none", transition: "transform .18s",
+                    }}>▾</span>
+                </div>
+            </div>
+
+            {open && !loading && (
+                <div style={S.branchDropdown}>
+                    {error && (
+                        <div style={{ padding: "12px 14px", fontSize: "12.5px", color: C.error }}>
+                            {error}
+                        </div>
+                    )}
+                    {!error && branches.length === 0 && (
+                        <div style={{ padding: "12px 14px", fontSize: "12.5px", color: "#8892a0" }}>
+                            Không có chi nhánh nào.
+                        </div>
+                    )}
+                    {!error && branches.length > 0 && (
+                        <div style={S.branchList}>
+                            {branches.map((b) => {
+                                const active = b.id === value;
+                                return (
+                                    <div
+                                        key={b.id}
+                                        style={S.branchItem(active)}
+                                        onClick={() => { onChange(b.id); setOpen(false); }}
+                                    >
+                                        <div style={S.branchItemName(active)}>
+                                            {active ? "✓ " : ""}{b.name}
+                                        </div>
+                                        {b.address && <div style={S.branchItemAddr}>{b.address}</div>}
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    )}
+                </div>
+            )}
         </div>
     );
 }
@@ -475,14 +612,12 @@ function OTPStep({ phone, fullName, password, gender, branchId, onBack, onSucces
         } finally { setLoading(false); }
     };
 
-    // OTPStep — handleResend()
     const handleResend = async () => {
         setOtp(Array(OTP_LEN).fill(""));
         setError("");
         refs.current[0]?.focus();
         setActiveIdx(0);
         setCountdown(60);
-        // Thêm dòng này:
         await authApi.sendOtp({ phone });
     };
 
@@ -536,25 +671,23 @@ function OTPStep({ phone, fullName, password, gender, branchId, onBack, onSucces
 }
 
 /* ─── Confirm Step ─── */
-function ConfirmStep({ formData, onConfirm, onBack }) {
+function ConfirmStep({ formData, branches, onConfirm, onBack }) {
     const isMobile = useIsMobile();
     const S = getStyles(isMobile);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState("");
 
-    // ConfirmStep — handleConfirm()
     const handleConfirm = async () => {
         setError(""); setLoading(true);
         try {
-            // Chỉ gửi OTP, không tạo account
             await authApi.sendOtp({ phone: formData.phone });
-            onConfirm(); // chuyển sang OTPStep
+            onConfirm();
         } catch (err) {
             setError(err.message || "Có lỗi xảy ra, thử lại sau.");
         } finally { setLoading(false); }
     };
 
-    const branchName = BRANCHES.find((b) => b.id === formData.branchId)?.name || "—";
+    const branchName = branches.find((b) => b.id === formData.branchId)?.name || "—";
 
     const infoRows = [
         { icon: "👤", label: "HỌ VÀ TÊN", value: formData.fullName, highlight: false },
@@ -572,9 +705,8 @@ function ConfirmStep({ formData, onConfirm, onBack }) {
                 Vui lòng xác nhận trước khi nhận mã OTP.
             </p>
 
-            {/* Info card */}
             <div style={{
-                background: C.surface,
+                background: "rgba(255,255,255,0.03)",
                 border: `1.5px solid ${C.border}`,
                 borderRadius: "14px",
                 padding: "6px 16px",
@@ -590,11 +722,11 @@ function ConfirmStep({ formData, onConfirm, onBack }) {
                     }}>
                         <span style={{
                             width: "36px", height: "36px", flexShrink: 0,
-                            background: highlight ? "rgba(0,194,203,0.12)" : "rgba(255,255,255,0.04)",
+                            background: highlight ? "rgba(255,90,46,0.14)" : "rgba(255,255,255,0.05)",
                             borderRadius: "10px",
                             display: "flex", alignItems: "center", justifyContent: "center",
                             fontSize: "17px",
-                            border: `1px solid ${highlight ? "rgba(0,194,203,0.25)" : C.border}`,
+                            border: `1px solid ${highlight ? "rgba(255,90,46,0.3)" : C.border}`,
                         }}>
                             {icon}
                         </span>
@@ -621,10 +753,9 @@ function ConfirmStep({ formData, onConfirm, onBack }) {
                 ))}
             </div>
 
-            {/* OTP notice banner */}
             <div style={{
-                background: "rgba(0,194,203,0.07)",
-                border: `1.5px solid rgba(0,194,203,0.2)`,
+                background: "rgba(255,90,46,0.08)",
+                border: `1.5px solid rgba(255,90,46,0.25)`,
                 borderRadius: "12px",
                 padding: "13px 16px",
                 marginBottom: "20px",
@@ -652,14 +783,13 @@ function ConfirmStep({ formData, onConfirm, onBack }) {
                 <div style={{
                     ...S.errorMsg, marginBottom: "16px",
                     padding: "10px 14px",
-                    background: "rgba(240,80,80,0.1)",
+                    background: "rgba(240,80,80,0.12)",
                     borderRadius: "10px",
                 }}>
                     ⚠ {error}
                 </div>
             )}
 
-            {/* Action buttons */}
             <div style={{ display: "flex", gap: "10px", marginTop: "4px" }}>
                 <button
                     style={S.btnSecondary(isMobile)}
@@ -672,8 +802,8 @@ function ConfirmStep({ formData, onConfirm, onBack }) {
                     style={{
                         flex: 2,
                         padding: isMobile ? "14px" : "15px",
-                        background: C.accent,
-                        color: C.bg,
+                        background: `linear-gradient(135deg, ${C.accent}, ${C.accentDark})`,
+                        color: "#ffffff",
                         border: "none",
                         borderRadius: "12px",
                         fontSize: isMobile ? "13px" : "14px",
@@ -681,7 +811,7 @@ function ConfirmStep({ formData, onConfirm, onBack }) {
                         letterSpacing: "0.4px",
                         cursor: loading ? "not-allowed" : "pointer",
                         transition: "all .2s",
-                        boxShadow: "0 6px 20px rgba(0,194,203,0.35)",
+                        boxShadow: "0 10px 28px rgba(255,90,46,0.35)",
                         fontFamily: "inherit",
                         WebkitAppearance: "none",
                         touchAction: "manipulation",
@@ -747,14 +877,12 @@ function clearDraft() {
 }
 
 /* ─── Register Step ─── */
-function RegisterStep({ onSendOTP, initialData }) {
+function RegisterStep({ onSendOTP, initialData, branches, branchesLoading, branchesError }) {
     const isMobile = useIsMobile();
     const S = getStyles(isMobile);
     const navigate = useNavigate();
     const location = useLocation();
 
-    // Thứ tự ưu tiên dữ liệu khôi phục: state truyền qua router (khi quay lại từ trang chi nhánh)
-    // → initialData (đang ở trong state cha) → draft lưu tạm trong sessionStorage → form trống
     const [formData, setFormData] = useState(
         location.state?.formData || initialData || loadDraft() || {
             fullName: "", phone: "", password: "", confirmPassword: "", gender: "Male", branchId: "",
@@ -765,10 +893,10 @@ function RegisterStep({ onSendOTP, initialData }) {
     const [showConfirm, setShowConfirm] = useState(false);
     const { isFocused, bind } = useInputFocus();
 
-    // Lưu lại mỗi khi người dùng thay đổi thông tin (kể cả khi họ bấm sang trang chi nhánh)
     useEffect(() => { saveDraft(formData); }, [formData]);
 
     const handleChange = (e) => setFormData({ ...formData, [e.target.name]: e.target.value });
+    const handleBranchChange = (id) => setFormData((f) => ({ ...f, branchId: id }));
 
     const validate = () => {
         const errs = {};
@@ -787,7 +915,6 @@ function RegisterStep({ onSendOTP, initialData }) {
         const errs = validate();
         if (Object.keys(errs).length) { setErrors(errs); return; }
         setErrors({});
-        // Không gọi API ở đây — chuyển sang bước Confirm
         onSendOTP({ ...formData });
     };
 
@@ -845,26 +972,14 @@ function RegisterStep({ onSendOTP, initialData }) {
                 {/* Chọn chi nhánh */}
                 <div style={S.fieldGroup}>
                     <label style={S.label}>CHI NHÁNH TẬP LUYỆN</label>
-                    <div style={S.inputWrap}>
-                        <span style={S.inputIcon}>📍</span>
-                        <select
-                            name="branchId"
-                            value={formData.branchId}
-                            onChange={handleChange}
-                            style={{
-                                ...S.select,
-                                ...(isFocused("branchId") ? S.inputFocus : {}),
-                                ...(errors.branchId ? S.inputError : {}),
-                            }}
-                            {...bind("branchId")}
-                        >
-                            <option value="" disabled>— Chọn chi nhánh gần bạn —</option>
-                            {BRANCHES.map((b) => (
-                                <option key={b.id} value={b.id}>{b.name}</option>
-                            ))}
-                        </select>
-                        <span style={S.selectArrow}>▾</span>
-                    </div>
+                    <BranchSelect
+                        value={formData.branchId}
+                        branches={branches}
+                        loading={branchesLoading}
+                        error={branchesError}
+                        hasError={!!errors.branchId}
+                        onChange={handleBranchChange}
+                    />
                     {errors.branchId && <div style={S.errorMsg}>⚠ {errors.branchId}</div>}
                     <button
                         type="button"
@@ -915,6 +1030,28 @@ function Register() {
     const [step, setStep] = useState("register");   // "register" | "confirm" | "otp" | "success"
     const [formData, setFormData] = useState(null);
 
+    const [branches, setBranches] = useState([]);
+    const [branchesLoading, setBranchesLoading] = useState(true);
+    const [branchesError, setBranchesError] = useState("");
+
+    useEffect(() => {
+        let cancelled = false;
+        (async () => {
+            setBranchesLoading(true);
+            setBranchesError("");
+            try {
+                const res = await memberApi.getBranches({ status: "Active" });
+                const items = res?.items || [];
+                if (!cancelled) setBranches(items.map(mapBranch));
+            } catch (err) {
+                if (!cancelled) setBranchesError(err.message || "Không thể tải danh sách chi nhánh.");
+            } finally {
+                if (!cancelled) setBranchesLoading(false);
+            }
+        })();
+        return () => { cancelled = true; };
+    }, []);
+
     const handleGoConfirm = (data) => { setFormData(data); setStep("confirm"); };
     const handleConfirmed = () => setStep("otp");
     const handleBackToRegister = () => setStep("register");
@@ -927,11 +1064,18 @@ function Register() {
                 <Logo />
 
                 {step === "register" && (
-                    <RegisterStep onSendOTP={handleGoConfirm} initialData={formData} />
+                    <RegisterStep
+                        onSendOTP={handleGoConfirm}
+                        initialData={formData}
+                        branches={branches}
+                        branchesLoading={branchesLoading}
+                        branchesError={branchesError}
+                    />
                 )}
                 {step === "confirm" && (
                     <ConfirmStep
                         formData={formData}
+                        branches={branches}
                         onConfirm={handleConfirmed}
                         onBack={handleBackToRegister}
                     />
@@ -954,11 +1098,10 @@ function Register() {
 
             <style>{`
             * { box-sizing: border-box; }
-            input::placeholder { color: #3d5a72; }
-            input:focus, select:focus { outline: none; }
+            input::placeholder { color: #9aa4b2; }
+            input:focus { outline: none; }
             button:active { transform: scale(0.98); }
             button, a { touch-action: manipulation; }
-            select option { background: #162030; color: #e0eaf2; }
             @media (max-height: 700px) {
             body { overflow-y: auto; }
             }

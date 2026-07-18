@@ -1,5 +1,5 @@
 import { CalendarDays, ChevronLeft, ChevronRight, Clock, Dumbbell, LogIn, LogOut, Users } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Bar,
   BarChart,
@@ -10,10 +10,11 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import memberApi from "../../api/memberApi"; // chỉnh lại path cho khớp cấu trúc project của bạn
 import Footer from "../../component/Footer";
 import Header from "../../component/Header";
 
-// ============ DỮ LIỆU MẪU ============
+// ============ HẰNG SỐ ============
 
 const DAYS = [
   { key: "T2", label: "Thứ 2" },
@@ -25,45 +26,49 @@ const DAYS = [
   { key: "CN", label: "Chủ nhật" },
 ];
 
-const HOURLY_SLOTS = Array.from({ length: 24 }, (_, h) => {
-  const start = String(h).padStart(2, "0");
-  const end = String((h + 1) % 24).padStart(2, "0");
-  return `${start}:00-${end}:00`;
-});
-
+const HOURLY_SLOTS_COUNT = 24;
 const SLOTS_PER_VIEW = 6;
 
-function genMockSlotData() {
-  const data = {};
-  DAYS.forEach((d) => {
-    data[d.key] = HOURLY_SLOTS.map((s, h) => {
-      let base = 3;
-      if (h >= 6 && h <= 7) base = 18;
-      if (h >= 17 && h <= 20) base = 22;
-      if (h >= 11 && h <= 13) base = 8;
-      if (h >= 0 && h <= 5) base = 1;
-      const weekendBoost = d.key === "T7" || d.key === "CN" ? 5 : 0;
-      const noise = ((d.key.charCodeAt(0) + h * 3) % 7) - 3;
-      return { slot: s, luot: Math.max(0, base + weekendBoost + noise) };
-    });
-  });
-  return data;
+const EMPTY_DAY_SLOTS = Array.from({ length: HOURLY_SLOTS_COUNT }, (_, h) => {
+  const start = String(h).padStart(2, "0");
+  const end = String((h + 1) % 24).padStart(2, "0");
+  return { slot: `${start}:00-${end}:00`, luot: 0 };
+});
+
+const EMPTY_SUMMARY = {
+  buoiTapThangNay: 0,
+  tongGioTap: "0h 0m",
+  buoiSangSom: 0,
+  streakHienTai: 0,
+};
+
+const DAY_KEYS = new Set(DAYS.map((d) => d.key));
+
+// Backend trả về { data: {...}, ... }, nhưng tùy cách authApi implement,
+// "res" có thể là response Axios thô (res.data.data...) hoặc đã unwrap sẵn (res.data...)
+// hoặc unwrap tới tận nơi (res...). Hàm này tự dò xuống từng lớp ".data"
+// cho tới khi tìm đúng hình dạng dữ liệu mong đợi, tránh bóc vỏ thừa/thiếu 1 lớp.
+function unwrapPayload(res, isTarget, maxDepth = 5) {
+  let cur = res;
+  for (let i = 0; i < maxDepth; i++) {
+    if (isTarget(cur)) return cur;
+    if (cur && typeof cur === "object" && "data" in cur) {
+      cur = cur.data;
+    } else {
+      break;
+    }
+  }
+  return cur;
 }
 
-const mockSlotData = genMockSlotData();
+const isDensityMap = (obj) =>
+  !!obj && typeof obj === "object" && Object.keys(obj).some((k) => DAY_KEYS.has(k));
 
-const myHistory = [
-  { id: 1, date: "30/06/2026", checkIn: "06:12", checkOut: "07:45", duration: "1h 33m" },
-  { id: 2, date: "28/06/2026", checkIn: "18:05", checkOut: "19:30", duration: "1h 25m" },
-  { id: 3, date: "26/06/2026", checkIn: "17:50", checkOut: null, duration: null },
-  { id: 4, date: "24/06/2026", checkIn: "06:30", checkOut: "08:00", duration: "1h 30m" },
-  { id: 5, date: "22/06/2026", checkIn: "19:00", checkOut: "20:20", duration: "1h 20m" },
-  { id: 6, date: "20/06/2026", checkIn: "06:00", checkOut: "07:10", duration: "1h 10m" },
-  { id: 7, date: "18/06/2026", checkIn: "17:30", checkOut: "19:00", duration: "1h 30m" },
-  { id: 8, date: "16/06/2026", checkIn: "06:15", checkOut: "07:50", duration: "1h 35m" },
-  { id: 9, date: "14/06/2026", checkIn: "18:30", checkOut: "20:00", duration: "1h 30m" },
-  { id: 10, date: "12/06/2026", checkIn: "06:00", checkOut: "07:30", duration: "1h 30m" },
-];
+const isSummaryShape = (obj) =>
+  !!obj && typeof obj === "object" && "buoiTapThangNay" in obj;
+
+const isHistoryShape = (obj) =>
+  !!obj && typeof obj === "object" && Array.isArray(obj.items);
 
 // ============ STAT CARD ============
 
@@ -104,10 +109,87 @@ export default function ThongKe() {
   const [activeDay, setActiveDay] = useState("T2");
   const [viewStart, setViewStart] = useState(0);
 
-  const dayData = mockSlotData[activeDay] || [];
+  // Dữ liệu mật độ phòng tập — public, key theo T2..CN
+  const [densityData, setDensityData] = useState({});
+  const [loadingDensity, setLoadingDensity] = useState(true);
+
+  // Tổng quan (4 stat card) — cần đăng nhập
+  const [summary, setSummary] = useState(EMPTY_SUMMARY);
+  const [loadingSummary, setLoadingSummary] = useState(true);
+
+  // Lịch sử check-in — cần đăng nhập
+  const [history, setHistory] = useState([]);
+  const [loadingHistory, setLoadingHistory] = useState(true);
+
+  const [errorMsg, setErrorMsg] = useState(null);
+
+  // ---- Gọi API mật độ phòng tập (công khai, gọi 1 lần khi vào trang) ----
+  useEffect(() => {
+    let mounted = true;
+    setLoadingDensity(true);
+    memberApi
+      .getGymDensity()
+      .then((res) => {
+        if (!mounted) return;
+        const densityMap = unwrapPayload(res, isDensityMap);
+        setDensityData(isDensityMap(densityMap) ? densityMap : {});
+      })
+      .catch((err) => {
+        console.error("Lỗi tải mật độ phòng tập:", err);
+        if (mounted) setErrorMsg("Không tải được dữ liệu mật độ phòng tập.");
+      })
+      .finally(() => mounted && setLoadingDensity(false));
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  // ---- Gọi API tổng quan (cần đăng nhập, gọi 1 lần khi vào trang) ----
+  useEffect(() => {
+    let mounted = true;
+    setLoadingSummary(true);
+    memberApi
+      .getThongKeSummary()
+      .then((res) => {
+        if (!mounted) return;
+        const payload = unwrapPayload(res, isSummaryShape);
+        setSummary(isSummaryShape(payload) ? payload : EMPTY_SUMMARY);
+      })
+      .catch((err) => {
+        console.error("Lỗi tải tổng quan thống kê:", err);
+        if (mounted) setErrorMsg("Không tải được dữ liệu tổng quan.");
+      })
+      .finally(() => mounted && setLoadingSummary(false));
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  // ---- Gọi API lịch sử check-in (cần đăng nhập, gọi 1 lần khi vào trang) ----
+  useEffect(() => {
+    let mounted = true;
+    setLoadingHistory(true);
+    memberApi
+      .getCheckInHistory({ page: 1, pageSize: 10 })
+      .then((res) => {
+        if (!mounted) return;
+        const payload = unwrapPayload(res, isHistoryShape);
+        setHistory(isHistoryShape(payload) ? payload.items : []);
+      })
+      .catch((err) => {
+        console.error("Lỗi tải lịch sử check-in:", err);
+        if (mounted) setErrorMsg("Không tải được lịch sử check-in.");
+      })
+      .finally(() => mounted && setLoadingHistory(false));
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const dayData = densityData[activeDay] || EMPTY_DAY_SLOTS;
   const chartData = useMemo(() => dayData.slice(viewStart, viewStart + SLOTS_PER_VIEW), [dayData, viewStart]);
   const canPrev = viewStart > 0;
-  const canNext = viewStart + SLOTS_PER_VIEW < HOURLY_SLOTS.length;
+  const canNext = viewStart + SLOTS_PER_VIEW < dayData.length;
   const tongLuot = useMemo(() => chartData.reduce((s, d) => s + d.luot, 0), [chartData]);
   const dongNhat = useMemo(() => {
     if (!chartData.length) return null;
@@ -132,12 +214,36 @@ export default function ThongKe() {
 
       <main style={styles.main}>
 
+        {errorMsg && (
+          <div style={styles.errorBanner}>{errorMsg}</div>
+        )}
+
         {/* Summary stats row */}
         <div style={styles.summaryRow} className="summary-row">
-          <StatCard icon={<Clock size={18} />} label="Buổi tập tháng này" value="10" accent="#e0622f" />
-          <StatCard icon={<Users size={18} />} label="Tổng giờ tập" value="14h 23m" accent="#3d8bfd" />
-          <StatCard icon={<LogIn size={18} />} label="Buổi sáng sớm (trước 8h)" value="6" accent="#2fbf71" />
-          <StatCard icon={<Dumbbell size={18} />} label="Streak hiện tại" value="3 ngày" accent="#a855f7" />
+          <StatCard
+            icon={<Clock size={18} />}
+            label="Buổi tập tháng này"
+            value={loadingSummary ? "…" : summary.buoiTapThangNay}
+            accent="#e0622f"
+          />
+          <StatCard
+            icon={<Users size={18} />}
+            label="Tổng giờ tập"
+            value={loadingSummary ? "…" : summary.tongGioTap}
+            accent="#3d8bfd"
+          />
+          <StatCard
+            icon={<LogIn size={18} />}
+            label="Buổi sáng sớm (trước 8h)"
+            value={loadingSummary ? "…" : summary.buoiSangSom}
+            accent="#2fbf71"
+          />
+          <StatCard
+            icon={<Dumbbell size={18} />}
+            label="Streak hiện tại"
+            value={loadingSummary ? "…" : `${summary.streakHienTai} ngày`}
+            accent="#a855f7"
+          />
         </div>
 
         {/* Day selector */}
@@ -163,14 +269,16 @@ export default function ThongKe() {
           <div style={styles.cardHeader}>
             <div>
               <h2 style={styles.cardTitle}>Mật độ phòng tập</h2>
-              <p style={styles.cardSub}>{DAYS.find((d) => d.key === activeDay)?.label} · {chartData[0]?.slot.split("-")[0]} – {chartData[chartData.length - 1]?.slot.split("-")[1]}</p>
+              <p style={styles.cardSub}>
+                {DAYS.find((d) => d.key === activeDay)?.label} · {chartData[0]?.slot.split("-")[0]} – {chartData[chartData.length - 1]?.slot.split("-")[1]}
+              </p>
             </div>
             <div style={styles.navGroup}>
               <button onClick={() => canPrev && setViewStart((v) => Math.max(0, v - SLOTS_PER_VIEW))} disabled={!canPrev}
                 style={{ ...styles.navBtn, ...(canPrev ? {} : styles.navBtnDisabled) }}>
                 <ChevronLeft size={16} />
               </button>
-              <button onClick={() => canNext && setViewStart((v) => Math.min(HOURLY_SLOTS.length - SLOTS_PER_VIEW, v + SLOTS_PER_VIEW))} disabled={!canNext}
+              <button onClick={() => canNext && setViewStart((v) => Math.min(dayData.length - SLOTS_PER_VIEW, v + SLOTS_PER_VIEW))} disabled={!canNext}
                 style={{ ...styles.navBtn, ...(canNext ? {} : styles.navBtnDisabled) }}>
                 <ChevronRight size={16} />
               </button>
@@ -192,19 +300,23 @@ export default function ThongKe() {
           </div>
 
           <div style={{ width: "100%", height: 260 }}>
-            <ResponsiveContainer>
-              <BarChart data={chartData} margin={{ left: -10, right: 10, top: 8 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#1c1c21" vertical={false} />
-                <XAxis dataKey="slot" stroke="#5b5b62" fontSize={10.5} tickLine={false} axisLine={false} />
-                <YAxis stroke="#5b5b62" fontSize={11} tickLine={false} axisLine={false} width={28} allowDecimals={false} />
-                <Tooltip content={<CustomTooltip />} cursor={{ fill: "rgba(224,98,47,0.06)" }} />
-                <Bar dataKey="luot" name="Số người" radius={[5, 5, 0, 0]} maxBarSize={44}>
-                  {chartData.map((entry, i) => (
-                    <Cell key={i} fill={dongNhat && entry.slot === dongNhat.slot ? "#e0622f" : "#3d8bfd"} fillOpacity={dongNhat && entry.slot === dongNhat.slot ? 1 : 0.75} />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
+            {loadingDensity ? (
+              <div style={styles.loadingBox}>Đang tải dữ liệu mật độ…</div>
+            ) : (
+              <ResponsiveContainer>
+                <BarChart data={chartData} margin={{ left: -10, right: 10, top: 8 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#1c1c21" vertical={false} />
+                  <XAxis dataKey="slot" stroke="#5b5b62" fontSize={10.5} tickLine={false} axisLine={false} />
+                  <YAxis stroke="#5b5b62" fontSize={11} tickLine={false} axisLine={false} width={28} allowDecimals={false} />
+                  <Tooltip content={<CustomTooltip />} cursor={{ fill: "rgba(224,98,47,0.06)" }} />
+                  <Bar dataKey="luot" name="Số người" radius={[5, 5, 0, 0]} maxBarSize={44}>
+                    {chartData.map((entry, i) => (
+                      <Cell key={i} fill={dongNhat && entry.slot === dongNhat.slot ? "#e0622f" : "#3d8bfd"} fillOpacity={dongNhat && entry.slot === dongNhat.slot ? 1 : 0.75} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            )}
           </div>
         </section>
 
@@ -213,7 +325,7 @@ export default function ThongKe() {
           <div style={styles.cardHeader}>
             <div>
               <h2 style={styles.cardTitle}>Lịch sử check-in</h2>
-              <p style={styles.cardSub}>{myHistory.length} buổi gần nhất</p>
+              <p style={styles.cardSub}>{history.length} buổi gần nhất</p>
             </div>
             <button style={styles.exportBtn}>Xuất CSV ↓</button>
           </div>
@@ -230,27 +342,37 @@ export default function ThongKe() {
                 </tr>
               </thead>
               <tbody>
-                {myHistory.map((log, i) => (
-                  <tr key={log.id} style={{ ...styles.tr, animationDelay: `${i * 0.04}s` }}>
-                    <td style={styles.td}><span style={styles.dateCell}>{log.date}</span></td>
-                    <td style={styles.td}><span style={styles.timeChip}>{log.checkIn}</span></td>
-                    <td style={styles.td}>
-                      {log.checkOut
-                        ? <span style={styles.timeChip}>{log.checkOut}</span>
-                        : <span style={styles.dash}>—</span>}
-                    </td>
-                    <td style={styles.td}>
-                      {log.duration
-                        ? <span style={styles.duration}>{log.duration}</span>
-                        : <span style={styles.dash}>—</span>}
-                    </td>
-                    <td style={styles.td}>
-                      {log.checkOut
-                        ? <span style={styles.tagDone}>Đã ra</span>
-                        : <span style={styles.tagActive}>Đang tập</span>}
-                    </td>
+                {loadingHistory ? (
+                  <tr>
+                    <td style={styles.td} colSpan={5}>Đang tải lịch sử…</td>
                   </tr>
-                ))}
+                ) : history.length === 0 ? (
+                  <tr>
+                    <td style={styles.td} colSpan={5}>Chưa có lịch sử check-in.</td>
+                  </tr>
+                ) : (
+                  history.map((log, i) => (
+                    <tr key={log.checkInId} style={{ ...styles.tr, animationDelay: `${i * 0.04}s` }}>
+                      <td style={styles.td}><span style={styles.dateCell}>{log.date}</span></td>
+                      <td style={styles.td}><span style={styles.timeChip}>{log.checkIn}</span></td>
+                      <td style={styles.td}>
+                        {log.checkOut
+                          ? <span style={styles.timeChip}>{log.checkOut}</span>
+                          : <span style={styles.dash}>—</span>}
+                      </td>
+                      <td style={styles.td}>
+                        {log.duration
+                          ? <span style={styles.duration}>{log.duration}</span>
+                          : <span style={styles.dash}>—</span>}
+                      </td>
+                      <td style={styles.td}>
+                        {log.status === "Đã ra"
+                          ? <span style={styles.tagDone}>Đã ra</span>
+                          : <span style={styles.tagActive}>Đang tập</span>}
+                      </td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>
@@ -317,6 +439,16 @@ const styles = {
   heroSub: { color: "#9a9aa2", fontSize: 14, margin: 0 },
 
   main: { maxWidth: 1200, margin: "0 auto", padding: "32px 24px" },
+
+  errorBanner: {
+    background: "rgba(224,98,47,0.1)",
+    border: "1px solid rgba(224,98,47,0.3)",
+    color: "#e0622f",
+    borderRadius: 10,
+    padding: "10px 14px",
+    fontSize: 13,
+    marginBottom: 18,
+  },
 
   summaryRow: {
     display: "grid",
@@ -385,6 +517,11 @@ const styles = {
     border: "1px solid #232328", background: "none", color: "#9a9aa2",
     fontSize: 12, padding: "7px 14px", borderRadius: 8, cursor: "pointer",
     alignSelf: "flex-start",
+  },
+
+  loadingBox: {
+    display: "flex", alignItems: "center", justifyContent: "center",
+    height: "100%", color: "#5b5b62", fontSize: 13,
   },
 
   tableWrap: {

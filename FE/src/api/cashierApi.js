@@ -22,6 +22,23 @@ const cashierApi = {
         ).toString();
         return authApi.get(`/api/members${query ? `?${query}` : ""}`);
     },
+    getListMembersEmployee(params = {}) {
+        const query = new URLSearchParams(
+            Object.entries(params).filter(
+                ([, v]) => v !== undefined && v !== null && v !== ""
+            )
+        ).toString();
+        return authApi.get(`/api/members/employee${query ? `?${query}` : ""}`);
+    },
+    getAll(params = {}) {
+        const query = new URLSearchParams(
+            Object.entries(params).filter(
+                ([, v]) => v !== undefined && v !== null && v !== ""
+            )
+        ).toString();
+        return authApi.get(`/api/members/all${query ? `?${query}` : ""}`);
+    },
+
     getMemberDetail(id) {
         return authApi.get(`/api/members/${id}`);
     },
@@ -67,6 +84,10 @@ const cashierApi = {
     // POST /api/members/{id}/activate-face-id -> MemberService.ActivateFaceIdOnlyAsync
     // Dùng khi hội viên ĐÃ có gói (Pending mua online, hoặc gói cũ còn hạn): chỉ đăng ký FaceID.
     // BE tự kích hoạt gói Pending (nếu có) hoặc dùng gói còn hạn hiện tại.
+    gercurrentpackInternal(id) {
+        return authApi.get(`/api/members/${id}/packages/internal`);
+    },
+
     // formData chỉ cần: ProfileImage.
     activateFaceIdOnly(id, formData) {
         return authApi.post(`/api/members/${id}/activate-face-id`, formData);
@@ -96,6 +117,11 @@ const cashierApi = {
     getAllPackage() {
         return authApi.get("/api/packages", false);
     },
+    getPackOfStaff() {
+        return authApi.get("/api/packages/internal")
+
+    },
+
     // POST /api/members/{memberId}/packages/renew — dùng chung cho cả "gia hạn"
     // lẫn "gán gói lần đầu" (hội viên activate chưa có gói cũ nào để gia hạn).
     renewMembership(memberId, formData) {

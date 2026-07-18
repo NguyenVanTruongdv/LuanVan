@@ -1,6 +1,5 @@
 import {
     AlertTriangle,
-    Building2,
     Check,
     CheckCircle2,
     ChevronDown,
@@ -1053,7 +1052,7 @@ function AdjustModal({ transactionId, onClose, onSuccess }) {
     );
 }
 
-export default function Invoice() {
+export default function InvoiceOfCashier() {
     const [history, setHistory] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
@@ -1290,29 +1289,7 @@ export default function Invoice() {
                         </div>
                     </div>
 
-                    {!branchesLoading && branches.length > 0 && (
-                        <div className="branch-strip scroll-dark" style={S.branchStrip}>
-                            <button
-                                className="branch-chip"
-                                style={S.branchChip(branchFilter === "all")}
-                                onClick={() => setBranchFilter("all")}
-                            >
-                                <span style={S.branchChipIcon(branchFilter === "all")}><Building2 size={14} /></span>
-                                Tất cả chi nhánh
-                            </button>
-                            {branches.map((b) => (
-                                <button
-                                    key={b.branchId}
-                                    className="branch-chip"
-                                    style={S.branchChip(String(branchFilter) === String(b.branchId))}
-                                    onClick={() => setBranchFilter(b.branchId)}
-                                >
-                                    <span style={S.branchChipIcon(String(branchFilter) === String(b.branchId))}><MapPin size={14} /></span>
-                                    {b.branchName}
-                                </button>
-                            ))}
-                        </div>
-                    )}
+
 
                     <div className="filter-panel" style={S.filterPanel}>
                         <div className="filter-grid" style={S.filterGrid}>
@@ -1354,15 +1331,7 @@ export default function Invoice() {
                                 ]}
                             />
 
-                            <CustomSelect
-                                value={branchFilter}
-                                onChange={setBranchFilter}
-                                placeholder="Tất cả chi nhánh"
-                                options={[
-                                    { value: "all", label: "Tất cả chi nhánh" },
-                                    ...branches.map((b) => ({ value: b.branchId, label: b.branchName })),
-                                ]}
-                            />
+
 
                             <button className="reset-btn" style={S.resetBtn} onClick={resetFilters}>Đặt lại</button>
                         </div>

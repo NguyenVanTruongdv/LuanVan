@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
+import memberApi from "../../api/memberApi"; // chỉnh lại path cho đúng project của bạn
 import Footer from "../../component/Footer"; // chỉnh lại path cho đúng project của bạn
 import Header from "../../component/Header"; // chỉnh lại path cho đúng project của bạn
 
@@ -20,25 +21,7 @@ const C = {
    Field map theo model BE.Models.Branch + BranchImage:
    branchId, branchName, address, phone, managerId, status, createdAt,
    manager {fullName}, branchImages [{imageId, imageUrl, caption}] */
-const MOCK_DETAILS = {
-    1: {
-        branchId: 1,
-        branchName: "VTGYM Quận 1",
-        address: "12 Nguyễn Huệ, Bến Nghé, Quận 1, TP.HCM",
-        phone: "028 3822 1234",
-        managerId: 101,
-        manager: { fullName: "Nguyễn Văn An" },
-        status: "Active",
-        createdAt: "2022-03-14T00:00:00",
-        lat: 10.7745,
-        lng: 106.7032,
-        branchImages: [
-            { imageId: 1, imageUrl: "https://images.unsplash.com/photo-1534438327276-14e5300c3a48?w=900&q=80", caption: "Khu vực tạ tự do" },
-            { imageId: 2, imageUrl: "https://images.unsplash.com/photo-1571902943202-507ec2618e8f?w=900&q=80", caption: "Khu cardio" },
-            { imageId: 3, imageUrl: "https://images.unsplash.com/photo-1593079831268-3381b0db4a77?w=900&q=80", caption: "Sảnh chính" },
-        ],
-    },
-};
+
 
 function useBreakpoint() {
     const [bp, setBp] = useState(() => getBp());
@@ -71,6 +54,21 @@ function gmapsEmbed(branch) {
 function formatDate(iso) {
     if (!iso) return "—";
     return new Date(iso).toLocaleDateString("vi-VN", { day: "2-digit", month: "2-digit", year: "numeric" });
+}
+
+// Chuẩn hoá response ảnh trả về từ BE về đúng field: imageId, imageUrl, caption
+// Chuẩn hoá response ảnh trả về từ BE về đúng field: imageId, imageUrl, caption, sortOrder
+function normalizeImages(raw) {
+    if (!Array.isArray(raw)) return [];
+    return raw
+        .map((img, i) => ({
+            imageId: img.imageId ?? img.id ?? i,
+            imageUrl: img.imageUrl ?? img.url ?? img.imagePath ?? "",
+            caption: img.imageType ?? img.description ?? "",
+            sortOrder: img.sortOrder ?? i, // fallback theo thứ tự gốc nếu BE không trả sortOrder
+        }))
+        .filter((img) => img.imageUrl)
+        .sort((a, b) => a.sortOrder - b.sortOrder); // sắp xếp theo sortOrder tăng dần
 }
 
 function getStyles(bp) {
@@ -168,7 +166,38 @@ function getStyles(bp) {
             boxShadow: "0 18px 44px rgba(0,0,0,0.4)",
         },
         panelTitle: { fontSize: "13px", fontWeight: 800, color: C.accent, textTransform: "uppercase", letterSpacing: "0.8px", margin: "0 0 16px" },
+        galleryWrap: { position: "relative" },
         galleryMain: { width: "100%", height: isMobile ? "220px" : "320px", borderRadius: "14px", objectFit: "cover", display: "block", border: `1px solid ${C.border}` },
+        galleryArrow: (side) => ({
+            position: "absolute",
+            top: "50%",
+            [side]: "10px",
+            transform: "translateY(-50%)",
+            width: "36px",
+            height: "36px",
+            borderRadius: "50%",
+            border: "none",
+            background: "rgba(13,13,13,0.55)",
+            color: C.text,
+            fontSize: "16px",
+            fontWeight: 700,
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            backdropFilter: "blur(2px)",
+        }),
+        galleryCounter: {
+            position: "absolute",
+            bottom: "12px",
+            right: "12px",
+            background: "rgba(13,13,13,0.6)",
+            color: C.text,
+            fontSize: "11px",
+            fontWeight: 700,
+            padding: "3px 9px",
+            borderRadius: "20px",
+        },
         galleryCaption: { fontSize: "12.5px", color: C.muted, marginTop: "10px" },
         thumbRow: { display: "flex", gap: "8px", marginTop: "10px", overflowX: "auto" },
         thumb: (active) => ({
@@ -188,6 +217,7 @@ function getStyles(bp) {
         infoValue: { fontSize: "14px", color: C.text, fontWeight: 600, lineHeight: 1.5 },
         mapFrame: { width: "100%", height: isMobile ? "200px" : "240px", border: 0, borderRadius: "14px", display: "block", filter: "grayscale(0.4) contrast(1.1) brightness(0.85)" },
         notFound: { color: C.muted, textAlign: "center", padding: "80px 20px", fontSize: "14px" },
+        galleryPlaceholder: { color: C.subtle, fontSize: "13px", padding: "20px 0", textAlign: "center" },
     };
 }
 
@@ -199,10 +229,60 @@ function BranchDetail() {
     const S = getStyles(bp);
 
     // Ưu tiên data truyền qua state (từ list), fallback mock theo id — sau này thay bằng fetch API thật
-    const passedBranch = location.state?.branch;
-    const branch = MOCK_DETAILS[id] || passedBranch;
+    const [branch, setBranch] = useState(null);
 
     const [activeImg, setActiveImg] = useState(0);
+    const [images, setImages] = useState([]);
+    const [loadingImages, setLoadingImages] = useState(true);
+    useEffect(() => {
+        if (!id) return;
+
+        let cancelled = false;
+
+        const load = async () => {
+            try {
+                const res = await memberApi.getBranchDetail(id);
+
+                if (!cancelled) {
+                    setBranch(res);
+                }
+            } catch (err) {
+                console.error(err);
+            }
+        };
+
+        load();
+
+        return () => {
+            cancelled = true;
+        };
+    }, [id]);
+    // Gọi API lấy ảnh chi nhánh: GET /api/branches/{id}/images
+    useEffect(() => {
+        if (!id) return;
+        let cancelled = false;
+
+        (async () => {
+            setLoadingImages(true);
+            try {
+                const res = await memberApi.getBranchDetail(id);
+                const list = normalizeImages(res.images);
+                if (!cancelled && list.length > 0) {
+                    setImages(list);
+                    setActiveImg(0);
+                }
+            } catch (err) {
+                console.error("Lỗi tải ảnh chi nhánh:", err);
+                // giữ nguyên ảnh mock/ảnh truyền qua state nếu API lỗi
+            } finally {
+                if (!cancelled) setLoadingImages(false);
+            }
+        })();
+
+        return () => {
+            cancelled = true;
+        };
+    }, [id]);
 
     if (!branch) {
         return (
@@ -216,8 +296,11 @@ function BranchDetail() {
         );
     }
 
-    const images = branch.branchImages || [];
     const isActive = branch.status === "Active";
+    const hasImages = images.length > 0;
+
+    const goPrev = () => setActiveImg((i) => (i - 1 + images.length) % images.length);
+    const goNext = () => setActiveImg((i) => (i + 1) % images.length);
 
     return (
         <div style={S.page}>
@@ -253,34 +336,61 @@ function BranchDetail() {
                 <div style={S.layout}>
                     {/* Cột trái: gallery + info */}
                     <div style={S.col}>
-                        {images.length > 0 && (
-                            <div style={S.panel}>
-                                <h2 style={S.panelTitle}>Hình ảnh chi nhánh</h2>
-                                <img src={images[activeImg].imageUrl} alt={images[activeImg].caption || branch.branchName} style={S.galleryMain} />
-                                {images[activeImg].caption && <p style={S.galleryCaption}>{images[activeImg].caption}</p>}
-                                {images.length > 1 && (
-                                    <div style={S.thumbRow}>
-                                        {images.map((img, i) => (
-                                            <img
-                                                key={img.imageId}
-                                                src={img.imageUrl}
-                                                alt={img.caption || `Ảnh ${i + 1}`}
-                                                style={S.thumb(i === activeImg)}
-                                                onClick={() => setActiveImg(i)}
-                                            />
-                                        ))}
+                        <div style={S.panel}>
+                            <h2 style={S.panelTitle}>Hình ảnh chi nhánh</h2>
+
+                            {loadingImages && !hasImages && (
+                                <p style={S.galleryPlaceholder}>Đang tải ảnh…</p>
+                            )}
+
+                            {!loadingImages && !hasImages && (
+                                <p style={S.galleryPlaceholder}>Chưa có hình ảnh cho chi nhánh này.</p>
+                            )}
+
+                            {hasImages && (
+                                <>
+                                    <div style={S.galleryWrap}>
+                                        <img
+                                            src={images[activeImg].imageUrl}
+                                            alt={images[activeImg].caption || branch.branchName}
+                                            style={S.galleryMain}
+                                        />
+                                        {images.length > 1 && (
+                                            <>
+                                                <button style={S.galleryArrow("left")} onClick={goPrev} aria-label="Ảnh trước">
+                                                    ‹
+                                                </button>
+                                                <button style={S.galleryArrow("right")} onClick={goNext} aria-label="Ảnh sau">
+                                                    ›
+                                                </button>
+                                                <span style={S.galleryCounter}>{activeImg + 1}/{images.length}</span>
+                                            </>
+                                        )}
                                     </div>
-                                )}
-                            </div>
-                        )}
+
+                                    {images[activeImg].caption && <p style={S.galleryCaption}>{images[activeImg].caption}</p>}
+
+                                    {images.length > 1 && (
+                                        <div style={S.thumbRow}>
+                                            {images.map((img, i) => (
+                                                <img
+                                                    key={img.imageId}
+                                                    src={img.imageUrl}
+                                                    alt={img.caption || `Ảnh ${i + 1}`}
+                                                    style={S.thumb(i === activeImg)}
+                                                    onClick={() => setActiveImg(i)}
+                                                />
+                                            ))}
+                                        </div>
+                                    )}
+                                </>
+                            )}
+                        </div>
 
                         <div style={S.panel}>
                             <h2 style={S.panelTitle}>Thông tin chi nhánh</h2>
                             <div style={S.infoGrid}>
-                                <div style={S.infoItem}>
-                                    <span style={S.infoLabel}>Mã chi nhánh</span>
-                                    <span style={S.infoValue}>#{branch.branchId}</span>
-                                </div>
+                                
                                 <div style={S.infoItem}>
                                     <span style={S.infoLabel}>Trạng thái</span>
                                     <span style={S.infoValue}>{isActive ? "Đang hoạt động" : "Tạm đóng"}</span>
@@ -295,7 +405,7 @@ function BranchDetail() {
                                 </div>
                                 <div style={S.infoItem}>
                                     <span style={S.infoLabel}>Quản lý chi nhánh</span>
-                                    <span style={S.infoValue}>{branch.manager?.fullName || `#${branch.managerId}`}</span>
+                                    <span style={S.infoValue}>{branch.managers?.[0]?.fullName || "Chưa có quản lý" || `#${branch.managerId}`}</span>
                                 </div>
                                 <div style={S.infoItem}>
                                     <span style={S.infoLabel}>Ngày tạo</span>

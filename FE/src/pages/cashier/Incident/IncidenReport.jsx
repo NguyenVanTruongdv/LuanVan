@@ -31,25 +31,23 @@ function extractList(res) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// STYLES: theme lấy từ ảnh chụp thật của Cashier Portal — nền sáng, accent
-// cyan/teal (giống màu tab active "Sự cố" và avatar "NQ" trong Sidebar).
-// Khai báo biến CSS cục bộ trong .vt-app thay vì dựa vào :root của trang khác,
-// để không phụ thuộc site có định nghĩa sẵn hay không. Nếu bạn có bảng màu
-// chính xác hơn (mã hex thật từ design system), gửi mình chỉnh lại cho khớp
-// 100% thay vì áng chừng qua ảnh.
+// STYLES: đồng bộ theme tối (navy) với trang login — nền navy đậm #0B1120,
+// các khối panel dùng #1E293B, viền slate #334155, điểm nhấn cyan #06B6D4,
+// và bộ 3 màu chữ (tiêu đề / phụ) đúng như trang login.
 // ─────────────────────────────────────────────────────────────────────────────
 const STYLES = `
     .vt-app {
-        --accent: #0891B2;
+        --accent: #06B6D4;
         --accent-dark: #0E7490;
-        --accent-soft: rgba(8,145,178,0.10);
-        --accent-border: rgba(8,145,178,0.28);
-        --bg: #F1F4F8;
-        --bg-soft: #FFFFFF;
-        --bg-elevated: #F8FAFC;
-        --line: #E2E8F0;
-        --text: #111827;
-        --text-dim: #6B7280;
+        --accent-soft: rgba(6,182,212,0.14);
+        --accent-border: rgba(6,182,212,0.38);
+        --bg: #0B1120;
+        --bg-soft: #1E293B;
+        --bg-elevated: #16202E;
+        --line: #334155;
+        --text: #F1F5F9;
+        --text-dim: #94A3B8;
+        --text-dimmer: #64748B;
         --radius: 16px;
 
         background: transparent;
@@ -58,10 +56,11 @@ const STYLES = `
     }
     .vt-app *, .vt-app *::before, .vt-app *::after { box-sizing: border-box; margin: 0; }
 
-    .vt-page { padding: 4px; }
+    .vt-page { padding: 4px; background: var(--bg); }
 
     .vt-card {
         background: var(--bg-soft);
+        border: 1px solid var(--line);
         border-radius: var(--radius);
         padding: 32px 36px;
     }
@@ -96,15 +95,15 @@ const STYLES = `
         font-family: 'Inter', system-ui, sans-serif; font-weight: 500;
     }
     .vt-textarea { resize: vertical; min-height: 120px; line-height: 1.6; }
-    .vt-input::placeholder, .vt-textarea::placeholder { color: var(--text-dim); font-weight: 400; }
+    .vt-input::placeholder, .vt-textarea::placeholder { color: var(--text-dimmer); font-weight: 400; }
     .vt-input:focus, .vt-textarea:focus {
         border-color: var(--accent);
         box-shadow: 0 0 0 3px var(--accent-soft);
     }
-    .vt-input.has-error, .vt-textarea.has-error { border-color: var(--accent); background: var(--accent-soft); }
-    .vt-error { font-size: 12px; color: var(--accent); margin-top: 6px; font-weight: 600; display: flex; align-items: center; gap: 5px; }
-    .vt-counter { font-size: 11px; color: var(--text-dim); text-align: right; margin-top: 5px; }
-    .vt-hint { font-size: 11.5px; color: var(--text-dim); margin-top: 6px; }
+    .vt-input.has-error, .vt-textarea.has-error { border-color: #F87171; background: rgba(248,113,113,0.08); }
+    .vt-error { font-size: 12px; color: #F87171; margin-top: 6px; font-weight: 600; display: flex; align-items: center; gap: 5px; }
+    .vt-counter { font-size: 11px; color: var(--text-dimmer); text-align: right; margin-top: 5px; }
+    .vt-hint { font-size: 11.5px; color: var(--text-dimmer); margin-top: 6px; }
 
     /* ── Equipment picker ── */
     .eq-wrapper { position: relative; }
@@ -118,7 +117,7 @@ const STYLES = `
     .eq-trigger:hover, .eq-trigger.is-open { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
     .eq-trigger:disabled { cursor: not-allowed; opacity: .6; }
     .eq-trigger-label { flex: 1; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-    .eq-trigger-placeholder { color: var(--text-dim); font-weight: 400; }
+    .eq-trigger-placeholder { color: var(--text-dimmer); font-weight: 400; }
     .eq-trigger-chevron { color: var(--text-dim); flex-shrink: 0; transition: transform .15s; }
     .eq-trigger.is-open .eq-trigger-chevron { transform: rotate(180deg); }
 
@@ -139,7 +138,7 @@ const STYLES = `
     .eq-dropdown {
         position: absolute; top: calc(100% + 6px); left: 0; right: 0; z-index: 200;
         background: var(--bg-soft); border: 1.5px solid var(--accent-border);
-        border-radius: 12px; box-shadow: 0 12px 28px -6px rgba(15,23,42,0.35), 0 0 0 1px rgba(15,23,42,0.04);
+        border-radius: 12px; box-shadow: 0 12px 28px -6px rgba(0,0,0,0.55), 0 0 0 1px rgba(0,0,0,0.15);
         overflow: hidden;
     }
     .eq-search-wrap {
@@ -147,7 +146,7 @@ const STYLES = `
         display: flex; align-items: center; gap: 8px; background: var(--bg-elevated);
     }
     .eq-search { flex: 1; border: none; background: transparent; outline: none; font-size: 13px; color: var(--text); font-family: 'Inter', system-ui, sans-serif; font-weight: 500; }
-    .eq-search::placeholder { color: var(--text-dim); font-weight: 400; }
+    .eq-search::placeholder { color: var(--text-dimmer); font-weight: 400; }
     .eq-list { max-height: 140px; overflow-y: auto; padding: 6px; }
     .eq-list::-webkit-scrollbar { width: 4px; }
     .eq-list::-webkit-scrollbar-thumb { background: var(--line); border-radius: 4px; }
@@ -162,9 +161,9 @@ const STYLES = `
     }
     .eq-option-info { flex: 1; min-width: 0; }
     .eq-option-name { font-size: 13px; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .eq-option-loc { font-size: 11px; color: var(--text-dim); margin-top: 1px; }
+    .eq-option-loc { font-size: 11px; color: var(--text-dimmer); margin-top: 1px; }
     .eq-option-check { color: var(--accent); flex-shrink: 0; }
-    .eq-empty { padding: 18px; text-align: center; font-size: 13px; color: var(--text-dim); }
+    .eq-empty { padding: 18px; text-align: center; font-size: 13px; color: var(--text-dimmer); }
     .eq-none-option {
         display: flex; align-items: center; gap: 10px;
         padding: 9px 10px; border-radius: 8px; cursor: pointer;
@@ -204,7 +203,7 @@ const STYLES = `
     .vt-video-drop:hover, .vt-video-drop.drag-active { border-color: var(--accent); background: var(--accent-soft); }
     .vt-video-drop .title { font-size: 13px; font-weight: 600; color: var(--text); }
     .vt-video-drop .title span { color: var(--accent); }
-    .vt-video-drop .sub { font-size: 11.5px; color: var(--text-dim); }
+    .vt-video-drop .sub { font-size: 11.5px; color: var(--text-dimmer); }
     .vt-video-thumb { position: relative; border-radius: 10px; overflow: hidden; aspect-ratio: 16/9; border: 1.5px solid var(--line); background: #000; }
     .vt-video-thumb video { width: 100%; height: 100%; object-fit: contain; display: block; }
     .vt-video-thumb .vt-thumb-remove { top: 8px; right: 8px; width: 24px; height: 24px; }
@@ -213,7 +212,7 @@ const STYLES = `
     .vt-submit-row { margin-top: 20px; }
     .vt-submit {
         width: 100%; background: var(--accent);
-        color: #fff; font-weight: 700; font-size: 15px; padding: 13px 0;
+        color: #0B1120; font-weight: 700; font-size: 15px; padding: 13px 0;
         border-radius: 10px; border: none; cursor: pointer;
         display: inline-flex; align-items: center; justify-content: center; gap: 8px;
         transition: filter .15s, transform .1s;
@@ -240,7 +239,7 @@ const STYLES = `
     .vt-summary { background: var(--bg-elevated); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; margin: 16px 0 20px; text-align: left; }
     .vt-summary-row { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; }
     .vt-summary-row + .vt-summary-row { margin-top: 9px; }
-    .vt-summary-row .key { color: var(--text-dim); }
+    .vt-summary-row .key { color: var(--text-dimmer); }
     .vt-summary-row .val { font-weight: 700; text-align: right; color: var(--text); }
 
     @media (max-width: 900px) {
@@ -330,7 +329,7 @@ function SuccessScreen({ data, onReset }) {
             <style>{STYLES}</style>
             <div className="vt-success-wrap">
                 <div className="vt-success-card">
-                    <div className="vt-success-icon"><CheckCircle2 size={24} color="#fff" strokeWidth={2.5} /></div>
+                    <div className="vt-success-icon"><CheckCircle2 size={24} color="#0B1120" strokeWidth={2.5} /></div>
                     <h2 style={{ fontFamily: "'Inter', system-ui, sans-serif", fontSize: 20, fontWeight: 700, textTransform: "uppercase", color: "var(--text)" }}>
                         Báo cáo đã được gửi!
                     </h2>
@@ -381,30 +380,47 @@ export default function IncidentReportForm() {
     // KHÔNG phải id, nên không được dùng branches[0] làm branchId.
     useEffect(() => {
         let mounted = true;
+
         (async () => {
             try {
                 const profileRes = await cashierApi.getEmployeeProfile();
-                const profile = profileRes?.data !== undefined ? profileRes.data : profileRes;
+                const profile = profileRes?.data ?? profileRes;
 
-                const branchId = profile?.branchId ?? null;
+                const branchId =
+                    profile?.defaultBranchId ??
+                    profile?.branches?.[0]?.branchId ??
+                    null;
 
                 if (!branchId) {
                     if (mounted) {
                         setEquipmentError("Không xác định được chi nhánh của nhân viên.");
                         setEquipmentList([]);
+                        setEquipmentLoading(false);
                     }
                     return;
                 }
 
                 const res = await cashierApi.getAllEquipment({ branchId });
-                if (mounted) setEquipmentList(extractList(res));
+
+                if (mounted) {
+                    setEquipmentList(extractList(res));
+                }
             } catch (err) {
-                if (mounted) setEquipmentError("Không tải được danh sách thiết bị.");
+                console.error(err);
+
+                if (mounted) {
+                    setEquipmentError("Không tải được danh sách thiết bị.");
+                }
             } finally {
-                if (mounted) setEquipmentLoading(false);
+                if (mounted) {
+                    setEquipmentLoading(false);
+                }
             }
         })();
-        return () => { mounted = false; };
+
+        return () => {
+            mounted = false;
+        };
     }, []);
 
     const errors = {

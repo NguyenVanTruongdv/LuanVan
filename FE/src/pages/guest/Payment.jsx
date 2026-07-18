@@ -1,4 +1,4 @@
-import { ArrowLeft, ArrowRight, Check } from "lucide-react";
+import { ArrowLeft, ArrowRight, Check, Gift, Percent, Tag } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import memberApi from "../../api/memberApi"; // chỉnh lại đường dẫn cho đúng project của bạn
@@ -73,9 +73,12 @@ const styles = `
   .co-track{ position:relative; height:8px; border-radius:5px; background:var(--border); overflow:hidden; }
   .co-fill-old{ position:absolute; left:0; top:0; height:100%; background:var(--border-hi); }
   .co-fill-new{ position:absolute; top:0; height:100%; background:linear-gradient(90deg, var(--accent), var(--accent-2)); border-radius:5px; }
+  .co-fill-bonus{ position:absolute; top:0; height:100%; background:repeating-linear-gradient(45deg, var(--teal), var(--teal) 5px, rgba(63,214,192,0.65) 5px, rgba(63,214,192,0.65) 10px); }
   .co-tl-labels{ display:flex; justify-content:space-between; margin-top:9px; font-size:11px; color:var(--text-faint); }
   .co-tl-pt{ display:flex; flex-direction:column; align-items:center; gap:2px; }
   .co-tl-pt b{ color:var(--text); font-weight:600; font-size:11.5px; }
+  .co-tl-bonus-note{ display:flex; align-items:center; gap:7px; margin-top:11px; font-size:11.5px; color:var(--teal); font-weight:600; }
+  .co-tl-bonus-dot{ width:8px; height:8px; border-radius:2px; background:repeating-linear-gradient(45deg, var(--teal), var(--teal) 2px, rgba(63,214,192,0.65) 2px, rgba(63,214,192,0.65) 4px); flex-shrink:0; }
 
   .co-promo{ display:flex; align-items:center; justify-content:space-between; gap:10px; border:1px dashed rgba(63,214,192,0.4); background:rgba(63,214,192,0.06); border-radius:12px; padding:12px 15px; margin-top:16px; }
   .co-promo-left{ display:flex; align-items:center; gap:11px; }
@@ -210,6 +213,60 @@ function getInitials(name) {
     return parts[parts.length - 1]?.charAt(0)?.toUpperCase() || "?";
 }
 
+// Số ngày cộng thêm vào thời hạn gói do khuyến mãi.
+// "TangNgay" dùng thẳng soNgayTang; "TangChuKy" quy đổi 1 chu kỳ = 30 ngày.
+// Chỉnh CHU_KY_DAYS nếu BE định nghĩa độ dài chu kỳ khác 30 ngày.
+const CHU_KY_DAYS = 30;
+
+function getPromotionBonusDays(promo) {
+    if (!promo) return 0;
+    if (promo.promoType === "TangNgay") return Number(promo.soNgayTang || 0);
+    if (promo.promoType === "TangChuKy") return Number(promo.soChuKyTang || 0) * CHU_KY_DAYS;
+    return 0;
+}
+
+// Số tiền được giảm trực tiếp trên giá gói (chỉ áp dụng cho 2 loại giảm giá).
+function getPromotionDiscountAmount(promo, price) {
+    if (!promo || !price) return 0;
+    if (promo.promoType === "GiamPhanTram") {
+        const raw = (Number(price) * Number(promo.phanTramGiam || 0)) / 100;
+        return promo.mucGiamToiDa ? Math.min(raw, Number(promo.mucGiamToiDa)) : raw;
+    }
+    if (promo.promoType === "GiamTien") {
+        return Number(promo.soTienGiam || 0);
+    }
+    return 0;
+}
+
+// Quy đổi tất cả các loại khuyến mãi (giảm tiền lẫn tặng ngày/chu kỳ) về cùng một đơn vị
+// "giá trị VNĐ tương đương" để có thể so sánh và tự động chọn ra khuyến mãi tốt nhất cho khách,
+// không cần khách phải tự chọn. Với khuyến mãi tặng ngày: quy đổi theo đơn giá/ngày của gói.
+function estimatePromotionValue(promo, plan) {
+    if (!promo || !plan) return 0;
+    if (promo.promoType === "TangNgay" || promo.promoType === "TangChuKy") {
+        const bonusDays = getPromotionBonusDays(promo);
+        const perDayValue = plan.durationDays ? Number(plan.price || 0) / Number(plan.durationDays) : 0;
+        return bonusDays * perDayValue;
+    }
+    return getPromotionDiscountAmount(promo, plan.price);
+}
+
+// Icon + nhãn hiển thị ngắn gọn cho từng loại khuyến mãi trong danh sách chọn.
+function getPromotionBadge(promo) {
+    switch (promo.promoType) {
+        case "TangNgay":
+            return { label: `+${promo.soNgayTang} ngày`, Icon: Gift };
+        case "TangChuKy":
+            return { label: `+${promo.soChuKyTang} chu kỳ`, Icon: Gift };
+        case "GiamPhanTram":
+            return { label: `-${promo.phanTramGiam}%`, Icon: Percent };
+        case "GiamTien":
+            return { label: `-${formatVnd(promo.soTienGiam)}`, Icon: Tag };
+        default:
+            return { label: "", Icon: Tag };
+    }
+}
+
 // Tách bank/account/holder/nội dung CK từ query string của link ảnh QR (VietQR)
 // dùng chung cho cả trường hợp tạo đơn mới và trường hợp resume đơn Pending có sẵn.
 function parseQrInfo(qrImageUrl, fallbackOrderCode) {
@@ -271,9 +328,16 @@ export default function Payment() {
     const [selectedBranchId, setSelectedBranchId] = useState("");
     const [branchError, setBranchError] = useState(null);
 
+    // Danh sách khuyến mãi áp dụng được cho gói đang chọn. Khuyến mãi tốt nhất (quy đổi ra
+    // giá trị VNĐ cao nhất) sẽ được TỰ ĐỘNG áp dụng, khách không cần tự chọn.
+    const [promotions, setPromotions] = useState([]);
+    const [selectedPromotionId, setSelectedPromotionId] = useState(null);
+    const [loadingPromotions, setLoadingPromotions] = useState(false);
+    const [promotionError, setPromotionError] = useState(null);
+
     // Đơn thanh toán tạo ra sau khi bấm "Xác nhận & Thanh toán", hoặc được khôi phục lại
     // từ transaction Pending có sẵn khi trang Gói tập điều hướng qua với resumePending.
-    const [order, setOrder] = useState(null); // { orderId, amount, qrImageUrl, checkoutUrl, bankName, accountName, accountNumber, transferContent, expiresInSeconds }
+    const [order, setOrder] = useState(null); // { orderId, amount, qrImageUrl, checkoutUrl, bankName, accountName, accountNumber, transferContent, expiresInSeconds, promotion }
     const [creatingOrder, setCreatingOrder] = useState(false);
     const [orderError, setOrderError] = useState(null);
 
@@ -382,8 +446,61 @@ export default function Payment() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
+    // Lấy danh sách khuyến mãi áp dụng được mỗi khi gói được chọn thay đổi (chỉ cần ở màn
+    // xác nhận đơn hàng - step 1; khi resume đơn Pending thì đơn đã chốt khuyến mãi từ trước
+    // nên không cần gọi lại). Khuyến mãi có giá trị quy đổi cao nhất sẽ được tự động chọn.
+    useEffect(() => {
+        if (!selectedPlan?.planId || location.state?.resumePending) {
+            setPromotions([]);
+            setSelectedPromotionId(null);
+            return;
+        }
+
+        let mounted = true;
+        (async () => {
+            try {
+                setLoadingPromotions(true);
+                setPromotionError(null);
+
+                const res = await memberApi.getApplicablePromotions(selectedPlan.planId);
+                const raw = res?.data ?? res ?? [];
+                const list = Array.isArray(raw) ? raw : [];
+
+                if (mounted) {
+                    setPromotions(list);
+                    // Tự động áp dụng khuyến mãi tốt nhất (quy đổi ra VNĐ cao nhất) cho khách,
+                    // không cần khách tự chọn. Đổi gói -> tính lại từ đầu vì danh sách khuyến mãi
+                    // áp dụng được có thể khác.
+                    if (list.length > 0) {
+                        const best = list.reduce((a, b) =>
+                            estimatePromotionValue(b, selectedPlan) > estimatePromotionValue(a, selectedPlan) ? b : a
+                        );
+                        setSelectedPromotionId(best.promotionId);
+                    } else {
+                        setSelectedPromotionId(null);
+                    }
+                }
+            } catch (err) {
+                console.warn("Không lấy được danh sách khuyến mãi:", err);
+                if (mounted) {
+                    setPromotions([]);
+                    setPromotionError("Không thể tải khuyến mãi.");
+                }
+            } finally {
+                if (mounted) setLoadingPromotions(false);
+            }
+        })();
+
+        return () => {
+            mounted = false;
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [selectedPlan?.planId]);
+
+    const selectedPromotion = promotions.find((p) => p.promotionId === selectedPromotionId) ?? null;
+
     // Tạo đơn thanh toán khi bước sang màn hình QR
-    // API thật: memberApi.createPayment(planId, branchId) -> POST /api/payment/create { planId, branchId }
+    // API thật: memberApi.createPayment(planId, branchId, promotionId) -> POST /api/payment/create { planId, branchId, promotionId }
     const handleConfirmPayment = async () => {
         if (!selectedPlan) return;
 
@@ -398,7 +515,11 @@ export default function Payment() {
             setCreatingOrder(true);
             setOrderError(null);
 
-            const res = await memberApi.createPayment(selectedPlan.planId, selectedBranchId);
+            const res = await memberApi.createPayment(
+                selectedPlan.planId,
+                selectedBranchId,
+                selectedPromotionId ?? null
+            );
             const raw = res?.data ?? res;
 
             if (!raw) throw new Error("Không nhận được dữ liệu thanh toán từ server");
@@ -407,15 +528,17 @@ export default function Payment() {
             // qrImage là link ảnh VietQR trực tiếp, dạng:
             // https://vietqr.app/img?bank=MBBank&acc=...&amount=...&des=...&holder=...
             // BE không trả riêng bankName/accountNumber/holder nên tách từ query string của qrImage để hiển thị.
+            // amount trả về đã là số tiền cuối cùng sau khi BE áp dụng khuyến mãi (nếu có).
             const parsed = parseQrInfo(raw.qrImage, raw.orderCode);
 
             setOrder({
                 orderId: raw.orderCode,
-                amount: raw.amount ?? selectedPlan.price,
+                amount: raw.amount ?? finalPrice,
                 qrImageUrl: raw.qrImage ?? null, // null -> UI sẽ hiển thị ô trống "Chưa có mã QR" để dễ nhận biết khi test
                 checkoutUrl: null,
                 ...parsed,
                 expiresInSeconds: raw.expiresInSeconds ?? 299,
+                promotion: selectedPromotion,
             });
 
             setStep(2);
@@ -485,12 +608,24 @@ export default function Payment() {
         };
     }, [step, order]);
 
-    // Tính mốc thời gian hiệu lực gói mới
+    // Số ngày tặng thêm và số tiền được giảm từ khuyến mãi đang chọn (nếu có)
+    const bonusDays = getPromotionBonusDays(selectedPromotion);
+    const discountAmount = selectedPlan ? getPromotionDiscountAmount(selectedPromotion, selectedPlan.price) : 0;
+    const finalPrice = selectedPlan ? Math.max(0, Number(selectedPlan.price || 0) - discountAmount) : 0;
+
+    // Tính mốc thời gian hiệu lực gói mới (đã cộng thêm số ngày tặng nếu có khuyến mãi loại tặng ngày/chu kỳ)
     // Nếu hội viên đang có gói active -> gói mới bắt đầu tính từ ngày hết hạn gói cũ (nối tiếp)
     // Nếu chưa có gói nào -> bắt đầu từ hôm nay
     const today = new Date();
     const newStart = currentPackage?.expiryDate ? new Date(currentPackage.expiryDate) : today;
-    const newEnd = selectedPlan ? addDays(newStart, selectedPlan.durationDays) : null;
+    const totalDurationDays = selectedPlan ? Number(selectedPlan.durationDays || 0) + bonusDays : 0;
+    const newEnd = selectedPlan ? addDays(newStart, totalDurationDays) : null;
+
+    // Chia thanh thời gian biểu thành 3 đoạn: gói cũ (xám) / gói mới (cam) / ngày tặng thêm (teal sọc)
+    const oldSegmentWidth = currentPackage ? 22 : 0;
+    const newSegmentTotalWidth = 100 - oldSegmentWidth;
+    const bonusSegmentWidth = totalDurationDays > 0 ? (bonusDays / totalDurationDays) * newSegmentTotalWidth : 0;
+    const planSegmentWidth = newSegmentTotalWidth - bonusSegmentWidth;
 
     const goToPackages = () => navigate("/packages");
 
@@ -597,20 +732,35 @@ export default function Payment() {
                                             <div className="co-pkg-box new">
                                                 <div className="co-pkg-tag">Gói muốn mua</div>
                                                 <div className="co-pkg-name co-disp">{selectedPlan.planName}</div>
-                                                <div className="co-pkg-meta">Thời hạn {selectedPlan.durationDays} ngày</div>
+                                                <div className="co-pkg-meta">
+                                                    Thời hạn {selectedPlan.durationDays} ngày
+                                                    {bonusDays > 0 && ` + ${bonusDays} ngày tặng`}
+                                                </div>
                                             </div>
                                         </div>
 
                                         <div className="co-timeline">
                                             <div className="co-track">
-                                                <div className="co-fill-old" style={{ width: currentPackage ? "22%" : "0%" }} />
-                                                <div className="co-fill-new" style={{ left: currentPackage ? "22%" : "0%", width: currentPackage ? "78%" : "100%" }} />
+                                                <div className="co-fill-old" style={{ width: `${oldSegmentWidth}%` }} />
+                                                <div className="co-fill-new" style={{ left: `${oldSegmentWidth}%`, width: `${planSegmentWidth}%` }} />
+                                                {bonusDays > 0 && (
+                                                    <div
+                                                        className="co-fill-bonus"
+                                                        style={{ left: `${oldSegmentWidth + planSegmentWidth}%`, width: `${bonusSegmentWidth}%` }}
+                                                    />
+                                                )}
                                             </div>
                                             <div className="co-tl-labels">
                                                 <div className="co-tl-pt">Hôm nay<br /><b>{formatDate(today)}</b></div>
                                                 <div className="co-tl-pt">Bắt đầu gói mới<br /><b>{formatDate(newStart)}</b></div>
                                                 <div className="co-tl-pt">Kết thúc gói mới<br /><b>{formatDate(newEnd)}</b></div>
                                             </div>
+                                            {bonusDays > 0 && (
+                                                <div className="co-tl-bonus-note">
+                                                    <span className="co-tl-bonus-dot" />
+                                                    Bao gồm {bonusDays} ngày tặng thêm từ khuyến mãi "{selectedPromotion?.tenKhuyenMai}"
+                                                </div>
+                                            )}
                                         </div>
 
                                         {/* Danh sách gói đang mở bán để đổi lựa chọn ngay tại trang này */}
@@ -640,11 +790,73 @@ export default function Payment() {
                                             </div>
                                         )}
 
+                                        {/* Khuyến mãi được tự động áp dụng cho gói đang chọn (khách không cần tự chọn -
+                                            hệ thống tự tìm khuyến mãi có giá trị quy đổi cao nhất trong danh sách áp dụng được) */}
+                                        <div style={{ marginTop: 18 }}>
+                                            <div className="co-card-title" style={{ marginBottom: 10 }}>
+                                                <span className="co-bar" />Khuyến mãi
+                                            </div>
+
+                                            {loadingPromotions && <div className="co-fine">Đang tải khuyến mãi...</div>}
+
+                                            {!loadingPromotions && promotionError && (
+                                                <div className="co-fine" style={{ color: "var(--accent-2)" }}>{promotionError}</div>
+                                            )}
+
+                                            {!loadingPromotions && !promotionError && promotions.length === 0 && (
+                                                <div className="co-fine">Gói này hiện chưa có khuyến mãi áp dụng.</div>
+                                            )}
+
+                                            {!loadingPromotions && !promotionError && selectedPromotion && (() => {
+                                                const badge = getPromotionBadge(selectedPromotion);
+                                                const BadgeIcon = badge.Icon;
+                                                return (
+                                                    <div className="co-promo" style={{ marginTop: 0 }}>
+                                                        <div className="co-promo-left">
+                                                            <div className="co-promo-icon">
+                                                                <BadgeIcon size={16} />
+                                                            </div>
+                                                            <div>
+                                                                <div className="co-promo-name">
+                                                                    {selectedPromotion.tenKhuyenMai}
+                                                                    <span
+                                                                        style={{
+                                                                            marginLeft: 8,
+                                                                            fontSize: 10,
+                                                                            fontWeight: 700,
+                                                                            textTransform: "uppercase",
+                                                                            letterSpacing: ".4px",
+                                                                            color: "var(--teal)",
+                                                                            background: "rgba(63,214,192,0.12)",
+                                                                            borderRadius: 5,
+                                                                            padding: "2px 6px",
+                                                                        }}
+                                                                    >
+                                                                        Tự động áp dụng
+                                                                    </span>
+                                                                </div>
+                                                                {selectedPromotion.moTa && (
+                                                                    <div className="co-promo-desc">{selectedPromotion.moTa}</div>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                        <div className="co-promo-val co-disp">{badge.label}</div>
+                                                    </div>
+                                                );
+                                            })()}
+                                        </div>
+
                                         <div className="co-spacer" />
 
                                         <div className="co-price-list">
                                             <div className="co-price-row"><span>Giá {selectedPlan.planName}</span><span>{formatVnd(selectedPlan.price)}</span></div>
-                                            <div className="co-price-row total"><span>Thành tiền</span><span className="val co-disp">{formatVnd(selectedPlan.price)}</span></div>
+                                            {discountAmount > 0 && (
+                                                <div className="co-price-row discount">
+                                                    <span>Khuyến mãi ({selectedPromotion?.tenKhuyenMai})</span>
+                                                    <span>-{formatVnd(discountAmount)}</span>
+                                                </div>
+                                            )}
+                                            <div className="co-price-row total"><span>Thành tiền</span><span className="val co-disp">{formatVnd(finalPrice)}</span></div>
                                         </div>
                                     </div>
                                 </div>
@@ -677,7 +889,7 @@ export default function Payment() {
                                         <div className="co-card-title"><span className="co-bar" />Thanh toán</div>
                                         <div className="co-info-line">
                                             <span>Tổng cộng</span>
-                                            <span className="co-disp" style={{ fontSize: 17, color: "#ff8a50" }}>{formatVnd(selectedPlan.price)}</span>
+                                            <span className="co-disp" style={{ fontSize: 17, color: "#ff8a50" }}>{formatVnd(finalPrice)}</span>
                                         </div>
 
                                         {/* Chọn chi nhánh thanh toán / kích hoạt gói -> gửi kèm branchId khi tạo đơn */}
@@ -779,7 +991,10 @@ export default function Payment() {
                                         <div className="co-card-title"><span className="co-bar" />Thông tin đơn hàng</div>
                                         <div className="co-info-line"><span>Mã đơn hàng</span><span>#{order.orderId}</span></div>
                                         <div className="co-info-line"><span>Gói tập</span><span>{selectedPlan.planName}</span></div>
-                                        <div className="co-info-line"><span>Thời hạn</span><span>{selectedPlan.durationDays} ngày</span></div>
+                                        <div className="co-info-line"><span>Thời hạn</span><span>{selectedPlan.durationDays} ngày{bonusDays > 0 && ` + ${bonusDays} ngày tặng`}</span></div>
+                                        {order.promotion && (
+                                            <div className="co-info-line"><span>Khuyến mãi</span><span>{order.promotion.tenKhuyenMai}</span></div>
+                                        )}
                                         {order.bankName && <div className="co-info-line"><span>Ngân hàng</span><span>{order.bankName}</span></div>}
                                         {order.accountName && <div className="co-info-line"><span>Chủ tài khoản</span><span>{order.accountName}</span></div>}
                                         {order.accountNumber && <div className="co-info-line"><span>Số tài khoản</span><span>{order.accountNumber}</span></div>}
@@ -839,8 +1054,11 @@ export default function Payment() {
                                 <div className="co-card-title"><span className="co-bar" />Chi tiết giao dịch</div>
                                 <div className="co-info-line"><span>Gói tập</span><span>{selectedPlan.planName}</span></div>
                                 <div className="co-info-line"><span>Thời hạn</span><span>{formatDate(newStart)} &ndash; {formatDate(newEnd)}</span></div>
+                                {order?.promotion && (
+                                    <div className="co-info-line"><span>Khuyến mãi</span><span>{order.promotion.tenKhuyenMai}</span></div>
+                                )}
                                 <div className="co-info-line"><span>Mã đơn hàng</span><span>#{order?.orderId}</span></div>
-                                <div className="co-info-line"><span>Số tiền đã thanh toán</span><span style={{ color: "#ff8a50", fontWeight: 700 }}>{formatVnd(order?.amount ?? selectedPlan.price)}</span></div>
+                                <div className="co-info-line"><span>Số tiền đã thanh toán</span><span style={{ color: "#ff8a50", fontWeight: 700 }}>{formatVnd(order?.amount ?? finalPrice)}</span></div>
                             </div>
 
                             <button className="co-btn co-btn-primary" style={{ marginTop: 16 }} onClick={() => navigate("/")}>

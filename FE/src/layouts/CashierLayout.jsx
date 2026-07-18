@@ -112,7 +112,9 @@ const NAV_ITEMS = [
         matchPrefix: "/cashier/packages",
         children: [
             { id: "packages-renew", icon: Icons.renew, label: "Gia hạn gói tập", path: "/cashier/packages/renew" },
+
             { id: "packages-history", icon: Icons.history, label: "Lịch sử đăng ký", path: "/cashier/packages/history" },
+            { id: "packages-invoice", icon: Icons.history, label: "Hóa đơn", path: "/cashier/packages/invoice" },
         ],
     },
     {
@@ -135,30 +137,49 @@ const NAV_ITEMS = [
             { id: "incidents-list", icon: Icons.list, label: "Danh sách sự cố", path: "/cashier/incidents-list" },
         ],
     },
+    {
+        id: "staff",
+        icon: Icons.members,
+        label: "Nhân viên",
+        matchPrefix: "/cashier/staff",
+        children: [
+            { id: "incidents-report", icon: Icons.report, label: "Danh sách nhân viên", path: "/cashier/staffs" },
+            { id: "incidents-list", icon: Icons.members, label: "Tạo nhân viên", path: "/cashier/staff-create" },
+            { id: "incidents-list", icon: Icons.packages, label: "Tạo gói nhân viên", path: "/cashier/staff/create-pack" },
+        ],
+    },
+    {
+        id: "report",
+        icon: Icons.Staff,
+        label: "Báo cáo",
+        matchPrefix: "/cashier/reports",
+        children: [
+            { id: "reports", icon: Icons.report, label: "Báo cáo", path: "/cashier/reports" },
+
+        ],
+    },
 ];
 
-// ── Bảng màu tối hiện đại — lấy cảm hứng từ màn hình đăng nhập (navy + cyan glow) ──
+// ── Bảng màu tối — đồng bộ với màn hình đăng nhập (navy sâu + cyan accent) ──
 const C = {
-    bgDeep: "#080B14",
-    panel: "rgba(18, 26, 46, 0.72)",
-    panelSolid: "#0F1729",
-    panelBorder: "rgba(148, 163, 184, 0.12)",
-    cyan: "#22D3EE",
+    bgDeep: "#0B1120",
+    panel: "#1E293B",
+    panelSolid: "#1E293B",
+    panelBorder: "#334155",
+    cyan: "#06B6D4",
     cyanDark: "#0E7490",
-    cyanSoft: "rgba(34, 211, 238, 0.14)",
-    cyanGlow: "rgba(34, 211, 238, 0.35)",
-    blue: "#3B82F6",
+    cyanSoft: "rgba(6, 182, 212, 0.14)",
+    cyanGlow: "rgba(6, 182, 212, 0.35)",
+    blue: "#0891B2",
     textPrimary: "#F1F5F9",
     textSecondary: "#94A3B8",
     textMuted: "#64748B",
     danger: "#F87171",
     dangerBg: "rgba(248, 113, 113, 0.1)",
     dangerBorder: "rgba(248, 113, 113, 0.28)",
-    // Trước đây main content dùng nền sáng (#F4F6F8) trong khi các trang con giờ
-    // đều đã chuyển sang tông tối -> phần padding của khối main lộ ra thành viền
-    // sáng bao quanh nội dung tối. Đổi sang panel kính tối cùng tông sidebar/topbar
-    // để không còn viền sáng lạc tông nữa.
-    surfaceLight: "#0B121F",
+    // Content panel dùng cùng tông #1E293B như sidebar/topbar (giống panel
+    // bên trái của trang login) để đồng bộ toàn bộ layout.
+    surfaceLight: "#1E293B",
 };
 
 function getInitials(fullName) {
@@ -350,11 +371,16 @@ export default function CashierLayout() {
         .branch-select-btn { transition: border-color 0.15s, background 0.15s !important; }
         .branch-select-btn:hover:not(:disabled) {
           border-color: ${C.cyan} !important;
-          background: rgba(34, 211, 238, 0.06) !important;
+          background: rgba(6, 182, 212, 0.06) !important;
+        }
+        .branch-select-btn:focus-visible {
+          outline: none;
+          border-color: ${C.cyan} !important;
+          box-shadow: 0 0 0 3px ${C.cyanSoft};
         }
         .branch-menu-item { transition: background 0.15s, color 0.15s !important; }
         .branch-menu-item:hover {
-          background: rgba(34, 211, 238, 0.1) !important;
+          background: rgba(6, 182, 212, 0.1) !important;
           color: ${C.cyan} !important;
         }
         .icon-btn { transition: background 0.15s !important; }
@@ -387,7 +413,7 @@ export default function CashierLayout() {
         }
       `}</style>
 
-            {/* Glow nền — mô phỏng ánh sáng teal/blue của màn hình đăng nhập */}
+            {/* Glow nền — mô phỏng ánh sáng cyan/teal của màn hình đăng nhập */}
             <div style={S.glowTopLeft} />
             <div style={S.glowBottomRight} />
 
@@ -600,7 +626,7 @@ const S = {
         width: 480,
         height: 480,
         borderRadius: "50%",
-        background: "radial-gradient(circle, rgba(34,211,238,0.22) 0%, rgba(34,211,238,0) 70%)",
+        background: "radial-gradient(circle, rgba(6,182,212,0.22) 0%, rgba(6,182,212,0) 70%)",
         filter: "blur(10px)",
         pointerEvents: "none",
         zIndex: 0,
@@ -612,7 +638,7 @@ const S = {
         width: 560,
         height: 560,
         borderRadius: "50%",
-        background: "radial-gradient(circle, rgba(59,130,246,0.18) 0%, rgba(59,130,246,0) 70%)",
+        background: "radial-gradient(circle, rgba(8,145,178,0.18) 0%, rgba(8,145,178,0) 70%)",
         filter: "blur(10px)",
         pointerEvents: "none",
         zIndex: 0,
@@ -632,8 +658,6 @@ const S = {
         height: 68,
         flexShrink: 0,
         background: C.panel,
-        backdropFilter: "blur(16px)",
-        WebkitBackdropFilter: "blur(16px)",
         border: `1px solid ${C.panelBorder}`,
         borderRadius: 18,
         display: "flex",
@@ -667,7 +691,7 @@ const S = {
         alignItems: "center",
         justifyContent: "center",
         flexShrink: 0,
-        boxShadow: `0 0 0 1px rgba(34,211,238,0.25) inset`,
+        boxShadow: `0 0 0 1px rgba(6,182,212,0.25) inset`,
     },
     logoImage: {
         height: 22,
@@ -782,10 +806,11 @@ const S = {
         fontWeight: 800,
         fontSize: 12,
     },
+    // line-height đồng bộ với .al-account-text / .al-user-text bên Admin (1.2)
     staffInfo: {
         display: "flex",
         flexDirection: "column",
-        lineHeight: 1.3,
+        lineHeight: 1.2,
     },
     staffName: {
         fontSize: 13,
@@ -814,11 +839,10 @@ const S = {
         backdropFilter: "blur(2px)",
     },
 
+    // width 240 để khớp .al-sidebar bên Admin (trước đây là 250)
     sidebar: {
-        width: 250,
+        width: 240,
         background: C.panel,
-        backdropFilter: "blur(16px)",
-        WebkitBackdropFilter: "blur(16px)",
         border: `1px solid ${C.panelBorder}`,
         borderRadius: 18,
         display: "flex",
@@ -828,28 +852,32 @@ const S = {
         overflowY: "auto",
         boxShadow: "0 8px 30px rgba(0,0,0,0.35)",
     },
+    // padding dưới giảm nhẹ để khoảng cách tới nav gần với nhịp 18px của
+    // .al-nav bên Admin (trước đây "20px 16px 10px")
     menuLabel: {
         fontSize: 11,
         fontWeight: 700,
         color: C.textMuted,
         letterSpacing: "0.08em",
-        padding: "20px 16px 10px",
+        padding: "16px 16px 8px",
         textTransform: "uppercase",
     },
+    // padding + gap khớp .al-nav bên Admin (18px 10px / gap 6px)
     nav: {
         display: "flex",
         flexDirection: "column",
         flex: 1,
-        padding: "4px 10px 16px",
-        gap: 2,
+        padding: "10px 10px 16px",
+        gap: 6,
     },
     navColumn: {
         display: "flex",
         flexDirection: "column",
-        gap: 1,
+        gap: 6,
         flex: 1,
     },
 
+    // padding + fontSize khớp .al-navlink bên Admin (10px 12px / 14px)
     navItem: {
         display: "flex",
         alignItems: "center",
@@ -857,12 +885,12 @@ const S = {
         width: "100%",
         padding: "10px 12px",
         borderRadius: 10,
-        fontSize: 14.5,
+        fontSize: 14,
         fontWeight: 600,
         textAlign: "left",
     },
     navItemActive: {
-        background: `linear-gradient(135deg, ${C.cyan}, #38BDF8)`,
+        background: `linear-gradient(135deg, ${C.cyan}, ${C.cyanDark})`,
         color: "#04222B",
         boxShadow: `0 4px 16px ${C.cyanGlow}`,
     },
@@ -883,22 +911,24 @@ const S = {
         flexShrink: 0,
     },
 
+    // bỏ paddingLeft ở container, dồn hết phần thụt lề vào subItem (giống
+    // .al-submenu / .al-navlink-sub bên Admin: indent 32px nằm trên chính nút)
     submenu: {
         display: "flex",
         flexDirection: "column",
-        gap: 1,
-        paddingLeft: 12,
-        marginTop: 1,
-        marginBottom: 2,
+        gap: 3,
+        marginTop: 4,
+        marginBottom: 4,
     },
+    // padding-left 32px + fontSize 13 khớp .al-navlink-sub bên Admin
     subItem: {
         display: "flex",
         alignItems: "center",
         gap: 8,
         width: "100%",
-        padding: "9px 10px",
+        padding: "10px 12px 10px 32px",
         borderRadius: 8,
-        fontSize: 13.5,
+        fontSize: 13,
         textAlign: "left",
     },
     subItemActive: {
@@ -913,6 +943,9 @@ const S = {
     },
     subLabel: { flex: 1 },
 
+    // đã bỏ khóa marginTop trùng lặp ("auto" rồi "8") — trước đây khóa sau
+    // ghi đè khóa trước khiến nút Đăng xuất không được đẩy xuống đáy sidebar
+    // như ý đồ ban đầu (giống .al-sidebar-foot bên Admin nằm cố định ở đáy).
     logoutBtn: {
         display: "flex",
         alignItems: "center",
@@ -923,7 +956,6 @@ const S = {
         background: C.dangerBg,
         border: `1px solid ${C.dangerBorder}`,
         width: "100%",
-        marginTop: 8,
     },
     logoutLabel: {
         fontSize: 14.5,
@@ -931,19 +963,18 @@ const S = {
         color: C.danger,
     },
 
-    // Panel nội dung chính — trước dùng nền sáng, giờ chuyển sang panel tối
-    // cùng tông với sidebar/topbar để không còn viền sáng lộ ra quanh các
-    // trang con (đã chuyển sang theme tối).
+    // Khối chứa nội dung chính: KHÔNG tự vẽ card (không background/border/
+    // shadow/padding riêng) — chỉ là vùng chứa trung lập. Lý do: từng trang
+    // con (Outlet) đã tự có card riêng của nó (vd .vt-card trong
+    // IncidentReportForm), nếu main cũng vẽ card y hệt sẽ bị lồng 2 lớp
+    // nền + viền giống hệt nhau, tạo viền mảnh thừa bao quanh (double
+    // border). Nếu có trang con nào KHÔNG tự vẽ card, style riêng cho trang
+    // đó thay vì thêm lại style card ở đây.
     main: {
         flex: 1,
-        background: C.surfaceLight,
-        borderRadius: 18,
-        border: `1px solid ${C.panelBorder}`,
         overflowY: "auto",
         overflowX: "hidden",
-        padding: "28px 32px",
         minWidth: 0,
         height: "100%",
-        boxShadow: "0 8px 30px rgba(0,0,0,0.35)",
     },
 };

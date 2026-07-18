@@ -465,6 +465,7 @@ export default function LichSuDangKyGoiTapOfManager() {
                                         <thead style={S.stickyHead}>
                                             <tr>
                                                 <th style={S.th}>Hội viên</th>
+                                                <th style={S.th}>Mã giao dịch</th>
                                                 <th style={S.th}>Gói tập</th>
                                                 <th style={S.th}>Chi nhánh</th>
                                                 <th style={S.th}>Kênh mua</th>
@@ -488,17 +489,19 @@ export default function LichSuDangKyGoiTapOfManager() {
                                                             </div>
                                                         </td>
                                                         <td style={S.td}>
-                                                            <span style={S.planName}>{item.planName}</span>
+
                                                             {item.transactionCode && (
                                                                 <p style={S.orderCodeTag}>{item.transactionCode}</p>
                                                             )}
                                                         </td>
                                                         <td style={S.td}>
-                                                            <span style={S.branchTag}>
-                                                                <MapPin size={12} color="#475569" />
-                                                                {item.branchName || "—"}
-                                                            </span>
+                                                            <span style={S.planName}>{item.planName}</span>
+
                                                         </td>
+                                                        <td><span style={S.branchTag}>
+                                                            <MapPin size={12} color="#475569" />
+                                                            {item.branchName || "—"}
+                                                        </span></td>
                                                         <td style={S.td}><ChannelBadge channel={item.channel} /></td>
                                                         <td style={S.td}><span style={S.dateRange}>{formatDate(item.startDate)} → {formatDate(item.expiryDate)}</span></td>
                                                         <td style={S.tdRight}>

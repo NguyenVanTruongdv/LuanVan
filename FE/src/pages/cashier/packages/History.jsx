@@ -1,14 +1,13 @@
 import {
+  Check,
   CheckCircle2,
+  ChevronDown,
   Clock,
-  Download,
-  FileText,
   Globe,
   History,
-  Hourglass,
   Loader2,
+  MapPin,
   Phone,
-  Printer,
   Search,
   Store,
   User,
@@ -16,22 +15,19 @@ import {
   XCircle
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import cashierApi from "../../../api/cashierApi";
+import authApi from "../../../api/authApi";
+import managerApi from "../../../api/managerApi";
 
-// ---------------------------------------------------------------------------
-// Config: map trạng thái / kênh mua trả về từ BE sang label + màu hiển thị
-// ---------------------------------------------------------------------------
+// Trạng thái của MemberPackage (gói tập đã đăng ký) — khác với paymentStatus của Transaction.
 const STATUS_CONFIG = {
-  Pending: { label: "Chờ thanh toán", icon: Hourglass, bg: "#fffbeb", color: "#b45309" },
-  Paid: { label: "Đang hiệu lực", icon: CheckCircle2, bg: "#ecfdf5", color: "#047857" },
-  Expired: { label: "Hết hạn", icon: Clock, bg: "#f1f5f9", color: "#64748b" },
-  Cancelled: { label: "Đã hủy", icon: XCircle, bg: "#fff1f2", color: "#be123c" },
+  Active: { label: "Đang hoạt động", icon: CheckCircle2, bg: "rgba(4,120,87,0.16)", color: "#34d399" },
+  Expired: { label: "Hết hạn", icon: Clock, bg: "rgba(100,116,139,0.16)", color: "#94a3b8" },
+  Cancelled: { label: "Đã hủy", icon: XCircle, bg: "rgba(190,18,60,0.16)", color: "#fb7185" },
 };
 
-// BE trả về purchaseChannel dạng chuỗi hiển thị sẵn: "Online" | "Tại quầy"
 const CHANNEL_CONFIG = {
-  "Online": { label: "Online", icon: Globe, bg: "#f0f9ff", color: "#0369a1" },
-  "Tại quầy": { label: "Tại quầy", icon: Store, bg: "#ecfdf5", color: "#047857" },
+  "Online": { label: "Online", icon: Globe, bg: "rgba(3,105,161,0.16)", color: "#38bdf8" },
+  "Offline": { label: "Tại quầy", icon: Store, bg: "rgba(4,120,87,0.16)", color: "#34d399" },
 };
 
 function formatCurrency(v) {
@@ -47,96 +43,87 @@ function formatDate(d) {
   return `${dd}/${m}/${y}`;
 }
 
-// ---------------------------------------------------------------------------
-// Styles object
-/// ... (toàn bộ import và các phần khác giữ nguyên) ...
-
 const S = {
-  root: { display: "flex", flexDirection: "column", height: "100vh", backgroundColor: "#f8fafc", fontFamily: "'Inter', 'Segoe UI', system-ui, sans-serif" },
-  main: { flex: 1, overflow: "hidden", padding: "24px 32px", display: "flex", flexDirection: "column" },
+  root: { display: "flex", flexDirection: "column", height: "100vh", backgroundColor: "#0b1220", fontFamily: "'Inter', 'Segoe UI', system-ui, sans-serif" },
+  main: { flex: 1, overflow: "visible", padding: "24px 32px", display: "flex", flexDirection: "column", minHeight: 0 },
 
-  pageTitle: { display: "flex", alignItems: "center", gap: 12, marginBottom: 24 },
-  pageTitleIcon: { width: 44, height: 44, borderRadius: 12, backgroundColor: "#065f46", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 },
-  h1: { fontSize: 22, fontWeight: 700, color: "#0f172a", margin: 0 },
-  pageDesc: { fontSize: 13, color: "#64748b", margin: 0 },
+  pageTitle: { display: "flex", alignItems: "center", gap: 12, marginBottom: 20 },
+  pageTitleIcon: { width: 44, height: 44, borderRadius: 12, backgroundColor: "#0d9488", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 },
+  h1: { fontSize: 22, fontWeight: 700, color: "#f1f5f9", margin: 0 },
+  pageDesc: { fontSize: 13, color: "#94a3b8", margin: 0 },
 
-  filterPanel: { marginBottom: 20, borderRadius: 16, border: "1px solid #e2e8f0", backgroundColor: "#fff", padding: 20 },
-  filterGrid: { display: "grid", gridTemplateColumns: "1fr auto auto auto", gap: 12 },
+  branchStrip: { display: "flex", alignItems: "center", gap: 10, marginBottom: 20, flexWrap: "wrap" },
+  branchChip: (active) => ({
+    display: "inline-flex", alignItems: "center", gap: 8, borderRadius: 10,
+    border: `1px solid ${active ? "#0d9488" : "#1e293b"}`,
+    backgroundColor: active ? "rgba(13,148,136,0.14)" : "#111827",
+    padding: "8px 14px", fontSize: 12.5, fontWeight: 600,
+    color: active ? "#5eead4" : "#94a3b8", cursor: "pointer", whiteSpace: "nowrap",
+  }),
+  branchChipIcon: (active) => ({ display: "flex", color: active ? "#2dd4bf" : "#475569" }),
+
+  filterPanel: { marginBottom: 20, borderRadius: 16, border: "1px solid #1e293b", backgroundColor: "#111827", padding: 20, flexShrink: 0 },
+  filterGrid: { display: "grid", gridTemplateColumns: "1fr auto auto auto auto", gap: 12 },
   searchWrap: { position: "relative" },
-  searchIcon: { position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: "#94a3b8", pointerEvents: "none" },
-  searchInput: { width: "100%", boxSizing: "border-box", borderRadius: 8, border: "1px solid #e2e8f0", backgroundColor: "#f8fafc", padding: "10px 36px 10px 36px", fontSize: 13, color: "#334155", outline: "none" },
-  clearBtn: { position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", color: "#94a3b8", display: "flex", padding: 2 },
-  select: { borderRadius: 8, border: "1px solid #e2e8f0", backgroundColor: "#f8fafc", padding: "10px 12px", fontSize: 13, color: "#334155", outline: "none", cursor: "pointer" },
-  resetBtn: { borderRadius: 8, border: "1px solid #e2e8f0", backgroundColor: "#fff", padding: "10px 16px", fontSize: 13, fontWeight: 500, color: "#475569", cursor: "pointer" },
+  searchIcon: { position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: "#64748b", pointerEvents: "none" },
+  searchInput: { width: "100%", boxSizing: "border-box", borderRadius: 8, border: "1px solid #1e293b", backgroundColor: "#0b1220", padding: "10px 36px 10px 36px", fontSize: 13, color: "#e2e8f0", outline: "none" },
+  clearBtn: { position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", color: "#64748b", display: "flex", padding: 2 },
 
-  card: { borderRadius: 16, border: "1px solid #e2e8f0", backgroundColor: "#fff", flex: 1, display: "flex", flexDirection: "column", minHeight: 0 },
-  cardHeader: { display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: "1px solid #f1f5f9", padding: "14px 20px" },
-  countText: { fontSize: 13, color: "#64748b" },
-  countBold: { fontWeight: 600, color: "#0f172a" },
+  customSelectWrap: { position: "relative" },
+  customSelectBtn: (open, disabled) => ({
+    width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10,
+    borderRadius: 8, border: `1px solid ${open ? "#0d9488" : "#1e293b"}`, backgroundColor: disabled ? "#0d131f" : "#0b1220",
+    padding: "10px 12px", fontSize: 13, color: disabled ? "#475569" : "#e2e8f0", cursor: disabled ? "not-allowed" : "pointer", whiteSpace: "nowrap",
+    boxShadow: open ? "0 0 0 3px rgba(13,148,136,0.18)" : "none",
+  }),
+  customSelectBtnLabel: { overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
+  customSelectChevron: (open) => ({ display: "flex", flexShrink: 0, color: "#64748b", transform: open ? "rotate(180deg)" : "none", transition: "transform 0.15s ease" }),
+  customSelectMenu: { position: "absolute", top: "calc(100% + 6px)", left: 0, right: 0, minWidth: 180, zIndex: 60, borderRadius: 10, border: "1px solid #1e293b", backgroundColor: "#111827", boxShadow: "0 16px 32px rgba(0,0,0,0.45)", padding: 6, maxHeight: 260, overflowY: "auto" },
+  customSelectOption: (active) => ({
+    display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8,
+    borderRadius: 8, padding: "9px 10px", fontSize: 13, cursor: "pointer",
+    color: active ? "#5eead4" : "#cbd5e1",
+    backgroundColor: active ? "rgba(13,148,136,0.14)" : "transparent",
+  }),
+  resetBtn: { borderRadius: 8, border: "1px solid #1e293b", backgroundColor: "#0b1220", padding: "10px 16px", fontSize: 13, fontWeight: 500, color: "#94a3b8", cursor: "pointer" },
+
+  card: { borderRadius: 16, border: "1px solid #1e293b", backgroundColor: "#111827", flex: 1, display: "flex", flexDirection: "column", minHeight: 0 },
+  cardHeader: { display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: "1px solid #1e293b", padding: "14px 20px", flexShrink: 0 },
+  countText: { fontSize: 13, color: "#94a3b8" },
+  countBold: { fontWeight: 600, color: "#f1f5f9" },
 
   table: { width: "100%", borderCollapse: "collapse", fontSize: 13, textAlign: "left" },
-  th: { padding: "10px 20px", fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", color: "#94a3b8", borderBottom: "1px solid #f1f5f9", textTransform: "uppercase", whiteSpace: "nowrap" },
-  thRight: { padding: "10px 20px", fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", color: "#94a3b8", borderBottom: "1px solid #f1f5f9", textAlign: "right", textTransform: "uppercase" },
-  thCenter: { padding: "10px 20px", fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", color: "#94a3b8", borderBottom: "1px solid #f1f5f9", textAlign: "center", textTransform: "uppercase" },
-  td: { padding: "14px 20px", borderBottom: "1px solid #f8fafc", verticalAlign: "middle" },
-  tdRight: { padding: "14px 20px", borderBottom: "1px solid #f8fafc", textAlign: "right", verticalAlign: "middle" },
-  tdCenter: { padding: "14px 20px", borderBottom: "1px solid #f8fafc", textAlign: "center", verticalAlign: "middle" },
+  th: { padding: "10px 20px", fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", color: "#64748b", borderBottom: "1px solid #1e293b", textTransform: "uppercase", whiteSpace: "nowrap", backgroundColor: "#111827" },
+  thRight: { padding: "10px 20px", fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", color: "#64748b", borderBottom: "1px solid #1e293b", textAlign: "right", textTransform: "uppercase", backgroundColor: "#111827" },
+  td: { padding: "14px 20px", borderBottom: "1px solid #1e293b", verticalAlign: "middle" },
+  tdRight: { padding: "14px 20px", borderBottom: "1px solid #1e293b", textAlign: "right", verticalAlign: "middle" },
   memberRow: { display: "flex", alignItems: "center", gap: 10 },
-  avatarImg: { width: 36, height: 36, borderRadius: "50%", objectFit: "cover", flexShrink: 0, border: "1px solid #e2e8f0" },
-  avatarFallback: { width: 36, height: 36, borderRadius: "50%", backgroundColor: "#f1f5f9", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, color: "#94a3b8" },
-  memberName: { fontWeight: 600, color: "#0f172a", fontSize: 13 },
-  memberPhone: { display: "flex", alignItems: "center", gap: 4, fontSize: 11, color: "#94a3b8", marginTop: 2 },
-  planName: { color: "#334155" },
-  dateRange: { color: "#475569", whiteSpace: "nowrap" },
-  amountMain: { fontWeight: 600, color: "#0f172a" },
-  amountOld: { fontSize: 11, color: "#94a3b8", textDecoration: "line-through" },
+  avatarImg: { width: 36, height: 36, borderRadius: "50%", objectFit: "cover", flexShrink: 0, border: "1px solid #1e293b" },
+  avatarFallback: { width: 36, height: 36, borderRadius: "50%", backgroundColor: "#1e293b", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, color: "#64748b" },
+  memberName: { fontWeight: 600, color: "#f1f5f9", fontSize: 13 },
+  memberPhone: { display: "flex", alignItems: "center", gap: 4, fontSize: 11, color: "#64748b", marginTop: 2 },
+  planName: { color: "#cbd5e1" },
+  orderCodeTag: { fontSize: 11, color: "#64748b", marginTop: 2 },
+  branchTag: { display: "inline-flex", alignItems: "center", gap: 5, fontSize: 12, color: "#94a3b8" },
+  dateRange: { color: "#94a3b8", whiteSpace: "nowrap" },
+  amountMain: { fontWeight: 600, color: "#f1f5f9" },
 
   badge: (bg, color) => ({ display: "inline-flex", alignItems: "center", gap: 6, borderRadius: 9999, padding: "4px 10px", fontSize: 11, fontWeight: 600, backgroundColor: bg, color }),
 
-  invoiceBtn: { display: "inline-flex", alignItems: "center", gap: 6, borderRadius: 8, border: "1px solid #e2e8f0", backgroundColor: "#fff", padding: "6px 12px", fontSize: 12, fontWeight: 500, color: "#0369a1", cursor: "pointer", whiteSpace: "nowrap" },
-  invoiceBtnDisabled: { opacity: 0.6, cursor: "not-allowed" },
-
   emptyState: { display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8, padding: "64px 24px", textAlign: "center" },
-  emptyTitle: { fontSize: 13, fontWeight: 500, color: "#475569" },
-  emptyDesc: { fontSize: 11, color: "#94a3b8" },
+  emptyTitle: { fontSize: 13, fontWeight: 500, color: "#cbd5e1" },
+  emptyDesc: { fontSize: 11, color: "#64748b" },
 
   loadingState: { display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10, padding: "64px 24px", textAlign: "center" },
   errorState: { display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8, padding: "64px 24px", textAlign: "center" },
-  retryBtn: { marginTop: 8, borderRadius: 8, border: "1px solid #e2e8f0", backgroundColor: "#fff", padding: "8px 16px", fontSize: 13, fontWeight: 500, color: "#475569", cursor: "pointer" },
+  retryBtn: { marginTop: 8, borderRadius: 8, border: "1px solid #1e293b", backgroundColor: "#0b1220", padding: "8px 16px", fontSize: 13, fontWeight: 500, color: "#94a3b8", cursor: "pointer" },
 
   scrollArea: { flex: 1, minHeight: 0, overflowY: "auto" },
-  stickyHead: { position: "sticky", top: 0, backgroundColor: "#fff", zIndex: 1 },
-
-  // ---- Modal xem hóa đơn ----
-  // Kích thước co giãn theo viewport (vw/vh) thay vì set cứng px, để hiển thị
-  // hợp lý trên nhiều loại thiết bị (laptop, màn lớn, tablet...). Mobile nhỏ
-  // được xử lý riêng bằng class "invoice-modal-box" trong <style> bên dưới.
-  modalBackdrop: { position: "fixed", inset: 0, backgroundColor: "rgba(15,23,42,0.55)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50, padding: "4vh 4vw" },
-  modalBox: {
-    width: "clamp(320px, 60vw, 760px)",
-    height: "clamp(420px, 85vh, 900px)",
-    backgroundColor: "#fff",
-    borderRadius: 16,
-    display: "flex",
-    flexDirection: "column",
-    overflow: "hidden",
-    boxShadow: "0 20px 50px rgba(0,0,0,0.25)",
-  },
-  modalHeader: { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 18px", borderBottom: "1px solid #f1f5f9", flexShrink: 0 },
-  modalTitle: { fontSize: 14, fontWeight: 600, color: "#0f172a", margin: 0 },
-  modalHeaderActions: { display: "flex", alignItems: "center", gap: 8 },
-  modalIconBtn: { display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, borderRadius: 8, border: "1px solid #e2e8f0", backgroundColor: "#fff", padding: "6px 10px", fontSize: 12, fontWeight: 500, color: "#475569", cursor: "pointer" },
-  modalBody: { flex: 1, minHeight: 0, overflow: "hidden", backgroundColor: "#fff" },
-  invoiceFrame: { width: "100%", height: "100%", border: "none", display: "block", backgroundColor: "#fff" },
-  invoiceImgWrap: { width: "100%", height: "100%", overflow: "auto", display: "flex", alignItems: "flex-start", justifyContent: "center", backgroundColor: "#f1f5f9" },
-  invoiceImg: { maxWidth: "100%", display: "block" },
+  stickyHead: { position: "sticky", top: 0, zIndex: 1 },
 };
 
-// ---------------------------------------------------------------------------
-// Badge components
-// ---------------------------------------------------------------------------
 function StatusBadge({ status }) {
-  const cfg = STATUS_CONFIG[status] ?? STATUS_CONFIG.Pending;
+  const cfg = STATUS_CONFIG[status] ?? STATUS_CONFIG.Active;
   const Icon = cfg.icon;
   return (
     <span style={S.badge(cfg.bg, cfg.color)}>
@@ -157,12 +144,12 @@ function ChannelBadge({ channel }) {
   );
 }
 
-function Avatar({ src, alt }) {
+function Avatar({ src, alt, size = 36 }) {
   const [errored, setErrored] = useState(false);
   if (!src || errored) {
     return (
-      <span style={S.avatarFallback}>
-        <User size={16} />
+      <span style={{ ...S.avatarFallback, width: size, height: size }}>
+        <User size={size <= 36 ? 16 : 20} />
       </span>
     );
   }
@@ -170,97 +157,72 @@ function Avatar({ src, alt }) {
     <img
       src={src}
       alt={alt || "avatar"}
-      style={S.avatarImg}
+      style={{ ...S.avatarImg, width: size, height: size }}
       onError={() => setErrored(true)}
     />
   );
 }
 
-function InvoiceButton({ item, onView, loading }) {
+function CustomSelect({ value, onChange, options, placeholder = "Chọn...", disabled = false }) {
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef(null);
+
+  useEffect(() => {
+    function handleClickOutside(e) {
+      if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false);
+    }
+    function handleKey(e) {
+      if (e.key === "Escape") setOpen(false);
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    document.addEventListener("keydown", handleKey);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("keydown", handleKey);
+    };
+  }, []);
+
+  const selected = options.find((o) => String(o.value) === String(value));
+
   return (
-    <button
-      style={{ ...S.invoiceBtn, ...(loading ? S.invoiceBtnDisabled : {}) }}
-      className="invoice-btn"
-      disabled={loading}
-      onClick={() => onView(item)}
-    >
-      {loading ? <Loader2 className="spin" size={13} /> : <FileText size={13} />}
-      Xem hóa đơn
-    </button>
-  );
-}
-
-function InvoiceModal({ state, onClose, onPrint, onDownload }) {
-  if (!state.open) return null;
-
-  const isPdf = state.contentType?.includes("pdf");
-  const isHtml = state.contentType?.includes("html");
-  const isImage = state.contentType?.startsWith("image/");
-  const showIframe = isPdf || isHtml;
-
-  return (
-    <div style={S.modalBackdrop} onClick={onClose}>
-      <div style={S.modalBox} className="invoice-modal-box" onClick={(e) => e.stopPropagation()}>
-        <div style={S.modalHeader}>
-          <p style={S.modalTitle}>
-            Hóa đơn{state.item?.fullName ? ` - ${state.item.fullName}` : ""}
-          </p>
-          <div style={S.modalHeaderActions}>
-            {!state.loading && !state.error && (
-              <>
-                <button style={S.modalIconBtn} onClick={onDownload}>
-                  <Download size={13} /> Tải về
-                </button>
-                {showIframe && (
-                  <button style={S.modalIconBtn} onClick={onPrint}>
-                    <Printer size={13} /> In
-                  </button>
-                )}
-              </>
-            )}
-            <button style={S.modalIconBtn} onClick={onClose}>
-              <X size={13} /> Đóng
-            </button>
-          </div>
-        </div>
-
-        <div style={S.modalBody}>
-          {state.loading ? (
-            <div style={S.loadingState}>
-              <Loader2 className="spin" size={28} color="#94a3b8" />
-              <p style={S.emptyTitle}>Đang tải hóa đơn...</p>
-            </div>
-          ) : state.error ? (
-            <div style={S.errorState}>
-              <XCircle size={28} color="#f43f5e" />
-              <p style={S.emptyTitle}>{state.error}</p>
-            </div>
-          ) : showIframe ? (
-            <iframe
-              id="invoice-print-frame"
-              title="Hóa đơn"
-              src={state.blobUrl}
-              style={S.invoiceFrame}
-            />
-          ) : isImage ? (
-            <div style={S.invoiceImgWrap}>
-              <img src={state.blobUrl} alt="Hóa đơn" style={S.invoiceImg} />
-            </div>
+    <div ref={wrapRef} style={S.customSelectWrap}>
+      <button
+        type="button"
+        className="custom-select-btn"
+        style={S.customSelectBtn(open, disabled)}
+        onClick={() => !disabled && setOpen((o) => !o)}
+        disabled={disabled}
+      >
+        <span style={S.customSelectBtnLabel}>{selected ? selected.label : placeholder}</span>
+        <span style={S.customSelectChevron(open)}><ChevronDown size={14} /></span>
+      </button>
+      {open && (
+        <div style={S.customSelectMenu} className="scroll-dark custom-select-menu">
+          {options.length === 0 ? (
+            <div style={{ padding: "10px 10px", fontSize: 12.5, color: "#475569" }}>Không có dữ liệu</div>
           ) : (
-            <div style={S.errorState}>
-              <XCircle size={28} color="#f43f5e" />
-              <p style={S.emptyTitle}>Định dạng hóa đơn không được hỗ trợ xem trực tiếp</p>
-            </div>
+            options.map((opt) => {
+              const isActive = String(opt.value) === String(value);
+              return (
+                <div
+                  key={opt.value}
+                  className="custom-select-option"
+                  style={S.customSelectOption(isActive)}
+                  onClick={() => { onChange(opt.value); setOpen(false); }}
+                >
+                  <span>{opt.label}</span>
+                  {isActive && <Check size={14} />}
+                </div>
+              );
+            })
           )}
         </div>
-      </div>
+      )}
     </div>
   );
 }
 
-// ---------------------------------------------------------------------------
-// Main page
-// ---------------------------------------------------------------------------
+
 export default function LichSuDangKyGoiTap() {
   const [history, setHistory] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -271,15 +233,26 @@ export default function LichSuDangKyGoiTap() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [channelFilter, setChannelFilter] = useState("all");
 
-  const [invoiceModal, setInvoiceModal] = useState({
-    open: false,
-    loading: false,
-    error: null,
-    blobUrl: "",
-    contentType: "",
-    item: null,
-  });
-  const loadingItemRef = useRef(null);
+  const [branches, setBranches] = useState([]);
+  const [branchFilter, setBranchFilter] = useState("all");
+  const [branchesLoading, setBranchesLoading] = useState(true);
+
+  useEffect(() => {
+    async function fetchBranches() {
+      setBranchesLoading(true);
+      try {
+        const res = await authApi.get("/api/employee/profile");
+        const data = res?.data ?? res;
+        setBranches(Array.isArray(data?.branches) ? data.branches : []);
+      } catch (err) {
+        console.error("Không thể tải danh sách chi nhánh:", err);
+        setBranches([]);
+      } finally {
+        setBranchesLoading(false);
+      }
+    }
+    fetchBranches();
+  }, []);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -292,13 +265,15 @@ export default function LichSuDangKyGoiTap() {
     keyword: debouncedSearch || undefined,
     status: statusFilter !== "all" ? statusFilter : undefined,
     channel: channelFilter !== "all" ? channelFilter : undefined,
-  }), [debouncedSearch, statusFilter, channelFilter]);
+    branchId: branchFilter !== "all" ? branchFilter : undefined,
+  }), [debouncedSearch, statusFilter, channelFilter, branchFilter]);
 
+  // Danh sách gói tập đã đăng ký (MemberPackage), lấy từ /api/member-packages/history.
   async function fetchHistory() {
     setLoading(true);
     setError(null);
     try {
-      const res = await cashierApi.getHisRegisPack(formData);
+      const res = await managerApi.getMemberPackagesHistory(formData);
       const raw = res?.data ?? res;
       const data = Array.isArray(raw) ? raw : (Array.isArray(raw?.data) ? raw.data : []);
       setHistory(data);
@@ -315,64 +290,7 @@ export default function LichSuDangKyGoiTap() {
   }, [formData]);
 
   function resetFilters() {
-    setSearchTerm(""); setDebouncedSearch(""); setStatusFilter("all"); setChannelFilter("all");
-  }
-
-  async function handleViewInvoice(item) {
-    const transactionId = item.transactionId ?? item.id;
-    if (!transactionId) {
-      alert("Không tìm thấy mã giao dịch");
-      return;
-    }
-
-    loadingItemRef.current = item;
-    setInvoiceModal({ open: true, loading: true, error: null, blobUrl: "", contentType: "", item });
-
-    try {
-      const { blob, contentType } = await cashierApi.getInvoice(transactionId);
-      const blobUrl = URL.createObjectURL(blob);
-      setInvoiceModal({ open: true, loading: false, error: null, blobUrl, contentType, item });
-    } catch (err) {
-      setInvoiceModal({
-        open: true,
-        loading: false,
-        error: err?.message || "Không thể tải hóa đơn",
-        blobUrl: "",
-        contentType: "",
-        item,
-      });
-    } finally {
-      loadingItemRef.current = null;
-    }
-  }
-
-  function closeInvoiceModal() {
-    if (invoiceModal.blobUrl) {
-      URL.revokeObjectURL(invoiceModal.blobUrl);
-    }
-    setInvoiceModal({ open: false, loading: false, error: null, blobUrl: "", contentType: "", item: null });
-  }
-
-  function handlePrintInvoice() {
-    const iframe = document.getElementById("invoice-print-frame");
-    if (iframe && iframe.contentWindow) {
-      iframe.contentWindow.focus();
-      iframe.contentWindow.print();
-    }
-  }
-
-  function handleDownloadInvoice() {
-    if (!invoiceModal.blobUrl) return;
-    const a = document.createElement("a");
-    a.href = invoiceModal.blobUrl;
-    let ext = "jpg";
-    if (invoiceModal.contentType?.includes("pdf")) ext = "pdf";
-    else if (invoiceModal.contentType?.includes("html")) ext = "html";
-    else if (invoiceModal.contentType?.includes("png")) ext = "png";
-    a.download = `hoa-don-${invoiceModal.item?.transactionId ?? invoiceModal.item?.id ?? "invoice"}.${ext}`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
+    setSearchTerm(""); setDebouncedSearch(""); setStatusFilter("all"); setChannelFilter("all"); setBranchFilter("all");
   }
 
   return (
@@ -381,42 +299,63 @@ export default function LichSuDangKyGoiTap() {
         * { box-sizing: border-box; }
         body { margin: 0; }
         a { text-decoration: none; }
-        input:focus { border-color: #059669 !important; background: #fff !important; box-shadow: 0 0 0 3px rgba(5,150,105,0.12) !important; }
-        select:focus { border-color: #059669 !important; background: #fff !important; box-shadow: 0 0 0 3px rgba(5,150,105,0.12) !important; }
-        tr:hover td { background-color: rgba(248,250,252,0.8); }
+        input:focus { border-color: #0d9488 !important; background: #0b1220 !important; box-shadow: 0 0 0 3px rgba(13,148,136,0.18) !important; }
+        tr:hover td { background-color: rgba(30,41,59,0.55) !important; }
         .table-wrap { display: block; overflow-x: auto; }
         .mobile-cards { display: none; }
         .spin { animation: spin 0.8s linear infinite; }
-        .invoice-btn:hover { background-color: #f0f9ff !important; border-color: #bae6fd !important; }
+        .reset-btn:hover { background-color: #1e293b !important; }
+        .branch-chip:hover { border-color: #0d9488 !important; }
+        .custom-select-btn:not(:disabled):hover { border-color: #334155 !important; }
+        .custom-select-option:hover { background-color: #1e293b !important; }
+        .custom-select-menu { animation: dropdown-in 0.12s ease-out; }
+        @keyframes dropdown-in { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
         @keyframes spin { to { transform: rotate(360deg); } }
+        .scroll-dark::-webkit-scrollbar { width: 8px; height: 8px; }
+        .scroll-dark::-webkit-scrollbar-track { background: transparent; }
+        .scroll-dark::-webkit-scrollbar-thumb { background-color: #1e293b; border-radius: 8px; }
+        .scroll-dark::-webkit-scrollbar-thumb:hover { background-color: #334155; }
+        .scroll-dark { scrollbar-width: thin; scrollbar-color: #1e293b transparent; }
+        .app-root { height: 100vh; height: 100dvh; }
+        @media (max-width: 1024px) {
+          .filter-grid { grid-template-columns: 1fr 1fr !important; }
+          .filter-grid .reset-btn { grid-column: span 2; }
+        }
         @media (max-width: 768px) {
           .table-wrap { display: none !important; }
           .mobile-cards { display: flex !important; flex-direction: column; gap: 12px; padding: 16px; }
           .filter-grid { grid-template-columns: 1fr !important; }
+          .filter-grid .reset-btn { grid-column: span 1; }
           .main-pad { padding: 16px !important; }
+          .page-title-icon { width: 38px !important; height: 38px !important; }
+          .page-title-h1 { font-size: 18px !important; }
+          .page-desc { font-size: 12px !important; }
+          .filter-panel { padding: 14px !important; }
+          .branch-strip { flex-wrap: nowrap !important; overflow-x: auto !important; padding-bottom: 4px; }
+          input, .custom-select-btn { font-size: 16px !important; }
         }
-        /* Modal hóa đơn: trên màn hình nhỏ chiếm gần full màn hình để dễ đọc/thao tác */
-        @media (max-width: 640px) {
-          .invoice-modal-box {
-            width: 96vw !important;
-            height: 92vh !important;
-          }
+        @media (max-width: 480px) {
+          .page-title { gap: 10px !important; }
+          .page-title-icon { width: 34px !important; height: 34px !important; border-radius: 10px !important; }
+          .page-title-h1 { font-size: 16px !important; }
         }
       `}</style>
 
-      <div style={S.root}>
+      <div className="app-root" style={S.root}>
         <main className="main-pad" style={S.main}>
-          <div style={S.pageTitle}>
-            <div style={S.pageTitleIcon}>
+          <div className="page-title" style={S.pageTitle}>
+            <div className="page-title-icon" style={S.pageTitleIcon}>
               <History size={20} color="#fff" />
             </div>
             <div>
-              <h1 style={S.h1}>Lịch sử đăng ký gói tập</h1>
-              <p style={S.pageDesc}>Xem lại lịch sử mua và gia hạn gói tập của hội viên</p>
+              <h1 className="page-title-h1" style={S.h1}>Lịch sử đăng ký gói tập</h1>
+              <p className="page-desc" style={S.pageDesc}>Xem lại các gói tập hội viên đã đăng ký</p>
             </div>
           </div>
 
-          <div style={S.filterPanel}>
+
+
+          <div className="filter-panel" style={S.filterPanel}>
             <div className="filter-grid" style={S.filterGrid}>
               <div style={S.searchWrap}>
                 <span style={S.searchIcon}><Search size={16} /></span>
@@ -433,21 +372,32 @@ export default function LichSuDangKyGoiTap() {
                 )}
               </div>
 
-              <select style={S.select} value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); }}>
-                <option value="all">Tất cả trạng thái</option>
-                <option value="Pending">Chờ thanh toán</option>
-                <option value="Paid">Đang hiệu lực</option>
-                <option value="Cancelled">Đã hủy</option>
-                <option value="Expired">Hết hạn</option>
-              </select>
+              <CustomSelect
+                value={statusFilter}
+                onChange={setStatusFilter}
+                placeholder="Tất cả trạng thái"
+                options={[
+                  { value: "all", label: "Tất cả trạng thái" },
+                  { value: "Active", label: "Đang hoạt động" },
+                  { value: "Expired", label: "Hết hạn" },
+                  { value: "Cancelled", label: "Đã hủy" },
+                ]}
+              />
 
-              <select style={S.select} value={channelFilter} onChange={(e) => { setChannelFilter(e.target.value); }}>
-                <option value="all">Tất cả kênh mua</option>
-                <option value="Online">Online</option>
-                <option value="Tại quầy">Tại quầy</option>
-              </select>
+              <CustomSelect
+                value={channelFilter}
+                onChange={setChannelFilter}
+                placeholder="Tất cả kênh mua"
+                options={[
+                  { value: "all", label: "Tất cả kênh mua" },
+                  { value: "Online", label: "Online" },
+                  { value: "Offline", label: "Tại quầy" },
+                ]}
+              />
 
-              <button style={S.resetBtn} onClick={resetFilters}>Đặt lại</button>
+
+
+              <button className="reset-btn" style={S.resetBtn} onClick={resetFilters}>Đặt lại</button>
             </div>
           </div>
 
@@ -455,7 +405,7 @@ export default function LichSuDangKyGoiTap() {
             <div style={S.cardHeader}>
               <p style={S.countText}>
                 {loading ? "Đang tải..." : (
-                  <>Tìm thấy <span style={S.countBold}>{history.length}</span> giao dịch</>
+                  <>Tìm thấy <span style={S.countBold}>{history.length}</span> gói tập đã đăng ký</>
                 )}
               </p>
             </div>
@@ -473,53 +423,60 @@ export default function LichSuDangKyGoiTap() {
               </div>
             ) : history.length === 0 ? (
               <div style={S.emptyState}>
-                <Search size={28} color="#cbd5e1" />
-                <p style={S.emptyTitle}>Không tìm thấy giao dịch phù hợp</p>
+                <Search size={28} color="#334155" />
+                <p style={S.emptyTitle}>Không tìm thấy gói tập phù hợp</p>
                 <p style={S.emptyDesc}>Thử đổi từ khóa hoặc xóa bộ lọc đang áp dụng</p>
               </div>
             ) : (
               <>
-                <div className="table-wrap" style={S.scrollArea}>
+                <div className="table-wrap scroll-dark" style={S.scrollArea}>
                   <table style={S.table}>
                     <thead style={S.stickyHead}>
                       <tr>
                         <th style={S.th}>Hội viên</th>
+                        <th style={S.th}>Mã giao dịch</th>
                         <th style={S.th}>Gói tập</th>
+                        <th style={S.th}>Chi nhánh</th>
                         <th style={S.th}>Kênh mua</th>
                         <th style={S.th}>Thời hạn</th>
                         <th style={S.thRight}>Số tiền</th>
                         <th style={S.th}>Trạng thái</th>
-                        <th style={S.thCenter}>Hóa đơn</th>
                       </tr>
                     </thead>
                     <tbody>
                       {history.map((item, idx) => {
-                        const rowKey = `${item.phone}-${item.planName}-${item.startDate}-${idx}`;
-                        const isThisLoading = invoiceModal.open && invoiceModal.loading && invoiceModal.item === item;
+                        const rowKey = item.memberPackageId ?? `${item.memberPhone}-${item.planName}-${item.startDate}-${idx}`;
                         return (
                           <tr key={rowKey}>
                             <td style={S.td}>
                               <div style={S.memberRow}>
-                                <Avatar src={item.urlImg} alt={item.fullName} />
+                                <Avatar src={item.memberAvatarUrl} alt={item.memberFullName} />
                                 <div>
-                                  <p style={S.memberName}>{item.fullName}</p>
-                                  <p style={S.memberPhone}><Phone size={10} />{item.phone}</p>
+                                  <p style={S.memberName}>{item.memberFullName}</p>
+                                  <p style={S.memberPhone}><Phone size={10} />{item.memberPhone}</p>
                                 </div>
                               </div>
                             </td>
-                            <td style={S.td}><span style={S.planName}>{item.planName}</span></td>
-                            <td style={S.td}><ChannelBadge channel={item.purchaseChannel} /></td>
+                            <td style={S.td}>
+
+                              {item.transactionCode && (
+                                <p style={S.orderCodeTag}>{item.transactionCode}</p>
+                              )}
+                            </td>
+                            <td style={S.td}>
+                              <span style={S.planName}>{item.planName}</span>
+
+                            </td>
+                            <td><span style={S.branchTag}>
+                              <MapPin size={12} color="#475569" />
+                              {item.branchName || "—"}
+                            </span></td>
+                            <td style={S.td}><ChannelBadge channel={item.channel} /></td>
                             <td style={S.td}><span style={S.dateRange}>{formatDate(item.startDate)} → {formatDate(item.expiryDate)}</span></td>
                             <td style={S.tdRight}>
                               <p style={S.amountMain}>{formatCurrency(item.amount)}</p>
-                              {item.amount !== item.originalAmount && (
-                                <p style={S.amountOld}>{formatCurrency(item.originalAmount)}</p>
-                              )}
                             </td>
-                            <td style={S.td}><StatusBadge status={item.status} /></td>
-                            <td style={S.tdCenter}>
-                              <InvoiceButton item={item} onView={handleViewInvoice} loading={isThisLoading} />
-                            </td>
+                            <td style={S.td}><StatusBadge status={item.packageStatus} /></td>
                           </tr>
                         );
                       })}
@@ -527,32 +484,31 @@ export default function LichSuDangKyGoiTap() {
                   </table>
                 </div>
 
-                <div className="mobile-cards" style={S.scrollArea}>
+                <div className="mobile-cards scroll-dark" style={S.scrollArea}>
                   {history.map((item, idx) => {
-                    const rowKey = `${item.phone}-${item.planName}-${item.startDate}-${idx}`;
-                    const isThisLoading = invoiceModal.open && invoiceModal.loading && invoiceModal.item === item;
+                    const rowKey = item.memberPackageId ?? `${item.memberPhone}-${item.planName}-${item.startDate}-${idx}`;
                     return (
-                      <div key={rowKey} style={{ borderRadius: 12, border: "1px solid #f1f5f9", padding: 16 }}>
+                      <div key={rowKey} style={{ borderRadius: 12, border: "1px solid #1e293b", padding: 16, backgroundColor: "#0b1220" }}>
                         <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
                           <div style={S.memberRow}>
-                            <Avatar src={item.urlImg} alt={item.fullName} />
+                            <Avatar src={item.memberAvatarUrl} alt={item.memberFullName} />
                             <div>
-                              <p style={S.memberName}>{item.fullName}</p>
-                              <p style={S.memberPhone}><Phone size={10} />{item.phone}</p>
+                              <p style={S.memberName}>{item.memberFullName}</p>
+                              <p style={S.memberPhone}><Phone size={10} />{item.memberPhone}</p>
                             </div>
                           </div>
-                          <StatusBadge status={item.status} />
+                          <StatusBadge status={item.packageStatus} />
                         </div>
                         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 12, fontSize: 13 }}>
-                          <span style={{ color: "#475569" }}>{item.planName}</span>
-                          <ChannelBadge channel={item.purchaseChannel} />
+                          <span style={{ color: "#cbd5e1" }}>{item.planName}</span>
+                          <ChannelBadge channel={item.channel} />
+                        </div>
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 8 }}>
+                          <span style={S.branchTag}><MapPin size={12} color="#475569" />{item.branchName || "—"}</span>
                         </div>
                         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 8, fontSize: 11, color: "#64748b" }}>
                           <span>{formatDate(item.startDate)} → {formatDate(item.expiryDate)}</span>
-                          <span style={{ fontSize: 13, fontWeight: 600, color: "#0f172a" }}>{formatCurrency(item.amount)}</span>
-                        </div>
-                        <div style={{ marginTop: 12, display: "flex", justifyContent: "flex-end" }}>
-                          <InvoiceButton item={item} onView={handleViewInvoice} loading={isThisLoading} />
+                          <span style={{ fontSize: 13, fontWeight: 600, color: "#f1f5f9" }}>{formatCurrency(item.amount)}</span>
                         </div>
                       </div>
                     );
@@ -563,13 +519,6 @@ export default function LichSuDangKyGoiTap() {
           </div>
         </main>
       </div>
-
-      <InvoiceModal
-        state={invoiceModal}
-        onClose={closeInvoiceModal}
-        onPrint={handlePrintInvoice}
-        onDownload={handleDownloadInvoice}
-      />
     </>
   );
 }

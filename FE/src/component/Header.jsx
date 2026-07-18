@@ -17,7 +17,7 @@ const NAV_LINKS = [
     { label: "Chi nhánh", href: "/branch" },
     { label: "Thống kê", href: "/thong-ke", requireAuth: true },
     { label: "Báo cáo vấn đề", href: "/issue", requireAuth: true, requireActive: true },
-    { label: "Cộng Đồng", href: "/comunity" },
+    { label: "Cộng Đồng", href: "/forum", requireAuth: true, requireActive: true },
 ];
 
 /* Cho phép các trang không nằm trong NAV_LINKS (vd: /payment, /checkout...) vẫn
@@ -30,7 +30,7 @@ const ACTIVE_KEY_TO_HREF = {
     branch: "/branch",
     stats: "/thong-ke",
     issue: "/issue",
-    community: "/comunity",
+    community: "/forum",
 };
 
 /* ─── icons ─── */

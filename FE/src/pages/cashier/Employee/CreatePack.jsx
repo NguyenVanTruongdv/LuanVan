@@ -1,6 +1,7 @@
 import {
     Banknote,
     CalendarPlus,
+    Camera,
     Check,
     CheckCircle2,
     CreditCard,
@@ -9,8 +10,10 @@ import {
     Search,
     ShieldCheck,
     Tag,
+    Trash2,
+    Upload,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import cashierApi from "../../../api/cashierApi";
 
 /* ─────────────────────────────────────────────
@@ -114,6 +117,12 @@ html,body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:va
 .member-meta{font-size:12px;color:var(--muted);margin-top:2px;}
 .member-select-hint{font-size:12px;color:var(--primary);font-weight:600;margin-left:auto;white-space:nowrap;}
 
+/* status badge — trạng thái tài khoản nhân viên */
+.status-badge{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:700;padding:3px 9px;border-radius:999px;white-space:nowrap;}
+.status-badge-active{color:#6EE7B7;background:var(--discount-bg);border:1px solid rgba(16,185,129,.35);}
+.status-badge-pending{color:var(--warn);background:var(--warn-bg);border:1px solid var(--warn-border);}
+.status-badge-other{color:var(--muted);background:rgba(148,163,184,.12);border:1px solid var(--border-md);}
+
 /* pkg switch (giống trang active) */
 .pkg-switch{display:flex;align-items:stretch;gap:12px;margin-bottom:20px;}
 .pkg-switch-box{flex:1;background:var(--bg);border:1px solid var(--border);border-radius:12px;padding:14px 16px;min-width:0;}
@@ -135,6 +144,22 @@ html,body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:va
 .pkg-timeline-dates div{display:flex;flex-direction:column;gap:3px;}
 .pkg-timeline-dates span{font-size:11.5px;color:var(--muted);}
 .pkg-timeline-dates strong{font-size:13px;color:var(--ink);}
+
+/* face id capture — chỉ hiện với tài khoản PendingActivation */
+.facecapture{display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap;margin-bottom:22px;padding:16px;background:var(--bg);border:1.5px dashed var(--border-md);border-radius:var(--radius-sm);}
+.facecapture-preview{width:96px;height:96px;border-radius:12px;background:var(--surface);border:1.5px solid var(--border);display:flex;align-items:center;justify-content:center;color:var(--muted);flex:none;overflow:hidden;}
+.facecapture-preview img{width:100%;height:100%;object-fit:cover;}
+.facecapture-info{flex:1;min-width:180px;}
+.facecapture-title{font-size:13.5px;font-weight:700;color:var(--ink);display:flex;align-items:center;gap:6px;margin-bottom:4px;}
+.facecapture-desc{font-size:12px;color:var(--muted);line-height:1.5;margin-bottom:10px;}
+.facecapture-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+.facecapture-input-label{display:inline-flex;align-items:center;gap:7px;background:var(--primary);color:#04222B;font-size:12.5px;font-weight:700;padding:8px 14px;border-radius:var(--radius-sm);cursor:pointer;transition:filter .15s;}
+.facecapture-input-label:hover{filter:brightness(1.06);}
+.facecapture-input-label.secondary{background:var(--surface);color:var(--ink);border:1.5px solid var(--border-md);}
+.facecapture-input-label input{display:none;}
+.facecapture-remove{display:inline-flex;align-items:center;gap:6px;background:none;border:1px solid var(--danger-border);color:var(--danger);font-size:12px;font-weight:700;padding:7px 12px;border-radius:var(--radius-sm);cursor:pointer;}
+.facecapture-remove:hover{background:var(--danger-light);}
+.facecapture-ok{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:700;color:#6EE7B7;}
 
 /* package list — dạng hàng radio giống trang active */
 .pkg-list-title{font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:10px;}
@@ -191,25 +216,6 @@ html,body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:va
 .payment-method-btn.active{border-color:var(--primary);background:var(--primary-light);color:var(--primary);}
 .payment-method-check{margin-left:auto;color:var(--primary);}
 
-/* transfer box */
-.transfer-box{margin-top:14px;border:1.5px solid var(--primary-light);background:var(--primary-light);border-radius:var(--radius-sm);padding:14px 16px;}
-.transfer-box-title{font-size:12px;font-weight:700;color:var(--primary);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;}
-.transfer-info-row{display:flex;justify-content:space-between;gap:10px;font-size:13px;margin-bottom:6px;}
-.transfer-info-row:last-of-type{margin-bottom:0;}
-.transfer-info-row .k{color:var(--muted);font-weight:500;}
-.transfer-info-row .v{font-weight:700;color:var(--ink);}
-.transfer-ref-input{
-  width:100%;background:var(--bg);border:1.5px solid var(--border);border-radius:var(--radius-sm);
-  padding:9px 12px;margin-top:10px;font-size:13px;color:var(--ink);font-family:'Inter',sans-serif;font-weight:500;outline:none;
-}
-.transfer-ref-input:focus{border-color:var(--primary);box-shadow:0 0 0 3px rgba(6,182,212,.10);}
-.transfer-file-input{margin-top:10px;font-size:12.5px;color:var(--muted);font-weight:500;}
-.transfer-confirm{display:flex;align-items:flex-start;gap:9px;margin-top:12px;cursor:pointer;user-select:none;}
-.transfer-confirm input{margin-top:2px;width:16px;height:16px;accent-color:var(--primary);cursor:pointer;flex-shrink:0;}
-.transfer-confirm span{font-size:12.5px;color:var(--ink);font-weight:600;line-height:1.5;}
-.transfer-confirmed-tag{display:flex;align-items:center;gap:6px;margin-top:12px;background:var(--discount-bg);border:1px solid rgba(16,185,129,.4);color:#6EE7B7;border-radius:6px;padding:7px 10px;font-size:12px;font-weight:700;}
-
-/* summary card */
 .summary-card{position:sticky;top:24px;}
 .summary-head{background:linear-gradient(135deg,var(--navy),var(--navy-light));padding:20px 22px;}
 .summary-head-title{font-size:12.5px;font-weight:700;color:rgba(255,255,255,.65);letter-spacing:.5px;text-transform:uppercase;margin-bottom:4px;}
@@ -262,15 +268,16 @@ html,body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:va
 .field-label{font-size:12px;font-weight:700;color:var(--ink);margin-bottom:7px;display:block;}
 .btn-outline{background:none;border:1px solid var(--border-md);border-radius:var(--radius-sm);padding:5px 10px;font-size:12px;font-weight:600;cursor:pointer;color:var(--muted);}
 
+/* live camera capture modal — dùng webcam của máy trạm thu ngân */
+.camera-box{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:22px;max-width:440px;width:100%;box-shadow:var(--shadow-lg);}
+.camera-box-title{font-size:15px;font-weight:700;color:var(--ink);margin-bottom:14px;display:flex;align-items:center;gap:8px;}
+.camera-video{width:100%;aspect-ratio:4/3;background:#000;border-radius:var(--radius-sm);object-fit:cover;transform:scaleX(-1);}
+.camera-actions{display:flex;align-items:center;justify-content:flex-end;gap:10px;margin-top:16px;}
+.camera-btn-capture{display:inline-flex;align-items:center;gap:7px;background:var(--primary);color:#04222B;font-size:13.5px;font-weight:700;padding:10px 18px;border-radius:var(--radius-sm);border:none;cursor:pointer;transition:filter .15s;}
+.camera-btn-capture:hover{filter:brightness(1.06);}
+
 @media(max-width:480px){.payment-methods{flex-direction:column;}}
 `;
-
-/* ─────────── Static (chưa có API riêng) ─────────── */
-const BANK_INFO = {
-    bankName: "Vietcombank",
-    accountNumber: "0123 456 789",
-    accountName: "CÔNG TY TNHH PHÒNG GYM ABC",
-};
 
 const COLORS = ["#06B6D4", "#2563EB", "#7C3AED", "#DB2777", "#D97706"];
 const avatarColor = id => COLORS[Number(id) % COLORS.length] || COLORS[0];
@@ -285,6 +292,28 @@ const addDays = (dateStr, days) => {
     return d.toISOString().slice(0, 10);
 };
 const todayISO = () => new Date().toISOString().slice(0, 10);
+
+/* Nhận diện chuỗi tìm kiếm có phải SĐT hay không, để map đúng vào query
+   param `phone` hoặc `fullName` của GetMembers([FromQuery] phone, fullName, branchId). */
+const isPhoneLike = q => /^[0-9+\s.-]+$/.test(q.trim()) && /\d/.test(q);
+
+/* Trạng thái tài khoản nhân viên quyết định luồng thao tác:
+   - PendingActivation → cần chụp Face ID + chọn gói → activateWithPackage
+   - Active            → chỉ cần chọn gói tập          → renewMembership */
+const MEMBER_STATUS = {
+    ACTIVE: "Active",
+    PENDING: "PendingActivation",
+};
+function statusBadgeInfo(status) {
+    switch (status) {
+        case MEMBER_STATUS.ACTIVE:
+            return { label: "Đang hoạt động", cls: "status-badge-active" };
+        case MEMBER_STATUS.PENDING:
+            return { label: "Chờ kích hoạt", cls: "status-badge-pending" };
+        default:
+            return { label: status || "Không rõ", cls: "status-badge-other" };
+    }
+}
 
 /* ─────────── HELPERS: unwrap + normalize dữ liệu từ API ─────────── */
 function unwrap(res) { return res?.data ?? res ?? null; }
@@ -329,6 +358,8 @@ function normalizeMember(m) {
         name: m.fullName ?? m.FullName ?? m.name,
         phone: m.phone ?? m.Phone,
         email: m.email ?? m.Email,
+        status: m.status ?? m.Status ?? m.memberStatus ?? m.MemberStatus ?? MEMBER_STATUS.ACTIVE,
+        branchId: m.branchId ?? m.BranchId,
         raw: m,
     };
 }
@@ -345,7 +376,7 @@ function normalizePlan(p) {
 
 // Khuyến mãi cho 1 gói — GET /api/plans/{planId}/applicable-promotions (cashierApi.getApplicablePromotions).
 // Mỗi gói chỉ có tối đa 1 khuyến mãi hiệu lực -> FE lấy phần tử đầu tiên và áp dụng tự động,
-// không cho nhân viên chọn thủ công (đồng bộ với khâu chọn gói tập của trang kích hoạt hội viên).
+// không cho nhân viên chọn thủ công (đồng bộ với khâu chọn gói tập của trang kích hoạt nhân viên).
 // promoType: "GiamPhanTram" | "GiamTienMat" | "TangNgay" | "TangChuKy"
 function normalizePromotion(p) {
     const { promotionId, tenKhuyenMai, promoType, phanTramGiam, soTienGiam, mucGiamToiDa, soNgayTang, soChuKyTang, moTa } = p;
@@ -390,7 +421,7 @@ function promotionShortLabel(promotion) {
 }
 
 // Tính lại thời hạn + số tiền của gói mới dựa trên plan + khuyến mãi (nếu có) + ngày bắt đầu.
-// startDateISO: hôm nay nếu hội viên chưa có gói active, hoặc ngày hết hạn gói hiện tại nếu đang gia hạn nối tiếp.
+// startDateISO: hôm nay nếu nhân viên chưa có gói active, hoặc ngày hết hạn gói hiện tại nếu đang gia hạn nối tiếp.
 function computePricing(plan, promotion, startDateISO) {
     if (!plan) return null;
     const price = Number(plan.price) || 0;
@@ -420,8 +451,8 @@ function computePricing(plan, promotion, startDateISO) {
 }
 
 /* ─────────────────────────────────────────────────────────────── */
-export default function RenewPage() {
-    /* ---- hội viên: tìm kiếm qua API (debounce) ---- */
+export default function CreatePackPage() {
+    /* ---- nhân viên: tìm kiếm qua API (debounce) ---- */
     const [searchQ, setSearchQ] = useState("");
     const [memberResults, setMemberResults] = useState([]);
     const [searching, setSearching] = useState(false);
@@ -429,7 +460,8 @@ export default function RenewPage() {
     const [selectedMember, setMember] = useState(null);
     const [loadingMemberDetail, setLoadingMemberDetail] = useState(false);
 
-    /* ---- gói tập hiện tại: getCurrentMemberPack() ---- */
+    /* ---- gói tập hiện tại: gercurrentpackInternal() — chỉ áp dụng cho nhân viên Active;
+       trả về null nếu nhân viên chưa từng có gói nào trước đó ---- */
     const [currentPkg, setCurrentPkg] = useState(null);
     const [loadingPkgInfo, setLoadingPkgInfo] = useState(false);
     const [pkgInfoError, setPkgInfoError] = useState("");
@@ -445,32 +477,44 @@ export default function RenewPage() {
     const [loadingPromotion, setLoadingPromotion] = useState(false);
     const [promotionError, setPromotionError] = useState("");
 
-    /* ---- thanh toán ---- */
+    /* ---- Face ID — bắt buộc khi nhân viên đang ở trạng thái PendingActivation.
+       Có thể chụp trực tiếp (camera) hoặc tải ảnh có sẵn lên. ---- */
+    const [faceImage, setFaceImage] = useState(null);
+    const [faceImagePreview, setFaceImagePreview] = useState(null);
+    const [showCamera, setShowCamera] = useState(false);
+    const [cameraError, setCameraError] = useState("");
+    const videoRef = useRef(null);
+    const streamRef = useRef(null);
+
+    /* ---- thanh toán — chỉ cần chọn phương thức, không cần nhập thông tin chuyển khoản ---- */
     const [paymentMethod, setPaymentMethod] = useState(null); // "cash" | "transfer"
-    const [transferRef, setTransferRef] = useState("");
-    const [transferConfirmed, setTransferConfirmed] = useState(false);
-    const [receiptFile, setReceiptFile] = useState(null);
 
     /* ---- submit ---- */
     const [submitting, setSubmitting] = useState(false);
     const [submitError, setSubmitError] = useState("");
     const [success, setSuccess] = useState(null);
 
+    /* trạng thái nhân viên quyết định luồng: PendingActivation cần chụp Face ID + activateWithPackage,
+       còn lại (Active...) chỉ cần chọn gói + renewMembership như cũ. */
+    const isPending = selectedMember?.status === MEMBER_STATUS.PENDING;
+
     /* step logic */
-    const step = !selectedMember ? 1 : !selectedPlan ? 2 : 3;
+    const step = !selectedMember ? 1 : !selectedPlan || (isPending && !faceImage) ? 2 : 3;
 
     /* ---- load danh sách gói tập khi mount ---- */
     const fetchPlans = useCallback(() => {
         setLoadingPlans(true);
         setPlansError("");
-        return cashierApi.getAllPackage()
+        return cashierApi.getPackOfStaff()
             .then(res => setPlans(unwrapList(res).map(normalizePlan)))
             .catch(() => setPlansError("Không tải được danh sách gói tập. Vui lòng thử lại."))
             .finally(() => setLoadingPlans(false));
     }, []);
     useEffect(() => { fetchPlans(); }, [fetchPlans]);
 
-    /* ---- tìm hội viên: debounce theo searchQ ---- */
+    /* ---- tìm nhân viên: debounce theo searchQ ----
+       GetMembers([FromQuery] string? phone, [FromQuery] string? fullName, [FromQuery] int? branchId)
+       → map ô tìm kiếm sang đúng tham số: chuỗi số → phone, còn lại → fullName. */
     useEffect(() => {
         const q = searchQ.trim();
         if (!q) { setMemberResults([]); setSearchError(""); return; }
@@ -478,12 +522,13 @@ export default function RenewPage() {
         setSearching(true);
         const t = setTimeout(async () => {
             try {
-                const res = await cashierApi.getListMembers({ search: q });
+                const params = isPhoneLike(q) ? { phone: q } : { fullName: q };
+                const res = await cashierApi.getListMembers(params);
                 if (!active) return;
                 setMemberResults(unwrapList(res).map(normalizeMember).filter(Boolean));
                 setSearchError("");
             } catch (e) {
-                if (active) { setMemberResults([]); setSearchError("Không tìm được hội viên. Vui lòng thử lại."); }
+                if (active) { setMemberResults([]); setSearchError("Không tìm được nhân viên. Vui lòng thử lại."); }
             } finally {
                 if (active) setSearching(false);
             }
@@ -491,7 +536,7 @@ export default function RenewPage() {
         return () => { active = false; clearTimeout(t); };
     }, [searchQ]);
 
-    /* ---- chọn hội viên: lấy chi tiết hội viên từ API ---- */
+    /* ---- chọn nhân viên: lấy chi tiết nhân viên từ API ---- */
     async function handleSelectMember(m) {
         setSearchQ("");
         setMemberResults([]);
@@ -507,25 +552,38 @@ export default function RenewPage() {
         }
     }
 
-    /* ---- lấy gói tập hiện tại của hội viên ---- */
+    /* ---- lấy gói tập hiện tại của nhân viên — bỏ qua với nhân viên PendingActivation
+       vì tài khoản chưa từng được kích hoạt nên chắc chắn chưa có gói nào.
+       Lưu ý: gercurrentpackInternal trả về null (hoặc 404) khi nhân viên chưa từng
+       có gói nào trước đó — đây KHÔNG phải là lỗi, chỉ đơn giản là "chưa có gói". ---- */
     useEffect(() => {
-        if (!selectedMember?.id) { setCurrentPkg(null); setPkgInfoError(""); return; }
+        if (!selectedMember?.id || isPending) { setCurrentPkg(null); setPkgInfoError(""); return; }
         let active = true;
         (async () => {
             setLoadingPkgInfo(true);
             setPkgInfoError("");
             try {
-                const res = await cashierApi.getCurrentMemberPack(selectedMember.id);
+                const res = await cashierApi.gercurrentpackInternal(selectedMember.id);
                 if (!active) return;
+                // res/data null → nhân viên chưa có gói trước đó, không phải lỗi
                 setCurrentPkg(normalizePackageInfo(extractPackageDto(res)));
             } catch (e) {
-                if (active) { setCurrentPkg(null); setPkgInfoError("Không tải được thông tin gói tập hiện tại."); }
+                if (!active) return;
+                const status = e?.response?.status;
+                if (status === 404) {
+                    // Không tìm thấy gói hiện tại = chưa có gói, không hiển thị lỗi
+                    setCurrentPkg(null);
+                    setPkgInfoError("");
+                } else {
+                    setCurrentPkg(null);
+                    setPkgInfoError("Không tải được thông tin gói tập hiện tại.");
+                }
             } finally {
                 if (active) setLoadingPkgInfo(false);
             }
         })();
         return () => { active = false; };
-    }, [selectedMember?.id]);
+    }, [selectedMember?.id, isPending]);
 
     /* ---- tra khuyến mãi áp dụng mỗi khi đổi gói tập ---- */
     useEffect(() => {
@@ -544,15 +602,67 @@ export default function RenewPage() {
         return () => { active = false; };
     }, [selectedPlan?.planId]);
 
+    /* ---- preview ảnh Face ID vừa chụp/chọn ---- */
+    useEffect(() => {
+        if (!faceImage) { setFaceImagePreview(null); return; }
+        const url = URL.createObjectURL(faceImage);
+        setFaceImagePreview(url);
+        return () => URL.revokeObjectURL(url);
+    }, [faceImage]);
+
+    function handleFaceImageChange(e) {
+        const file = e.target.files?.[0] ?? null;
+        setFaceImage(file);
+        e.target.value = "";
+    }
+
+    /* ---- Chụp ảnh trực tiếp bằng webcam của máy trạm thu ngân (không phải input capture,
+       vì trên desktop input[capture] chỉ mở lại hộp thoại chọn file như "Tải ảnh lên"). ---- */
+    useEffect(() => {
+        if (!showCamera) return;
+        let active = true;
+        setCameraError("");
+        navigator.mediaDevices?.getUserMedia?.({ video: { facingMode: "user" }, audio: false })
+            .then(stream => {
+                if (!active) { stream.getTracks().forEach(t => t.stop()); return; }
+                streamRef.current = stream;
+                if (videoRef.current) videoRef.current.srcObject = stream;
+            })
+            .catch(() => { if (active) setCameraError("Không truy cập được webcam. Vui lòng cho phép quyền camera trên trình duyệt, hoặc dùng \"Tải ảnh lên\"."); });
+        return () => {
+            active = false;
+            if (streamRef.current) { streamRef.current.getTracks().forEach(t => t.stop()); streamRef.current = null; }
+        };
+    }, [showCamera]);
+
+    function openCamera() { setShowCamera(true); }
+    function closeCamera() { setShowCamera(false); }
+    function capturePhoto() {
+        const video = videoRef.current;
+        if (!video || !video.videoWidth) return;
+        const canvas = document.createElement("canvas");
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        const ctx = canvas.getContext("2d");
+        ctx.translate(canvas.width, 0);
+        ctx.scale(-1, 1); // ảnh chụp giữ đúng chiều thật, chỉ preview video bị lật gương
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        canvas.toBlob(blob => {
+            if (!blob) return;
+            setFaceImage(new File([blob], `face-id-${Date.now()}.jpg`, { type: "image/jpeg" }));
+            closeCamera();
+        }, "image/jpeg", 0.92);
+    }
+
     function changeMember() {
         setMember(null); setPlan(null); setPromotion(null); setPromotionError("");
-        setPaymentMethod(null); setTransferConfirmed(false); setTransferRef("");
-        setReceiptFile(null); setSubmitError("");
+        setPaymentMethod(null); setSubmitError("");
         setCurrentPkg(null); setPkgInfoError("");
+        setFaceImage(null);
     }
 
     const pkg = currentPkg;
-    const isExtending = !!pkg; // BE chỉ trả về gói có PackageStatus === "Active", hoặc null
+    const isExtending = !isPending && !!pkg; // BE chỉ trả về gói có PackageStatus === "Active", hoặc null
 
     /* ngày bắt đầu gói mới: nối tiếp gói hiện tại nếu đang gia hạn, ngược lại bắt đầu từ hôm nay */
     const newStartDate = useMemo(() => {
@@ -560,7 +670,7 @@ export default function RenewPage() {
         return isExtending ? pkg.expiryDate : todayISO();
     }, [selectedMember, isExtending, pkg]);
 
-    /* pricing (hiển thị — BE tự tính lại chính xác khi renew) */
+    /* pricing (hiển thị — BE tự tính lại chính xác khi renew/activate) */
     const pricing = useMemo(
         () => (selectedPlan ? computePricing(selectedPlan, promotion, newStartDate) : null),
         [selectedPlan, promotion, newStartDate]
@@ -571,16 +681,14 @@ export default function RenewPage() {
 
     /* can the user actually submit? */
     const canSubmit = !!selectedMember && !!selectedPlan && !!paymentMethod && !submitting
-        && (paymentMethod === "cash" || (paymentMethod === "transfer" && transferConfirmed));
+        && (!isPending || !!faceImage);
 
-    function selectPaymentMethod(method) {
-        setPaymentMethod(method);
-        if (method === "cash") { setTransferConfirmed(false); setTransferRef(""); setReceiptFile(null); }
-    }
-
-    /* ---- gọi API renew — khớp RenewMembershipRequest (RenewController.Renew) ----
-       PlanId, PromotionId (null nếu không có KM), PaymentMethod ("Cash"|"BankTransfer"),
-       BankReferenceCode, ReceiptImage. BE tự tính GiaGoc/Amount/ngày/StartDate/ExpiryDate. */
+    /* ---- gọi API renew/activate ----
+       - Active  → renewMembership(id, fd) — khớp RenewMembershipRequest (RenewController.Renew):
+         PlanId, PromotionId (null nếu không có KM), PaymentMethod ("Cash"|"BankTransfer").
+         BE tự tính GiaGoc/Amount/ngày/StartDate/ExpiryDate.
+       - PendingActivation → activateWithPackage(id, fd) (trang mẫu "kích hoạt nhân viên"):
+         cùng các field trên, cộng thêm FaceImage bắt buộc để đăng ký Face ID cho nhân viên. */
     async function handleSubmit() {
         if (!canSubmit) return;
         setSubmitting(true);
@@ -590,23 +698,27 @@ export default function RenewPage() {
             fd.append("PlanId", selectedPlan.planId);
             if (promotion?.promotionId != null) fd.append("PromotionId", promotion.promotionId);
             fd.append("PaymentMethod", paymentMethod === "cash" ? "Cash" : "BankTransfer");
-            if (transferRef) fd.append("BankReferenceCode", transferRef);
-            if (receiptFile) fd.append("ReceiptImage", receiptFile);
 
-            const res = await cashierApi.renewMembership(selectedMember.id, fd);
+            let res;
+            if (isPending) {
+                fd.append("FaceImage", faceImage);
+                res = await cashierApi.activateWithPackage(selectedMember.id, fd);
+            } else {
+                res = await cashierApi.renewMembership(selectedMember.id, fd);
+            }
             const data = unwrap(res);
 
             setSuccess({
+                activated: isPending,
                 memberName: selectedMember.name,
                 planName: selectedPlan.planName,
                 amount: data?.amount ?? data?.Amount ?? pricing?.finalAmount,
                 newExpiry: data?.expiryDate ?? data?.ExpiryDate ?? pricing?.expiry,
                 bonusDays: pricing?.bonusDays ?? 0,
                 paymentMethod,
-                transferRef,
             });
         } catch (e) {
-            setSubmitError(e?.response?.data?.message ?? e?.message ?? "Gia hạn thất bại. Vui lòng thử lại.");
+            setSubmitError(e?.response?.data?.message ?? e?.message ?? (isPending ? "Kích hoạt thất bại. Vui lòng thử lại." : "Gia hạn thất bại. Vui lòng thử lại."));
         } finally {
             setSubmitting(false);
         }
@@ -615,9 +727,9 @@ export default function RenewPage() {
     function reset() {
         setSearchQ(""); setMember(null); setPlan(null);
         setPromotion(null); setPromotionError(""); setPaymentMethod(null);
-        setTransferRef(""); setTransferConfirmed(false);
-        setReceiptFile(null); setSubmitError(""); setSuccess(null);
+        setSubmitError(""); setSuccess(null);
         setCurrentPkg(null); setPkgInfoError("");
+        setFaceImage(null);
     }
 
     return (
@@ -631,8 +743,8 @@ export default function RenewPage() {
                         <RefreshCw size={20} />
                     </div>
                     <div>
-                        <h1>Gia hạn gói tập</h1>
-                        <p>Chọn hội viên và gói tập cần gia hạn</p>
+                        <h1>Tạo gói cho nhân viên</h1>
+                        <p>Tìm nhân viên theo tên hoặc số điện thoại, sau đó kích hoạt (chụp Face ID) hoặc gia hạn gói tập</p>
                     </div>
                 </div>
 
@@ -640,12 +752,12 @@ export default function RenewPage() {
                 <div className="stepper">
                     <div className={`step ${step > 1 ? "step-done" : step === 1 ? "step-active" : ""}`}>
                         <div className="step-circle">{step > 1 ? <Check size={13} /> : "1"}</div>
-                        <span>Chọn hội viên</span>
+                        <span>Chọn nhân viên</span>
                     </div>
                     <div className="step-line" />
                     <div className={`step ${step > 2 ? "step-done" : step === 2 ? "step-active" : ""}`}>
                         <div className="step-circle">{step > 2 ? <Check size={13} /> : "2"}</div>
-                        <span>Chọn gói tập</span>
+                        <span>{isPending ? "Chụp Face ID & chọn gói" : "Chọn gói tập"}</span>
                     </div>
                     <div className="step-line" />
                     <div className={`step ${step === 3 ? "step-active" : ""}`}>
@@ -658,17 +770,17 @@ export default function RenewPage() {
                     {/* LEFT COL */}
                     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
 
-                        {/* Bước 1 — Tìm hội viên */}
+                        {/* Bước 1 — Tìm nhân viên */}
                         <div className="card">
                             <div className="card-head">
                                 <div className="card-head-icon"><Search size={16} /></div>
                                 <div>
-                                    <div className="card-head-title">Bước 1 — Tìm hội viên</div>
+                                    <div className="card-head-title">Bước 1 — Tìm nhân viên</div>
                                     <div className="card-head-sub">Tìm theo tên hoặc số điện thoại</div>
                                 </div>
                                 {selectedMember && (
                                     <button onClick={changeMember} className="btn-outline" style={{ marginLeft: "auto" }}>
-                                        Đổi hội viên
+                                        Đổi nhân viên
                                     </button>
                                 )}
                             </div>
@@ -677,32 +789,41 @@ export default function RenewPage() {
                                     <>
                                         <div className="search-wrap">
                                             <Search className="search-icon" size={16} />
-                                            <input className="search-input" placeholder="Nhập tên hoặc SĐT hội viên..." value={searchQ} onChange={e => setSearchQ(e.target.value)} autoFocus />
+                                            <input className="search-input" placeholder="Nhập tên hoặc SĐT nhân viên..." value={searchQ} onChange={e => setSearchQ(e.target.value)} autoFocus />
                                         </div>
 
                                         {searching && <div className="center-loading"><span className="spinner dark" /> Đang tìm...</div>}
                                         {!searching && searchError && <div className="notice error" style={{ marginTop: 10, marginBottom: 0 }}>{searchError}</div>}
                                         {!searching && !searchError && searchQ && memberResults.length === 0 && (
-                                            <p style={{ fontSize: 13, color: "var(--muted)", marginTop: 10, fontWeight: 500 }}>Không tìm thấy hội viên phù hợp</p>
+                                            <p style={{ fontSize: 13, color: "var(--muted)", marginTop: 10, fontWeight: 500 }}>Không tìm thấy nhân viên phù hợp</p>
                                         )}
-                                        {!searching && memberResults.map(m => (
-                                            <div key={m.id} className="member-result" onClick={() => handleSelectMember(m)}>
-                                                <div className="avatar" style={{ background: avatarColor(m.id) }}>{initials(m.name)}</div>
-                                                <div>
-                                                    <div className="member-name">{m.name}</div>
-                                                    <div className="member-meta">{m.phone} · {m.email}</div>
+                                        {!searching && memberResults.map(m => {
+                                            const badge = statusBadgeInfo(m.status);
+                                            return (
+                                                <div key={m.id} className="member-result" onClick={() => handleSelectMember(m)}>
+                                                    <div className="avatar" style={{ background: avatarColor(m.id) }}>{initials(m.name)}</div>
+                                                    <div>
+                                                        <div className="member-name" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                                            {m.name}
+                                                            <span className={`status-badge ${badge.cls}`}>{badge.label}</span>
+                                                        </div>
+                                                        <div className="member-meta">{m.phone} · {m.email}</div>
+                                                    </div>
+                                                    <div className="member-select-hint">Chọn →</div>
                                                 </div>
-                                                <div className="member-select-hint">Chọn →</div>
-                                            </div>
-                                        ))}
+                                            );
+                                        })}
                                     </>
                                 ) : loadingMemberDetail ? (
-                                    <div className="center-loading"><span className="spinner dark" /> Đang tải thông tin hội viên...</div>
+                                    <div className="center-loading"><span className="spinner dark" /> Đang tải thông tin nhân viên...</div>
                                 ) : (
                                     <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                                         <div className="avatar" style={{ background: avatarColor(selectedMember.id), width: 44, height: 44, fontSize: 16 }}>{initials(selectedMember.name)}</div>
                                         <div>
-                                            <div style={{ fontSize: 16, fontWeight: 800, color: "var(--ink)" }}>{selectedMember.name}</div>
+                                            <div style={{ fontSize: 16, fontWeight: 800, color: "var(--ink)", display: "flex", alignItems: "center", gap: 9 }}>
+                                                {selectedMember.name}
+                                                <span className={`status-badge ${statusBadgeInfo(selectedMember.status).cls}`}>{statusBadgeInfo(selectedMember.status).label}</span>
+                                            </div>
                                             <div style={{ fontSize: 13, color: "var(--muted)", marginTop: 2 }}>{selectedMember.phone} · {selectedMember.email}</div>
                                         </div>
                                     </div>
@@ -710,42 +831,79 @@ export default function RenewPage() {
                             </div>
                         </div>
 
-                        {/* Bước 2 — Chọn gói tập (đồng bộ layout với khâu chọn gói ở trang kích hoạt hội viên) */}
+                        {/* Bước 2 — Chụp Face ID (nếu cần) & chọn gói tập */}
                         {selectedMember && !loadingMemberDetail && (
                             <div className="card">
                                 <div className="card-head">
                                     <div className="card-head-icon"><ShieldCheck size={16} /></div>
                                     <div>
-                                        <div className="card-head-title">Bước 2 — Chọn gói tập</div>
-                                        <div className="card-head-sub">Chỉ hiển thị gói đang bán · khuyến mãi được áp dụng tự động</div>
+                                        <div className="card-head-title">Bước 2 — {isPending ? "Chụp Face ID & chọn gói tập" : "Chọn gói tập"}</div>
+                                        <div className="card-head-sub">
+                                            {isPending
+                                                ? "Tài khoản đang chờ kích hoạt — cần chụp hoặc tải ảnh khuôn mặt trước khi chọn gói"
+                                                : "Chỉ hiển thị gói đang bán · khuyến mãi được áp dụng tự động"}
+                                        </div>
                                     </div>
                                 </div>
                                 <div className="card-body">
 
-                                    {/* Chuyển đổi gói: gói hiện tại -> gói muốn gia hạn */}
-                                    <div className="pkg-switch">
-                                        <div className="pkg-switch-box">
-                                            <div className="pkg-switch-label">Gói hiện tại</div>
-                                            {loadingPkgInfo ? (
-                                                <div className="pkg-switch-value" style={{ color: "var(--muted)", fontWeight: 500 }}>Đang kiểm tra...</div>
-                                            ) : pkgInfoError ? (
-                                                <div className="pkg-switch-value" style={{ color: "var(--danger)", fontSize: 12.5, fontWeight: 600 }}>{pkgInfoError}</div>
-                                            ) : pkg ? (
-                                                <>
-                                                    <div className="pkg-switch-value">{pkg.planName}</div>
-                                                    <div className="pkg-switch-sub">Hết hạn {fmtDate(pkg.expiryDate)}</div>
-                                                </>
-                                            ) : (
-                                                <div className="pkg-switch-value" style={{ color: "var(--muted)" }}>Chưa có gói</div>
-                                            )}
+                                    {/* Face ID — chỉ bắt buộc với tài khoản PendingActivation.
+                                        Cho phép chụp trực tiếp bằng camera HOẶC tải ảnh có sẵn lên. */}
+                                    {isPending && (
+                                        <div className="facecapture">
+                                            <div className="facecapture-preview">
+                                                {faceImagePreview ? <img src={faceImagePreview} alt="Face ID preview" /> : <Camera size={26} />}
+                                            </div>
+                                            <div className="facecapture-info">
+                                                <div className="facecapture-title"><Camera size={14} /> Ảnh Face ID (bắt buộc)</div>
+                                                <div className="facecapture-desc">Chụp rõ mặt nhân viên, đủ sáng, không đeo khẩu trang/kính râm để hệ thống nhận diện chính xác. Có thể chụp trực tiếp hoặc tải ảnh có sẵn lên.</div>
+                                                <div className="facecapture-actions">
+                                                    <button type="button" className="facecapture-input-label" onClick={openCamera}>
+                                                        <Camera size={14} />
+                                                        {faceImage ? "Chụp lại" : "Chụp ảnh"}
+                                                    </button>
+                                                    <label className="facecapture-input-label secondary">
+                                                        <Upload size={14} />
+                                                        Tải ảnh lên
+                                                        <input type="file" accept="image/*" onChange={handleFaceImageChange} />
+                                                    </label>
+                                                    {faceImage && (
+                                                        <button type="button" className="facecapture-remove" onClick={() => setFaceImage(null)}>
+                                                            <Trash2 size={13} /> Xoá ảnh
+                                                        </button>
+                                                    )}
+                                                    {faceImage && <span className="facecapture-ok"><CheckCircle2 size={14} /> Đã có ảnh</span>}
+                                                </div>
+                                            </div>
                                         </div>
-                                        <div className="pkg-switch-arrow"><ChevronRightIcon /></div>
-                                        <div className={"pkg-switch-box pkg-switch-new" + (selectedPlan ? " filled" : "")}>
-                                            <div className="pkg-switch-label">Gói muốn gia hạn</div>
-                                            <div className="pkg-switch-value">{selectedPlan ? selectedPlan.planName : "Chưa chọn gói"}</div>
-                                            {selectedPlan && <div className="pkg-switch-duration">Thời hạn {selectedPlan.duration}</div>}
+                                    )}
+
+                                    {/* Chuyển đổi gói: gói hiện tại -> gói muốn gia hạn (chỉ hiển thị khi đang gia hạn) */}
+                                    {!isPending && (
+                                        <div className="pkg-switch">
+                                            <div className="pkg-switch-box">
+                                                <div className="pkg-switch-label">Gói hiện tại</div>
+                                                {loadingPkgInfo ? (
+                                                    <div className="pkg-switch-value" style={{ color: "var(--muted)", fontWeight: 500 }}>Đang kiểm tra...</div>
+                                                ) : pkgInfoError ? (
+                                                    <div className="pkg-switch-value" style={{ color: "var(--danger)", fontSize: 12.5, fontWeight: 600 }}>{pkgInfoError}</div>
+                                                ) : pkg ? (
+                                                    <>
+                                                        <div className="pkg-switch-value">{pkg.planName}</div>
+                                                        <div className="pkg-switch-sub">Hết hạn {fmtDate(pkg.expiryDate)}</div>
+                                                    </>
+                                                ) : (
+                                                    <div className="pkg-switch-value" style={{ color: "var(--muted)" }}>Chưa có gói</div>
+                                                )}
+                                            </div>
+                                            <div className="pkg-switch-arrow"><ChevronRightIcon /></div>
+                                            <div className={"pkg-switch-box pkg-switch-new" + (selectedPlan ? " filled" : "")}>
+                                                <div className="pkg-switch-label">Gói muốn gia hạn</div>
+                                                <div className="pkg-switch-value">{selectedPlan ? selectedPlan.planName : "Chưa chọn gói"}</div>
+                                                {selectedPlan && <div className="pkg-switch-duration">Thời hạn {selectedPlan.duration}</div>}
+                                            </div>
                                         </div>
-                                    </div>
+                                    )}
 
                                     {/* Mốc thời gian */}
                                     <div className="pkg-timeline">
@@ -761,8 +919,8 @@ export default function RenewPage() {
                                         )}
                                         <div className="pkg-timeline-dates">
                                             <div><span>Hôm nay</span><strong>{fmtDate(todayISO())}</strong></div>
-                                            <div><span>Bắt đầu gói mới</span><strong>{selectedPlan ? fmtDate(newStartDate) : "—"}</strong></div>
-                                            <div><span>Kết thúc gói mới</span><strong>{pricing ? fmtDate(pricing.expiry) : "—"}</strong></div>
+                                            <div><span>{isPending ? "Bắt đầu gói" : "Bắt đầu gói mới"}</span><strong>{selectedPlan ? fmtDate(newStartDate) : "—"}</strong></div>
+                                            <div><span>{isPending ? "Kết thúc gói" : "Kết thúc gói mới"}</span><strong>{pricing ? fmtDate(pricing.expiry) : "—"}</strong></div>
                                         </div>
                                     </div>
 
@@ -844,50 +1002,20 @@ export default function RenewPage() {
                                         </div>
                                     )}
 
-                                    {/* Phương thức thanh toán */}
+                                    {/* Phương thức thanh toán — chỉ cần chọn, không cần nhập thêm thông tin */}
                                     {selectedPlan && (
                                         <>
                                             <div className="pkg-list-title" style={{ marginTop: 22 }}>Bước 3 — Phương thức thanh toán</div>
                                             <div className="payment-methods">
-                                                <button className={"payment-method-btn" + (paymentMethod === "cash" ? " active" : "")} onClick={() => selectPaymentMethod("cash")}>
+                                                <button className={"payment-method-btn" + (paymentMethod === "cash" ? " active" : "")} onClick={() => setPaymentMethod("cash")}>
                                                     <Banknote size={17} /><span>Tiền mặt</span>
                                                     {paymentMethod === "cash" && <Check size={13} className="payment-method-check" />}
                                                 </button>
-                                                <button className={"payment-method-btn" + (paymentMethod === "transfer" ? " active" : "")} onClick={() => selectPaymentMethod("transfer")}>
+                                                <button className={"payment-method-btn" + (paymentMethod === "transfer" ? " active" : "")} onClick={() => setPaymentMethod("transfer")}>
                                                     <CreditCard size={17} /><span>Chuyển khoản</span>
                                                     {paymentMethod === "transfer" && <Check size={13} className="payment-method-check" />}
                                                 </button>
                                             </div>
-
-                                            {paymentMethod === "transfer" && (
-                                                <div className="transfer-box">
-                                                    <div className="transfer-box-title">Thông tin chuyển khoản</div>
-                                                    <div className="transfer-info-row"><span className="k">Ngân hàng</span><span className="v">{BANK_INFO.bankName}</span></div>
-                                                    <div className="transfer-info-row"><span className="k">Số tài khoản</span><span className="v">{BANK_INFO.accountNumber}</span></div>
-                                                    <div className="transfer-info-row"><span className="k">Chủ tài khoản</span><span className="v">{BANK_INFO.accountName}</span></div>
-                                                    <div className="transfer-info-row"><span className="k">Số tiền</span><span className="v" style={{ color: "var(--primary)" }}>{fmtMoney(pricing?.finalAmount)}</span></div>
-
-                                                    <input
-                                                        className="transfer-ref-input"
-                                                        placeholder="Mã giao dịch / nội dung chuyển khoản (không bắt buộc)"
-                                                        value={transferRef}
-                                                        onChange={e => setTransferRef(e.target.value)}
-                                                    />
-                                                    <input type="file" accept="image/*" className="transfer-file-input" onChange={e => setReceiptFile(e.target.files?.[0] ?? null)} />
-
-                                                    {!transferConfirmed ? (
-                                                        <label className="transfer-confirm">
-                                                            <input type="checkbox" checked={transferConfirmed} onChange={e => setTransferConfirmed(e.target.checked)} />
-                                                            <span>Tôi xác nhận hội viên đã chuyển khoản đủ số tiền {fmtMoney(pricing?.finalAmount)} vào tài khoản trên.</span>
-                                                        </label>
-                                                    ) : (
-                                                        <div className="transfer-confirmed-tag">
-                                                            <CheckCircle2 size={14} /> Đã xác nhận chuyển khoản
-                                                            <button onClick={() => setTransferConfirmed(false)} style={{ marginLeft: "auto", background: "none", border: "none", cursor: "pointer", color: "#6EE7B7", opacity: .7, fontSize: 11, fontWeight: 700, textDecoration: "underline" }}>Bỏ xác nhận</button>
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            )}
                                         </>
                                     )}
                                 </div>
@@ -906,7 +1034,7 @@ export default function RenewPage() {
 
                             <div className="summary-body">
                                 {!selectedMember && (
-                                    <p style={{ fontSize: 13, color: "var(--muted)", textAlign: "center", padding: "16px 0" }}>Tìm và chọn hội viên để bắt đầu</p>
+                                    <p style={{ fontSize: 13, color: "var(--muted)", textAlign: "center", padding: "16px 0" }}>Tìm và chọn nhân viên để bắt đầu</p>
                                 )}
                                 {selectedMember && !selectedPlan && (
                                     <p style={{ fontSize: 13, color: "var(--muted)", textAlign: "center", padding: "16px 0" }}>Chọn gói tập để xem tổng tiền</p>
@@ -914,7 +1042,7 @@ export default function RenewPage() {
 
                                 {selectedMember && selectedPlan && (
                                     <>
-                                        <div className="section-label">Hội viên</div>
+                                        <div className="section-label">Nhân viên</div>
                                         <div className="summary-row" style={{ marginBottom: 16 }}>
                                             <span className="lbl">{selectedMember.name}</span>
                                             <span className="val" style={{ fontSize: 12, color: "var(--muted)" }}>{selectedMember.phone}</span>
@@ -948,9 +1076,18 @@ export default function RenewPage() {
                                             <span className="val">{selectedPlan.durationDays} ngày</span>
                                         </div>
                                         <div className="summary-row">
-                                            <span className="lbl">Loại gia hạn</span>
-                                            <span className="val" style={{ fontSize: 12 }}>{isExtending ? "Nối tiếp gói hiện tại" : "Bắt đầu từ hôm nay"}</span>
+                                            <span className="lbl">Loại thao tác</span>
+                                            <span className="val" style={{ fontSize: 12 }}>{isPending ? "Kích hoạt tài khoản mới" : isExtending ? "Nối tiếp gói hiện tại" : "Bắt đầu từ hôm nay"}</span>
                                         </div>
+
+                                        {isPending && (
+                                            <div className="summary-row">
+                                                <span className="lbl">Face ID</span>
+                                                <span className="val" style={{ fontSize: 12.5, color: faceImage ? "var(--discount)" : "var(--danger)" }}>
+                                                    {faceImage ? "Đã chụp" : "Chưa chụp"}
+                                                </span>
+                                            </div>
+                                        )}
 
                                         <div className="summary-divider" />
                                         <div className="section-label">Thanh toán</div>
@@ -960,14 +1097,6 @@ export default function RenewPage() {
                                                 {paymentMethod === "cash" ? "Tiền mặt" : paymentMethod === "transfer" ? "Chuyển khoản" : "Chưa chọn"}
                                             </span>
                                         </div>
-                                        {paymentMethod === "transfer" && (
-                                            <div className="summary-row">
-                                                <span className="lbl">Xác nhận CK</span>
-                                                <span className="val" style={{ fontSize: 12.5, color: transferConfirmed ? "var(--discount)" : "var(--danger)" }}>
-                                                    {transferConfirmed ? "Đã xác nhận" : "Chưa xác nhận"}
-                                                </span>
-                                            </div>
-                                        )}
 
                                         {isExtending && (
                                             <div className="notice" style={{ marginTop: 14 }}>
@@ -981,7 +1110,7 @@ export default function RenewPage() {
                                         <div className="summary-new-expiry">
                                             <CalendarPlus size={18} color="var(--primary)" />
                                             <div>
-                                                <div className="summary-new-expiry-label">Hạn mới sau gia hạn (ước tính)</div>
+                                                <div className="summary-new-expiry-label">{isPending ? "Hạn sử dụng (ước tính)" : "Hạn mới sau gia hạn (ước tính)"}</div>
                                                 <div className="summary-new-expiry-date">{fmtDate(pricing?.expiry)}</div>
                                             </div>
                                         </div>
@@ -989,23 +1118,25 @@ export default function RenewPage() {
                                         <button className="btn-submit" onClick={handleSubmit} disabled={!canSubmit}>
                                             {submitting
                                                 ? <><span className="spinner" /> Đang xử lý...</>
-                                                : <><Check size={16} /> Xác nhận gia hạn · {fmtMoney(pricing?.finalAmount)}</>
+                                                : <><Check size={16} /> {isPending ? "Xác nhận kích hoạt" : "Xác nhận gia hạn"} · {fmtMoney(pricing?.finalAmount)}</>
                                             }
                                         </button>
 
+                                        {isPending && !faceImage && (
+                                            <p style={{ fontSize: 11.5, color: "var(--danger)", textAlign: "center", marginTop: 10, lineHeight: 1.5, fontWeight: 600 }}>
+                                                Vui lòng chụp hoặc tải ảnh Face ID cho nhân viên
+                                            </p>
+                                        )}
                                         {!paymentMethod && (
                                             <p style={{ fontSize: 11.5, color: "var(--danger)", textAlign: "center", marginTop: 10, lineHeight: 1.5, fontWeight: 600 }}>
                                                 Vui lòng chọn phương thức thanh toán
                                             </p>
                                         )}
-                                        {paymentMethod === "transfer" && !transferConfirmed && (
-                                            <p style={{ fontSize: 11.5, color: "var(--danger)", textAlign: "center", marginTop: 10, lineHeight: 1.5, fontWeight: 600 }}>
-                                                Vui lòng xác nhận đã nhận chuyển khoản
-                                            </p>
-                                        )}
                                         {canSubmit && (
                                             <p style={{ fontSize: 11.5, color: "var(--muted)", textAlign: "center", marginTop: 10, lineHeight: 1.5 }}>
-                                                Sau khi xác nhận, giao dịch sẽ được ghi nhận và gói tập kích hoạt ngay
+                                                {isPending
+                                                    ? "Sau khi xác nhận, tài khoản sẽ được kích hoạt cùng Face ID và gói tập"
+                                                    : "Sau khi xác nhận, giao dịch sẽ được ghi nhận và gói tập kích hoạt ngay"}
                                             </p>
                                         )}
                                     </>
@@ -1016,25 +1147,44 @@ export default function RenewPage() {
                 </div>
             </div>
 
+            {/* Camera capture modal — dùng webcam của máy trạm thu ngân để chụp Face ID */}
+            {showCamera && (
+                <div className="overlay" onClick={closeCamera}>
+                    <div className="camera-box" onClick={e => e.stopPropagation()}>
+                        <div className="camera-box-title"><Camera size={17} /> Chụp ảnh Face ID</div>
+                        {cameraError ? (
+                            <div className="notice error">{cameraError}</div>
+                        ) : (
+                            <video ref={videoRef} autoPlay playsInline muted className="camera-video" />
+                        )}
+                        <div className="camera-actions">
+                            <button type="button" className="btn-outline" onClick={closeCamera}>Huỷ</button>
+                            {!cameraError && (
+                                <button type="button" className="camera-btn-capture" onClick={capturePhoto}>
+                                    <Camera size={15} /> Chụp
+                                </button>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* Success overlay */}
             {success && (
                 <div className="overlay" onClick={reset}>
                     <div className="success-box" onClick={e => e.stopPropagation()}>
                         <div className="success-icon"><Check size={26} color="#04222B" strokeWidth={2.5} /></div>
-                        <div className="success-title">Gia hạn thành công!</div>
-                        <div className="success-sub">Gói tập đã được kích hoạt và giao dịch ghi nhận.</div>
+                        <div className="success-title">{success.activated ? "Kích hoạt thành công!" : "Gia hạn thành công!"}</div>
+                        <div className="success-sub">{success.activated ? "Tài khoản nhân viên đã được kích hoạt cùng Face ID và gói tập." : "Gói tập đã được kích hoạt và giao dịch ghi nhận."}</div>
                         <div className="success-summary">
-                            <div className="success-row"><span className="k">Hội viên</span><span className="v">{success.memberName}</span></div>
+                            <div className="success-row"><span className="k">Nhân viên</span><span className="v">{success.memberName}</span></div>
                             <div className="success-row"><span className="k">Gói tập</span><span className="v">{success.planName}</span></div>
                             <div className="success-row"><span className="k">Phương thức</span><span className="v">{success.paymentMethod === "cash" ? "Tiền mặt" : "Chuyển khoản"}</span></div>
-                            {success.paymentMethod === "transfer" && success.transferRef && (
-                                <div className="success-row"><span className="k">Mã GD</span><span className="v">{success.transferRef}</span></div>
-                            )}
                             <div className="success-row"><span className="k">Số tiền</span><span className="v" style={{ color: "var(--primary)" }}>{fmtMoney(success.amount)}</span></div>
                             {success.bonusDays > 0 && <div className="success-row"><span className="k">Ngày tặng</span><span className="v" style={{ color: "var(--discount)" }}>+{success.bonusDays} ngày</span></div>}
                             <div className="success-row"><span className="k">Hạn đến</span><span className="v">{fmtDate(success.newExpiry)}</span></div>
                         </div>
-                        <button className="btn-new" onClick={reset}>Gia hạn cho hội viên khác</button>
+                        <button className="btn-new" onClick={reset}>Thao tác cho nhân viên khác</button>
                     </div>
                 </div>
             )}
