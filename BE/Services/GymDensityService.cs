@@ -42,35 +42,47 @@ public class GymDensityService
 
         return last?.Headcount ?? 0;
     }
-    public async Task<List<GymDensityHourDto>> GetDensityByBranchAsync(
-        int branchId,
-        int hoursCount = 5,
-        CancellationToken ct = default)
-    {
-        // Chỉ kéo dữ liệu trong khoảng thời gian đủ dùng (vd: hoursCount + 1 giờ gần nhất)
-        // để tránh load toàn bộ lịch sử của chi nhánh
-        var fromTime = DateTime.UtcNow.AddHours(-(hoursCount + 1));
+       public async Task<List<GymDensityHourDto>> GetDensityByBranchAsync(
+            int branchId,
+            int hoursCount = 5,
+            CancellationToken ct = default)
+        {
+            // Giờ hiện tại (local), cắt bỏ phút/giây để làm mốc (khung giờ cuối cùng trong dãy trả về)
+            var now = DateTime.Now;
+            var currentHourSlot = new DateTime(
+                now.Year, now.Month, now.Day, now.Hour, 0, 0);
 
-        var rawData = await _context.GymDensities
-            .Where(x => x.BranchId == branchId && x.RecordedAt >= fromTime)
-            .OrderByDescending(x => x.RecordedAt)
-            .ToListAsync(ct);
+            // Khung giờ sớm nhất cần trả về
+            var earliestSlot = currentHourSlot.AddHours(-(hoursCount - 1));
 
-        // Gom nhóm theo khung giờ (bỏ phút/giây), lấy bản ghi mới nhất trong mỗi giờ
-        var result = rawData
-            .GroupBy(x => new DateTime(
-                x.RecordedAt.Year, x.RecordedAt.Month, x.RecordedAt.Day,
-                x.RecordedAt.Hour, 0, 0))
-            .Select(g => new GymDensityHourDto
-            {
-                HourSlot = g.Key,
-                Headcount = g.OrderByDescending(x => x.RecordedAt).First().Headcount
-            })
-            .OrderByDescending(x => x.HourSlot)
-            .Take(hoursCount)
-            .OrderBy(x => x.HourSlot) // trả về theo thứ tự tăng dần để vẽ trái → phải
-            .ToList();
+            // Chỉ kéo dữ liệu trong khoảng thời gian đủ dùng, tránh load toàn bộ lịch sử
+            var fromTime = earliestSlot;
 
-        return result;
-    }
+            var rawData = await _context.GymDensities
+                .Where(x => x.BranchId == branchId && x.RecordedAt >= fromTime)
+                .OrderByDescending(x => x.RecordedAt)
+                .ToListAsync(ct);
+
+            // Gom nhóm theo khung giờ, lấy bản ghi mới nhất trong mỗi giờ -> dùng để tra cứu (lookup)
+            var groupedByHour = rawData
+                .GroupBy(x => new DateTime(
+                    x.RecordedAt.Year, x.RecordedAt.Month, x.RecordedAt.Day,
+                    x.RecordedAt.Hour, 0, 0))
+                .ToDictionary(
+                    g => g.Key,
+                    g => g.OrderByDescending(x => x.RecordedAt).First().Headcount);
+
+            // Sinh đủ hoursCount khung giờ liên tục, thiếu thì mặc định Headcount = 0
+            var result = Enumerable.Range(0, hoursCount)
+                .Select(i => earliestSlot.AddHours(i))
+                .Select(slot => new GymDensityHourDto
+                {
+                    HourSlot = slot,
+                    Headcount = (short)(groupedByHour.TryGetValue(slot, out var headcount) ? headcount : 0)
+                })
+                .OrderBy(x => x.HourSlot) // tăng dần để vẽ trái → phải
+                .ToList();
+
+            return result;
+        }
 }

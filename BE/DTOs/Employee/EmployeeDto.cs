@@ -57,7 +57,7 @@ namespace BE.DTOs.Employee
         public string Password { get; set; } = null!;
         [Required] public string Gender { get; set; } = null!;
         [Required] public sbyte RoleId { get; set; }
-        public List<int> BranchIds { get; set; } = new();
+        public List<int>? BranchIds { get; set; } = new();
     }
 
     public class UpdateEmployeeDto

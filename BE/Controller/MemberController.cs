@@ -60,6 +60,24 @@ namespace BE.Controllers
             return Ok(result);
         }
 
+        [HttpGet("employee")]
+        public async Task<IActionResult> GetMemberEmployee([FromQuery] string? phone, [FromQuery] string? fullName, [FromQuery] int? branchId)
+        {
+            if (!IsEmployee())
+                return Forbid();
+            long employeeId = GetCurrentUserId();
+            var result = await _memberService.GetMembersEmployeeAsync(phone, fullName, branchId, employeeId);
+            return Ok(result);
+        }
+        [HttpGet("all")]
+        public async Task<IActionResult> GetAll([FromQuery] string? phone, [FromQuery] string? fullName)
+        {
+            if (!IsEmployee())
+                return Forbid();
+
+            var result = await _memberService.GetAllAsync(phone, fullName);
+            return Ok(result);
+        }
         // ===================== [THU NGÂN] LẤY DANH SÁCH HỘI VIÊN CHỜ KÍCH HOẠT =====================
         [HttpGet("pending")]
         public async Task<IActionResult> GetPendingMembers([FromQuery] string? phone, [FromQuery] string? fullName, [FromQuery] int? branchId)
@@ -236,17 +254,17 @@ namespace BE.Controllers
             return Ok(new { member = member });
         }
         // GET: api/members/me — hồ sơ hội viên đang đăng nhập (dùng cho avatar/tên ở header)
-             [Authorize(Roles = "Member,Manager,Staff")]
-            [HttpGet("me")]
-            public async Task<IActionResult> GetMe()
-            {
-                var memberId = GetCurrentUserId();
-                var profile = await _memberService.GetMyProfileAsync(memberId);
+        [Authorize(Roles = "Member,Manager,Staff")]
+        [HttpGet("me")]
+        public async Task<IActionResult> GetMe()
+        {
+            var memberId = GetCurrentUserId();
+            var profile = await _memberService.GetMyProfileAsync(memberId);
 
-                if (profile is null)
-                    return NotFound(new { message = "Không tìm thấy hội viên" });
+            if (profile is null)
+                return NotFound(new { message = "Không tìm thấy hội viên" });
 
-                return Ok(profile);
-            }
+            return Ok(profile);
+        }
     }
 }

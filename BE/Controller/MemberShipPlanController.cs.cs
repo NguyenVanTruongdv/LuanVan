@@ -1,5 +1,6 @@
 using BE.Models;
 using BE.Services;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace BE.Controllers;
@@ -27,7 +28,13 @@ public class MembershipPlansController : ApiControllerBase
         var packages = await _membershipPlanService.GetAllAsync(packageName);
         return Ok(packages);
     }
-
+     [HttpGet("internal")]
+     [Authorize (Roles ="Admin,Manager,Staff")]
+    public async Task<IActionResult> GetAllInternal([FromQuery] string? packageName)
+    {
+        var packages = await _membershipPlanService.GetAllInternalAsync(packageName);
+        return Ok(packages);
+    }
     // GET: api/packages/1
     [HttpGet("{id:int}")]
     public async Task<IActionResult> GetById(int id)

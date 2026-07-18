@@ -16,5 +16,25 @@ namespace BE.DTOs.Payment
         public decimal Amount { get; set; }          // số tiền thực thu
         public string Status { get; set; } = null!;
     }
+    public class InternalMembershipPlanDto
+{
+    public int PlanId { get; set; }
+
+    public string PlanName { get; set; } = string.Empty;
+
+    public decimal Price { get; set; }
+
+    public short DurationDays { get; set; }
+
+    public string? Description { get; set; }
+
+    public string PlanType { get; set; } = string.Empty;
+
+    public string Status { get; set; } = string.Empty;
+
+    public DateTime CreatedAt { get; set; }
+
+    public bool IsPopular { get; set; }
+}
   
 }

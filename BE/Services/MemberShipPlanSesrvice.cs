@@ -1,4 +1,5 @@
 using BE.Data;
+using BE.DTOs.Payment;
 using BE.Models;
 using Microsoft.EntityFrameworkCore;
 
@@ -17,7 +18,7 @@ public class MembershipPlanService
 
     public async Task<List<MembershipPlan>> GetAllAsync(string? packageName)
     {
-        var query = _db.MembershipPlans.Where(p => p.Status == MembershipPlanEnum.OnSale.ToString()).AsQueryable();
+        var query = _db.MembershipPlans.Where(p => p.Status == MembershipPlanEnum.OnSale.ToString() && p.PlanType == "Customer").AsQueryable();
 
         if (!string.IsNullOrWhiteSpace(packageName))
         {
@@ -64,4 +65,32 @@ public class MembershipPlanService
         await _db.SaveChangesAsync();
         return true;
     }
+    public async Task<List<InternalMembershipPlanDto>> GetAllInternalAsync(string? packageName)
+    {
+        var query = _db.MembershipPlans
+            .Where(p => p.Status == MembershipPlanEnum.OnSale.ToString()
+                    && p.PlanType == "Internal")
+            .AsQueryable();
+
+        if (!string.IsNullOrWhiteSpace(packageName))
+        {
+            query = query.Where(p => p.PlanName.Contains(packageName));
+        }
+
+        return await query
+            .Select(p => new InternalMembershipPlanDto
+            {
+                PlanId = p.PlanId,
+                PlanName = p.PlanName,
+                Price = p.Price,
+                DurationDays = p.DurationDays,
+                Description = p.Description,
+                PlanType = p.PlanType,
+                Status = p.Status,
+                CreatedAt = p.CreatedAt,
+                IsPopular = p.IsPopular
+            })
+            .ToListAsync();
+    }
+
 }

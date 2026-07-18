@@ -6,54 +6,6 @@ using Microsoft.EntityFrameworkCore;
 
 namespace BE.Services;
 
-// Chỉ lo phần ĐĂNG KÝ TẬP (MemberPackage) — tính ngày hiệu lực, tạo MemberPackage, xác định nối hạn.
-// KHÔNG biết gì về:
-//  - MembershipPlan (danh sách gói tập để bán)   -> xem MembershipPlanService
-//  - Transaction (giao dịch, hóa đơn)            -> xem TransactionService
-// nhận sẵn TransactionId từ service gọi vào (MemberService hoặc PaymentService).
-//
-// GHI CHÚ VỀ MODEL: MemberPackage.StartDate và MemberPackage.ExpiryDate phải là DateOnly? (nullable)
-// vì gói mua online trước khi kích hoạt chưa có ngày bắt đầu/kết thúc.
-//
-// [MỚI - 13/07/2026] Gom công thức tính "Số ngày tặng thêm đã quy đổi thực tế" (đúng như comment
-// trên cột MemberPackage.SoNgayTangThucTe: TangNgay=so_ngay_tang, TangChuKy=so_chu_ky_tang×30,
-// không KM=0) về 2 hàm dùng chung CalculateBonusDays / CalculateExpiryDate bên dưới. Trước đây
-// công thức này bị viết lặp lại y hệt ở nhiều nơi (CreateMemberAsync, ActivateWithPackageAsync
-// trong MemberService, và ActivatePendingPackageAsync/CreateActivePackageForCustomerAsync ở chính
-// file này) — chỉ cần 1 chỗ viết sai/quên cập nhật là ngày hết hạn tính lệch giữa các luồng.
-//
-// [FIX - 13/07/2026] BUG: CalculateBonusDays trước đây tính TangChuKy = SoChuKyTang * plan.DurationDays
-// (dùng thời hạn của GÓI ĐANG MUA làm độ dài 1 chu kỳ). Điều này SAI vì:
-//   - Theo đúng định nghĩa nghiệp vụ, 1 CHU KỲ = 30 NGÀY CỐ ĐỊNH, không phụ thuộc gói tập đang
-//     mua là gói 1/3/6/12 tháng.
-//   - Với công thức cũ, cùng 1 khuyến mãi "tặng 1 chu kỳ" sẽ cho ra số ngày tặng KHÁC NHAU tùy
-//     khách mua gói nào (gói 3 tháng -> tặng 90 ngày, gói 6 tháng -> tặng 180 ngày...), trong khi
-//     ý định thực tế chỉ là tặng thêm đúng 1 tháng (30 ngày) cho mỗi chu kỳ.
-//   - Ví dụ thực tế gây lỗi: KM "Mua 3 Tháng Tặng 1 Chu Kỳ" (SoChuKyTang=1) áp cho gói 3 tháng
-//     (DurationDays=90) -> hệ thống tính nhầm ra 90 ngày tặng thêm thay vì đúng ra phải là 30 ngày.
-// FIX: nhân SoChuKyTang với hằng số CYCLE_DAYS = 30, KHÔNG dùng plan.DurationDays nữa.
-//
-// [MỚI - 13/07/2026] Thêm CalculateDiscountedAmount — công thức DUY NHẤT để tính GIÁ SAU GIẢM,
-// làm cặp song song với CalculateBonusDays (công thức DUY NHẤT để tính NGÀY TẶNG). Lý do gom về
-// đây: Promotion chỉ có 4 loại (GiamPhanTram/GiamTienMat/TangNgay/TangChuKy), và luôn CHỈ ẢNH
-// HƯỞNG 1 TRONG 2 THỨ — hoặc giá tiền, hoặc ngày hết hạn — không bao giờ cả hai (xem
-// PromotionService.ValidatePromotionData, 2 nhóm cột loại trừ nhau). Vì vậy 2 hàm này luôn đi cùng
-// nhau thành 1 cặp khi xử lý hiệu lực khuyến mãi cho 1 giao dịch:
-//   - CalculateDiscountedAmount(promotion, giaGoc)         -> ra "amount" (giá sau giảm)
-//   - CalculateBonusDays(promotion, plan)                  -> ra "bonusDays" (số ngày tặng thêm)
-// Nơi gọi vào (MemberService, TransactionService, PaymentService) nên gọi CẢ HAI cho mọi
-// Promotion, thay vì tự viết lại công thức giảm giá rải rác từng nơi — tránh lặp lại đúng kiểu
-// bug đã từng gặp với công thức tính ngày tặng.
-//
-// [FIX - 13/07/2026] CYCLE_DAYS chuyển từ private sang PUBLIC CONST. Trước đây PromotionService
-// tự khai báo một hằng số CYCLE_DAYS = 30 RIÊNG của chính nó (chỉ để phục vụ việc map SoNgayTang
-// tương đương cho FE hiển thị) — về mặt giá trị thì đang khớp với hằng số ở đây, nhưng là 2 khai
-// báo ĐỘC LẬP, không liên kết gì với nhau. Nếu sau này nghiệp vụ đổi định nghĩa "1 chu kỳ" (VD từ
-// 30 ngày sang 30.5 ngày, hoặc đổi hẳn cách tính), sửa ở đây mà quên sửa bên PromotionService thì
-// FE sẽ hiển thị SAI số ngày tương đương so với số ngày THẬT được cộng vào ExpiryDate — trong khi
-// bản chất đây phải là CÙNG MỘT con số. Public hoá hằng số này để PromotionService tham chiếu
-// thẳng MemberPackageService.CYCLE_DAYS thay vì tự khai báo lại, đưa về đúng 1 nguồn duy nhất cho
-// toàn bộ hệ thống (tính toán thật lẫn hiển thị FE).
 public class MemberPackageService
 {
     // ===================== [FIX] ĐỘ DÀI 1 CHU KỲ = 30 NGÀY CỐ ĐỊNH =====================
@@ -62,6 +14,18 @@ public class MemberPackageService
     // [FIX] Đổi private -> public để PromotionService (và bất kỳ nơi nào khác cần hiển thị/suy ra
     // số ngày tương đương của 1 chu kỳ) tham chiếu thẳng, KHÔNG tự khai báo hằng số trùng lặp nữa.
     public const int CYCLE_DAYS = 30;
+
+    // ===================== [MỚI] PHÂN LOẠI GÓI: NỘI BỘ (nhân viên) vs KHÁCH HÀNG =====================
+    // [GIẢ ĐỊNH] MembershipPlan cần thêm cột PlanType (string, NOT NULL), giá trị là 1 trong 2
+    // hằng số dưới đây. Member đang dùng 1 gói có PlanType = PLAN_TYPE_INTERNAL thì được gọi là
+    // "nhân viên" (theo đúng nghiệp vụ bạn mô tả). Đây là điểm mình PHẢI giả định vì chưa thấy
+    // model MembershipPlan — nếu tên cột/giá trị khác, đổi lại 2 hằng số này là đủ, phần logic
+    // bên dưới không phụ thuộc vào tên chuỗi cụ thể.
+    public const string PLAN_TYPE_INTERNAL = "Internal";
+    public const string PLAN_TYPE_CUSTOMER = "Customer";
+
+    // [MỚI] Trạng thái gói nội bộ sau khi bị ngưng dùng (khác "Active"/"PendingActivation" hiện có).
+    public const string STATUS_CANCELED = "Canceled";
 
     private readonly GymManagementContext _db;
 
@@ -78,6 +42,10 @@ public class MemberPackageService
     //                                                     KHÔNG dùng plan.DurationDays)
     //   còn lại/không KM (GiamPhanTram/GiamTienMat/null) -> 0, vì 2 loại giảm giá KHÔNG tặng ngày,
     //   chỉ ảnh hưởng tới giá — xem CalculateDiscountedAmount bên dưới cho phần đó.
+    //
+    // [KHÔNG ĐỔI] Khuyến mãi áp dụng như cũ cho MỌI loại gói (nội bộ lẫn khách hàng) — nghiệp vụ
+    // gói nội bộ/khách hàng chỉ ảnh hưởng tới việc TÍNH START/EXPIRY DATE (track nào nối hạn với
+    // track nào) và việc reset khi ngưng gói nội bộ, KHÔNG ảnh hưởng gì tới công thức KM.
     public short CalculateBonusDays(Promotion? promotion, MembershipPlan plan)
     {
         if (promotion == null)
@@ -143,6 +111,7 @@ public class MemberPackageService
     // chỗ chỉ cần một con số ƯỚC TÍNH (VD dữ liệu in hóa đơn tạm cho gói PendingActivation, chưa
     // có MemberPackage thật để gọi) cũng PHẢI gọi hàm này thay vì tự viết lại AddDays(a + b) inline,
     // xem PaymentService.HandleWebhookAsync để biết ví dụ đã sửa theo đúng quy tắc này.
+    // Cũng được SuspendInternalPackageAsync bên dưới tái sử dụng khi reset lại gói khách hàng.
     public DateOnly CalculateExpiryDate(DateOnly startDate, MembershipPlan plan, short bonusDays)
     {
         return startDate.AddDays(plan.DurationDays + bonusDays);
@@ -161,29 +130,50 @@ public class MemberPackageService
     // ===================== LẤY GÓI GẦN NHẤT ĐÃ CÓ NGÀY (dùng để tính nối hạn) =====================
     // CHỈ xét các gói KHÔNG ở trạng thái PendingActivation — gói Pending chưa có ExpiryDate nên
     // không có ý nghĩa khi so sánh "còn hạn hay không" cho việc gia hạn/nối hạn.
-    public async Task<MemberPackage?> GetLatestPackageAsync(long memberId)
+    //
+    // [MỚI] planType: từ khi có gói nội bộ chạy SONG SONG với gói khách hàng, 1 hội viên có thể có
+    // 2 "track" gói riêng biệt (nội bộ / khách hàng) tồn tại cùng lúc.
+    //   - Truyền planType CỤ THỂ (PLAN_TYPE_INTERNAL / PLAN_TYPE_CUSTOMER) khi cần NỐI HẠN —
+    //     nối hạn PHẢI tính riêng theo từng track, gói nội bộ chỉ nối vào gói nội bộ trước đó,
+    //     gói khách hàng chỉ nối vào gói khách hàng trước đó (xem RenewMembershipAsync,
+    //     CreateActivePackageForCustomerAsync).
+    //   - Truyền null khi chỉ cần biết "hội viên còn gói nào chưa hết hạn không", KHÔNG quan tâm
+    //     track (VD MemberService.ActivateFaceIdOnlyAsync — kích hoạt FaceID chỉ cần hội viên có
+    //     ÍT NHẤT 1 gói còn hạn, bất kể nội bộ hay khách hàng) -> không lọc theo Plan.PlanType.
+    public async Task<MemberPackage?> GetLatestPackageAsync(long memberId, string? planType = null)
     {
-        return await _db.MemberPackages
+        var query = _db.MemberPackages
             .Include(p => p.Plan)
-            .Where(p => p.MemberId == memberId && p.PackageStatus != "PendingActivation")
-            .OrderByDescending(p => p.ExpiryDate)
-            .FirstOrDefaultAsync();
+            .Where(p => p.MemberId == memberId && p.PackageStatus != "PendingActivation");
+
+        if (planType != null)
+            query = query.Where(p => p.Plan.PlanType == planType);
+
+        return await query.OrderByDescending(p => p.ExpiryDate).FirstOrDefaultAsync();
     }
 
     // ===================== LẤY GÓI ĐANG CHỜ KÍCH HOẠT (mua online, chưa qua quầy) =====================
-    // Theo ràng buộc nghiệp vụ, mỗi hội viên tối đa 1 gói ở trạng thái này tại 1 thời điểm.
-    public async Task<MemberPackage?> GetPendingPackageAsync(long memberId)
+    // [MỚI] Ràng buộc "tối đa 1 gói Pending" giờ áp dụng THEO TỪNG TRACK (nội bộ / khách hàng),
+    // không còn chặn chéo — hội viên có thể vừa có 1 gói khách hàng Pending vừa có 1 gói nội bộ
+    // Pending cùng lúc (2 track độc lập). Việc lọc theo track được thực hiện ở nơi gọi thông qua
+    // CreatePendingPackageAsync (xem bên dưới); hàm GetPendingPackageAsync này để lấy 1 gói Pending
+    // cụ thể theo track khi cần (VD PaymentService biết trước đang xử lý gói loại gì).
+    public async Task<MemberPackage?> GetPendingPackageAsync(long memberId, string? planType = null)
     {
-        return await _db.MemberPackages
+        var query = _db.MemberPackages
             .Include(p => p.Plan)
-            .Where(p => p.MemberId == memberId && p.PackageStatus == "PendingActivation")
-            .OrderByDescending(p => p.CreatedAt)
-            .FirstOrDefaultAsync();
+            .Where(p => p.MemberId == memberId && p.PackageStatus == "PendingActivation");
+
+        if (planType != null)
+            query = query.Where(p => p.Plan.PlanType == planType);
+
+        return await query.OrderByDescending(p => p.CreatedAt).FirstOrDefaultAsync();
     }
 
     // ===================== QUYẾT ĐỊNH NGÀY BẮT ĐẦU (gia hạn) =====================
-    // latestPackage truyền vào luôn lấy từ GetLatestPackageAsync (đã loại Pending) nên ExpiryDate
-    // ở đây luôn có giá trị thật -> trả về DateOnly không nullable, không cần xử lý null phía sau.
+    // latestPackage truyền vào luôn lấy từ GetLatestPackageAsync (đã loại Pending, đã lọc đúng
+    // track) nên ExpiryDate ở đây luôn có giá trị thật -> trả về DateOnly không nullable, không
+    // cần xử lý null phía sau.
     public (DateOnly StartDate, bool IsExtending) DetermineStartDate(MemberPackage? latestPackage, DateOnly today)
     {
         var isExtending = latestPackage != null
@@ -204,6 +194,10 @@ public class MemberPackageService
     // LƯU Ý: amount và bonusDays truyền vào đây PHẢI đã được tính sẵn qua CalculateDiscountedAmount
     // / CalculateBonusDays ở nơi gọi (MemberService/TransactionService) — hàm này không tự tính
     // lại từ Promotion, chỉ nhận giá trị cuối để lưu, tránh phải query lại Promotion/Plan ở đây.
+    //
+    // [KHÔNG ĐỔI] Hàm này KHÔNG cần biết gói là nội bộ hay khách hàng — nó chỉ insert, việc phân
+    // track (nối hạn theo đúng track nào) đã được xử lý TRƯỚC khi gọi vào đây, ở nơi tính
+    // startDate/expiryDate (xem CreateActivePackageForCustomerAsync bên dưới).
     public async Task<MemberPackage> CreateActivePackageAsync(
         long memberId, int planId, int? promotionId,
         decimal giaGoc, decimal amount, short bonusDays,
@@ -238,7 +232,8 @@ public class MemberPackageService
     // ===================== [KHÁCH HÀNG] TẠO GÓI TẬP CHỜ KÍCH HOẠT (mua online) =====================
     // Dùng khi khách mua gói online lúc tài khoản còn PendingActivation: CHƯA biết ngày kích hoạt
     // nên StartDate/ExpiryDate = null. PackageStatus = "PendingActivation".
-    // Ràng buộc: 1 tài khoản chỉ được có TỐI ĐA 1 gói đang ở trạng thái PendingActivation.
+    // Ràng buộc: 1 tài khoản chỉ được có TỐI ĐA 1 gói đang ở trạng thái PendingActivation
+    // [MỚI] — TÍNH THEO TỪNG TRACK (nội bộ / khách hàng), không chặn chéo giữa 2 loại.
     // PaymentService (webhook xác nhận thanh toán) gọi hàm này khi Member.Status == "PendingActivation".
     // branchId: chi nhánh khách TỰ CHỌN lúc mua online (FE gửi lên, PaymentService lưu tạm vào
     // Transaction.BranchId ngay lúc tạo QR, rồi đọc lại và truyền xuống đây khi webhook báo Paid).
@@ -252,8 +247,14 @@ public class MemberPackageService
         decimal giaGoc, decimal amount, short bonusDays,
         long transactionId, int branchId)
     {
+        var plan = await _db.MembershipPlans.FindAsync(planId)
+            ?? throw new KeyNotFoundException("Không tìm thấy gói tập.");
+
         var alreadyPending = await _db.MemberPackages
-            .AnyAsync(p => p.MemberId == memberId && p.PackageStatus == "PendingActivation");
+            .Include(p => p.Plan)
+            .AnyAsync(p => p.MemberId == memberId
+                        && p.PackageStatus == "PendingActivation"
+                        && p.Plan.PlanType == plan.PlanType);
         if (alreadyPending)
             throw new InvalidOperationException(
                 "Hội viên đã có một gói tập đang chờ kích hoạt. Vui lòng hoàn tất kích hoạt tại quầy trước khi mua gói khác.");
@@ -315,24 +316,36 @@ public class MemberPackageService
     // Dùng cho luồng thanh toán online (PaymentService) khi Member.Status == "Active" (hoặc "Expired"):
     // tự động nối hạn dựa trên gói gần nhất — cùng logic với gia hạn tại quầy
     // (MemberService.RenewMembershipAsync), chỉ khác là không cần request.PaymentMethod/BankReferenceCode
-    // do controller khác xử lý. Tài khoản đã kích hoạt được phép mua nhiều gói, luôn cộng dồn/nối hạn.
+    // do controller khác xử lý.
     // branchId: chi nhánh khách chọn lúc mua online (đọc từ Transaction.BranchId, giống CreatePendingPackageAsync).
     // Dùng CalculateExpiryDate thay vì AddDays(plan.DurationDays + bonusDays) inline.
     //
+    // [MỚI] Gói được mua vẫn có thể là gói nội bộ HOẶC gói khách hàng — hàm dùng chung cho cả 2,
+    // tự đọc plan.PlanType rồi nối hạn ĐÚNG theo track tương ứng (PLAN_TYPE_INTERNAL nối với
+    // PLAN_TYPE_INTERNAL, PLAN_TYPE_CUSTOMER nối với PLAN_TYPE_CUSTOMER). Nhờ vậy:
+    //   - Đang có gói khách hàng còn hạn mà được đăng ký thêm gói nội bộ -> gói nội bộ tạo mới,
+    //     StartDate = hôm nay (vì chưa có gói nội bộ nào trước đó để nối), CHẠY SONG SONG với
+    //     gói khách hàng đang có, không đụng ngày của nhau.
+    //   - Đang dùng gói nội bộ mà khách vẫn mua thêm gói khách hàng -> gói khách hàng nối hạn
+    //     bình thường theo track khách hàng của riêng nó (không bị gói nội bộ ảnh hưởng lúc mua).
+    //     Việc "trả lại" thời gian bị gói nội bộ che mất chỉ xảy ra khi gói nội bộ NGƯNG, xem
+    //     SuspendInternalPackageAsync bên dưới.
+    //
     // LƯU Ý: giaGoc/amount/bonusDays vẫn nhận từ nơi gọi (đã tính sẵn qua CalculateDiscountedAmount
     // / CalculateBonusDays trước khi gọi vào đây) — hàm này chỉ lo phần NGÀY (xác định startDate
-    // theo nối hạn, rồi tính expiryDate), không tự tính lại giá.
+    // theo nối hạn ĐÚNG TRACK, rồi tính expiryDate), không tự tính lại giá.
     public async Task<MemberPackage> CreateActivePackageForCustomerAsync(
         long memberId, int planId, int? promotionId,
         decimal giaGoc, decimal amount, short bonusDays,
         long transactionId, int branchId)
     {
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
-        var latestPackage = await GetLatestPackageAsync(memberId);
-        var (startDate, _) = DetermineStartDate(latestPackage, today);
 
         var plan = await _db.MembershipPlans.FindAsync(planId)
             ?? throw new KeyNotFoundException("Không tìm thấy gói tập.");
+
+        var latestPackage = await GetLatestPackageAsync(memberId, plan.PlanType);
+        var (startDate, _) = DetermineStartDate(latestPackage, today);
 
         var expiryDate = CalculateExpiryDate(startDate, plan, bonusDays);
 
@@ -340,7 +353,108 @@ public class MemberPackageService
             memberId, planId, promotionId, giaGoc, amount, bonusDays,
             startDate, expiryDate, transactionId, branchId);
     }
-// ===================== [MỚI] LẤY DANH SÁCH CHI NHÁNH NHÂN VIÊN ĐƯỢC QUẢN LÝ =====================
+
+    // ===================== [MỚI] GÓI "MẶC ĐỊNH" CỦA HỘI VIÊN =====================
+    // Khi hội viên có cả gói nội bộ lẫn gói khách hàng đang Active song song, gói MẶC ĐỊNH
+    // (dùng để check-in/FaceID/hiển thị trạng thái chính...) LUÔN LÀ GÓI NỘI BỘ, theo đúng
+    // nghiệp vụ "member đã có gói khách hàng mà được đăng ký gói nội bộ thì gói mặc định là gói
+    // nội bộ". Nếu không có gói nội bộ nào đang Active/còn hạn, fallback về gói khách hàng còn
+    // hạn xa nhất.
+    public async Task<MemberPackage?> GetDefaultActivePackageAsync(long memberId)
+    {
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+
+        var activePackages = await _db.MemberPackages
+            .Include(p => p.Plan)
+            .Where(p => p.MemberId == memberId
+                        && p.PackageStatus == "Active"
+                        && p.ExpiryDate.HasValue
+                        && p.ExpiryDate.Value >= today)
+            .ToListAsync();
+
+        return activePackages.FirstOrDefault(p => p.Plan.PlanType == PLAN_TYPE_INTERNAL)
+            ?? activePackages.OrderByDescending(p => p.ExpiryDate).FirstOrDefault();
+    }
+
+    // ===================== [MỚI] NGƯNG DÙNG GÓI NỘI BỘ (nhân viên nghỉ / bị thu hồi quyền lợi) =====================
+    // Nghiệp vụ:
+    //   1) Gói nội bộ đang Active bị CHỐT LẠI ngay tại ngày ngưng: ExpiryDate = suspendDate,
+    //      PackageStatus chuyển sang "Canceled" (không còn tính là gói đang dùng).
+    //   2) Trong lúc dùng gói nội bộ, nếu hội viên có mua thêm gói khách hàng thì gói đó vẫn được
+    //      tạo bình thường (track khách hàng độc lập — xem CreateActivePackageForCustomerAsync),
+    //      NHƯNG coi như "chưa thật sự dùng" vì hội viên đang tập bằng gói nội bộ (gói mặc định).
+    //      Nhận diện các gói khách hàng này bằng điều kiện: StartDate >= StartDate của gói nội bộ
+    //      (tức là toàn bộ thời gian của gói khách hàng nằm trong giai đoạn đang có gói nội bộ).
+    //      Với các gói này: RESET lại — StartDate = ngày ngưng gói nội bộ, ExpiryDate tính lại từ
+    //      đó theo đúng DurationDays của Plan + SoNgayTangThucTe đã chốt lúc mua (KHÔNG tính lại
+    //      khuyến mãi, KHÔNG đổi Amount/GiaGoc) — coi như "trả lại" nguyên vẹn số ngày khách đã
+    //      trả tiền, bắt đầu tính từ đúng lúc khách thật sự bắt đầu dùng.
+    //   3) Gói khách hàng nào đã có StartDate TRƯỚC khi gói nội bộ bắt đầu (tức là đã dùng dở từ
+    //      trước khi thành nhân viên) thì KHÔNG bị đụng tới — giữ nguyên StartDate/ExpiryDate cũ.
+    //
+    // [GIẢ ĐỊNH CẦN XÁC NHẬN] Điều kiện nhận diện gói khách hàng "bị che" ở bước 2 là
+    // StartDate >= StartDate gói nội bộ. Nếu nghiệp vụ thực tế muốn mốc so sánh khác (VD so với
+    // ngày member được gắn PlanType nội bộ, không phải StartDate của MemberPackage nội bộ), báo
+    // lại để chỉnh 1 dòng Where bên dưới.
+   public async Task<MemberPackage> SuspendInternalPackageAsync(long memberId, DateOnly suspendDate, long updatedByEmployeeId )
+        {
+            var internalPackage = await _db.MemberPackages
+                .Include(p => p.Plan)
+                .Where(p => p.MemberId == memberId
+                            && p.PackageStatus == "Active"
+                            && p.Plan.PlanType == PLAN_TYPE_INTERNAL)
+                .OrderByDescending(p => p.StartDate)
+                .FirstOrDefaultAsync();
+
+            if (internalPackage == null)
+                throw new InvalidOperationException("Hội viên không có gói nội bộ đang hoạt động.");
+
+            if (!internalPackage.StartDate.HasValue)
+                throw new InvalidOperationException("Gói nội bộ chưa có ngày bắt đầu hợp lệ.");
+
+            var now = DateTime.UtcNow;
+            var oldStatus = internalPackage.PackageStatus;
+
+            // 1) Chốt lại gói nội bộ.
+            internalPackage.ExpiryDate = suspendDate;
+            internalPackage.PackageStatus = STATUS_CANCELED;
+            internalPackage.UpdatedAt = now;
+
+            // 2) Reset các gói khách hàng "bị che" trong lúc dùng gói nội bộ.
+            var affectedCustomerPackages = await _db.MemberPackages
+                .Include(p => p.Plan)
+                .Where(p => p.MemberId == memberId
+                            && p.PackageStatus == "Active"
+                            && p.Plan.PlanType == PLAN_TYPE_CUSTOMER
+                            && p.StartDate.HasValue
+                            && p.StartDate.Value >= internalPackage.StartDate.Value)
+                .ToListAsync();
+
+            foreach (var pkg in affectedCustomerPackages)
+            {
+                pkg.StartDate = suspendDate;
+                pkg.ExpiryDate = CalculateExpiryDate(suspendDate, pkg.Plan!, pkg.SoNgayTangThucTe);
+                pkg.UpdatedAt = now;
+            }
+
+            // 3) Ghi log lịch sử cập nhật — hiển thị trong "Lịch sử cập nhật" của hội viên
+            _db.MemberUpdateLogs.Add(new MemberUpdateLog
+            {
+                UpdateSessionId = Guid.NewGuid(),
+                MemberId = memberId,
+                FieldName = "SUSPEND_INTERNAL_PACKAGE",
+                OldValue = oldStatus,
+                NewValue = $"Đã ngưng gói \"{internalPackage.Plan?.PlanName}\" (hiệu lực đến {suspendDate:dd/MM/yyyy})",
+                UpdatedByEmployeeId = updatedByEmployeeId,
+                UpdatedAt = now,
+            });
+
+            await _db.SaveChangesAsync();
+
+            return internalPackage;
+        }
+
+    // ===================== [MỚI] LẤY DANH SÁCH CHI NHÁNH NHÂN VIÊN ĐƯỢC QUẢN LÝ =====================
     // Dùng để giới hạn phạm vi xem lịch sử đăng ký gói tập theo role:
     //   - Staff: EmployeeBranches có đúng 1 dòng -> chỉ xem chi nhánh đó.
     //   - Manager: có thể có nhiều dòng (VD 3 chi nhánh) -> xem được cả 3.

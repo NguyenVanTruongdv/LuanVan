@@ -27,6 +27,18 @@ namespace BE.Services
     //   khuyến mãi (TrangThai, NgayBatDau/NgayKetThuc, GioiHanLuot/SoLuotDaDung, PlanId có khớp
     //   không) cũng được gom về 1 hàm private ValidateAndGetPromotionAsync bên dưới, vì trước đây
     //   2 luồng trên copy y hệt khối validate này.
+    // - [MỚI - 18/07/2026] BỌC TRANSACTION cho 3 luồng ghi nhiều bảng cùng lúc: CreateMemberAsync,
+    //   ActivateWithPackageAsync, ActivateFaceIdOnlyAsync. Trước đây mỗi hàm gọi SaveChangesAsync
+    //   rải rác nhiều lần (Member, FaceId, Transaction, MemberPackage, Log...) mà KHÔNG có DB
+    //   transaction bọc ngoài, nên nếu 1 bước giữa chừng lỗi (ví dụ upload ảnh FaceID lỗi) thì
+    //   các bước đã SaveChanges trước đó (VD: Member vừa tạo) vẫn nằm lại trong DB ở trạng thái
+    //   dở dang ("mồ côi"). Giờ toàn bộ được bọc trong 1 DB transaction duy nhất qua
+    //   IExecutionStrategy + BeginTransactionAsync/CommitAsync/RollbackAsync: hễ có exception ở
+    //   bất kỳ bước nào bên trong (kể cả từ FaceIdService/TransactionService/MemberPackageService,
+    //   vì tất cả dùng chung 1 DbContext instance) thì rollback toàn bộ rồi rethrow để FE vẫn nhận
+    //   đúng lỗi như cũ. Lưu ý: việc upload file ảnh vật lý lên storage ngoài (nếu có) không nằm
+    //   trong phạm vi DB transaction này — nếu cần dọn file mồ côi khi rollback, xử lý riêng trong
+    //   catch của FaceIdService hoặc bằng job dọn dẹp định kỳ.
     public class MemberService
     {
         private readonly GymManagementContext _context;
@@ -70,6 +82,30 @@ namespace BE.Services
             return pack;
         }
 
+        public async Task<CurrentPackageDto?> GetCurrentPackageInternalAsync(long memberId)
+        {
+            var exist = await _context.Members.FindAsync(memberId);
+            if (exist == null)
+                throw new NotFoundException("Không tìm thấy hội viên");
+
+            return await _context.MemberPackages
+                .Include(mp => mp.Plan)
+                .Where(mp =>
+                    mp.MemberId == memberId &&
+                    mp.PackageStatus == "Active" &&
+                    mp.Plan.PlanType == "Internal")
+                .OrderByDescending(mp => mp.ExpiryDate)
+                .Select(mp => new CurrentPackageDto
+                {
+                    MemberPackageId = mp.MemberPackageId,
+                    PlanId = mp.PlanId,
+                    PlanName = mp.Plan.PlanName,
+                    StartDate = mp.StartDate,
+                    ExpiryDate = mp.ExpiryDate,
+                    PackageStatus = mp.PackageStatus,
+                })
+                .FirstOrDefaultAsync();
+        }
         // ===================== KIỂM TRA TRÙNG SỐ ĐIỆN THOẠI =====================
         public async Task<bool> CheckPhoneExistsAsync(string phone)
         {
@@ -165,6 +201,10 @@ namespace BE.Services
         }
 
         // ===================== [THU NGÂN] TẠO HỘI VIÊN MỚI (walk-in, Active ngay) =====================
+        // [MỚI] Toàn bộ phần ghi DB (Member, FaceID, Transaction, MemberPackage, PromotionUsage,
+        // Invoice, Log) được bọc trong 1 DB transaction duy nhất qua ExecutionStrategy. Nếu bất kỳ
+        // bước nào bên trong throw (kể cả upload ảnh FaceID lỗi) thì rollback toàn bộ và rethrow
+        // để FE vẫn nhận đúng lỗi.
         public async Task<MemberResponse> CreateMemberAsync(CreateMemberRequest request, long performedBy)
         {
             var phoneExisted = await _context.Members.AnyAsync(m => m.Phone == request.Phone);
@@ -192,78 +232,96 @@ namespace BE.Services
             var startDate = DateOnly.FromDateTime(now);
             var expiryDate = _packageService.CalculateExpiryDate(startDate, plan, soNgayTangThucTe);
 
-            var member = new Member
+            var strategy = _context.Database.CreateExecutionStrategy();
+            MemberResponse response = null!;
+
+            await strategy.ExecuteAsync(async () =>
             {
-                FullName = request.FullName,
-                Phone = request.Phone,
-                PasswordHash = BCrypt.Net.BCrypt.HashPassword(generatedPassword),
-                Gender = request.Gender,
-                Status = "Activate",
-                InternalNotes = request.InternalNotes,
-                CreatedBy = performedBy,
-                CreatedAt = now,
-                UpdatedAt = now
-            };
-            _context.Members.Add(member);
-            await _context.SaveChangesAsync();
+                await using var dbTransaction = await _context.Database.BeginTransactionAsync();
+                try
+                {
+                    var member = new Member
+                    {
+                        FullName = request.FullName,
+                        Phone = request.Phone,
+                        PasswordHash = BCrypt.Net.BCrypt.HashPassword(generatedPassword),
+                        Gender = request.Gender,
+                        Status = "Activate",
+                        InternalNotes = request.InternalNotes,
+                        CreatedBy = performedBy,
+                        CreatedAt = now,
+                        UpdatedAt = now
+                    };
+                    _context.Members.Add(member);
+                    await _context.SaveChangesAsync();
 
-            await _faceIdService.RegisterFirstFaceAsync(
-                member.MemberId, request.ProfileImage,
-                "Đăng ký khuôn mặt lần đầu khi tạo hội viên", performedBy);
+                    // [MỚI] Nếu upload ảnh lỗi -> throw -> rơi vào catch -> rollback member vừa Add.
+                    await _faceIdService.RegisterFirstFaceAsync(
+                        member.MemberId, request.ProfileImage,
+                        "Đăng ký khuôn mặt lần đầu khi tạo hội viên", performedBy);
 
-            var paymentStatus = string.IsNullOrWhiteSpace(request.PaymentStatus)
-                ? (request.PaymentMethod == "Cash" ? "Paid" : PaymentStatus.Paid.ToString())
-                : request.PaymentStatus;
+                    var paymentStatus = string.IsNullOrWhiteSpace(request.PaymentStatus)
+                        ? (request.PaymentMethod == "Cash" ? "Paid" : PaymentStatus.Paid.ToString())
+                        : request.PaymentStatus;
 
-            var transaction = await _transactionService.CreateTransactionAsync(
-                member.MemberId, request.PlanId, request.PromotionId,
-                request.GiaGoc, request.Amount,
-                request.PaymentMethod, paymentStatus,
-                null, performedBy, branchId); // [MỚI] branchId
+                    var transaction = await _transactionService.CreateTransactionAsync(
+                        member.MemberId, request.PlanId, request.PromotionId,
+                        request.GiaGoc, request.Amount,
+                        request.PaymentMethod, paymentStatus,
+                        null, performedBy, branchId); // [MỚI] branchId
 
-            var memberPackage = await _packageService.CreateActivePackageAsync(
-                member.MemberId, request.PlanId, request.PromotionId,
-                request.GiaGoc, request.Amount, soNgayTangThucTe,
-                startDate, expiryDate, transaction.TransactionId, branchId);
+                    var memberPackage = await _packageService.CreateActivePackageAsync(
+                        member.MemberId, request.PlanId, request.PromotionId,
+                        request.GiaGoc, request.Amount, soNgayTangThucTe,
+                        startDate, expiryDate, transaction.TransactionId, branchId);
 
-            // [MỚI] Ghi nhận lượt dùng khuyến mãi sau khi transaction + memberPackage đã tạo thành công.
-            if (promotion != null)
-            {
-                _transactionService.RecordPromotionUsage(
-                    promotion, member.MemberId, memberPackage.MemberPackageId,
-                    request.PlanId, soNgayTangThucTe, discountAmount: request.GiaGoc - request.Amount);
-            }
+                    // [MỚI] Ghi nhận lượt dùng khuyến mãi sau khi transaction + memberPackage đã tạo thành công.
+                    if (promotion != null)
+                    {
+                        _transactionService.RecordPromotionUsage(
+                            promotion, member.MemberId, memberPackage.MemberPackageId,
+                            request.PlanId, soNgayTangThucTe, discountAmount: request.GiaGoc - request.Amount);
+                    }
 
-            await GenerateInvoiceIfPaidAsync(
-                transaction, member, plan, paymentStatus,
-                giaGoc: request.GiaGoc,
-                discountAmount: request.GiaGoc - request.Amount,
-                amount: request.Amount,
-                bonusDays: soNgayTangThucTe,
-                startDate: startDate,
-                expiryDate: expiryDate,
-                performedBy: performedBy,
-                promotion: promotion, // [MỚI] dùng lại promotion đã fetch, khỏi query lại
-                branchId: branchId); // [MỚI] chi nhánh in trên hóa đơn = chi nhánh đã bán gói
+                    await GenerateInvoiceIfPaidAsync(
+                        transaction, member, plan, paymentStatus,
+                        giaGoc: request.GiaGoc,
+                        discountAmount: request.GiaGoc - request.Amount,
+                        amount: request.Amount,
+                        bonusDays: soNgayTangThucTe,
+                        startDate: startDate,
+                        expiryDate: expiryDate,
+                        performedBy: performedBy,
+                        promotion: promotion, // [MỚI] dùng lại promotion đã fetch, khỏi query lại
+                        branchId: branchId); // [MỚI] chi nhánh in trên hóa đơn = chi nhánh đã bán gói
 
-            member.Status = "Active";
-            member.UpdatedAt = now;
+                    member.Status = "Active";
+                    member.UpdatedAt = now;
 
-            _context.MemberUpdateLogs.Add(new MemberUpdateLog
-            {
-                UpdateSessionId = Guid.NewGuid(),
-                MemberId = member.MemberId,
-                FieldName = "CREATE_MEMBER",
-                OldValue = null,
-                NewValue = $"Tạo hội viên '{member.FullName}' - SĐT {member.Phone} - Hóa đơn {transaction.OrderCode}",
-                UpdatedByEmployeeId = performedBy,
-                UpdatedAt = now
+                    _context.MemberUpdateLogs.Add(new MemberUpdateLog
+                    {
+                        UpdateSessionId = Guid.NewGuid(),
+                        MemberId = member.MemberId,
+                        FieldName = "CREATE_MEMBER",
+                        OldValue = null,
+                        NewValue = $"Tạo hội viên '{member.FullName}' - SĐT {member.Phone} - Hóa đơn {transaction.OrderCode}",
+                        UpdatedByEmployeeId = performedBy,
+                        UpdatedAt = now
+                    });
+
+                    await _context.SaveChangesAsync();
+                    await dbTransaction.CommitAsync();
+
+                    response = await BuildMemberResponse(member.MemberId);
+                    response.GeneratedPassword = generatedPassword;
+                }
+                catch
+                {
+                    await dbTransaction.RollbackAsync();
+                    throw; // [MỚI] rethrow để controller/FE vẫn nhận đúng lỗi như cũ
+                }
             });
 
-            await _context.SaveChangesAsync();
-
-            var response = await BuildMemberResponse(member.MemberId);
-            response.GeneratedPassword = generatedPassword;
             return response;
         }
 
@@ -287,16 +345,26 @@ namespace BE.Services
         public async Task<List<MemberListItem>> GetMembersAsync(string? phone, string? fullName, int? branchId)
             => await QueryMemberList(phone, fullName, branchId, pendingOnly: false);
 
+        public async Task<List<MemberListItem>> GetMembersEmployeeAsync(string? phone, string? fullName, int? branchId, long employeeId)
+            => await QueryMemberEmployeeList(phone, fullName, branchId, employeeId);
+
+        public async Task<List<MemberListItem>> GetAllAsync(string? phone, string? fullName)
+            => await QueryAll(phone, fullName);
         // ===================== DANH SÁCH HỘI VIÊN CHỜ KÍCH HOẠT =====================
         public async Task<List<MemberListItem>> GetPendingMembersAsync(string? phone, string? fullName, int? branchId)
             => await QueryMemberList(phone, fullName, branchId, pendingOnly: true);
 
-        private async Task<List<MemberListItem>> QueryMemberList(string? phone, string? fullName, int? branchId, bool pendingOnly)
+      private async Task<List<MemberListItem>> QueryMemberList(string? phone, string? fullName, int? branchId, bool pendingOnly)
         {
             var query = _context.Members
                 .Include(m => m.FaceDatum)
-                .Include(m => m.MemberPackages).ThenInclude(p => p.Plan)
-                .Include(m => m.MemberPackages).ThenInclude(p => p.Branch)
+                .Include(m => m.MemberPackages)
+                    .ThenInclude(mp => mp.Plan)
+                .Include(m => m.MemberPackages)
+                    .ThenInclude(mp => mp.Branch)
+                .Where(m => !m.MemberPackages.Any(mp =>
+                    mp.Plan.PlanType == "Internal" &&
+                    mp.PackageStatus == "Active"))
                 .AsQueryable();
 
             if (pendingOnly)
@@ -311,13 +379,15 @@ namespace BE.Services
             if (branchId.HasValue)
                 query = query.Where(m => m.MemberPackages.Any(p => p.BranchId == branchId));
 
-            var members = await query.OrderByDescending(m => m.CreatedAt).ToListAsync();
-            var today = DateOnly.FromDateTime(DateTime.UtcNow);
+            var members = await query
+                .OrderByDescending(m => m.CreatedAt)
+                .ToListAsync();
 
             return members.Select(member =>
             {
-                var latestPackage = member.MemberPackages
-                    .OrderByDescending(p => p.CreatedAt)
+                var currentPackage = member.MemberPackages
+                    .Where(p => p.PackageStatus == "Active")
+                    .OrderByDescending(p => p.ExpiryDate)
                     .FirstOrDefault();
 
                 return new MemberListItem
@@ -325,12 +395,13 @@ namespace BE.Services
                     MemberId = member.MemberId,
                     FullName = member.FullName,
                     Phone = member.Phone,
-                    BranchName = latestPackage?.Branch?.BranchName,
+                    BranchName = currentPackage?.Branch?.BranchName,
                     Status = member.Status,
                     ProfileImage = member.FaceDatum?.ProfileImage,
+
                     CurrentPackages = member.MemberPackages
-                        .Where(p => p.StartDate.HasValue && p.ExpiryDate.HasValue
-                            && p.StartDate.Value <= today && p.ExpiryDate.Value >= today)
+                        .Where(p => p.PackageStatus == "Active")
+                        .OrderByDescending(p => p.ExpiryDate)
                         .Select(p => new CurrentPackageItem
                         {
                             MemberPackageId = p.MemberPackageId,
@@ -339,11 +410,168 @@ namespace BE.Services
                             StartDate = p.StartDate,
                             ExpiryDate = p.ExpiryDate,
                             PackageStatus = p.PackageStatus
-                        }).ToList()
+                        })
+                        .ToList()
                 };
             }).ToList();
         }
+        private async Task<List<MemberListItem>> QueryAll(
+            string? phone,
+            string? fullName)
+        {
+            var query = _context.Members
+                .Include(m => m.FaceDatum)
+                .AsQueryable();
 
+            if (!string.IsNullOrWhiteSpace(phone))
+                query = query.Where(m => m.Phone.Contains(phone));
+
+            if (!string.IsNullOrWhiteSpace(fullName))
+                query = query.Where(m => m.FullName.Contains(fullName));
+
+            // Nếu không cần lọc theo chi nhánh thì bỏ luôn đoạn branchId
+
+            var members = await query
+                .OrderByDescending(m => m.CreatedAt)
+                .ToListAsync();
+
+            return members.Select(member => new MemberListItem
+            {
+                MemberId = member.MemberId,
+                FullName = member.FullName,
+                Phone = member.Phone,
+                Status = member.Status,
+                ProfileImage = member.FaceDatum?.ProfileImage,
+
+                // Không lấy thông tin gói
+                BranchName = null,
+                CurrentPackages = new List<CurrentPackageItem>()
+            }).ToList();
+        }
+      private async Task<List<MemberListItem>> QueryMemberEmployeeList(  string? phone, string? fullName,int? branchId,  long employeeId)
+            {
+                var emp = await _context.Employees
+                    .Include(e => e.Role)
+                    .FirstOrDefaultAsync(e => e.EmployeeId == employeeId);
+
+                if (emp == null)
+                    return new List<MemberListItem>();
+
+                List<int> employeeBranchIds = new();
+
+                // Không phải Admin thì mới lấy danh sách chi nhánh được phân công
+                if (emp.Role?.RoleId != 3)
+                {
+                    employeeBranchIds = await _context.EmployeeBranches
+                        .Where(eb => eb.EmployeeId == employeeId)
+                        .Select(eb => eb.BranchId)
+                        .ToListAsync();
+                }
+
+                var query = _context.Members
+                    .Include(m => m.FaceDatum)
+                    .Include(m => m.MemberPackages)
+                        .ThenInclude(mp => mp.Plan)
+                    .Include(m => m.MemberPackages)
+                        .ThenInclude(mp => mp.Branch)
+                    .AsQueryable();
+
+                if (branchId.HasValue)
+                {
+                    // Có chọn chi nhánh thì cả Admin và Manager đều lọc theo chi nhánh đó
+                    query = query.Where(m => m.MemberPackages.Any(mp =>
+                        mp.BranchId == branchId.Value &&
+                        mp.Plan.PlanType == "Internal" &&
+                        mp.PackageStatus == "Active"));
+                }
+                else if (emp.Role?.RoleId != 3)
+                {
+                    // Manager/Nhân viên chỉ xem chi nhánh được phân công
+                    query = query.Where(m => m.MemberPackages.Any(mp =>
+                        employeeBranchIds.Contains(mp.BranchId) &&
+                        mp.Plan.PlanType == "Internal" &&
+                        mp.PackageStatus == "Active"));
+                }
+                else
+                {
+                    // Admin xem tất cả
+                    query = query.Where(m => m.MemberPackages.Any(mp =>
+                        mp.Plan.PlanType == "Internal" &&
+                        mp.PackageStatus == "Active"));
+                }
+
+                if (!string.IsNullOrWhiteSpace(phone))
+                    query = query.Where(m => m.Phone.Contains(phone));
+
+                if (!string.IsNullOrWhiteSpace(fullName))
+                    query = query.Where(m => m.FullName.Contains(fullName));
+
+                var members = await query
+                    .OrderByDescending(m => m.CreatedAt)
+                    .ToListAsync();
+
+                return members.Select(member =>
+                {
+                    MemberPackage? internalPackage;
+
+                    if (branchId.HasValue)
+                    {
+                        internalPackage = member.MemberPackages
+                            .Where(mp =>
+                                mp.BranchId == branchId.Value &&
+                                mp.Plan.PlanType == "Internal" &&
+                                mp.PackageStatus == "Active")
+                            .OrderByDescending(mp => mp.ExpiryDate)
+                            .FirstOrDefault();
+                    }
+                    else if (emp.Role?.RoleId == 3)
+                    {
+                        // Admin
+                        internalPackage = member.MemberPackages
+                            .Where(mp =>
+                                mp.Plan.PlanType == "Internal" &&
+                                mp.PackageStatus == "Active")
+                            .OrderByDescending(mp => mp.ExpiryDate)
+                            .FirstOrDefault();
+                    }
+                    else
+                    {
+                        // Manager/Nhân viên
+                        internalPackage = member.MemberPackages
+                            .Where(mp =>
+                                employeeBranchIds.Contains(mp.BranchId) &&
+                                mp.Plan.PlanType == "Internal" &&
+                                mp.PackageStatus == "Active")
+                            .OrderByDescending(mp => mp.ExpiryDate)
+                            .FirstOrDefault();
+                    }
+
+                    return new MemberListItem
+                    {
+                        MemberId = member.MemberId,
+                        FullName = member.FullName,
+                        Phone = member.Phone,
+                        BranchName = internalPackage?.Branch?.BranchName,
+                        Status = member.Status,
+                        ProfileImage = member.FaceDatum?.ProfileImage,
+
+                        CurrentPackages = internalPackage == null
+                            ? new List<CurrentPackageItem>()
+                            : new List<CurrentPackageItem>
+                            {
+                                new CurrentPackageItem
+                                {
+                                    MemberPackageId = internalPackage.MemberPackageId,
+                                    PlanId = internalPackage.PlanId,
+                                    PlanName = internalPackage.Plan.PlanName,
+                                    StartDate = internalPackage.StartDate,
+                                    ExpiryDate = internalPackage.ExpiryDate,
+                                    PackageStatus = internalPackage.PackageStatus
+                                }
+                            }
+                    };
+                }).ToList();
+            }
         // ===================== KIỂM TRA ĐÃ CÓ GÓI TẬP CHƯA =====================
         public async Task<bool> HasPackageAsync(long memberId)
         {
@@ -438,6 +666,8 @@ namespace BE.Services
         // [MỚI] Chi nhánh gói tập vẫn lấy từ nhân viên đang bán gói lúc kích hoạt (vì đây là bán
         // gói mới thật sự, không phải "chỉ kích hoạt tài khoản"), nhưng KHÔNG có ràng buộc gì về
         // việc hội viên/gói cũ phải cùng chi nhánh — kích hoạt ở chi nhánh nào cũng được.
+        // [MỚI] Toàn bộ được bọc trong 1 DB transaction: lỗi ở bất kỳ bước nào (kể cả upload
+        // ảnh FaceID) đều rollback hết Transaction/MemberPackage/PromotionUsage/Log đã ghi trước đó.
         public async Task<MemberResponse> ActivateWithPackageAsync(long memberId, ActivateMemberWithPackageRequest request, long performedBy)
         {
             var member = await _context.Members.FirstOrDefaultAsync(m => m.MemberId == memberId);
@@ -477,61 +707,79 @@ namespace BE.Services
                 ? (request.PaymentMethod == "Cash" ? "Paid" : PaymentStatus.Paid.ToString())
                 : request.PaymentStatus;
 
-            var transaction = await _transactionService.CreateTransactionAsync(
-                memberId, request.PlanId, request.PromotionId,
-                request.GiaGoc, request.Amount,
-                request.PaymentMethod, paymentStatus,
-                null, performedBy, branchId); // [MỚI] branchId
+            var strategy = _context.Database.CreateExecutionStrategy();
+            MemberResponse response = null!;
 
-            var memberPackage = await _packageService.CreateActivePackageAsync(
-                memberId, request.PlanId, request.PromotionId,
-                request.GiaGoc, request.Amount, soNgayTangThucTe,
-                startDate, expiryDate, transaction.TransactionId, branchId);
-
-            // [MỚI] Ghi nhận lượt dùng khuyến mãi.
-            if (promotion != null)
+            await strategy.ExecuteAsync(async () =>
             {
-                _transactionService.RecordPromotionUsage(
-                    promotion, memberId, memberPackage.MemberPackageId,
-                    request.PlanId, soNgayTangThucTe, discountAmount: request.GiaGoc - request.Amount);
-            }
+                await using var dbTransaction = await _context.Database.BeginTransactionAsync();
+                try
+                {
+                    var transaction = await _transactionService.CreateTransactionAsync(
+                        memberId, request.PlanId, request.PromotionId,
+                        request.GiaGoc, request.Amount,
+                        request.PaymentMethod, paymentStatus,
+                        null, performedBy, branchId); // [MỚI] branchId
 
-            await GenerateInvoiceIfPaidAsync(
-                transaction, member, plan, paymentStatus,
-                giaGoc: request.GiaGoc,
-                discountAmount: request.GiaGoc - request.Amount,
-                amount: request.Amount,
-                bonusDays: soNgayTangThucTe,
-                startDate: startDate,
-                expiryDate: expiryDate,
-                performedBy: performedBy,
-                promotion: promotion, // [MỚI] dùng lại promotion đã fetch
-                branchId: branchId); // [MỚI]
+                    var memberPackage = await _packageService.CreateActivePackageAsync(
+                        memberId, request.PlanId, request.PromotionId,
+                        request.GiaGoc, request.Amount, soNgayTangThucTe,
+                        startDate, expiryDate, transaction.TransactionId, branchId);
 
-            await _faceIdService.RegisterFirstFaceAsync(
-                memberId, request.ProfileImage,
-                "Đăng ký khuôn mặt lần đầu khi kích hoạt hội viên", performedBy);
+                    // [MỚI] Ghi nhận lượt dùng khuyến mãi.
+                    if (promotion != null)
+                    {
+                        _transactionService.RecordPromotionUsage(
+                            promotion, memberId, memberPackage.MemberPackageId,
+                            request.PlanId, soNgayTangThucTe, discountAmount: request.GiaGoc - request.Amount);
+                    }
 
-            var oldStatus = member.Status;
-            member.Status = "Active";
-            member.UpdatedAt = now;
+                    await GenerateInvoiceIfPaidAsync(
+                        transaction, member, plan, paymentStatus,
+                        giaGoc: request.GiaGoc,
+                        discountAmount: request.GiaGoc - request.Amount,
+                        amount: request.Amount,
+                        bonusDays: soNgayTangThucTe,
+                        startDate: startDate,
+                        expiryDate: expiryDate,
+                        performedBy: performedBy,
+                        promotion: promotion, // [MỚI] dùng lại promotion đã fetch
+                        branchId: branchId); // [MỚI]
 
-            // [MỚI] Log ghi rõ tên nhân viên kích hoạt (ngoài UpdatedByEmployeeId đã có sẵn)
-            _context.MemberUpdateLogs.Add(new MemberUpdateLog
-            {
-                UpdateSessionId = Guid.NewGuid(),
-                MemberId = memberId,
-                FieldName = "ACTIVATE_MEMBER",
-                OldValue = oldStatus,
-                NewValue = $"Kích hoạt hội viên - Tạo gói tập + FaceID - Hóa đơn {transaction.OrderCode} - NV kích hoạt: {employeeName ?? "N/A"}",
-                UpdatedByEmployeeId = performedBy,
-                UpdatedAt = now
+                    // [MỚI] Nếu upload ảnh lỗi -> throw -> rollback cả Transaction + MemberPackage + Invoice vừa tạo ở trên.
+                    await _faceIdService.RegisterFirstFaceAsync(
+                        memberId, request.ProfileImage,
+                        "Đăng ký khuôn mặt lần đầu khi kích hoạt hội viên", performedBy);
+
+                    var oldStatus = member.Status;
+                    member.Status = "Active";
+                    member.UpdatedAt = now;
+
+                    // [MỚI] Log ghi rõ tên nhân viên kích hoạt (ngoài UpdatedByEmployeeId đã có sẵn)
+                    _context.MemberUpdateLogs.Add(new MemberUpdateLog
+                    {
+                        UpdateSessionId = Guid.NewGuid(),
+                        MemberId = memberId,
+                        FieldName = "ACTIVATE_MEMBER",
+                        OldValue = oldStatus,
+                        NewValue = $"Kích hoạt hội viên - Tạo gói tập + FaceID - Hóa đơn {transaction.OrderCode} - NV kích hoạt: {employeeName ?? "N/A"}",
+                        UpdatedByEmployeeId = performedBy,
+                        UpdatedAt = now
+                    });
+
+                    await _context.SaveChangesAsync();
+                    await dbTransaction.CommitAsync();
+
+                    response = await BuildMemberResponse(memberId);
+                    response.ActivatedByEmployeeName = employeeName; // [MỚI]
+                }
+                catch
+                {
+                    await dbTransaction.RollbackAsync();
+                    throw; // [MỚI] rethrow để controller/FE vẫn nhận đúng lỗi như cũ
+                }
             });
 
-            await _context.SaveChangesAsync();
-
-            var response = await BuildMemberResponse(memberId);
-            response.ActivatedByEmployeeName = employeeName; // [MỚI]
             return response;
         }
         // ===================== [THU NGÂN] KÍCH HOẠT: CHỈ TẠO FACE ID =====================
@@ -539,6 +787,9 @@ namespace BE.Services
         // FaceID cho hội viên (gói Pending mua online giữ nguyên BranchId khách đã chọn; gói
         // Active/Expired cũ cũng không bị đổi BranchId ở đây). Chỉ ghi log + trả tên nhân viên
         // kích hoạt.
+        // [MỚI] Bọc DB transaction: nếu upload ảnh lỗi sau khi đã ActivatePendingPackageAsync,
+        // rollback lại luôn trạng thái PackageStatus vừa đổi, tránh gói bị "Active" mà FaceID
+        // chưa có.
         public async Task<MemberResponse> ActivateFaceIdOnlyAsync(long memberId, ActivateMemberFaceIdOnlyRequest request, long performedBy)
         {
             var member = await _context.Members.FirstOrDefaultAsync(m => m.MemberId == memberId);
@@ -549,58 +800,77 @@ namespace BE.Services
             var today = DateOnly.FromDateTime(now);
             var employeeName = await GetEmployeeNameAsync(performedBy); // [MỚI]
 
-            var pendingPackage = await _packageService.GetPendingPackageAsync(memberId);
-            if (pendingPackage != null)
+            var strategy = _context.Database.CreateExecutionStrategy();
+            MemberResponse response = null!;
+
+            await strategy.ExecuteAsync(async () =>
             {
-                await _packageService.ActivatePendingPackageAsync(pendingPackage, today);
-            }
-            else
-            {
-                var latestPackage = await _packageService.GetLatestPackageAsync(memberId);
-                if (latestPackage == null)
-                    throw new InvalidOperationException("Hội viên chưa có gói tập. Vui lòng dùng API tạo gói tập + FaceID.");
+                await using var dbTransaction = await _context.Database.BeginTransactionAsync();
+                try
+                {
+                    // [MỚI] Không lọc track — Pending của gói nội bộ hay khách hàng đều hợp lệ để kích hoạt.
+                    var pendingPackage = await _packageService.GetPendingPackageAsync(memberId);
+                    if (pendingPackage != null)
+                    {
+                        await _packageService.ActivatePendingPackageAsync(pendingPackage, today);
+                    }
+                    else
+                    {
+                        // [MỚI] Không lọc track — chỉ cần hội viên có 1 gói (bất kỳ loại nào) còn hạn.
+                        var latestPackage = await _packageService.GetLatestPackageAsync(memberId);
+                        if (latestPackage == null)
+                            throw new InvalidOperationException("Hội viên chưa có gói tập. Vui lòng dùng API tạo gói tập + FaceID.");
 
-                if (!latestPackage.ExpiryDate.HasValue || latestPackage.ExpiryDate.Value < today)
-                    throw new InvalidOperationException(
-                        $"Gói tập '{latestPackage.Plan?.PlanName}' đã hết hạn từ ngày {latestPackage.ExpiryDate:dd/MM/yyyy} " +
-                        "(hội viên chưa từng đến tập kể từ lúc mua gói). Vui lòng gia hạn/mua gói mới cho hội viên " +
-                        "trước khi đăng ký FaceID (dùng API gia hạn hoặc API tạo gói tập + FaceID).");
-            }
+                        if (!latestPackage.ExpiryDate.HasValue || latestPackage.ExpiryDate.Value < today)
+                            throw new InvalidOperationException(
+                                $"Gói tập '{latestPackage.Plan?.PlanName}' đã hết hạn từ ngày {latestPackage.ExpiryDate:dd/MM/yyyy} " +
+                                "(hội viên chưa từng đến tập kể từ lúc mua gói). Vui lòng gia hạn/mua gói mới cho hội viên " +
+                                "trước khi đăng ký FaceID (dùng API gia hạn hoặc API tạo gói tập + FaceID).");
+                    }
 
-            var hasFaceId = await _context.FaceData.AnyAsync(f => f.MemberId == memberId);
-            if (hasFaceId)
-                throw new InvalidOperationException("Hội viên đã có FaceID.");
+                    var hasFaceId = await _context.FaceData.AnyAsync(f => f.MemberId == memberId);
+                    if (hasFaceId)
+                        throw new InvalidOperationException("Hội viên đã có FaceID.");
 
-            await _faceIdService.RegisterFirstFaceAsync(
-                memberId, request.ProfileImage,
-                "Đăng ký khuôn mặt lần đầu khi kích hoạt hội viên", performedBy);
+                    // [MỚI] Nếu upload ảnh lỗi -> throw -> rollback luôn ActivatePendingPackageAsync ở trên.
+                    await _faceIdService.RegisterFirstFaceAsync(
+                        memberId, request.ProfileImage,
+                        "Đăng ký khuôn mặt lần đầu khi kích hoạt hội viên", performedBy);
 
-            var oldStatus = member.Status;
-            member.Status = "Active";
-            member.UpdatedAt = now;
+                    var oldStatus = member.Status;
+                    member.Status = "Active";
+                    member.UpdatedAt = now;
 
-            // [MỚI] Ghi rõ tên nhân viên kích hoạt vào log
-            _context.MemberUpdateLogs.Add(new MemberUpdateLog
-            {
-                UpdateSessionId = Guid.NewGuid(),
-                MemberId = memberId,
-                FieldName = "ACTIVATE_MEMBER",
-                OldValue = oldStatus,
-                NewValue = (pendingPackage != null
-                    ? "Kích hoạt hội viên - Kích hoạt gói tập đã mua online + FaceID"
-                    : "Kích hoạt hội viên - Tạo FaceID (đã có gói tập)")
-                    + $" - NV kích hoạt: {employeeName ?? "N/A"}",
-                UpdatedByEmployeeId = performedBy,
-                UpdatedAt = now
+                    // [MỚI] Ghi rõ tên nhân viên kích hoạt vào log
+                    _context.MemberUpdateLogs.Add(new MemberUpdateLog
+                    {
+                        UpdateSessionId = Guid.NewGuid(),
+                        MemberId = memberId,
+                        FieldName = "ACTIVATE_MEMBER",
+                        OldValue = oldStatus,
+                        NewValue = (pendingPackage != null
+                            ? "Kích hoạt hội viên - Kích hoạt gói tập đã mua online + FaceID"
+                            : "Kích hoạt hội viên - Tạo FaceID (đã có gói tập)")
+                            + $" - NV kích hoạt: {employeeName ?? "N/A"}",
+                        UpdatedByEmployeeId = performedBy,
+                        UpdatedAt = now
+                    });
+
+                    await _context.SaveChangesAsync();
+                    await dbTransaction.CommitAsync();
+
+                    response = await BuildMemberResponse(memberId);
+                    response.ActivatedByEmployeeName = employeeName; // [MỚI]
+                }
+                catch
+                {
+                    await dbTransaction.RollbackAsync();
+                    throw; // [MỚI] rethrow để controller/FE vẫn nhận đúng lỗi như cũ
+                }
             });
 
-            await _context.SaveChangesAsync();
-
-            var response = await BuildMemberResponse(memberId);
-            response.ActivatedByEmployeeName = employeeName; // [MỚI]
             return response;
         }
-
         // ===================== KHÓA / MỞ KHÓA TÀI KHOẢN =====================
         public async Task LockMemberAsync(long memberId, LockMemberRequest request, long performedBy)
             => await SetLockStatusAsync(memberId, "Suspended", "Lock", request.Reason, performedBy);
@@ -675,18 +945,33 @@ namespace BE.Services
         }
 
         // ===================== HÀM DỰNG RESPONSE =====================
-        private async Task<MemberResponse> BuildMemberResponse(long memberId)
+       private async Task<MemberResponse> BuildMemberResponse(long memberId)
         {
             var member = await _context.Members
                 .Include(m => m.FaceDatum)
-                .Include(m => m.MemberPackages).ThenInclude(p => p.Plan)
-                .Include(m => m.MemberPackages).ThenInclude(p => p.Branch)
+                .Include(m => m.MemberPackages)
+                    .ThenInclude(mp => mp.Plan)
+                .Include(m => m.MemberPackages)
+                    .ThenInclude(mp => mp.Branch)
                 .FirstOrDefaultAsync(m => m.MemberId == memberId);
 
             if (member == null)
                 throw new KeyNotFoundException("Không tìm thấy hội viên.");
 
-            var currentPackage = member.MemberPackages.OrderByDescending(p => p.ExpiryDate).FirstOrDefault();
+            var currentPackage =
+                member.MemberPackages
+                    .Where(mp =>
+                        mp.PackageStatus == "Active" &&
+                        mp.Plan.PlanType == "Internal")
+                    .OrderByDescending(mp => mp.ExpiryDate)
+                    .FirstOrDefault()
+
+                ?? member.MemberPackages
+                    .Where(mp =>
+                        mp.PackageStatus == "Active" &&
+                        mp.Plan.PlanType == "Customer")
+                    .OrderByDescending(mp => mp.ExpiryDate)
+                    .FirstOrDefault();
 
             return new MemberResponse
             {
@@ -700,8 +985,10 @@ namespace BE.Services
                 InternalNotes = member.InternalNotes,
                 CreatedAt = member.CreatedAt,
                 UpdatedAt = member.UpdatedAt,
+
                 FaceIdAws = member.FaceDatum?.FaceIdAws,
                 ProfileImage = member.FaceDatum?.ProfileImage,
+
                 CurrentMemberPackageId = currentPackage?.Plan?.PlanName,
                 PackageExpiryDate = currentPackage?.ExpiryDate,
                 PackageStatus = currentPackage?.PackageStatus
@@ -800,6 +1087,8 @@ namespace BE.Services
         // kèm cả giá/giảm giá — CalculatePromotionEffectAsync cần biết bonusDays để trả về đúng bộ
         // (giaGoc, discountAmt, amount, bonusDays, appliedPromo) trong 1 lần, tránh phải validate
         // + tính lại promotion ở 2 nơi khác nhau cho cùng 1 giao dịch.
+        // [MỚI] Bọc DB transaction — luồng gia hạn không upload ảnh nên rủi ro thấp hơn 3 hàm trên,
+        // nhưng vẫn nên rollback đồng bộ nếu 1 trong các bước Transaction/MemberPackage/Invoice lỗi.
         public async Task<RenewMembershipResponse> RenewMembershipAsync(long memberId, RenewMembershipRequest request, long performedBy)
         {
             var member = await _context.Members.FirstOrDefaultAsync(m => m.MemberId == memberId);
@@ -820,7 +1109,8 @@ namespace BE.Services
 
             var today = DateOnly.FromDateTime(DateTime.UtcNow);
 
-            var latestPackage = await _packageService.GetLatestPackageAsync(memberId);
+            // [MỚI] Truyền plan.PlanType -> chỉ lấy gói gần nhất CÙNG TRACK (nội bộ/khách hàng) để nối hạn.
+            var latestPackage = await _packageService.GetLatestPackageAsync(memberId, plan.PlanType);
             var (startDate, isExtending) = _packageService.DetermineStartDate(latestPackage, today);
 
             var (giaGoc, discountAmt, amount, bonusDays, appliedPromo) =
@@ -830,69 +1120,88 @@ namespace BE.Services
             // khác (kết quả giống hệt startDate.AddDays(plan.DurationDays + bonusDays) như bản cũ).
             var expiryDate = _packageService.CalculateExpiryDate(startDate, plan, bonusDays);
 
-            var transaction = await _transactionService.CreateTransactionAsync(
-                memberId, plan.PlanId, appliedPromo?.PromotionId,
-                giaGoc, amount, request.PaymentMethod, "Paid",
-                request.BankReferenceCode, performedBy, branchId); // [MỚI] branchId
+            var strategy = _context.Database.CreateExecutionStrategy();
+            RenewMembershipResponse result = null!;
 
-            var memberPackage = await _packageService.CreateActivePackageAsync(
-                memberId, plan.PlanId, appliedPromo?.PromotionId,
-                giaGoc, amount, bonusDays, startDate, expiryDate, transaction.TransactionId, branchId);
-
-            if (appliedPromo != null)
-                _transactionService.RecordPromotionUsage(appliedPromo, memberId, memberPackage.MemberPackageId, plan.PlanId, bonusDays, discountAmt);
-
-            var now = DateTime.UtcNow;
-            if (member.Status == "Expired")
-                member.Status = "Active";
-            member.UpdatedAt = now;
-
-            _context.MemberUpdateLogs.Add(new MemberUpdateLog
+            await strategy.ExecuteAsync(async () =>
             {
-                UpdateSessionId = Guid.NewGuid(),
-                MemberId = memberId,
-                FieldName = "RENEW_PACKAGE",
-                OldValue = latestPackage != null ? $"{latestPackage.Plan?.PlanName} - hết hạn {latestPackage.ExpiryDate}" : null,
-                NewValue = $"Gia hạn '{plan.PlanName}' - Hóa đơn {transaction.OrderCode} - {(isExtending ? "Nối tiếp" : "Bắt đầu mới")}",
-                UpdatedByEmployeeId = performedBy,
-                UpdatedAt = now
+                await using var dbTransaction = await _context.Database.BeginTransactionAsync();
+                try
+                {
+                    var transaction = await _transactionService.CreateTransactionAsync(
+                        memberId, plan.PlanId, appliedPromo?.PromotionId,
+                        giaGoc, amount, request.PaymentMethod, "Paid",
+                        request.BankReferenceCode, performedBy, branchId); // [MỚI] branchId
+
+                    var memberPackage = await _packageService.CreateActivePackageAsync(
+                        memberId, plan.PlanId, appliedPromo?.PromotionId,
+                        giaGoc, amount, bonusDays, startDate, expiryDate, transaction.TransactionId, branchId);
+
+                    if (appliedPromo != null)
+                        _transactionService.RecordPromotionUsage(appliedPromo, memberId, memberPackage.MemberPackageId, plan.PlanId, bonusDays, discountAmt);
+
+                    var now = DateTime.UtcNow;
+                    if (member.Status == "Expired")
+                        member.Status = "Active";
+                    member.UpdatedAt = now;
+
+                    _context.MemberUpdateLogs.Add(new MemberUpdateLog
+                    {
+                        UpdateSessionId = Guid.NewGuid(),
+                        MemberId = memberId,
+                        FieldName = "RENEW_PACKAGE",
+                        OldValue = latestPackage != null ? $"{latestPackage.Plan?.PlanName} - hết hạn {latestPackage.ExpiryDate}" : null,
+                        NewValue = $"Gia hạn '{plan.PlanName}' - Hóa đơn {transaction.OrderCode} - {(isExtending ? "Nối tiếp" : "Bắt đầu mới")}",
+                        UpdatedByEmployeeId = performedBy,
+                        UpdatedAt = now
+                    });
+
+                    await _context.SaveChangesAsync();
+
+                    var invoiceUrl = await GenerateInvoiceIfPaidAsync(
+                        transaction, member, plan, transaction.PaymentStatus,
+                        giaGoc: giaGoc,
+                        discountAmount: discountAmt,
+                        amount: amount,
+                        bonusDays: bonusDays,
+                        startDate: startDate,
+                        expiryDate: expiryDate,
+                        performedBy: performedBy,
+                        promotion: appliedPromo,
+                        branchId: branchId); // [MỚI]
+
+                    await dbTransaction.CommitAsync();
+
+                    result = new RenewMembershipResponse
+                    {
+                        MemberId = memberId,
+                        MemberName = member.FullName,
+                        MemberPackageId = memberPackage.MemberPackageId,
+                        PlanId = plan.PlanId,
+                        PlanName = plan.PlanName,
+                        GiaGoc = giaGoc,
+                        DiscountAmount = discountAmt,
+                        Amount = amount,
+                        BonusDays = bonusDays,
+                        StartDate = startDate,
+                        ExpiryDate = expiryDate,
+                        IsExtending = isExtending,
+                        PaymentMethod = transaction.PaymentMethod,
+                        PaymentStatus = transaction.PaymentStatus,
+                        TransactionId = transaction.TransactionId,
+                        OrderCode = transaction.OrderCode,
+                        BankReferenceCode = transaction.BankReferenceCode,
+                        InvoiceUrl = invoiceUrl
+                    };
+                }
+                catch
+                {
+                    await dbTransaction.RollbackAsync();
+                    throw; // [MỚI] rethrow để controller/FE vẫn nhận đúng lỗi như cũ
+                }
             });
 
-            await _context.SaveChangesAsync();
-
-            var invoiceUrl = await GenerateInvoiceIfPaidAsync(
-                transaction, member, plan, transaction.PaymentStatus,
-                giaGoc: giaGoc,
-                discountAmount: discountAmt,
-                amount: amount,
-                bonusDays: bonusDays,
-                startDate: startDate,
-                expiryDate: expiryDate,
-                performedBy: performedBy,
-                promotion: appliedPromo,
-                branchId: branchId); // [MỚI]
-
-            return new RenewMembershipResponse
-            {
-                MemberId = memberId,
-                MemberName = member.FullName,
-                MemberPackageId = memberPackage.MemberPackageId,
-                PlanId = plan.PlanId,
-                PlanName = plan.PlanName,
-                GiaGoc = giaGoc,
-                DiscountAmount = discountAmt,
-                Amount = amount,
-                BonusDays = bonusDays,
-                StartDate = startDate,
-                ExpiryDate = expiryDate,
-                IsExtending = isExtending,
-                PaymentMethod = transaction.PaymentMethod,
-                PaymentStatus = transaction.PaymentStatus,
-                TransactionId = transaction.TransactionId,
-                OrderCode = transaction.OrderCode,
-                BankReferenceCode = transaction.BankReferenceCode,
-                InvoiceUrl = invoiceUrl
-            };
+            return result;
         }
 
         public async Task<MemberProfileDto?> GetMyProfileAsync(long memberId)

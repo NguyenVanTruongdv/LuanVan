@@ -1348,6 +1348,10 @@ public partial class GymManagementContext : DbContext
                 .HasComment("Mô tả quyền lợi gói tập hiển thị cho hội viên")
                 .HasColumnType("text")
                 .HasColumnName("description");
+             entity.Property(e => e.PlanType)
+                .HasComment("Loại gói tập: Customer = gói dành cho khách hàng, Internal = gói sử dụng nội bộ")
+                .HasColumnType("enum('Customer','Internal')")
+                .HasColumnName("plan_type");
             entity.Property(e => e.DurationDays)
                 .HasComment("Thời hạn gói tính bằng số ngày kể từ ngày bắt đầu")
                 .HasColumnName("duration_days");

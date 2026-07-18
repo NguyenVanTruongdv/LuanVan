@@ -34,6 +34,12 @@ namespace BE.Controllers
             return Ok(new { currentPackage });
         }
 
+        [HttpGet("internal")]
+        public async Task<IActionResult> GetCurrentPackInternal(long memberId)
+        {
+            var currentPackage = await _memberService.GetCurrentPackageInternalAsync(memberId);
+            return Ok(new { currentPackage });
+        }
         // ===================== KIỂM TRA ĐÃ CÓ GÓI TẬP CHƯA =====================
         [HttpGet("has-any")]
         public async Task<IActionResult> HasPackage(long memberId)
@@ -69,6 +75,34 @@ namespace BE.Controllers
             var performedBy = GetCurrentUserId();
             var result = await _memberService.RenewMembershipAsync(memberId, request, performedBy);
             return Ok(result);
+        }
+
+        // ===================== [MỚI] NGƯNG DÙNG GÓI NỘI BỘ (nhân viên nghỉ / bị thu hồi quyền lợi) =====================
+        // Chốt gói nội bộ (PlanType = NoiBo) đang Active của hội viên tại đúng ngày ngưng
+        // (mặc định hôm nay nếu không truyền suspendDate): ExpiryDate = ngày ngưng, PackageStatus
+        // chuyển "Canceled". Đồng thời tự động "trả lại" thời gian cho các gói khách hàng đã mua
+        // song song trong lúc dùng gói nội bộ (StartDate/ExpiryDate của gói khách hàng đó được
+        // reset lại tính từ đúng ngày ngưng) — chi tiết công thức xem
+        // MemberPackageService.SuspendInternalPackageAsync.
+        // [GIẢ ĐỊNH] Đây là thao tác quản trị (thu hồi quyền lợi nhân viên) nên mình tạm giới hạn
+        // quyền giống GetHistory bên dưới (Staff/Manager/Admin). Chưa siết theo chi nhánh vì gói
+        // nội bộ không rõ có ràng buộc chi nhánh giống lịch sử gói hay không — báo lại nếu cần.
+        [HttpPost("cancel-internal")]
+        [Authorize(Roles = "Staff,Manager,Admin")]
+        public async Task<IActionResult> CancelInternalPackage(long memberId)
+        {   
+            long employeeId= GetCurrentUserId();
+            var effectiveDate =  DateOnly.FromDateTime(DateTime.UtcNow);
+            var result = await _memberPackageService.SuspendInternalPackageAsync(memberId, effectiveDate,employeeId);
+
+            return Ok(new
+            {
+                memberPackageId = result.MemberPackageId,
+                planId = result.PlanId,
+                packageStatus = result.PackageStatus,
+                startDate = result.StartDate,
+                expiryDate = result.ExpiryDate
+            });
         }
 
         // ===================== KHUYẾN MÃI ÁP DỤNG ĐƯỢC CHO 1 GÓI =====================

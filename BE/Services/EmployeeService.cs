@@ -239,14 +239,14 @@ namespace BE.Services
             return roleName;
         }
 
-        // Quy tắc: Manager chỉ được gán vai trò nhân viên thường (không phải Admin/Manager).
-        // Admin được gán vai trò nhân viên thường hoặc Manager (không tạo thêm Admin qua API này).
+        // Quy tắc: Admin được tạo/gán full mọi vai trò (kể cả Admin khác).
+        // Manager chỉ được tạo/gán vai trò nhân viên thường (Staff) — không được
+        // tạo hoặc nâng cấp lên Admin/Manager.
         private static void EnsureCanAssignRole(string currentRoleName, string targetRoleName)
         {
             if (currentRoleName == RoleAdmin)
             {
-                if (targetRoleName == RoleAdmin)
-                    throw new UnauthorizedAccessException("Không thể tạo hoặc gán tài khoản với vai trò Admin.");
+                // Admin toàn quyền, không giới hạn vai trò được gán
                 return;
             }
 

@@ -33,6 +33,7 @@ public partial class MembershipPlan
     /// </summary>
     public string? Description { get; set; }
 
+    public string PlanType { get; set; } = "Customer";
     /// <summary>
     /// Trạng thái bán: OnSale = đang bán, Discontinued = ngừng bán
     /// </summary>
