@@ -1,6 +1,8 @@
 // BE/Controllers/MembersController.cs
 using System.Security.Claims;
 using BE.Dtos.Member;
+using BE.Dtos.Member.BE.Dtos.Member;
+using BE.Models;
 using BE.Services;
 using BE.Services.Identify;
 using Microsoft.AspNetCore.Authorization;
@@ -8,20 +10,7 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace BE.Controllers
 {
-    // Chỉ chứa các endpoint thuộc về hồ sơ hội viên: tạo tài khoản, thông tin cá nhân,
-    // FaceID, khóa/mở khóa, kích hoạt. Mọi thứ liên quan gói tập/giao dịch/gia hạn đã tách sang
-    // MemberPackagesController và TransactionsController.
-    //
-    // QUY TẮC PHÂN QUYỀN (áp dụng thống nhất trong file này):
-    //   - Endpoint CHỈ DÀNH CHO THU NGÂN/NHÂN VIÊN (tạo hội viên, danh sách, tìm kiếm,
-    //     khóa/mở khóa, sửa FaceID, lookup theo SĐT, kiểm tra/kích hoạt gói): bắt buộc
-    //     IsEmployee() == true. "id" trên route LUÔN được dùng trực tiếp — vì nhân viên
-    //     PHẢI chỉ định rõ đang thao tác trên hội viên nào, JWT của nhân viên không mang
-    //     theo memberId của khách.
-    //   - Endpoint CHO PHÉP CẢ HỘI VIÊN TỰ THAO TÁC (xem/sửa hồ sơ, xem lịch sử cập nhật):
-    //     "id" trên route CHỈ được tin dùng khi caller là nhân viên. Khi caller là hội viên,
-    //     memberId bắt buộc lấy từ JWT (GetCurrentUserId()), bỏ qua route — tránh trường hợp
-    //     hội viên A đổi số trên URL rồi đọc/sửa được dữ liệu của hội viên B.
+   
     [ApiController]
     [Route("api/members")]
     [Authorize]
@@ -36,8 +25,7 @@ namespace BE.Controllers
             _identifyService = indentifyService;
         }
 
-        // ===================== [THU NGÂN] TẠO HỘI VIÊN MỚI =====================
-        // Bắt buộc nhân viên — hội viên không có API tự đăng ký ở đây (đăng ký online nằm ở AuthService).
+
         [HttpPost]
         public async Task<IActionResult> CreateMember([FromForm] CreateMemberRequest request)
         {
@@ -49,7 +37,10 @@ namespace BE.Controllers
             return CreatedAtAction(nameof(GetMember), new { id = result.MemberId }, result);
         }
 
-        // ===================== [THU NGÂN] LẤY DANH SÁCH HỘI VIÊN =====================
+        // =========================================================================
+        // NHÓM 2: [THU NGÂN] DANH SÁCH / TÌM KIẾM / TRA CỨU
+        // =========================================================================
+
         [HttpGet]
         public async Task<IActionResult> GetMembers([FromQuery] string? phone, [FromQuery] string? fullName, [FromQuery] int? branchId)
         {
@@ -69,6 +60,7 @@ namespace BE.Controllers
             var result = await _memberService.GetMembersEmployeeAsync(phone, fullName, branchId, employeeId);
             return Ok(result);
         }
+
         [HttpGet("all")]
         public async Task<IActionResult> GetAll([FromQuery] string? phone, [FromQuery] string? fullName)
         {
@@ -78,6 +70,7 @@ namespace BE.Controllers
             var result = await _memberService.GetAllAsync(phone, fullName);
             return Ok(result);
         }
+
         // ===================== [THU NGÂN] LẤY DANH SÁCH HỘI VIÊN CHỜ KÍCH HOẠT =====================
         [HttpGet("pending")]
         public async Task<IActionResult> GetPendingMembers([FromQuery] string? phone, [FromQuery] string? fullName, [FromQuery] int? branchId)
@@ -111,6 +104,26 @@ namespace BE.Controllers
             return Ok(new { exists });
         }
 
+        // ===================== [THU NGÂN] TRA CỨU HỘI VIÊN THEO SỐ ĐIỆN THOẠI (check-in FaceID...) =====================
+        [HttpGet("lookup")]
+        public async Task<IActionResult> LookupMemberByPhone([FromQuery] string phone)
+        {
+            if (!IsEmployee())
+                return Forbid();
+
+            if (string.IsNullOrWhiteSpace(phone))
+            {
+                return BadRequest(new { message = "Thiếu số điện thoại." });
+            }
+
+            var member = await _identifyService.LookupMemberByPhoneAsync(phone);
+            return Ok(new { member = member });
+        }
+
+        // =========================================================================
+        // NHÓM 3: XEM HỒ SƠ HỘI VIÊN
+        // =========================================================================
+
         // ===================== LẤY THÔNG TIN CHI TIẾT 1 HỘI VIÊN =====================
         // Nhân viên: xem bất kỳ hội viên nào theo "id" trên route.
         // Hội viên: chỉ được xem hồ sơ của chính mình -> ép memberId về JWT, bỏ qua "id" trên route.
@@ -123,28 +136,67 @@ namespace BE.Controllers
             return Ok(result);
         }
 
-        // ===================== SỬA THÔNG TIN HỘI VIÊN =====================
-        // Nhân viên: sửa hồ sơ bất kỳ hội viên nào theo "id" trên route.
-        // Hội viên: chỉ được sửa hồ sơ của chính mình -> ép memberId về JWT.
+        // ===================== [HỘI VIÊN] HỒ SƠ RÚT GỌN DÙNG CHO FORUM (avatar/tên ở header) =====================
+        [Authorize(Roles = "Member,Manager,Staff")]
+        [HttpGet("me")]
+        public async Task<IActionResult> GetMe()
+        {
+            var memberId = GetCurrentUserId();
+            var profile = await _memberService.GetMyProfileForumAsync(memberId);
+
+            if (profile is null)
+                return NotFound(new { message = "Không tìm thấy hội viên" });
+
+            return Ok(profile);
+        }
+
+        // ===================== [HỘI VIÊN] HỒ SƠ ĐẦY ĐỦ (thông tin + gói tập + lịch sử) =====================
+        // [SỬA LỖI] Route trước đây là "/my-profile" (route TUYỆT ĐỐI) -> phá vỡ prefix
+        // "api/members" của controller. Đã đổi thành route tương đối "my-profile".
+        [Authorize(Roles = "Member")]
+        [HttpGet("my-profile")]
+        public async Task<IActionResult> GetMyProfile()
+        {
+            var memberId = GetCurrentUserId();
+            var profile = await _memberService.GetMyProfileAsync(memberId);
+
+            if (profile is null)
+                return NotFound(new { message = "Không tìm thấy hội viên" });
+
+            return Ok(profile);
+        }
+
+        // =========================================================================
+        // NHÓM 4: CẬP NHẬT THÔNG TIN HỘI VIÊN
+        // =========================================================================
+
+        // ===================== [NHÂN VIÊN] SỬA THÔNG TIN HỘI VIÊN =====================
+        // Chỉ nhân viên gọi endpoint này (sửa hồ sơ của khách theo "id" trên route, bao gồm cả
+        // InternalNotes — field ghi chú nội bộ mà hội viên KHÔNG được phép tự sửa).
         [HttpPut("{id:long}")]
         public async Task<IActionResult> UpdateMemberInfo(long id, [FromBody] UpdateMemberInfoRequest request)
         {
-            var performedBy = GetPerformedByOrNull();
-            var targetMemberId = IsEmployee() ? id : GetCurrentUserId();
+            if (!IsEmployee())
+                return Forbid();
 
-            var result = await _memberService.UpdateMemberInfoAsync(targetMemberId, request, performedBy);
+            var performedBy = GetPerformedByOrNull();
+            var result = await _memberService.UpdateMemberInfoAsync(id, request, performedBy);
             return Ok(result);
         }
 
-        // ===================== LỊCH SỬ CẬP NHẬT THÔNG TIN =====================
-        // Nhân viên: xem lịch sử của bất kỳ hội viên nào theo "id" trên route.
-        // Hội viên: chỉ được xem lịch sử của chính mình -> ép memberId về JWT.
-        [HttpGet("{id:long}/update-history")]
-        public async Task<IActionResult> GetUpdateHistory(long id)
+        // ===================== [MỚI] [HỘI VIÊN] TỰ CẬP NHẬT HỒ SƠ CỦA CHÍNH MÌNH =====================
+        // Thay thế cho endpoint "PUT api/members" (UpdateMyInfo) cũ đã bị xóa do không an toàn
+        // (xem ghi chú SỬA LỖI ở đầu file). memberId LUÔN lấy từ JWT, không nhận qua route/body,
+        // nên hội viên không thể tự sửa hồ sơ của người khác.
+        // Cho phép đổi: FullName, Phone, Gender, mật khẩu (CurrentPassword + NewPassword).
+        // KHÔNG cho sửa InternalNotes/Status — những field đó chỉ nhân viên mới được sửa qua
+        // endpoint UpdateMemberInfo(id) ở trên.
+        [Authorize(Roles = "Member")]
+        [HttpPut("me")]
+        public async Task<IActionResult> UpdateMyProfile([FromBody] UpdateMyProfileRequest request)
         {
-            var targetMemberId = IsEmployee() ? id : GetCurrentUserId();
-
-            var result = await _memberService.GetUpdateHistoryAsync(targetMemberId);
+            var memberId = GetCurrentUserId();
+            var result = await _memberService.UpdateMyProfileAsync(memberId, request);
             return Ok(result);
         }
 
@@ -165,19 +217,27 @@ namespace BE.Controllers
             return Ok(result);
         }
 
-        // ===================== [THU NGÂN] KHÓA TÀI KHOẢN HỘI VIÊN =====================
-        [HttpPut("{id:long}/lock")]
-        public async Task<IActionResult> LockMember(long id, [FromBody] LockMemberRequest request)
-        {
-            if (!IsEmployee())
-                return Forbid();
+        // =========================================================================
+        // NHÓM 5: LỊCH SỬ CẬP NHẬT
+        // =========================================================================
 
-            var performedBy = GetCurrentUserId();
-            await _memberService.LockMemberAsync(id, request, performedBy);
-            return Ok(new { message = "Đã khóa tài khoản hội viên." });
+        // ===================== LỊCH SỬ CẬP NHẬT THÔNG TIN =====================
+        // Nhân viên: xem lịch sử của bất kỳ hội viên nào theo "id" trên route.
+        // Hội viên: chỉ được xem lịch sử của chính mình -> ép memberId về JWT.
+        [HttpGet("{id:long}/update-history")]
+        public async Task<IActionResult> GetUpdateHistory(long id)
+        {
+            var targetMemberId = IsEmployee() ? id : GetCurrentUserId();
+
+            var result = await _memberService.GetUpdateHistoryAsync(targetMemberId);
+            return Ok(result);
         }
 
-        // ===================== [THU NGÂN] KIỂM TRA XEM CÓ GÓI TẬP (PENDING) K ĐỂ KÍCH HOẠT TK =====================
+        // =========================================================================
+        // NHÓM 6: [THU NGÂN] KÍCH HOẠT HỘI VIÊN
+        // =========================================================================
+
+        // ===================== KIỂM TRA XEM CÓ GÓI TẬP (PENDING) K ĐỂ KÍCH HOẠT TK =====================
         // Trả về boolean THÔ: true nếu hội viên đang có 1 gói ở trạng thái PendingActivation
         // (đã mua online, chưa kích hoạt). Dùng ở màn "Kích hoạt hội viên" để quyết định có cần
         // hiển thị bước chọn gói hay không (false -> cần chọn gói -> gọi ActivateWithPackage;
@@ -192,7 +252,7 @@ namespace BE.Controllers
             return Ok(hasPackage);
         }
 
-        // ===================== [THU NGÂN] KÍCH HOẠT: TẠO GÓI TẬP + FACE ID =====================
+        // ===================== KÍCH HOẠT: TẠO GÓI TẬP + FACE ID =====================
         // Dùng khi hội viên CHƯA có gói nào (kể cả Pending) — chọn gói tập + chụp FaceID cùng lúc.
         // request (multipart/form-data) khớp ActivateMemberWithPackageRequest: PlanId (bắt buộc),
         // PromotionId (tùy chọn), GiaGoc, Amount, PaymentMethod, PaymentStatus (tùy chọn),
@@ -209,7 +269,7 @@ namespace BE.Controllers
             return Ok(result);
         }
 
-        // ===================== [THU NGÂN] KÍCH HOẠT: CHỈ TẠO FACE ID =====================
+        // ===================== KÍCH HOẠT: CHỈ TẠO FACE ID =====================
         // Dùng khi hội viên ĐÃ có gói — gói Pending (mua online) sẽ được BE tự chuyển sang Active
         // với StartDate = hôm nay; nếu không có gói Pending thì BE dùng gói gần nhất còn hạn.
         // Nếu gói gần nhất đã hết hạn, BE sẽ trả lỗi yêu cầu gia hạn/mua gói mới trước.
@@ -225,7 +285,21 @@ namespace BE.Controllers
             return Ok(result);
         }
 
-        // ===================== [THU NGÂN] MỞ KHÓA TÀI KHOẢN HỘI VIÊN =====================
+        // =========================================================================
+        // NHÓM 7: [THU NGÂN] KHÓA / MỞ KHÓA TÀI KHOẢN
+        // =========================================================================
+
+        [HttpPut("{id:long}/lock")]
+        public async Task<IActionResult> LockMember(long id, [FromBody] LockMemberRequest request)
+        {
+            if (!IsEmployee())
+                return Forbid();
+
+            var performedBy = GetCurrentUserId();
+            await _memberService.LockMemberAsync(id, request, performedBy);
+            return Ok(new { message = "Đã khóa tài khoản hội viên." });
+        }
+
         [HttpPut("{id:long}/unlock")]
         public async Task<IActionResult> UnlockMember(long id, [FromBody] UnlockMemberRequest request)
         {
@@ -235,36 +309,6 @@ namespace BE.Controllers
             var performedBy = GetCurrentUserId();
             await _memberService.UnlockMemberAsync(id, request, performedBy);
             return Ok(new { message = "Đã mở khóa tài khoản hội viên." });
-        }
-
-        // ===================== [THU NGÂN] TRA CỨU HỘI VIÊN THEO SỐ ĐIỆN THOẠI (check-in FaceID...) =====================
-        [Authorize]
-        [HttpGet("lookup")]
-        public async Task<IActionResult> LookupMemberByPhone([FromQuery] string phone)
-        {
-            if (!IsEmployee())
-                return Forbid();
-
-            if (string.IsNullOrWhiteSpace(phone))
-            {
-                return BadRequest(new { message = "Thiếu số điện thoại." });
-            }
-
-            var member = await _identifyService.LookupMemberByPhoneAsync(phone);
-            return Ok(new { member = member });
-        }
-        // GET: api/members/me — hồ sơ hội viên đang đăng nhập (dùng cho avatar/tên ở header)
-        [Authorize(Roles = "Member,Manager,Staff")]
-        [HttpGet("me")]
-        public async Task<IActionResult> GetMe()
-        {
-            var memberId = GetCurrentUserId();
-            var profile = await _memberService.GetMyProfileAsync(memberId);
-
-            if (profile is null)
-                return NotFound(new { message = "Không tìm thấy hội viên" });
-
-            return Ok(profile);
         }
     }
 }

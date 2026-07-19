@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Http;
 using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
+using BE.DTOs.Payment;
 
 namespace BE.Dtos.Member
 {
@@ -247,13 +248,76 @@ namespace BE.Dtos.Member
         // = false CHỈ KHI: đang PendingActivation VÀ đã có sẵn 1 gói Pending rồi.
         public bool CanPurchasePackage { get; set; }
     }
+    public class MemberProfileDtoForum
+    {
+        public long MemberId { get; set; }
+        public string? FullName { get; set; }
+        public string? Avatar { get; set; }
+        public string? Phone { get; set; }
+        public DateTime? JoinedAt { get; set; }
+        public int PostCount { get; set; }
+    }
     public class MemberProfileDto
+    {
+        public long MemberId { get; set; }
+
+        public string FullName { get; set; }
+
+        public string? Avatar { get; set; }
+
+        public string? Update { get; set; }
+
+        public string? EmployeeName { get; set; }
+
+        public string BranchName { get; set; }
+
+        public string Phone { get; set; }
+
+        public string Gender { get; set; }
+
+        public DateTime? JoinedAt { get; set; }
+
+        public MembershipPlanReponse? MembershipPlanReponse { get; set; }
+
+        public List<MemberUpdateSessionResponse> UpdateHistory { get; set; } = new();
+
+        public List<HistoryRegisPacReponse> HistoryTransaction { get; set; } = new();
+    }
+    public class MembershipPlanReponse
+    {
+        public string PlanName { get; set; }
+        public DateTime StartDate { get; set; }
+        public DateTime EndDate { get; set; }
+
+        public decimal Price { get; set; }
+
+        public string Description { get; set; }
+    }
+    namespace BE.Dtos.Member
 {
-    public long MemberId { get; set; }
-    public string? FullName { get; set; }
-    public string? Avatar { get; set; }
-    public string? Phone { get; set; }
-    public DateTime? JoinedAt { get; set; }
-    public int PostCount { get; set; }
+    /// <summary>
+    /// Request để hội viên TỰ cập nhật thông tin của chính mình (đổi tên, SĐT, giới tính, mật khẩu).
+    /// Tất cả các field đều optional — field nào null/rỗng thì giữ nguyên giá trị cũ, KHÔNG cập nhật.
+    /// Riêng đổi mật khẩu: phải gửi kèm CurrentPassword để xác thực, và NewPassword là mật khẩu mới.
+    /// </summary>
+    public class UpdateMyProfileRequest
+    {
+        public string? FullName { get; set; }
+
+        public string? Phone { get; set; }
+
+        public string? Gender { get; set; }
+
+        /// <summary>
+        /// Mật khẩu hiện tại — bắt buộc phải đúng nếu muốn đổi mật khẩu (NewPassword có giá trị).
+        /// </summary>
+        public string? CurrentPassword { get; set; }
+
+        /// <summary>
+        /// Mật khẩu mới muốn đổi sang. Để trống nếu không đổi mật khẩu.
+        /// </summary>
+        public string? NewPassword { get; set; }
+    }
 }
+
 }

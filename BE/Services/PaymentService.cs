@@ -53,6 +53,29 @@ namespace BE.Services
     // gọi thẳng _packageService.CalculateExpiryDate(...) để chỉ còn đúng 1 nguồn công thức, không
     // đổi kết quả tính toán, chỉ đổi chỗ viết công thức — cùng nguyên tắc đã áp dụng cho
     // ActivatePendingPackageAsync/CreateActivePackageForCustomerAsync bên MemberPackageService.
+    //
+    // [FIX - 19/07/2026] ĐỒNG BỘ MÃ ĐƠN HÀNG (OrderCode) VỚI TRANSACTIONSERVICE.
+    // Trước đây file này tự có 1 hàm GenerateOrderCode() RIÊNG, sinh mã prefix "GYM" (dựa vào
+    // DateTime.Now với mili-giây: yyyyMMddHHmmssfff + 4 số random), trong khi TransactionService
+    // (luồng tại quầy) lại có 1 hàm GenerateOrderCode() KHÁC, sinh mã prefix "HD" (dựa vào
+    // DateTime.UtcNow: yyyyMMddHHmmss + 4 số random). Hậu quả: giao dịch tạo tại quầy và giao dịch
+    // mua online có 2 ĐỊNH DẠNG MÃ KHÁC NHAU cho cùng 1 khái niệm nghiệp vụ (OrderCode của
+    // Transaction) — đây chính là "nguồn sinh mã thứ 2" tương tự kiểu lỗi "nhiều nguồn công thức"
+    // đã từng gặp và sửa ở các file khác (MemberPackageService/TransactionService).
+    //
+    // FIX: Bỏ hẳn hàm GenerateOrderCode() riêng của PaymentService. PaymentService đã có sẵn
+    // _transactionService (TransactionService) tiêm qua constructor, nên dùng thẳng
+    // TransactionService.GenerateOrderCode() (hàm static, prefix "HD") làm NGUỒN SINH MÃ DUY NHẤT
+    // cho toàn hệ thống — cả tại quầy lẫn online giờ luôn ra cùng 1 định dạng mã "HD..." không còn
+    // phân biệt kênh mua.
+    //
+    // [QUAN TRỌNG] Vì đổi prefix mã từ "GYM" sang "HD", đoạn regex trong HandleWebhookAsync dùng để
+    // bóc tách OrderCode từ nội dung chuyển khoản ngân hàng (SePay content) PHẢI đổi theo, nếu
+    // không webhook sẽ không nhận diện được bất kỳ giao dịch online nào nữa (không tìm thấy chuỗi
+    // "GYM..." trong content vì mã QR mới sinh ra luôn có dạng "HD..."):
+    //     Cũ: @"\bGYM\d{18,}\b"
+    //     Mới: @"\bHD\d{18,}\b"   (HD + 14 số thời gian + 4 số random = 18 số, khớp định dạng
+    //                              TransactionService.GenerateOrderCode() đang sinh ra)
     public class PaymentService
     {
         private readonly GymManagementContext _db;
@@ -137,7 +160,10 @@ namespace BE.Services
             // TangChuKy (không giảm giá), hàm này tự trả về giaGoc, khỏi cần if riêng.
             decimal amount = _packageService.CalculateDiscountedAmount(promotion, giaGoc);
 
-            var OrderCode = GenerateOrderCode();
+            // [FIX - 19/07/2026] Dùng chung TransactionService.GenerateOrderCode() (prefix "HD")
+            // thay vì hàm GenerateOrderCode() riêng (prefix "GYM") của chính file này — đảm bảo
+            // giao dịch tại quầy và giao dịch online luôn ra CÙNG 1 định dạng mã đơn hàng.
+            var OrderCode = TransactionService.GenerateOrderCode();
 
             var transaction = new Transaction
             {
@@ -308,9 +334,14 @@ namespace BE.Services
                     .BeginTransactionAsync(IsolationLevel.Serializable);
                 try
                 {
+                    // [FIX - 19/07/2026] Đổi prefix regex từ "GYM" sang "HD" cho khớp với định
+                    // dạng mã đơn hàng mới do TransactionService.GenerateOrderCode() sinh ra
+                    // (HD + 14 số thời gian UTC + 4 số random = 18 số). Nếu không đổi, webhook sẽ
+                    // KHÔNG tìm thấy mã đơn hàng nào trong nội dung chuyển khoản nữa vì QR mới
+                    // không còn sinh ra chuỗi "GYM..." như trước.
                     var match = System.Text.RegularExpressions.Regex.Match(
                         request.Content,
-                        @"\bGYM\d{18,}\b"
+                        @"\bHD\d{18,}\b"
                     );
 
                     var orderCode = match.Value;
@@ -473,9 +504,9 @@ namespace BE.Services
                 $"&holder={Uri.EscapeDataString(holder!)}";
         }
 
-        private string GenerateOrderCode()
-        {
-            return $"GYM{DateTime.Now:yyyyMMddHHmmssfff}{Random.Shared.Next(1000, 9999)}";
-        }
+        // [FIX - 19/07/2026] Đã XÓA hàm GenerateOrderCode() riêng của PaymentService (prefix "GYM").
+        // Toàn bộ việc sinh OrderCode giờ đi qua đúng 1 nguồn duy nhất:
+        // TransactionService.GenerateOrderCode() (static, prefix "HD") — xem CreatePaymentAsync
+        // phía trên. Không còn 2 định dạng mã khác nhau giữa kênh tại quầy và kênh online nữa.
     }
 }

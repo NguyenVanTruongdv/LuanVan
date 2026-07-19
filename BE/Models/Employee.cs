@@ -68,10 +68,6 @@ public partial class Employee
     /// </summary>
     public DateTime UpdatedAt { get; set; }
 
-    public virtual ICollection<AccountLockLog> AccountLockLogEmployees { get; set; } = new List<AccountLockLog>();
-
-    public virtual ICollection<AccountLockLog> AccountLockLogPerformedByNavigations { get; set; } = new List<AccountLockLog>();
-
     public virtual ICollection<CheckIn> CheckInCheckOutStaffs { get; set; } = new List<CheckIn>();
 
     public virtual ICollection<CheckIn> CheckInStaffs { get; set; } = new List<CheckIn>();

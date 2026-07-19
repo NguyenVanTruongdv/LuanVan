@@ -314,6 +314,14 @@ export default function Header({ active } = {}) {
           display: flex; align-items: center; gap: 10px;
           padding: 16px 20px; border-bottom: 1px solid var(--line);
         }
+        .vt-drawer__user-links {
+          display: flex; flex-direction: column;
+          padding: 4px 0; border-bottom: 1px solid var(--line);
+        }
+        .vt-drawer__user-links .vt-hdr__link {
+          padding: 12px 20px; border-radius: 0;
+          font-size: 14px; font-weight: 500;
+        }
         .vt-drawer__login {
           display: flex; align-items: center; justify-content: center;
           gap: 8px; margin: 16px 20px;
@@ -460,8 +468,8 @@ export default function Header({ active } = {}) {
                                             </div>
                                         </div>
                                         <hr className="vt-usr__hr" />
-                                        <a href="/my-info" className="vt-usr__item">Thông tin cá nhân</a>
-                                        <a href="/thong-ke" className="vt-usr__item">Thống kê</a>
+                                        <a href="/my-profile" className="vt-usr__item" onClick={() => setUserOpen(false)}>Thông tin cá nhân</a>
+                                        <a href="/thong-ke" className="vt-usr__item" onClick={() => setUserOpen(false)}>Thống kê</a>
                                         <button className="vt-usr__out" onClick={handleLogout}>Đăng xuất</button>
                                     </div>
                                 )}
@@ -506,13 +514,22 @@ export default function Header({ active } = {}) {
                             </div>
 
                             {authed ? (
-                                <div className="vt-drawer__user">
-                                    <span className="vt-usr__avatar"><IconUser /></span>
-                                    <div>
-                                        <p className="vt-usr__name">{userName}</p>
-                                        <p className="vt-usr__plan">{ROLE_LABEL[userRole] || userRole || "Hội viên"}</p>
+                                <>
+                                    <div className="vt-drawer__user">
+                                        <span className="vt-usr__avatar"><IconUser /></span>
+                                        <div>
+                                            <p className="vt-usr__name">{userName}</p>
+                                            <p className="vt-usr__plan">{ROLE_LABEL[userRole] || userRole || "Hội viên"}</p>
+                                        </div>
                                     </div>
-                                </div>
+                                    {/* Link "Thông tin cá nhân" — trước đây chỉ có ở dropdown desktop,
+                                        giờ thêm vào drawer mobile cho đồng bộ. */}
+                                    <div className="vt-drawer__user-links">
+                                        <a href="/my-profile" className="vt-hdr__link" onClick={close}>
+                                            Thông tin cá nhân
+                                        </a>
+                                    </div>
+                                </>
                             ) : (
                                 <a href="/member/login" className="vt-drawer__login" onClick={close}>
                                     <IconUser />

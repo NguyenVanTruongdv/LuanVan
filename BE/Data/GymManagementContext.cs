@@ -17,8 +17,6 @@ public partial class GymManagementContext : DbContext
     {
     }
 
-    public virtual DbSet<AccountLockLog> AccountLockLogs { get; set; }
-
     public virtual DbSet<Branch> Branches { get; set; }
 
     public virtual DbSet<BranchImage> BranchImages { get; set; }
@@ -71,8 +69,6 @@ public partial class GymManagementContext : DbContext
 
     public virtual DbSet<News> News { get; set; }
 
-    public virtual DbSet<Notification> Notifications { get; set; }
-
     public virtual DbSet<Otp> Otps { get; set; }
 
     public virtual DbSet<Promotion> Promotions { get; set; }
@@ -88,66 +84,16 @@ public partial class GymManagementContext : DbContext
     public virtual DbSet<TransactionAdjustmentLog> TransactionAdjustmentLogs { get; set; }
 
     protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
-#warning To protect potentially sensitive information in your connection string, you should move it out of source code. You can avoid scaffolding the connection string by using the Name= syntax to read it from configuration - see https://go.microsoft.com/fwlink/?linkid=2131148. For more guidance on storing connection strings, see https://go.microsoft.com/fwlink/?LinkId=723263.
-        => optionsBuilder.UseMySql("server=localhost;port=3306;database=gym_management;user=root", Microsoft.EntityFrameworkCore.ServerVersion.Parse("9.1.0-mysql"));
-
+    // #warning To protect potentially sensitive information in your connection string, you should move it out of source code. You can avoid scaffolding the connection string by using the Name= syntax to read it from configuration - see https://go.microsoft.com/fwlink/?linkid=2131148. For more guidance on storing connection strings, see https://go.microsoft.com/fwlink/?LinkId=723263.
+    //         => optionsBuilder.UseMySql("server=localhost;port=3306;database=Gym_Management;user=root", Microsoft.EntityFrameworkCore.ServerVersion.Parse("9.1.0-mysql"));
+    {
+        
+    }
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder
             .UseCollation("utf8mb4_unicode_ci")
             .HasCharSet("utf8mb4");
-
-        modelBuilder.Entity<AccountLockLog>(entity =>
-        {
-            entity.HasKey(e => e.LogId).HasName("PRIMARY");
-
-            entity.ToTable("account_lock_log", tb => tb.HasComment("Lịch sử khóa/mở tài khoản hội viên và nhân viên — chỉ ghi thêm"));
-
-            entity.HasIndex(e => e.MemberId, "fk_kl_hv");
-
-            entity.HasIndex(e => e.PerformedBy, "fk_kl_nv");
-
-            entity.HasIndex(e => e.EmployeeId, "fk_kl_nv_target");
-
-            entity.Property(e => e.LogId)
-                .HasComment("Mã bản ghi — khóa chính tự tăng")
-                .HasColumnName("log_id");
-            entity.Property(e => e.Action)
-                .HasComment("Hành động thực hiện: Lock = khóa tài khoản, Unlock = mở khóa tài khoản")
-                .HasColumnType("enum('Lock','Unlock')")
-                .HasColumnName("action");
-            entity.Property(e => e.EmployeeId)
-                .HasComment("Nhân viên bị tác động — FK tới employees.employee_id. Điền khi khóa/mở tài khoản nhân viên, NULL nếu là hội viên")
-                .HasColumnName("employee_id");
-            entity.Property(e => e.MemberId)
-                .HasComment("Hội viên bị tác động — FK tới members.member_id. Điền khi khóa/mở tài khoản hội viên, NULL nếu là nhân viên")
-                .HasColumnName("member_id");
-            entity.Property(e => e.PerformedAt)
-                .HasDefaultValueSql("CURRENT_TIMESTAMP")
-                .HasComment("Thời điểm thực hiện")
-                .HasColumnType("datetime")
-                .HasColumnName("performed_at");
-            entity.Property(e => e.PerformedBy)
-                .HasComment("Nhân viên thực hiện thao tác — FK tới employees.employee_id")
-                .HasColumnName("performed_by");
-            entity.Property(e => e.Reason)
-                .HasComment("Lý do khóa hoặc mở khóa tài khoản")
-                .HasColumnType("text")
-                .HasColumnName("reason");
-
-            entity.HasOne(d => d.Employee).WithMany(p => p.AccountLockLogEmployees)
-                .HasForeignKey(d => d.EmployeeId)
-                .HasConstraintName("fk_kl_nv_target");
-
-            entity.HasOne(d => d.Member).WithMany(p => p.AccountLockLogs)
-                .HasForeignKey(d => d.MemberId)
-                .HasConstraintName("fk_kl_hv");
-
-            entity.HasOne(d => d.PerformedByNavigation).WithMany(p => p.AccountLockLogPerformedByNavigations)
-                .HasForeignKey(d => d.PerformedBy)
-                .OnDelete(DeleteBehavior.ClientSetNull)
-                .HasConstraintName("fk_kl_nv");
-        });
 
         modelBuilder.Entity<Branch>(entity =>
         {
@@ -914,10 +860,6 @@ public partial class GymManagementContext : DbContext
                 .HasForeignKey(d => d.MemberId)
                 .OnDelete(DeleteBehavior.ClientSetNull)
                 .HasConstraintName("fk_post_member");
-
-            entity.HasOne(d => d.OriginalPost).WithMany(p => p.InverseOriginalPost)
-                .HasForeignKey(d => d.OriginalPostId)
-                .HasConstraintName("fk_post_original");
         });
 
         modelBuilder.Entity<ForumPostImage>(entity =>
@@ -1348,10 +1290,6 @@ public partial class GymManagementContext : DbContext
                 .HasComment("Mô tả quyền lợi gói tập hiển thị cho hội viên")
                 .HasColumnType("text")
                 .HasColumnName("description");
-             entity.Property(e => e.PlanType)
-                .HasComment("Loại gói tập: Customer = gói dành cho khách hàng, Internal = gói sử dụng nội bộ")
-                .HasColumnType("enum('Customer','Internal')")
-                .HasColumnName("plan_type");
             entity.Property(e => e.DurationDays)
                 .HasComment("Thời hạn gói tính bằng số ngày kể từ ngày bắt đầu")
                 .HasColumnName("duration_days");
@@ -1360,6 +1298,10 @@ public partial class GymManagementContext : DbContext
                 .HasMaxLength(150)
                 .HasComment("Tên hiển thị của gói tập, VD: Gói 1 Tháng, Gói PRO 3 Tháng")
                 .HasColumnName("plan_name");
+            entity.Property(e => e.PlanType)
+                .HasDefaultValueSql("'Customer'")
+                .HasColumnType("enum('Customer','Internal')")
+                .HasColumnName("plan_type");
             entity.Property(e => e.Price)
                 .HasPrecision(12)
                 .HasComment("Giá niêm yết của gói (VNĐ), không có số thập phân")
@@ -1427,67 +1369,6 @@ public partial class GymManagementContext : DbContext
                 .HasForeignKey(d => d.CreatedBy)
                 .OnDelete(DeleteBehavior.ClientSetNull)
                 .HasConstraintName("fk_news_nv");
-        });
-
-        modelBuilder.Entity<Notification>(entity =>
-        {
-            entity.HasKey(e => e.NotificationId).HasName("PRIMARY");
-
-            entity.ToTable("notifications", tb => tb.HasComment("Thông báo nhắc hội viên khi gói tập sắp hết hạn — do background job tự sinh"));
-
-            entity.HasIndex(e => new { e.MemberId, e.IsRead }, "idx_notif_hv");
-
-            entity.HasIndex(e => new { e.MemberPackageId, e.DaysBeforeExpiry }, "uq_notif_goi_nguong").IsUnique();
-
-            entity.Property(e => e.NotificationId)
-                .HasComment("Mã thông báo — khóa chính tự tăng")
-                .HasColumnName("notification_id");
-            entity.Property(e => e.Content)
-                .HasComment("Nội dung chi tiết thông báo")
-                .HasColumnType("text")
-                .HasColumnName("content");
-            entity.Property(e => e.CreatedAt)
-                .HasDefaultValueSql("CURRENT_TIMESTAMP")
-                .HasComment("Thời điểm tạo thông báo")
-                .HasColumnType("datetime")
-                .HasColumnName("created_at");
-            entity.Property(e => e.DaysBeforeExpiry)
-                .HasComment("Số ngày còn lại trước khi hết hạn tại thời điểm gửi, VD: 7, 3, 1, 0")
-                .HasColumnName("days_before_expiry");
-            entity.Property(e => e.IsRead)
-                .HasComment("0 = chưa đọc, 1 = đã đọc — cập nhật khi hội viên mở thông báo")
-                .HasColumnName("is_read");
-            entity.Property(e => e.IsSent)
-                .HasComment("0 = chưa gửi, 1 = đã gửi — cập nhật bởi background job")
-                .HasColumnName("is_sent");
-            entity.Property(e => e.MemberId)
-                .HasComment("Hội viên nhận thông báo — FK tới members.member_id")
-                .HasColumnName("member_id");
-            entity.Property(e => e.MemberPackageId)
-                .HasComment("Gói tập sắp hết hạn tương ứng — FK tới member_packages.member_package_id")
-                .HasColumnName("member_package_id");
-            entity.Property(e => e.ScheduledAt)
-                .HasComment("Thời điểm hẹn gửi thông báo")
-                .HasColumnType("datetime")
-                .HasColumnName("scheduled_at");
-            entity.Property(e => e.SentAt)
-                .HasComment("Thời điểm thực tế đã gửi")
-                .HasColumnType("datetime")
-                .HasColumnName("sent_at");
-            entity.Property(e => e.Title)
-                .HasMaxLength(255)
-                .HasComment("Tiêu đề thông báo, VD: Gói tập của bạn sắp hết hạn")
-                .HasColumnName("title");
-
-            entity.HasOne(d => d.Member).WithMany(p => p.Notifications)
-                .HasForeignKey(d => d.MemberId)
-                .OnDelete(DeleteBehavior.ClientSetNull)
-                .HasConstraintName("fk_tb_hv");
-
-            entity.HasOne(d => d.MemberPackage).WithMany(p => p.Notifications)
-                .HasForeignKey(d => d.MemberPackageId)
-                .OnDelete(DeleteBehavior.ClientSetNull)
-                .HasConstraintName("fk_tb_goi_hv");
         });
 
         modelBuilder.Entity<Otp>(entity =>

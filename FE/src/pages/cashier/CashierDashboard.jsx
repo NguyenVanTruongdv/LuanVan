@@ -1,93 +1,132 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import cashierApi from "../../api/cashierApi";
 
-// ── MOCK DATA ──────────────────────────────────────────────────────────────
-const STATS = [
-    {
-        id: "revenue",
-        label: "Doanh thu hôm nay",
-        value: "12.450.000 ₫",
-        change: "+8.2%",
-        up: true,
-        icon: "💰",
-        color: "#2563EB",
-        bg: "#EFF6FF",
-    },
-    {
-        id: "new_members",
-        label: "Hội viên mới",
-        value: "7",
-        change: "+2 so với hôm qua",
-        up: true,
-        icon: "👥",
-        color: "#059669",
-        bg: "#ECFDF5",
-    },
-    {
-        id: "checkins",
-        label: "Check-in hôm nay",
-        value: "134",
-        change: "-5 so với hôm qua",
-        up: false,
-        icon: "📷",
-        color: "#7C3AED",
-        bg: "#F5F3FF",
-    },
+// ── HELPERS ────────────────────────────────────────────────────────────────
+const fmtCurrency = (v) => (v ?? 0).toLocaleString("vi-VN") + " ₫";
+const fmtCompact = (v) => ((v ?? 0) / 1000000).toFixed(1) + "M";
+const fmtTime = (iso) =>
+    iso ? new Date(iso).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" }) : "";
+const fmtPercent = (v) => `${v >= 0 ? "+" : ""}${(v ?? 0).toFixed(1)}%`;
 
-];
+const DAY_LABELS = ["CN", "T2", "T3", "T4", "T5", "T6", "T7"]; // theo Date.getDay()
+const dayLabelOf = (iso) => DAY_LABELS[new Date(iso).getDay()];
+const isSameDay = (iso) => new Date(iso).toDateString() === new Date().toDateString();
 
-const RECENT_CHECKINS = [
-    { id: 1, name: "Trần Minh Khoa", pkg: "Gói 3 tháng", time: "08:42", avatar: "TK", status: "in" },
-    { id: 2, name: "Nguyễn Thị Lan", pkg: "Gói 1 tháng", time: "08:39", avatar: "NL", status: "in" },
-    { id: 3, name: "Lê Hoàng Nam", pkg: "Gói 6 tháng", time: "08:31", avatar: "LN", status: "in" },
-    { id: 4, name: "Phạm Thu Hà", pkg: "Gói 1 năm", time: "08:20", avatar: "PH", status: "in" },
-    { id: 5, name: "Vũ Đức Anh", pkg: "Gói 3 tháng", time: "08:15", avatar: "VA", status: "in" },
-    { id: 6, name: "Bùi Ngọc Mai", pkg: "Gói 1 tháng", time: "08:05", avatar: "BM", status: "out" },
-];
+const METHOD_LABELS = { Cash: "Tiền mặt", BankTransfer: "Chuyển khoản" };
+const methodLabel = (m) => METHOD_LABELS[m] || m;
 
-const TRANSACTIONS = [
-    { id: "TXN001", member: "Trần Minh Khoa", pkg: "Gói 3 tháng", amount: "1.200.000 ₫", method: "Tiền mặt", time: "08:40", status: "success" },
-    { id: "TXN002", member: "Lý Thị Hoa", pkg: "Gói 1 tháng", amount: "450.000 ₫", method: "Chuyển khoản", time: "08:25", status: "success" },
-    { id: "TXN003", member: "Đoàn Minh Tuấn", pkg: "Gói 6 tháng", amount: "2.400.000 ₫", method: "Thẻ", time: "08:10", status: "success" },
-    { id: "TXN004", member: "Phan Ánh Tuyết", pkg: "Gói 1 tháng", amount: "450.000 ₫", method: "Tiền mặt", time: "07:55", status: "pending" },
-    { id: "TXN005", member: "Ngô Thế Phong", pkg: "Gói 3 tháng", amount: "1.200.000 ₫", method: "Chuyển khoản", time: "07:40", status: "success" },
-];
+// Trạng thái giao dịch — nền trong suốt (tint) + chữ sáng, phù hợp nền tối
+const STATUS_MAP = {
+    Paid: { label: "✓ Thành công", bg: "rgba(5,150,105,0.15)", color: "#34D399" },
+    Pending: { label: "⏳ Chờ", bg: "rgba(217,119,6,0.15)", color: "#FBBF24" },
+    Cancelled: { label: "✕ Đã huỷ", bg: "rgba(220,38,38,0.15)", color: "#F87171" },
+};
 
-const EXPIRING = [
-    { name: "Vũ Đức Anh", pkg: "Gói 3 tháng", days: 2, avatar: "VA" },
-    { name: "Bùi Ngọc Mai", pkg: "Gói 1 tháng", days: 3, avatar: "BM" },
-    { name: "Đinh Thanh Tùng", pkg: "Gói 6 tháng", days: 5, avatar: "DT" },
-    { name: "Cao Thị Phương", pkg: "Gói 1 tháng", days: 6, avatar: "CP" },
-];
-
-const BAR_DATA = [
-    { day: "T2", value: 8200000, checkin: 110 },
-    { day: "T3", value: 9500000, checkin: 126 },
-    { day: "T4", value: 7800000, checkin: 98 },
-    { day: "T5", value: 11200000, checkin: 142 },
-    { day: "T6", value: 13400000, checkin: 158 },
-    { day: "T7", value: 15600000, checkin: 178 },
-    { day: "CN", value: 12450000, checkin: 134 },
-];
-
+// Bảng màu avatar — slot đầu dùng cyan làm điểm nhấn thương hiệu (thay cho indigo cũ)
 const AVATAR_COLORS = [
-    ["#2563EB", "#EFF6FF"],
-    ["#059669", "#ECFDF5"],
-    ["#7C3AED", "#F5F3FF"],
-    ["#D97706", "#FFFBEB"],
-    ["#DC2626", "#FEF2F2"],
-    ["#0891B2", "#ECFEFF"],
+    ["#06B6D4", "rgba(6,182,212,0.15)"],
+    ["#34D399", "rgba(5,150,105,0.15)"],
+    ["#A78BFA", "rgba(124,58,237,0.15)"],
+    ["#FBBF24", "rgba(217,119,6,0.15)"],
+    ["#F87171", "rgba(220,38,38,0.15)"],
+    ["#22D3EE", "rgba(8,145,178,0.15)"],
 ];
+const initialsOf = (name = "") => {
+    const parts = name.trim().split(/\s+/);
+    const first = parts[0]?.[0] || "";
+    const last = parts[parts.length - 1]?.[0] || "";
+    return (first + (parts.length > 1 ? last : "")).toUpperCase();
+};
 const getAvatarColor = (str) => {
+    if (!str) return AVATAR_COLORS[0];
     const i = (str.charCodeAt(0) + (str.charCodeAt(1) || 0)) % AVATAR_COLORS.length;
     return AVATAR_COLORS[i];
 };
 
-const fmt = (v) => (v / 1000000).toFixed(1) + "M";
-
 // ── DASHBOARD ──────────────────────────────────────────────────────────────
 export default function Dashboard() {
     const [chartTab, setChartTab] = useState("revenue");
-    const maxBar = Math.max(...BAR_DATA.map((d) => (chartTab === "revenue" ? d.value : d.checkin)));
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
+    const [data, setData] = useState(null);
+
+    useEffect(() => {
+        loadDashboard();
+    }, []);
+
+    const loadDashboard = async () => {
+        try {
+            setLoading(true);
+            setError(null);
+            const res = await cashierApi.getDashboard();
+            setData(res.data ?? res);
+        } catch (err) {
+            console.error(err);
+            setError("Không tải được dữ liệu dashboard. Vui lòng thử lại.");
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    if (loading) {
+        return (
+            <div style={s.page}>
+                <p style={s.subtext}>Đang tải dữ liệu...</p>
+            </div>
+        );
+    }
+
+    if (error) {
+        return (
+            <div style={s.page}>
+                <p style={{ ...s.subtext, color: "#F87171" }}>{error}</p>
+                <button style={s.btnOutline} onClick={loadDashboard}>🔄 Thử lại</button>
+            </div>
+        );
+    }
+
+    const stats = data?.stats ?? {};
+    const recentCheckins = data?.recentCheckins ?? [];
+    const recentTransactions = data?.recentTransactions ?? [];
+    const weeklyChart = data?.weeklyChart ?? [];
+
+    const STATS = [
+        {
+            id: "revenue",
+            label: "Doanh thu hôm nay",
+            value: fmtCurrency(stats.revenueToday),
+            change: fmtPercent(stats.revenueChangePercent),
+            up: (stats.revenueChangePercent ?? 0) >= 0,
+            icon: "💰",
+            color: "#22D3EE",
+            bg: "rgba(6,182,212,0.15)",
+        },
+        {
+            id: "new_members",
+            label: "Hội viên mới",
+            value: String(stats.newMembersToday ?? 0),
+            change: "Hôm nay",
+            up: null,
+            icon: "👥",
+            color: "#34D399",
+            bg: "rgba(5,150,105,0.15)",
+        },
+        {
+            id: "checkins",
+            label: "Check-in hôm nay",
+            value: String(stats.checkinsToday ?? 0),
+            change: `${stats.checkinsChange >= 0 ? "+" : ""}${stats.checkinsChange ?? 0} so với hôm qua`,
+            up: (stats.checkinsChange ?? 0) >= 0,
+            icon: "📷",
+            color: "#A78BFA",
+            bg: "rgba(124,58,237,0.15)",
+        },
+    ];
+
+    const maxBar = Math.max(
+        1,
+        ...weeklyChart.map((d) => (chartTab === "revenue" ? d.revenue : d.checkinCount))
+    );
 
     return (
         <div style={s.page}>
@@ -114,12 +153,12 @@ export default function Dashboard() {
                                 <span style={{ fontSize: 20 }}>{stat.icon}</span>
                             </div>
                             {stat.up !== null && (
-                                <span style={{ ...s.badge, color: stat.up ? "#059669" : "#DC2626", background: stat.up ? "#ECFDF5" : "#FEF2F2" }}>
+                                <span style={{ ...s.badge, color: stat.up ? "#34D399" : "#F87171", background: stat.up ? "rgba(5,150,105,0.15)" : "rgba(220,38,38,0.15)" }}>
                                     {stat.up ? "▲" : "▼"} {stat.change}
                                 </span>
                             )}
                             {stat.up === null && (
-                                <span style={{ ...s.badge, color: "#D97706", background: "#FFFBEB" }}>
+                                <span style={{ ...s.badge, color: "#FBBF24", background: "rgba(217,119,6,0.15)" }}>
                                     ⚡ {stat.change}
                                 </span>
                             )}
@@ -130,7 +169,7 @@ export default function Dashboard() {
                 ))}
             </div>
 
-            {/* Chart + Expiring */}
+            {/* Chart + Recent checkins */}
             <div style={s.midRow}>
                 {/* Bar chart */}
                 <div style={s.card}>
@@ -152,27 +191,27 @@ export default function Dashboard() {
                         </div>
                     </div>
                     <div style={s.chartArea}>
-                        {BAR_DATA.map((d) => {
-                            const val = chartTab === "revenue" ? d.value : d.checkin;
+                        {weeklyChart.map((d) => {
+                            const val = chartTab === "revenue" ? d.revenue : d.checkinCount;
                             const pct = (val / maxBar) * 100;
-                            const isToday = d.day === "CN";
+                            const today = isSameDay(d.date);
                             return (
-                                <div key={d.day} style={s.barCol}>
-                                    <div style={s.barLabel2}>{chartTab === "revenue" ? fmt(val) : val}</div>
+                                <div key={d.date} style={s.barCol}>
+                                    <div style={s.barLabel2}>{chartTab === "revenue" ? fmtCompact(val) : val}</div>
                                     <div style={s.barTrack}>
                                         <div
                                             style={{
                                                 ...s.bar,
                                                 height: `${pct}%`,
-                                                background: isToday
-                                                    ? "linear-gradient(180deg, #2563EB, #60A5FA)"
-                                                    : "linear-gradient(180deg, #BFDBFE, #DBEAFE)",
+                                                background: today
+                                                    ? "linear-gradient(180deg, #06B6D4, #22D3EE)"
+                                                    : "linear-gradient(180deg, #334155, #475569)",
                                                 borderRadius: "6px 6px 0 0",
                                             }}
                                         />
                                     </div>
-                                    <div style={{ ...s.dayLabel, fontWeight: isToday ? 700 : 400, color: isToday ? "#2563EB" : "#9CA3AF" }}>
-                                        {d.day}
+                                    <div style={{ ...s.dayLabel, fontWeight: today ? 700 : 400, color: today ? "#22D3EE" : "#64748B" }}>
+                                        {dayLabelOf(d.date)}
                                     </div>
                                 </div>
                             );
@@ -180,57 +219,33 @@ export default function Dashboard() {
                     </div>
                 </div>
 
-                {/* Expiring soon */}
-                {/* <div style={{ ...s.card, minWidth: 0, flex: "0 0 280px" }}>
-                    <div style={s.cardHeader}>
-                        <h2 style={s.cardTitle}>⚠️ Sắp hết hạn</h2>
-                        <button style={s.linkBtn}>Xem tất cả</button>
-                    </div>
-                    <div style={s.expiringList}>
-                        {EXPIRING.map((m) => {
-                            const [fg, bg] = getAvatarColor(m.avatar);
-                            return (
-                                <div key={m.name} style={s.expiringItem}>
-                                    <div style={{ ...s.smAvatar, background: bg, color: fg }}>{m.avatar}</div>
-                                    <div style={s.expiringInfo}>
-                                        <div style={s.expiringName}>{m.name}</div>
-                                        <div style={s.expiringPkg}>{m.pkg}</div>
-                                    </div>
-                                    <span style={{
-                                        ...s.daysBadge,
-                                        background: m.days <= 2 ? "#FEF2F2" : m.days <= 5 ? "#FFFBEB" : "#F3F4F6",
-                                        color: m.days <= 2 ? "#DC2626" : m.days <= 5 ? "#D97706" : "#6B7280",
-                                    }}>
-                                        {m.days} ngày
-                                    </span>
-                                </div>
-                            );
-                        })}
-                    </div>
-                    <button style={s.renewAllBtn}>📨 Nhắc gia hạn tất cả</button>
-                </div> */}
+                {/* Recent check-ins */}
                 <div style={{ ...s.card, flex: "0 0 300px", minWidth: 0 }}>
                     <div style={s.cardHeader}>
                         <h2 style={s.cardTitle}>Check-in gần đây</h2>
                         <button style={s.linkBtn}>Xem tất cả</button>
                     </div>
                     <div style={s.checkinList}>
-                        {RECENT_CHECKINS.map((c) => {
-                            const [fg, bg] = getAvatarColor(c.avatar);
+                        {recentCheckins.length === 0 && (
+                            <div style={{ padding: "16px 20px", fontSize: 13, color: "#64748B" }}>Chưa có check-in nào hôm nay</div>
+                        )}
+                        {recentCheckins.map((c, i) => {
+                            const initials = initialsOf(c.memberName);
+                            const [fg, bg] = getAvatarColor(initials);
                             return (
-                                <div key={c.id} style={s.checkinItem}>
+                                <div key={i} style={s.checkinItem}>
                                     <div style={{ position: "relative" }}>
-                                        <div style={{ ...s.smAvatar, background: bg, color: fg }}>{c.avatar}</div>
+                                        <div style={{ ...s.smAvatar, background: bg, color: fg }}>{initials}</div>
                                         <span style={{
                                             ...s.statusDot,
-                                            background: c.status === "in" ? "#22C55E" : "#94A3B8",
+                                            background: c.isCheckedOut ? "#64748B" : "#22C55E",
                                         }} />
                                     </div>
                                     <div style={s.checkinInfo}>
-                                        <div style={s.checkinName}>{c.name}</div>
-                                        <div style={s.checkinPkg}>{c.pkg}</div>
+                                        <div style={s.checkinName}>{c.memberName}</div>
+                                        <div style={s.checkinPkg}>{c.packageName}</div>
                                     </div>
-                                    <span style={s.checkinTime}>{c.time}</span>
+                                    <span style={s.checkinTime}>{fmtTime(c.checkInTime)}</span>
                                 </div>
                             );
                         })}
@@ -238,12 +253,8 @@ export default function Dashboard() {
                 </div>
             </div>
 
-            {/* Bottom row: Recent checkins + Transactions */}
+            {/* Bottom row: Transactions */}
             <div style={s.bottomRow}>
-                {/* Recent check-ins */}
-
-
-                {/* Transactions */}
                 <div style={{ ...s.card, flex: 1, minWidth: 0, overflowX: "auto" }}>
                     <div style={s.cardHeader}>
                         <h2 style={s.cardTitle}>Giao dịch hôm nay</h2>
@@ -258,31 +269,39 @@ export default function Dashboard() {
                             </tr>
                         </thead>
                         <tbody>
-                            {TRANSACTIONS.map((tx, i) => (
-                                <tr key={tx.id} style={{ background: i % 2 === 0 ? "white" : "#FAFAFA" }}>
-                                    <td style={{ ...s.td, color: "#2563EB", fontWeight: 600, fontFamily: "monospace", fontSize: 12 }}>{tx.id}</td>
-                                    <td style={s.td}>{tx.member}</td>
-                                    <td style={{ ...s.td, color: "#6B7280" }}>{tx.pkg}</td>
-                                    <td style={{ ...s.td, fontWeight: 600, color: "#111827" }}>{tx.amount}</td>
-                                    <td style={s.td}>
-                                        <span style={{
-                                            ...s.methodBadge,
-                                            background: tx.method === "Tiền mặt" ? "#F0FDF4" : tx.method === "Chuyển khoản" ? "#EFF6FF" : "#F5F3FF",
-                                            color: tx.method === "Tiền mặt" ? "#15803D" : tx.method === "Chuyển khoản" ? "#1D4ED8" : "#6D28D9",
-                                        }}>{tx.method}</span>
-                                    </td>
-                                    <td style={{ ...s.td, color: "#6B7280" }}>{tx.time}</td>
-                                    <td style={s.td}>
-                                        <span style={{
-                                            ...s.statusBadge,
-                                            background: tx.status === "success" ? "#ECFDF5" : "#FFFBEB",
-                                            color: tx.status === "success" ? "#059669" : "#D97706",
-                                        }}>
-                                            {tx.status === "success" ? "✓ Thành công" : "⏳ Chờ"}
-                                        </span>
+                            {recentTransactions.length === 0 && (
+                                <tr>
+                                    <td colSpan={7} style={{ ...s.td, textAlign: "center", color: "#64748B" }}>
+                                        Chưa có giao dịch nào hôm nay
                                     </td>
                                 </tr>
-                            ))}
+                            )}
+                            {recentTransactions.map((tx, i) => {
+                                const badge = STATUS_MAP[tx.status] ?? { label: tx.status, bg: "#334155", color: "#94A3B8" };
+                                return (
+                                    <tr key={tx.transactionId} style={{ background: i % 2 === 0 ? "#1E293B" : "#243244" }}>
+                                        <td style={{ ...s.td, color: "#22D3EE", fontWeight: 600, fontFamily: "monospace", fontSize: 12 }}>
+                                            #{tx.transactionId}
+                                        </td>
+                                        <td style={s.td}>{tx.memberName}</td>
+                                        <td style={{ ...s.td, color: "#94A3B8" }}>{tx.packageName}</td>
+                                        <td style={{ ...s.td, fontWeight: 600, color: "#F1F5F9" }}>{fmtCurrency(tx.amount)}</td>
+                                        <td style={s.td}>
+                                            <span style={{
+                                                ...s.methodBadge,
+                                                background: tx.paymentMethod === "Cash" ? "rgba(5,150,105,0.15)" : "rgba(6,182,212,0.15)",
+                                                color: tx.paymentMethod === "Cash" ? "#34D399" : "#22D3EE",
+                                            }}>{methodLabel(tx.paymentMethod)}</span>
+                                        </td>
+                                        <td style={{ ...s.td, color: "#94A3B8" }}>{fmtTime(tx.time)}</td>
+                                        <td style={s.td}>
+                                            <span style={{ ...s.statusBadge, background: badge.bg, color: badge.color }}>
+                                                {badge.label}
+                                            </span>
+                                        </td>
+                                    </tr>
+                                );
+                            })}
                         </tbody>
                     </table>
                 </div>
@@ -292,7 +311,6 @@ export default function Dashboard() {
         @media (max-width: 1024px) {
           .mid-row { flex-direction: column !important; }
           .bottom-row { flex-direction: column !important; }
-          .expiring-card { flex: unset !important; }
           .checkin-card { flex: unset !important; }
         }
         @media (max-width: 640px) {
@@ -312,6 +330,9 @@ const s = {
         flexDirection: "column",
         gap: 24,
         maxWidth: 1400,
+        background: "#0B1120",
+        padding: 24,
+        borderRadius: 12,
     },
     pageHeader: {
         display: "flex",
@@ -323,12 +344,12 @@ const s = {
     h1: {
         fontSize: 24,
         fontWeight: 700,
-        color: "#111827",
+        color: "#F1F5F9",
         letterSpacing: "-0.4px",
     },
     subtext: {
         fontSize: 13,
-        color: "#6B7280",
+        color: "#94A3B8",
         marginTop: 4,
     },
     headerActions: {
@@ -338,38 +359,38 @@ const s = {
     },
     btnPrimary: {
         padding: "9px 18px",
-        background: "linear-gradient(135deg, #2563EB, #1D4ED8)",
-        color: "white",
+        background: "linear-gradient(135deg, #06B6D4, #0891B2)",
+        color: "#0B1120",
         borderRadius: 8,
         fontWeight: 600,
         fontSize: 14,
         border: "none",
         cursor: "pointer",
-        boxShadow: "0 1px 3px rgba(37,99,235,0.4)",
+        boxShadow: "0 1px 3px rgba(6,182,212,0.4)",
         whiteSpace: "nowrap",
     },
     btnOutline: {
         padding: "9px 18px",
-        background: "white",
-        color: "#374151",
+        background: "#1E293B",
+        color: "#CBD5E1",
         borderRadius: 8,
         fontWeight: 500,
         fontSize: 14,
-        border: "1px solid #E5E7EB",
+        border: "1px solid #334155",
         cursor: "pointer",
         whiteSpace: "nowrap",
     },
     statsGrid: {
         display: "grid",
-        gridTemplateColumns: "repeat(4, 1fr)",
+        gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
         gap: 16,
     },
     statCard: {
-        background: "white",
+        background: "#1E293B",
         borderRadius: 12,
         padding: "20px",
-        border: "1px solid #E5E7EB",
-        boxShadow: "0 1px 3px rgba(0,0,0,0.04)",
+        border: "1px solid #334155",
+        boxShadow: "0 1px 3px rgba(0,0,0,0.3)",
         display: "flex",
         flexDirection: "column",
         gap: 8,
@@ -398,25 +419,27 @@ const s = {
     statValue: {
         fontSize: 22,
         fontWeight: 700,
-        color: "#111827",
+        color: "#F1F5F9",
         letterSpacing: "-0.5px",
         marginTop: 4,
     },
     statLabel: {
         fontSize: 13,
-        color: "#6B7280",
+        color: "#94A3B8",
     },
     midRow: {
         display: "flex",
         gap: 16,
-        alignItems: "flex-start",
+        alignItems: "stretch",
     },
     card: {
         flex: 1,
-        background: "white",
+        display: "flex",
+        flexDirection: "column",
+        background: "#1E293B",
         borderRadius: 12,
-        border: "1px solid #E5E7EB",
-        boxShadow: "0 1px 3px rgba(0,0,0,0.04)",
+        border: "1px solid #334155",
+        boxShadow: "0 1px 3px rgba(0,0,0,0.3)",
         overflow: "hidden",
     },
     cardHeader: {
@@ -424,16 +447,16 @@ const s = {
         alignItems: "center",
         justifyContent: "space-between",
         padding: "16px 20px",
-        borderBottom: "1px solid #F3F4F6",
+        borderBottom: "1px solid #334155",
     },
     cardTitle: {
         fontSize: 15,
         fontWeight: 600,
-        color: "#111827",
+        color: "#F1F5F9",
     },
     linkBtn: {
         fontSize: 13,
-        color: "#2563EB",
+        color: "#22D3EE",
         fontWeight: 500,
         background: "none",
         border: "none",
@@ -442,7 +465,7 @@ const s = {
     },
     tabs: {
         display: "flex",
-        background: "#F3F4F6",
+        background: "#0B1120",
         borderRadius: 8,
         padding: 3,
         gap: 2,
@@ -452,23 +475,24 @@ const s = {
         borderRadius: 6,
         fontSize: 13,
         fontWeight: 500,
-        color: "#6B7280",
+        color: "#94A3B8",
         background: "none",
         border: "none",
         cursor: "pointer",
         transition: "all 0.15s",
     },
     tabActive: {
-        background: "white",
-        color: "#111827",
-        boxShadow: "0 1px 3px rgba(0,0,0,0.1)",
+        background: "#06B6D4",
+        color: "#0B1120",
+        boxShadow: "0 1px 3px rgba(6,182,212,0.4)",
     },
     chartArea: {
         display: "flex",
         alignItems: "flex-end",
         justifyContent: "space-around",
         padding: "20px 20px 12px",
-        height: 200,
+        flex: 1,
+        minHeight: 200,
         gap: 6,
     },
     barCol: {
@@ -481,7 +505,7 @@ const s = {
     },
     barLabel2: {
         fontSize: 10,
-        color: "#6B7280",
+        color: "#94A3B8",
         whiteSpace: "nowrap",
         minHeight: 14,
     },
@@ -500,17 +524,57 @@ const s = {
     dayLabel: {
         fontSize: 12,
     },
-    expiringList: {
+    bottomRow: {
+        display: "flex",
+        gap: 16,
+        alignItems: "flex-start",
+    },
+    checkinList: {
         display: "flex",
         flexDirection: "column",
         padding: "8px 0",
+        flex: 1,
+        minHeight: 0,
+        maxHeight: 420,
+        overflowY: "auto",
     },
-    expiringItem: {
+    checkinItem: {
         display: "flex",
         alignItems: "center",
         gap: 10,
         padding: "10px 20px",
-        borderBottom: "1px solid #F9FAFB",
+        borderBottom: "1px solid #293548",
+    },
+    checkinInfo: {
+        flex: 1,
+        minWidth: 0,
+    },
+    checkinName: {
+        fontSize: 13,
+        fontWeight: 600,
+        color: "#F1F5F9",
+        whiteSpace: "nowrap",
+        overflow: "hidden",
+        textOverflow: "ellipsis",
+    },
+    checkinPkg: {
+        fontSize: 12,
+        color: "#94A3B8",
+        marginTop: 1,
+    },
+    checkinTime: {
+        fontSize: 12,
+        color: "#64748B",
+        fontVariantNumeric: "tabular-nums",
+    },
+    statusDot: {
+        position: "absolute",
+        bottom: 0,
+        right: 0,
+        width: 9,
+        height: 9,
+        borderRadius: "50%",
+        border: "2px solid #1E293B",
     },
     smAvatar: {
         width: 34,
@@ -523,91 +587,6 @@ const s = {
         fontWeight: 700,
         flexShrink: 0,
     },
-    expiringInfo: {
-        flex: 1,
-        minWidth: 0,
-    },
-    expiringName: {
-        fontSize: 13,
-        fontWeight: 600,
-        color: "#111827",
-        overflow: "hidden",
-        textOverflow: "ellipsis",
-        whiteSpace: "nowrap",
-    },
-    expiringPkg: {
-        fontSize: 12,
-        color: "#6B7280",
-        marginTop: 1,
-    },
-    daysBadge: {
-        fontSize: 12,
-        fontWeight: 600,
-        padding: "3px 10px",
-        borderRadius: 20,
-        whiteSpace: "nowrap",
-    },
-    renewAllBtn: {
-        display: "block",
-        width: "calc(100% - 40px)",
-        margin: "12px 20px 16px",
-        padding: "10px",
-        background: "#EFF6FF",
-        color: "#2563EB",
-        borderRadius: 8,
-        fontSize: 13,
-        fontWeight: 600,
-        border: "1px solid #BFDBFE",
-        cursor: "pointer",
-    },
-    bottomRow: {
-        display: "flex",
-        gap: 16,
-        alignItems: "flex-start",
-    },
-    checkinList: {
-        display: "flex",
-        flexDirection: "column",
-        padding: "8px 0",
-    },
-    checkinItem: {
-        display: "flex",
-        alignItems: "center",
-        gap: 10,
-        padding: "10px 20px",
-        borderBottom: "1px solid #F9FAFB",
-    },
-    checkinInfo: {
-        flex: 1,
-        minWidth: 0,
-    },
-    checkinName: {
-        fontSize: 13,
-        fontWeight: 600,
-        color: "#111827",
-        whiteSpace: "nowrap",
-        overflow: "hidden",
-        textOverflow: "ellipsis",
-    },
-    checkinPkg: {
-        fontSize: 12,
-        color: "#6B7280",
-        marginTop: 1,
-    },
-    checkinTime: {
-        fontSize: 12,
-        color: "#9CA3AF",
-        fontVariantNumeric: "tabular-nums",
-    },
-    statusDot: {
-        position: "absolute",
-        bottom: 0,
-        right: 0,
-        width: 9,
-        height: 9,
-        borderRadius: "50%",
-        border: "2px solid white",
-    },
     table: {
         width: "100%",
         borderCollapse: "collapse",
@@ -618,18 +597,18 @@ const s = {
         textAlign: "left",
         fontSize: 11,
         fontWeight: 600,
-        color: "#6B7280",
+        color: "#94A3B8",
         textTransform: "uppercase",
         letterSpacing: "0.05em",
-        background: "#F9FAFB",
-        borderBottom: "1px solid #E5E7EB",
+        background: "#0F172A",
+        borderBottom: "1px solid #334155",
         whiteSpace: "nowrap",
     },
     td: {
         padding: "12px 14px",
-        color: "#374151",
+        color: "#CBD5E1",
         fontSize: 13,
-        borderBottom: "1px solid #F3F4F6",
+        borderBottom: "1px solid #293548",
         whiteSpace: "nowrap",
     },
     methodBadge: {

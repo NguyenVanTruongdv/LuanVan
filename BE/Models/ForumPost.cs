@@ -77,9 +77,5 @@ public partial class ForumPost
 
     public virtual ICollection<ForumPostImage> ForumPostImages { get; set; } = new List<ForumPostImage>();
 
-    public virtual ICollection<ForumPost> InverseOriginalPost { get; set; } = new List<ForumPost>();
-
     public virtual Member Member { get; set; } = null!;
-
-    public virtual ForumPost? OriginalPost { get; set; }
 }

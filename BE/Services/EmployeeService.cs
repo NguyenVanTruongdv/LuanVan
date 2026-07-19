@@ -190,21 +190,16 @@ namespace BE.Services
             return true;
         }
 
-        // Ẩn / kích hoạt lại tài khoản
-        public async Task<bool> SetStatusAsync(long employeeId, string status, string? suspendReason, long currentEmployeeId)
+        // Khóa tài khoản nhân viên — bắt buộc có lý do
+        public async Task<bool> LockAsync(long employeeId, string reason, long currentEmployeeId)
         {
-            await EnsureCanManageTargetAsync(currentEmployeeId, employeeId);
+            return await ChangeStatusInternalAsync(employeeId, "Suspended", reason, currentEmployeeId);
+        }
 
-            var employee = await _context.Employees.FirstOrDefaultAsync(e => e.EmployeeId == employeeId);
-            if (employee == null)
-                return false;
-
-            employee.Status = status;
-            employee.SuspendReason = status == "Suspended" ? suspendReason : null;
-            employee.UpdatedAt = DateTime.UtcNow;
-
-            await _context.SaveChangesAsync();
-            return true;
+        // Mở khóa tài khoản nhân viên — lý do không bắt buộc
+        public async Task<bool> UnlockAsync(long employeeId, long currentEmployeeId)
+        {
+            return await ChangeStatusInternalAsync(employeeId, "Active", null, currentEmployeeId);
         }
 
         // ------------------------------------------------------------------
@@ -290,6 +285,23 @@ namespace BE.Services
                 throw new UnauthorizedAccessException("Bạn không có quyền thao tác trên nhân viên thuộc chi nhánh khác.");
 
             return current;
+        }
+
+        // Đổi trạng thái tài khoản dùng chung cho Lock/Unlock
+        private async Task<bool> ChangeStatusInternalAsync(long employeeId, string status, string? reason, long currentEmployeeId)
+        {
+            await EnsureCanManageTargetAsync(currentEmployeeId, employeeId);
+
+            var employee = await _context.Employees.FirstOrDefaultAsync(e => e.EmployeeId == employeeId);
+            if (employee == null)
+                return false;
+
+            employee.Status = status;
+            employee.SuspendReason = status == "Suspended" ? reason : null;
+            employee.UpdatedAt = DateTime.UtcNow;
+
+            await _context.SaveChangesAsync();
+            return true;
         }
     }
 }

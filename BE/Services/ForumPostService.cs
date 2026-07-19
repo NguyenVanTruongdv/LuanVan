@@ -72,9 +72,6 @@ public class ForumPostService
             .Include(p => p.Member).ThenInclude(m => m.FaceDatum)
             .Include(p => p.Category)
             .Include(p => p.ForumPostImages)
-            .Include(p => p.OriginalPost).ThenInclude(op => op!.Member)
-            .Include(p => p.OriginalPost).ThenInclude(op => op!.Category)
-            .Include(p => p.OriginalPost).ThenInclude(op => op!.ForumPostImages)
             .FirstOrDefaultAsync(p => p.PostId == postId && p.Status != "Deleted");
 
         if (post is null) return null;
@@ -292,9 +289,6 @@ public class ForumPostService
             Content = p.Content,
             PostType = p.PostType,
             OriginalPostId = p.OriginalPostId,
-            OriginalPost = p.OriginalPost is not null
-                ? MapToDto(p.OriginalPost, likedPostIds)
-                : null,
             LikeCount = p.LikeCount,
             CommentCount = p.CommentCount,
             RepostCount = p.RepostCount,

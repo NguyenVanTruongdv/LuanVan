@@ -95,6 +95,7 @@ builder.Services.AddScoped<S3StorageService>(); // chỗ lưu file và ảnh tr�
 builder.Services.AddScoped<InvoiceService>(); // tạo hóa pdf
 builder.Services.AddScoped<ReportService>();
 builder.Services.AddScoped<ThongKeService>();
+builder.Services.AddScoped<DashboardService>();
 // forum 
 builder.Services.AddScoped<ForumCategoryService>();
 builder.Services.AddScoped<ForumPostService>();

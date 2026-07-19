@@ -12,6 +12,37 @@ const cashierApi = {
     },
 
     // =========================================================================
+    // DASHBOARD — dùng chung cho Cashier / Manager / Admin
+    // BE tự lọc theo chi nhánh dựa trên role trong token, FE không cần truyền branchId
+    // =========================================================================
+    // GET /api/dashboard
+    // -> response: { stats, recentCheckins, recentTransactions, weeklyChart, expiringPackages }
+    getDashboard() {
+        return authApi.get(`/api/dashboard`);
+    },
+    // GET /api/dashboard/stats
+    // -> response: { revenueToday, revenueChangePercent, newMembersToday, checkinsToday, checkinsChange }
+    getDashboardStats() {
+        return authApi.get(`/api/dashboard/stats`);
+    },
+    // GET /api/dashboard/recent-checkins?take=10
+    getRecentCheckins(take = 10) {
+        return authApi.get(`/api/dashboard/recent-checkins?take=${take}`);
+    },
+    // GET /api/dashboard/recent-transactions?take=10
+    getRecentTransactions(take = 10) {
+        return authApi.get(`/api/dashboard/recent-transactions?take=${take}`);
+    },
+    // GET /api/dashboard/weekly-chart
+    getWeeklyChart() {
+        return authApi.get(`/api/dashboard/weekly-chart`);
+    },
+    // GET /api/dashboard/expiring-packages?days=7
+    getExpiringPackages(days = 7) {
+        return authApi.get(`/api/dashboard/expiring-packages?days=${days}`);
+    },
+
+    // =========================================================================
     // HỘI VIÊN — danh sách, chi tiết, tạo/sửa
     // =========================================================================
     getListMembers(params = {}) {

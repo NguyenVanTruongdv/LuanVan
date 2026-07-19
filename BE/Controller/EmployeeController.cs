@@ -93,6 +93,7 @@ namespace BE.Controllers
             }
         }
 
+        // Khóa tài khoản nhân viên — bắt buộc nhập lý do
         [HttpPatch("{id:long}/hide")]
         [Authorize(Roles = "Admin,Manager")]
         public async Task<IActionResult> Hide(long id, [FromBody] HideEmployeeDto dto)
@@ -101,9 +102,12 @@ namespace BE.Controllers
             if (currentEmployeeId == null)
                 return Unauthorized();
 
+            if (string.IsNullOrWhiteSpace(dto.Reason))
+                return BadRequest(new { message = "Vui lòng nhập lý do khóa tài khoản." });
+
             try
             {
-                var success = await _employeeService.SetStatusAsync(id, "Suspended", dto.Reason, currentEmployeeId.Value);
+                var success = await _employeeService.LockAsync(id, dto.Reason, currentEmployeeId.Value);
                 return success ? NoContent() : NotFound();
             }
             catch (UnauthorizedAccessException ex)
@@ -112,6 +116,7 @@ namespace BE.Controllers
             }
         }
 
+        // Mở khóa tài khoản nhân viên
         [HttpPatch("{id:long}/activate")]
         [Authorize(Roles = "Admin,Manager")]
         public async Task<IActionResult> Activate(long id)
@@ -122,7 +127,7 @@ namespace BE.Controllers
 
             try
             {
-                var success = await _employeeService.SetStatusAsync(id, "Active", null, currentEmployeeId.Value);
+                var success = await _employeeService.UnlockAsync(id, currentEmployeeId.Value);
                 return success ? NoContent() : NotFound();
             }
             catch (UnauthorizedAccessException ex)

@@ -249,8 +249,8 @@ function AnnouncementPill({ a, onClick }) {
 }
 
 const ANNC_INTERVAL = 4500;
-const ANNC_MAX_CARDS = 3; // số thẻ tối đa hiển thị cùng lúc trên desktop
-const ANNC_MAX_HEIGHT = 260; // chiều cao tối đa của khung tin tức (px) — không thẻ nào được vượt quá phần này
+const ANNC_MAX_CARDS = 5; // số thẻ tối đa hiển thị cùng lúc trên desktop — tăng để khung kéo dài xuống thấp hơn
+const ANNC_MAX_HEIGHT = 430; // chiều cao tối đa của khung tin tức (px) — tăng để khung cao hơn, kéo xuống ngang chữ "Hạn" trong tiêu đề hero
 const ANNC_GAP = 12; // phải khớp với gap trong CSS .h-annc-scroll
 
 function AnnouncementRail({ items, loading, error, onSelect }) {
@@ -1049,7 +1049,22 @@ export default function Home() {
 
         /* hero announcements */
         .h-annc-rail--mobile  { display:none; }
-        .h-annc-rail--desktop { position:absolute; top:110px; right:5vw; z-index:3; width:320px; overflow:hidden; border-radius:16px; }
+
+        /*
+         * Desktop: khung bảng tin giữ chiều rộng vừa phải (không đè lên chữ tiêu đề),
+         * nhưng chiều CAO không bị giới hạn cứng — nó tự cao lên theo số thẻ/nội dung
+         * thật (xem ANNC_MAX_HEIGHT, ANNC_MAX_CARDS ở JS phía trên), kéo dài xuống cho
+         * tới ngang hàng với dòng chữ "...giới Hạn." trong tiêu đề hero.
+         */
+        .h-annc-rail--desktop {
+          position:absolute;
+          top:110px;
+          right:5vw;
+          width:340px;
+          z-index:3;
+          overflow:hidden;
+          border-radius:16px;
+        }
 
         /* PC: xếp chồng, cuộn dọc mượt (chiều cao khung được set động qua JS, không cắt thẻ) */
         .h-annc-scroll   { display:flex; flex-direction:column; gap:12px; overflow-y:auto; padding-right:2px; scrollbar-width:none; -ms-overflow-style:none; scroll-behavior:smooth; -webkit-overflow-scrolling:touch; scroll-snap-type:y proximity; scroll-padding-block:4px; }
@@ -1176,18 +1191,26 @@ export default function Home() {
         .mp-modal-actions{ display:flex; gap:10px; margin-top:20px; }
         .mp-modal-actions .h-btn{ flex:1; }
 
-        /* responsive */
+        /* ── responsive ── */
+
         @media (max-width:1024px) {
           .h-equip__grid  { grid-template-columns:repeat(2,1fr); }
           .h-plans__grid  { grid-template-columns:1fr 1fr; }
           .h-plan--hi     { grid-column:1/3; }
-          .h-annc-rail--desktop { width:280px; right:24px; top:90px; }
+          .h-annc-rail--desktop { width:300px; right:24px; top:90px; }
         }
+
         @media (max-width:900px) {
           .h-feat__grid   { grid-template-columns:1fr 1fr; }
           .h-gallery__grid{ grid-template-columns:1fr 1fr; grid-template-rows:200px 200px 200px; }
           .h-gallery__item--wide { grid-column:1/3; grid-row:1/2; }
+          .h-annc-rail--desktop { width:270px; right:18px; top:84px; }
         }
+
+        @media (max-width:820px) {
+          .h-annc-rail--desktop { width:240px; right:16px; top:78px; }
+        }
+
         @media (max-width:700px) {
           .h-stats        { grid-template-columns:repeat(2,1fr); }
           .h-stats__item:nth-child(2) { border-right:none; }

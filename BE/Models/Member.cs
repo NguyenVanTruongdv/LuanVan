@@ -63,7 +63,6 @@ public partial class Member
     /// </summary>
     public DateTime UpdatedAt { get; set; }
 
-    public virtual ICollection<AccountLockLog> AccountLockLogs { get; set; } = new List<AccountLockLog>();
 
     public virtual ICollection<CheckIn> CheckIns { get; set; } = new List<CheckIn>();
 
@@ -92,8 +91,6 @@ public partial class Member
     public virtual ICollection<MemberPackage> MemberPackages { get; set; } = new List<MemberPackage>();
 
     public virtual ICollection<MemberUpdateLog> MemberUpdateLogs { get; set; } = new List<MemberUpdateLog>();
-
-    public virtual ICollection<Notification> Notifications { get; set; } = new List<Notification>();
 
     public virtual ICollection<PromotionUsage> PromotionUsages { get; set; } = new List<PromotionUsage>();
 

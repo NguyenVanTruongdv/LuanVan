@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using BE.Dtos.Transaction;
+using BE.Models;
 using BE.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -113,13 +114,13 @@ namespace BE.Controllers
         }
 
         [HttpGet("my-history")]
-        public async Task<IActionResult> GetMyHistory([FromQuery] string? status, [FromQuery] string? channel)
+        public async Task<IActionResult> GetMyHistory()
         {
             // Khách hàng gọi API này -> GetCurrentUserId() trả về đúng MemberId của họ
             // (miễn là token member cũng set MemberId vào ClaimTypes.NameIdentifier lúc đăng nhập).
             var memberId = GetCurrentUserId();
 
-            var result = await _transactionService.GetMyHistoryAsync(memberId, status, channel);
+            var result = await _transactionService.GetMyHistoryAsync(memberId);
             return Ok(result);
         }
 

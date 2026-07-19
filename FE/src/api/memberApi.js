@@ -257,6 +257,15 @@ const memberApi = {
     getMyProfile() {
         return authApi.get("/api/members/me");
     },
+    getMe() {
+        return authApi.get("/api/members/my-profile")
+    },
+    updateMember(payload) {
+        return authApi.put("/api/members/me", payload)
+    },
+    getInvoice(transactionId) {
+        return authApi.getBlob(`/api/transactions/${transactionId}/invoice`);
+    },
     getApplicablePromotions(planId) {
         return authApi.get(`/api/plans/${planId}/applicable-promotions`);
     },

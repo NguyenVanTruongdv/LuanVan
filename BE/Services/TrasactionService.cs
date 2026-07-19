@@ -80,6 +80,15 @@ namespace BE.Services
     //     ExpiryDate = StartDate + planDurationDays (ngày) + bonusDays (ngày)
     //     bonusDays: TangNgay = SoNgayTang; TangChuKy = SoChuKyTang * 30; còn lại = 0.
     // Toàn bộ cộng bằng AddDays, KHÔNG dùng AddMonths ở bất kỳ đâu trong file này nữa.
+    //
+    // [FIX - 19/07/2026 - ĐỒNG BỘ MÃ ĐƠN HÀNG VỚI PAYMENTSERVICE] GenerateOrderCode() bên dưới
+    // (prefix "HD") giờ là NGUỒN SINH MÃ ĐƠN HÀNG DUY NHẤT của toàn hệ thống. Trước đây
+    // PaymentService (luồng mua online) có 1 hàm GenerateOrderCode() RIÊNG, sinh mã prefix "GYM"
+    // theo định dạng khác (dùng DateTime.Now + mili-giây thay vì UtcNow) — khiến giao dịch tại
+    // quầy và giao dịch online có 2 kiểu mã khác nhau. PaymentService đã được sửa để gọi thẳng
+    // TransactionService.GenerateOrderCode() (hàm này là static, không cần khởi tạo instance)
+    // thay vì tự sinh mã riêng. File này KHÔNG cần đổi gì thêm ngoài giữ nguyên hàm static public
+    // này để PaymentService tham chiếu được.
     public class TransactionService
     {
         // ===================== ĐỘ DÀI 1 CHU KỲ = 30 NGÀY CỐ ĐỊNH =====================
@@ -112,6 +121,14 @@ namespace BE.Services
                 .FirstOrDefaultAsync(t => t.TransactionId == transactionId);
         }
 
+        // [FIX - 19/07/2026] Đây giờ là NGUỒN SINH MÃ ĐƠN HÀNG DUY NHẤT cho toàn hệ thống — dùng
+        // cho cả luồng tạo giao dịch tại quầy (CreateTransactionAsync bên dưới) LẪN luồng mua
+        // online (PaymentService.CreatePaymentAsync gọi thẳng TransactionService.GenerateOrderCode()
+        // vì hàm này static và PaymentService đã có _transactionService tiêm sẵn qua constructor).
+        // Định dạng: "HD" + yyyyMMddHHmmss (UTC, 14 số) + 4 số random = 18 ký tự số sau "HD".
+        // Regex bóc tách OrderCode từ nội dung chuyển khoản ngân hàng trong
+        // PaymentService.HandleWebhookAsync (@"\bHD\d{18,}\b") PHẢI luôn khớp với định dạng này —
+        // nếu đổi định dạng ở đây (đổi prefix, đổi số chữ số...) thì phải sửa đồng thời regex đó.
         public static string GenerateOrderCode()
             => $"HD{DateTime.UtcNow:yyyyMMddHHmmss}{Random.Shared.Next(1000, 9999)}";
 
@@ -199,7 +216,7 @@ namespace BE.Services
                     UrlImg = t.Member.FaceDatum?.ProfileImage,
                     Phone = t.Member.Phone,
                     FullName = t.Member.FullName,
-                    OrderCode=t.OrderCode,
+                    OrderCode = t.OrderCode,
                     PlanName = t.Plan.PlanName,
                     BranchName = t.Branch.BranchName,
                     PurchaseChannel = t.EmployeeId != null ? "Tại quầy" : "Online",
@@ -222,7 +239,7 @@ namespace BE.Services
         }
 
         // ===================== KHÁCH HÀNG XEM LẠI LỊCH SỬ GIAO DỊCH CỦA CHÍNH MÌNH =====================
-        public async Task<List<HistoryRegisPacReponse>> GetMyHistoryAsync(long memberId, string? status, string? channel)
+        public async Task<List<HistoryRegisPacReponse>> GetMyHistoryAsync(long memberId)
         {
             var query = _context.Transactions
                 .Include(t => t.Member)
@@ -232,13 +249,7 @@ namespace BE.Services
                 .Where(t => t.MemberId == memberId) // [MỚI] chỉ giao dịch của chính member này
                 .AsQueryable();
 
-            if (!string.IsNullOrWhiteSpace(channel) && channel != "all")
-            {
-                bool isCounter = channel.Equals("Tại quầy", StringComparison.OrdinalIgnoreCase);
-                query = isCounter
-                    ? query.Where(t => t.EmployeeId != null)   // Tại quầy
-                    : query.Where(t => t.EmployeeId == null);  // Online
-            }
+
 
             var transactions = await query
                 .OrderByDescending(t => t.CreatedAt)
@@ -265,13 +276,6 @@ namespace BE.Services
                     Status = t.PaymentStatus
                 };
             }).ToList();
-
-            if (!string.IsNullOrWhiteSpace(status) && status != "all")
-            {
-                result = result
-                    .Where(r => r.Status.Equals(status, StringComparison.OrdinalIgnoreCase))
-                    .ToList();
-            }
 
             return result;
         }
@@ -406,7 +410,8 @@ namespace BE.Services
         // Dùng cho luồng THU NGÂN (tạo hội viên mới, kích hoạt, gia hạn) — Transaction luôn
         // gắn liền với 1 chi nhánh CỤ THỂ ngay từ lúc tạo (branchId bắt buộc, not null),
         // chính là chi nhánh của nhân viên thu ngân đang thao tác.
-        // Luồng mua online KHÔNG dùng hàm này (xem PaymentService.CreatePaymentAsync).
+        // Luồng mua online KHÔNG dùng hàm này (xem PaymentService.CreatePaymentAsync) nhưng vẫn
+        // dùng chung GenerateOrderCode() ở trên để đảm bảo cùng 1 định dạng mã đơn hàng.
         public async Task<Transaction> CreateTransactionAsync(
             long memberId, int planId, int? promotionId,
             decimal giaGoc, decimal amount,
