@@ -4,17 +4,17 @@ using System.Collections.Generic;
 namespace BE.Models;
 
 /// <summary>
-/// Vai trò của nhân viên trong hệ thống
+/// Vai trò của nhân viên
 /// </summary>
 public partial class Role
 {
     /// <summary>
-    /// Mã vai trò — khóa chính tự tăng
+    /// Mã vai trò
     /// </summary>
     public sbyte RoleId { get; set; }
 
     /// <summary>
-    /// Tên vai trò, VD: Staff, Manager, Admin, Technician
+    /// Tên vai trò: Staff, Manager, Admin
     /// </summary>
     public string RoleName { get; set; } = null!;
 

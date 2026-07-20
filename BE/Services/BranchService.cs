@@ -241,7 +241,7 @@ public class BranchService
             {
                 EmployeeId = eb.EmployeeId,
                 FullName = eb.Employee?.FullName ?? "",
-                Phone = eb.Employee?.Phone
+                Phone = eb.Employee?.Account.Phone,
             })
             .ToList(),
         Images = b.BranchImages

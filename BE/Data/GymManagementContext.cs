@@ -17,6 +17,8 @@ public partial class GymManagementContext : DbContext
     {
     }
 
+    public virtual DbSet<Account> Accounts { get; set; }
+
     public virtual DbSet<Branch> Branches { get; set; }
 
     public virtual DbSet<BranchImage> BranchImages { get; set; }
@@ -84,46 +86,104 @@ public partial class GymManagementContext : DbContext
     public virtual DbSet<TransactionAdjustmentLog> TransactionAdjustmentLogs { get; set; }
 
     protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
-    // #warning To protect potentially sensitive information in your connection string, you should move it out of source code. You can avoid scaffolding the connection string by using the Name= syntax to read it from configuration - see https://go.microsoft.com/fwlink/?linkid=2131148. For more guidance on storing connection strings, see https://go.microsoft.com/fwlink/?LinkId=723263.
-    //         => optionsBuilder.UseMySql("server=localhost;port=3306;database=Gym_Management;user=root", Microsoft.EntityFrameworkCore.ServerVersion.Parse("9.1.0-mysql"));
-    {
-        
-    }
+#warning To protect potentially sensitive information in your connection string, you should move it out of source code. You can avoid scaffolding the connection string by using the Name= syntax to read it from configuration - see https://go.microsoft.com/fwlink/?linkid=2131148. For more guidance on storing connection strings, see https://go.microsoft.com/fwlink/?LinkId=723263.
+        => optionsBuilder.UseMySql("server=localhost;database=Gym_Management;user=root", Microsoft.EntityFrameworkCore.ServerVersion.Parse("9.1.0-mysql"));
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder
-            .UseCollation("utf8mb4_unicode_ci")
+            .UseCollation("utf8mb4_0900_ai_ci")
             .HasCharSet("utf8mb4");
+
+        modelBuilder.Entity<Account>(entity =>
+        {
+            entity.HasKey(e => e.AccountId).HasName("PRIMARY");
+
+            entity
+                .ToTable("accounts", tb => tb.HasComment("Tài khoản đăng nhập dùng chung cho hội viên và nhân viên"))
+                .UseCollation("utf8mb4_unicode_ci");
+
+            entity.HasIndex(e => e.Email, "uq_account_email").IsUnique();
+
+            entity.HasIndex(e => e.EmployeeId, "uq_account_employee").IsUnique();
+
+            entity.HasIndex(e => e.MemberId, "uq_account_member").IsUnique();
+
+            entity.HasIndex(e => e.Phone, "uq_account_phone").IsUnique();
+
+            entity.Property(e => e.AccountId)
+                .HasComment("Mã tài khoản — khóa chính tự tăng")
+                .HasColumnName("account_id");
+            entity.Property(e => e.CreatedAt)
+                .HasDefaultValueSql("CURRENT_TIMESTAMP")
+                .HasColumnType("datetime")
+                .HasColumnName("created_at");
+            entity.Property(e => e.Email)
+                .HasMaxLength(150)
+                .HasComment("Email, dùng khôi phục mật khẩu/nhận thông báo, có thể NULL nhưng phải duy nhất nếu có")
+                .HasColumnName("email");
+            entity.Property(e => e.EmployeeId)
+                .HasComment("Nhân viên sở hữu tài khoản — FK tới employees.employee_id. NULL nếu đây là tài khoản hội viên")
+                .HasColumnName("employee_id");
+            entity.Property(e => e.MemberId)
+                .HasComment("Hội viên sở hữu tài khoản — FK tới members.member_id. NULL nếu đây là tài khoản nhân viên")
+                .HasColumnName("member_id");
+            entity.Property(e => e.PasswordHash)
+                .HasMaxLength(255)
+                .HasComment("Mật khẩu đã mã hóa bcrypt, không lưu bản rõ")
+                .HasColumnName("password_hash");
+            entity.Property(e => e.Phone)
+                .HasMaxLength(15)
+                .HasComment("Số điện thoại — dùng làm tên đăng nhập, duy nhất toàn hệ thống")
+                .HasColumnName("phone");
+            entity.Property(e => e.Status)
+                .HasDefaultValueSql("'Active'")
+                .HasComment("Trạng thái đăng nhập: Active = được phép đăng nhập, Suspended = bị khóa")
+                .HasColumnType("enum('Active','Suspended')")
+                .HasColumnName("status");
+            entity.Property(e => e.SuspendReason)
+                .HasComment("Lý do khóa — bắt buộc điền khi status = Suspended")
+                .HasColumnType("text")
+                .HasColumnName("suspend_reason");
+            entity.Property(e => e.UpdatedAt)
+                .ValueGeneratedOnAddOrUpdate()
+                .HasDefaultValueSql("CURRENT_TIMESTAMP")
+                .HasColumnType("datetime")
+                .HasColumnName("updated_at");
+
+            entity.HasOne(d => d.Employee).WithOne(p => p.Account)
+                .HasForeignKey<Account>(d => d.EmployeeId)
+                .HasConstraintName("fk_account_employee");
+
+            entity.HasOne(d => d.Member).WithOne(p => p.Account)
+                .HasForeignKey<Account>(d => d.MemberId)
+                .HasConstraintName("fk_account_member");
+        });
 
         modelBuilder.Entity<Branch>(entity =>
         {
             entity.HasKey(e => e.BranchId).HasName("PRIMARY");
 
-            entity.ToTable("branches", tb => tb.HasComment("Chi nhánh phòng gym"));
+            entity
+                .ToTable("branches", tb => tb.HasComment("Chi nhánh phòng gym"))
+                .UseCollation("utf8mb4_unicode_ci");
 
-            entity.Property(e => e.BranchId)
-                .HasComment("Mã chi nhánh — khóa chính tự tăng")
-                .HasColumnName("branch_id");
+            entity.Property(e => e.BranchId).HasColumnName("branch_id");
             entity.Property(e => e.Address)
-                .HasComment("Địa chỉ đầy đủ của chi nhánh")
                 .HasColumnType("text")
                 .HasColumnName("address");
             entity.Property(e => e.BranchName)
                 .HasMaxLength(150)
-                .HasComment("Tên hiển thị của chi nhánh")
                 .HasColumnName("branch_name");
             entity.Property(e => e.CreatedAt)
                 .HasDefaultValueSql("CURRENT_TIMESTAMP")
-                .HasComment("Thời điểm thêm chi nhánh vào hệ thống")
                 .HasColumnType("datetime")
                 .HasColumnName("created_at");
             entity.Property(e => e.Phone)
                 .HasMaxLength(15)
-                .HasComment("Số điện thoại liên hệ của chi nhánh, có thể NULL")
                 .HasColumnName("phone");
             entity.Property(e => e.Status)
                 .HasDefaultValueSql("'Active'")
-                .HasComment("Trạng thái hoạt động: Active = đang mở, Inactive = đã đóng")
                 .HasColumnType("enum('Active','Inactive')")
                 .HasColumnName("status");
         });
@@ -132,30 +192,23 @@ public partial class GymManagementContext : DbContext
         {
             entity.HasKey(e => e.ImageId).HasName("PRIMARY");
 
-            entity.ToTable("branch_images", tb => tb.HasComment("Album ảnh các khu vực của từng chi nhánh — chỉ Admin quản lý"));
+            entity
+                .ToTable("branch_images", tb => tb.HasComment("Album ảnh các khu vực của từng chi nhánh"))
+                .UseCollation("utf8mb4_unicode_ci");
 
             entity.HasIndex(e => e.BranchId, "idx_anh_cn");
 
-            entity.Property(e => e.ImageId)
-                .HasComment("Mã ảnh — khóa chính tự tăng")
-                .HasColumnName("image_id");
-            entity.Property(e => e.BranchId)
-                .HasComment("Chi nhánh sở hữu ảnh — FK tới branches.branch_id")
-                .HasColumnName("branch_id");
+            entity.Property(e => e.ImageId).HasColumnName("image_id");
+            entity.Property(e => e.BranchId).HasColumnName("branch_id");
             entity.Property(e => e.ImageType)
                 .HasMaxLength(100)
-                .HasComment("Khu vực trong ảnh, VD: Lễ tân, Phòng tập, Phòng thay đồ, Hồ bơi")
                 .HasColumnName("image_type");
             entity.Property(e => e.ImageUrl)
                 .HasMaxLength(500)
-                .HasComment("URL ảnh lưu trên S3")
                 .HasColumnName("image_url");
-            entity.Property(e => e.SortOrder)
-                .HasComment("Thứ tự hiển thị trong cùng image_type, số nhỏ hiển thị trước")
-                .HasColumnName("sort_order");
+            entity.Property(e => e.SortOrder).HasColumnName("sort_order");
             entity.Property(e => e.UploadedAt)
                 .HasDefaultValueSql("CURRENT_TIMESTAMP")
-                .HasComment("Thời điểm tải ảnh lên")
                 .HasColumnType("datetime")
                 .HasColumnName("uploaded_at");
 
@@ -169,7 +222,9 @@ public partial class GymManagementContext : DbContext
         {
             entity.HasKey(e => e.CheckInId).HasName("PRIMARY");
 
-            entity.ToTable("check_ins", tb => tb.HasComment("Lịch sử check-in và check-out của hội viên tại các chi nhánh"));
+            entity
+                .ToTable("check_ins", tb => tb.HasComment("Lịch sử check-in / check-out"))
+                .UseCollation("utf8mb4_unicode_ci");
 
             entity.HasIndex(e => e.BranchId, "fk_checkin_cn");
 
@@ -181,49 +236,31 @@ public partial class GymManagementContext : DbContext
 
             entity.HasIndex(e => e.CheckOutStaffId, "fk_checkout_nv");
 
-            entity.Property(e => e.CheckInId)
-                .HasComment("Mã lần check-in — khóa chính tự tăng")
-                .HasColumnName("check_in_id");
-            entity.Property(e => e.BranchId)
-                .HasComment("Chi nhánh hội viên vào tập — FK tới branches.branch_id")
-                .HasColumnName("branch_id");
+            entity.Property(e => e.CheckInId).HasColumnName("check_in_id");
+            entity.Property(e => e.BranchId).HasColumnName("branch_id");
             entity.Property(e => e.CheckInTime)
                 .HasDefaultValueSql("CURRENT_TIMESTAMP")
-                .HasComment("Thời điểm hội viên vào tập")
                 .HasColumnType("datetime")
                 .HasColumnName("check_in_time");
             entity.Property(e => e.CheckOutManualReason)
-                .HasComment("Lý do check out thủ công. Bắt buộc khi check_out_method = Manual")
                 .HasColumnType("text")
                 .HasColumnName("check_out_manual_reason");
             entity.Property(e => e.CheckOutMethod)
-                .HasComment("Phương thức check out: Auto = nhận diện khuôn mặt tự động, Manual = nhân viên thực hiện thủ công. NULL nếu chưa check out")
                 .HasColumnType("enum('Auto','Manual')")
                 .HasColumnName("check_out_method");
-            entity.Property(e => e.CheckOutStaffId)
-                .HasComment("Nhân viên thực hiện check out thủ công — FK tới employees.employee_id. NULL nếu check_out_method = Auto hoặc chưa check out")
-                .HasColumnName("check_out_staff_id");
+            entity.Property(e => e.CheckOutStaffId).HasColumnName("check_out_staff_id");
             entity.Property(e => e.CheckOutTime)
-                .HasComment("Thời điểm hội viên ra về. NULL = chưa check out")
                 .HasColumnType("datetime")
                 .HasColumnName("check_out_time");
             entity.Property(e => e.ManualReason)
-                .HasComment("Lý do check in thủ công, VD: camera lỗi, hội viên chưa đăng ký khuôn mặt. Bắt buộc khi method = Manual")
                 .HasColumnType("text")
                 .HasColumnName("manual_reason");
-            entity.Property(e => e.MemberId)
-                .HasComment("Hội viên check in — FK tới members.member_id")
-                .HasColumnName("member_id");
-            entity.Property(e => e.MemberPackageId)
-                .HasComment("Gói tập đang còn hiệu lực tại thời điểm check in — FK tới member_packages.member_package_id")
-                .HasColumnName("member_package_id");
+            entity.Property(e => e.MemberId).HasColumnName("member_id");
+            entity.Property(e => e.MemberPackageId).HasColumnName("member_package_id");
             entity.Property(e => e.Method)
-                .HasComment("Phương thức check in: Auto = nhận diện khuôn mặt tự động, Manual = nhân viên thực hiện thủ công")
                 .HasColumnType("enum('Auto','Manual')")
                 .HasColumnName("method");
-            entity.Property(e => e.StaffId)
-                .HasComment("Nhân viên thực hiện check in thủ công — FK tới employees.employee_id. NULL nếu method = Auto")
-                .HasColumnName("staff_id");
+            entity.Property(e => e.StaffId).HasColumnName("staff_id");
 
             entity.HasOne(d => d.Branch).WithMany(p => p.CheckIns)
                 .HasForeignKey(d => d.BranchId)
@@ -253,63 +290,39 @@ public partial class GymManagementContext : DbContext
         {
             entity.HasKey(e => e.EmployeeId).HasName("PRIMARY");
 
-            entity.ToTable("employees", tb => tb.HasComment("Tài khoản nhân viên vận hành phòng gym"));
+            entity
+                .ToTable("employees", tb => tb.HasComment("Hồ sơ nhân viên — thông tin đăng nhập nằm ở bảng accounts"))
+                .UseCollation("utf8mb4_unicode_ci");
 
             entity.HasIndex(e => e.CreatedBy, "fk_employee_creator");
 
             entity.HasIndex(e => e.RoleId, "fk_employee_role");
 
-            entity.HasIndex(e => e.Email, "uq_employee_email").IsUnique();
-
-            entity.HasIndex(e => e.Phone, "uq_employee_phone").IsUnique();
-
-            entity.Property(e => e.EmployeeId)
-                .HasComment("Mã nhân viên — khóa chính tự tăng")
-                .HasColumnName("employee_id");
+            entity.Property(e => e.EmployeeId).HasColumnName("employee_id");
             entity.Property(e => e.CreatedAt)
                 .HasDefaultValueSql("CURRENT_TIMESTAMP")
-                .HasComment("Thời điểm tạo tài khoản")
                 .HasColumnType("datetime")
                 .HasColumnName("created_at");
             entity.Property(e => e.CreatedBy)
-                .HasComment("Nhân viên tạo tài khoản này — FK tự tham chiếu, NULL cho tài khoản khởi tạo đầu tiên")
+                .HasComment("Nhân viên tạo tài khoản này — tự tham chiếu, NULL cho tài khoản khởi tạo đầu tiên")
                 .HasColumnName("created_by");
-            entity.Property(e => e.Email)
-                .HasMaxLength(150)
-                .HasComment("Địa chỉ email của nhân viên, dùng để nhận thông báo/khôi phục mật khẩu, có thể NULL nhưng phải duy nhất nếu có")
-                .HasColumnName("email");
             entity.Property(e => e.FullName)
                 .HasMaxLength(100)
-                .HasComment("Họ và tên đầy đủ của nhân viên")
                 .HasColumnName("full_name");
             entity.Property(e => e.Gender)
-                .HasComment("Giới tính của nhân viên")
                 .HasColumnType("enum('Male','Female','Other')")
                 .HasColumnName("gender");
-            entity.Property(e => e.PasswordHash)
-                .HasMaxLength(255)
-                .HasComment("Mật khẩu đã mã hóa bcrypt, không lưu bản rõ")
-                .HasColumnName("password_hash");
-            entity.Property(e => e.Phone)
-                .HasMaxLength(15)
-                .HasComment("Số điện thoại — dùng làm tên đăng nhập, phải duy nhất")
-                .HasColumnName("phone");
             entity.Property(e => e.RoleId)
-                .HasComment("Vai trò của nhân viên — FK tới roles.role_id")
+                .HasComment("FK tới roles.role_id")
                 .HasColumnName("role_id");
             entity.Property(e => e.Status)
                 .HasDefaultValueSql("'Active'")
-                .HasComment("Trạng thái tài khoản: Active = đang hoạt động, Suspended = bị tạm khóa")
-                .HasColumnType("enum('Active','Suspended')")
+                .HasComment("Trạng thái làm việc của nhân viên: Active = đang làm việc, Inactive = đã nghỉ việc/ngưng hoạt động")
+                .HasColumnType("enum('Active','Inactive')")
                 .HasColumnName("status");
-            entity.Property(e => e.SuspendReason)
-                .HasComment("Lý do tạm khóa — bắt buộc điền khi status = Suspended")
-                .HasColumnType("text")
-                .HasColumnName("suspend_reason");
             entity.Property(e => e.UpdatedAt)
                 .ValueGeneratedOnAddOrUpdate()
                 .HasDefaultValueSql("CURRENT_TIMESTAMP")
-                .HasComment("Thời điểm cập nhật gần nhất")
                 .HasColumnType("datetime")
                 .HasColumnName("updated_at");
 
@@ -329,7 +342,9 @@ public partial class GymManagementContext : DbContext
                 .HasName("PRIMARY")
                 .HasAnnotation("MySql:IndexPrefixLength", new[] { 0, 0 });
 
-            entity.ToTable("employee_branches");
+            entity
+                .ToTable("employee_branches")
+                .UseCollation("utf8mb4_unicode_ci");
 
             entity.HasIndex(e => e.BranchId, "fk_employee_branches_branch");
 
@@ -352,33 +367,26 @@ public partial class GymManagementContext : DbContext
         {
             entity.HasKey(e => e.EquipmentId).HasName("PRIMARY");
 
-            entity.ToTable("equipment", tb => tb.HasComment("Thiết bị tập luyện được lắp đặt tại các chi nhánh"));
+            entity
+                .ToTable("equipment", tb => tb.HasComment("Thiết bị tập luyện lắp đặt tại các chi nhánh"))
+                .UseCollation("utf8mb4_unicode_ci");
 
             entity.HasIndex(e => e.BranchId, "fk_thietbi_chinhanh");
 
             entity.HasIndex(e => e.CategoryId, "fk_thietbi_danhmuc");
 
-            entity.Property(e => e.EquipmentId)
-                .HasComment("Mã thiết bị — khóa chính tự tăng")
-                .HasColumnName("equipment_id");
+            entity.Property(e => e.EquipmentId).HasColumnName("equipment_id");
             entity.Property(e => e.AddedAt)
                 .HasDefaultValueSql("CURRENT_TIMESTAMP")
-                .HasComment("Ngày thiết bị được thêm vào hệ thống")
                 .HasColumnType("datetime")
                 .HasColumnName("added_at");
-            entity.Property(e => e.BranchId)
-                .HasComment("Chi nhánh đang đặt thiết bị — FK tới branches.branch_id")
-                .HasColumnName("branch_id");
-            entity.Property(e => e.CategoryId)
-                .HasComment("Danh mục thiết bị — FK tới equipment_categories.category_id")
-                .HasColumnName("category_id");
+            entity.Property(e => e.BranchId).HasColumnName("branch_id");
+            entity.Property(e => e.CategoryId).HasColumnName("category_id");
             entity.Property(e => e.Description)
-                .HasComment("Mô tả thêm về thiết bị, VD: serial number, năm mua")
                 .HasColumnType("text")
                 .HasColumnName("description");
             entity.Property(e => e.EquipmentName)
                 .HasMaxLength(150)
-                .HasComment("Tên thiết bị, VD: Máy chạy bộ TechnoGym Run 700")
                 .HasColumnName("equipment_name");
             entity.Property(e => e.Status)
                 .HasDefaultValueSql("'Active'")
@@ -400,19 +408,17 @@ public partial class GymManagementContext : DbContext
         {
             entity.HasKey(e => e.CategoryId).HasName("PRIMARY");
 
-            entity.ToTable("equipment_categories", tb => tb.HasComment("Danh mục phân loại thiết bị tập luyện"));
+            entity
+                .ToTable("equipment_categories", tb => tb.HasComment("Danh mục phân loại thiết bị"))
+                .UseCollation("utf8mb4_unicode_ci");
 
             entity.HasIndex(e => e.CategoryName, "uq_ten_danh_muc").IsUnique();
 
-            entity.Property(e => e.CategoryId)
-                .HasComment("Mã danh mục — khóa chính tự tăng")
-                .HasColumnName("category_id");
+            entity.Property(e => e.CategoryId).HasColumnName("category_id");
             entity.Property(e => e.CategoryName)
                 .HasMaxLength(100)
-                .HasComment("Tên danh mục thiết bị, VD: Cardio, Tạ tự do, Máy tập")
                 .HasColumnName("category_name");
             entity.Property(e => e.Description)
-                .HasComment("Mô tả chi tiết về danh mục thiết bị")
                 .HasColumnType("text")
                 .HasColumnName("description");
         });
@@ -421,26 +427,20 @@ public partial class GymManagementContext : DbContext
         {
             entity.HasKey(e => e.ImageId).HasName("PRIMARY");
 
-            entity.ToTable("equipment_images", tb => tb.HasComment("Album ảnh của từng thiết bị"));
+            entity
+                .ToTable("equipment_images", tb => tb.HasComment("Album ảnh của từng thiết bị"))
+                .UseCollation("utf8mb4_unicode_ci");
 
             entity.HasIndex(e => e.EquipmentId, "idx_anh_tb");
 
-            entity.Property(e => e.ImageId)
-                .HasComment("Mã ảnh — khóa chính tự tăng")
-                .HasColumnName("image_id");
-            entity.Property(e => e.EquipmentId)
-                .HasComment("Thiết bị sở hữu ảnh — FK tới equipment.equipment_id")
-                .HasColumnName("equipment_id");
+            entity.Property(e => e.ImageId).HasColumnName("image_id");
+            entity.Property(e => e.EquipmentId).HasColumnName("equipment_id");
             entity.Property(e => e.ImageUrl)
                 .HasMaxLength(500)
-                .HasComment("URL ảnh lưu trên S3")
                 .HasColumnName("image_url");
-            entity.Property(e => e.SortOrder)
-                .HasComment("Thứ tự hiển thị, số nhỏ hiển thị trước")
-                .HasColumnName("sort_order");
+            entity.Property(e => e.SortOrder).HasColumnName("sort_order");
             entity.Property(e => e.UploadedAt)
                 .HasDefaultValueSql("CURRENT_TIMESTAMP")
-                .HasComment("Thời điểm tải ảnh lên")
                 .HasColumnType("datetime")
                 .HasColumnName("uploaded_at");
 
@@ -454,7 +454,9 @@ public partial class GymManagementContext : DbContext
         {
             entity.HasKey(e => e.FaceDataId).HasName("PRIMARY");
 
-            entity.ToTable("face_data", tb => tb.HasComment("Dữ liệu nhận diện khuôn mặt hội viên liên kết với AWS Rekognition"));
+            entity
+                .ToTable("face_data", tb => tb.HasComment("Dữ liệu nhận diện khuôn mặt hội viên (AWS Rekognition) — chỉ nhân viên mới được tạo faceId"))
+                .UseCollation("utf8mb4_unicode_ci");
 
             entity.HasIndex(e => e.CreatedBy, "fk_face_creator");
 
@@ -462,27 +464,20 @@ public partial class GymManagementContext : DbContext
 
             entity.HasIndex(e => e.MemberId, "uq_face_member").IsUnique();
 
-            entity.Property(e => e.FaceDataId)
-                .HasComment("Mã bản ghi — khóa chính tự tăng")
-                .HasColumnName("face_data_id");
+            entity.Property(e => e.FaceDataId).HasColumnName("face_data_id");
             entity.Property(e => e.CreatedAt)
                 .HasDefaultValueSql("CURRENT_TIMESTAMP")
-                .HasComment("Thời điểm đăng ký khuôn mặt")
                 .HasColumnType("datetime")
                 .HasColumnName("created_at");
             entity.Property(e => e.CreatedBy)
-                .HasComment("Nhân viên thực hiện đăng ký khuôn mặt — FK tới employees.employee_id")
+                .HasComment("Nhân viên đã đăng ký/tạo faceId này — FK tới employees.employee_id")
                 .HasColumnName("created_by");
             entity.Property(e => e.FaceIdAws)
                 .HasMaxLength(100)
-                .HasComment("Face ID do AWS Rekognition trả về sau khi đăng ký")
                 .HasColumnName("face_id_aws");
-            entity.Property(e => e.MemberId)
-                .HasComment("Hội viên sở hữu khuôn mặt — FK tới members.member_id, quan hệ 1-1")
-                .HasColumnName("member_id");
+            entity.Property(e => e.MemberId).HasColumnName("member_id");
             entity.Property(e => e.ProfileImage)
                 .HasMaxLength(500)
-                .HasComment("URL ảnh đại diện lưu trên S3, có thể NULL")
                 .HasColumnName("profile_image");
 
             entity.HasOne(d => d.CreatedByNavigation).WithMany(p => p.FaceData)
@@ -500,44 +495,36 @@ public partial class GymManagementContext : DbContext
         {
             entity.HasKey(e => e.HistoryId).HasName("PRIMARY");
 
-            entity.ToTable("face_update_history", tb => tb.HasComment("Lịch sử mỗi lần cập nhật khuôn mặt hội viên"));
+            entity
+                .ToTable("face_update_history", tb => tb.HasComment("Lịch sử mỗi lần tạo/cập nhật khuôn mặt hội viên — chỉ ghi thêm, không sửa/xóa"))
+                .UseCollation("utf8mb4_unicode_ci");
 
             entity.HasIndex(e => e.MemberId, "fk_facehistory_member");
 
             entity.HasIndex(e => e.PerformedBy, "fk_facehistory_staff");
 
-            entity.Property(e => e.HistoryId)
-                .HasComment("Mã bản ghi — khóa chính tự tăng")
-                .HasColumnName("history_id");
-            entity.Property(e => e.MemberId)
-                .HasComment("Hội viên được cập nhật khuôn mặt — FK tới members.member_id")
-                .HasColumnName("member_id");
+            entity.Property(e => e.HistoryId).HasColumnName("history_id");
+            entity.Property(e => e.MemberId).HasColumnName("member_id");
             entity.Property(e => e.NewFaceIdAws)
                 .HasMaxLength(100)
-                .HasComment("Face ID mới trên AWS sau khi cập nhật")
                 .HasColumnName("new_face_id_aws");
             entity.Property(e => e.NewProfileImage)
                 .HasMaxLength(500)
-                .HasComment("Ảnh đại diện mới trên S3")
                 .HasColumnName("new_profile_image");
             entity.Property(e => e.OldFaceIdAws)
                 .HasMaxLength(100)
-                .HasComment("Face ID cũ trên AWS — NULL nếu đây là lần đăng ký đầu tiên")
                 .HasColumnName("old_face_id_aws");
             entity.Property(e => e.OldProfileImage)
                 .HasMaxLength(500)
-                .HasComment("Ảnh đại diện cũ trên S3, NULL nếu lần đầu đăng ký")
                 .HasColumnName("old_profile_image");
             entity.Property(e => e.PerformedAt)
                 .HasDefaultValueSql("CURRENT_TIMESTAMP")
-                .HasComment("Thời điểm thực hiện thay đổi")
                 .HasColumnType("datetime")
                 .HasColumnName("performed_at");
             entity.Property(e => e.PerformedBy)
-                .HasComment("Nhân viên thực hiện thao tác — FK tới employees.employee_id")
+                .HasComment("Nhân viên thực hiện tạo/cập nhật faceId — FK tới employees.employee_id")
                 .HasColumnName("performed_by");
             entity.Property(e => e.Reason)
-                .HasComment("Lý do thay đổi khuôn mặt, VD: ảnh cũ không rõ, hội viên yêu cầu")
                 .HasColumnType("text")
                 .HasColumnName("reason");
 
@@ -558,7 +545,7 @@ public partial class GymManagementContext : DbContext
 
             entity
                 .ToTable("forum_categories")
-                .UseCollation("utf8mb4_0900_ai_ci");
+                .UseCollation("utf8mb4_unicode_ci");
 
             entity.Property(e => e.CategoryId).HasColumnName("category_id");
             entity.Property(e => e.CategoryName)
@@ -585,7 +572,9 @@ public partial class GymManagementContext : DbContext
         {
             entity.HasKey(e => e.CommentId).HasName("PRIMARY");
 
-            entity.ToTable("forum_comments", tb => tb.HasComment("Bình luận bài viết cộng đồng, hỗ trợ trả lời 2 cấp"));
+            entity
+                .ToTable("forum_comments", tb => tb.HasComment("Bình luận bài viết cộng đồng, hỗ trợ trả lời 2 cấp"))
+                .UseCollation("utf8mb4_unicode_ci");
 
             entity.HasIndex(e => e.MemberId, "IX_forum_comments_member_id");
 
@@ -595,42 +584,26 @@ public partial class GymManagementContext : DbContext
 
             entity.HasIndex(e => e.ReplyToMemberId, "IX_forum_comments_reply_to_member_id");
 
-            entity.Property(e => e.CommentId)
-                .HasComment("Mã bình luận — khóa chính tự tăng")
-                .HasColumnName("comment_id");
+            entity.Property(e => e.CommentId).HasColumnName("comment_id");
             entity.Property(e => e.Content)
                 .HasMaxLength(2000)
-                .HasComment("Nội dung bình luận")
                 .HasColumnName("content");
             entity.Property(e => e.CreatedAt)
                 .HasDefaultValueSql("CURRENT_TIMESTAMP")
-                .HasComment("Thời điểm tạo bình luận")
                 .HasColumnType("datetime")
                 .HasColumnName("created_at");
-            entity.Property(e => e.LikeCount)
-                .HasComment("Tổng số lượt tym bình luận này")
-                .HasColumnName("like_count");
-            entity.Property(e => e.MemberId)
-                .HasComment("Hội viên viết bình luận — FK tới members.member_id")
-                .HasColumnName("member_id");
-            entity.Property(e => e.ParentCommentId)
-                .HasComment("NULL = bình luận gốc (cấp 1). Có giá trị = trả lời, LUÔN trỏ về comment_id của bình luận GỐC (kể cả khi trả lời 1 reply khác) — FK tới forum_comments.comment_id")
-                .HasColumnName("parent_comment_id");
-            entity.Property(e => e.PostId)
-                .HasComment("Bài đăng chứa bình luận — FK tới forum_posts.post_id")
-                .HasColumnName("post_id");
-            entity.Property(e => e.ReplyToMemberId)
-                .HasComment("Chỉ dùng để hiển thị \"Trả lời <tên>\" khi reply nhắm vào 1 reply khác, không ảnh hưởng cấu trúc cây — FK tới members.member_id")
-                .HasColumnName("reply_to_member_id");
+            entity.Property(e => e.LikeCount).HasColumnName("like_count");
+            entity.Property(e => e.MemberId).HasColumnName("member_id");
+            entity.Property(e => e.ParentCommentId).HasColumnName("parent_comment_id");
+            entity.Property(e => e.PostId).HasColumnName("post_id");
+            entity.Property(e => e.ReplyToMemberId).HasColumnName("reply_to_member_id");
             entity.Property(e => e.Status)
                 .HasDefaultValueSql("'Active'")
-                .HasComment("Trạng thái: Active=hiển thị, Hidden=admin ẩn, Deleted=đã xóa")
                 .HasColumnType("enum('Active','Hidden','Deleted')")
                 .HasColumnName("status");
             entity.Property(e => e.UpdatedAt)
                 .ValueGeneratedOnAddOrUpdate()
                 .HasDefaultValueSql("CURRENT_TIMESTAMP")
-                .HasComment("Thời điểm cập nhật gần nhất")
                 .HasColumnType("datetime")
                 .HasColumnName("updated_at");
 
@@ -658,26 +631,21 @@ public partial class GymManagementContext : DbContext
         {
             entity.HasKey(e => e.LikeId).HasName("PRIMARY");
 
-            entity.ToTable("forum_comment_likes", tb => tb.HasComment("Lượt tym bình luận"));
+            entity
+                .ToTable("forum_comment_likes", tb => tb.HasComment("Lượt tym bình luận"))
+                .UseCollation("utf8mb4_unicode_ci");
 
             entity.HasIndex(e => e.MemberId, "IX_forum_comment_likes_member_id");
 
             entity.HasIndex(e => new { e.CommentId, e.MemberId }, "UQ_forum_comment_likes").IsUnique();
 
-            entity.Property(e => e.LikeId)
-                .HasComment("Mã lượt tym — khóa chính tự tăng")
-                .HasColumnName("like_id");
-            entity.Property(e => e.CommentId)
-                .HasComment("Bình luận được tym — FK tới forum_comments.comment_id")
-                .HasColumnName("comment_id");
+            entity.Property(e => e.LikeId).HasColumnName("like_id");
+            entity.Property(e => e.CommentId).HasColumnName("comment_id");
             entity.Property(e => e.CreatedAt)
                 .HasDefaultValueSql("CURRENT_TIMESTAMP")
-                .HasComment("Thời điểm tym")
                 .HasColumnType("datetime")
                 .HasColumnName("created_at");
-            entity.Property(e => e.MemberId)
-                .HasComment("Hội viên thực hiện tym — FK tới members.member_id")
-                .HasColumnName("member_id");
+            entity.Property(e => e.MemberId).HasColumnName("member_id");
 
             entity.HasOne(d => d.Comment).WithMany(p => p.ForumCommentLikes)
                 .HasForeignKey(d => d.CommentId)
@@ -692,26 +660,21 @@ public partial class GymManagementContext : DbContext
         {
             entity.HasKey(e => e.LikeId).HasName("PRIMARY");
 
-            entity.ToTable("forum_likes", tb => tb.HasComment("Lượt tym (yêu thích) bài đăng forum của hội viên"));
+            entity
+                .ToTable("forum_likes", tb => tb.HasComment("Lượt tym bài đăng forum"))
+                .UseCollation("utf8mb4_unicode_ci");
 
             entity.HasIndex(e => e.MemberId, "idx_like_member");
 
             entity.HasIndex(e => new { e.PostId, e.MemberId }, "uq_like_post_member").IsUnique();
 
-            entity.Property(e => e.LikeId)
-                .HasComment("Mã lượt tym — khóa chính tự tăng")
-                .HasColumnName("like_id");
+            entity.Property(e => e.LikeId).HasColumnName("like_id");
             entity.Property(e => e.CreatedAt)
                 .HasDefaultValueSql("CURRENT_TIMESTAMP")
-                .HasComment("Thời điểm tym")
                 .HasColumnType("datetime")
                 .HasColumnName("created_at");
-            entity.Property(e => e.MemberId)
-                .HasComment("Hội viên thực hiện tym — FK tới members.member_id")
-                .HasColumnName("member_id");
-            entity.Property(e => e.PostId)
-                .HasComment("Bài đăng được tym — FK tới forum_posts.post_id")
-                .HasColumnName("post_id");
+            entity.Property(e => e.MemberId).HasColumnName("member_id");
+            entity.Property(e => e.PostId).HasColumnName("post_id");
 
             entity.HasOne(d => d.Member).WithMany(p => p.ForumLikes)
                 .HasForeignKey(d => d.MemberId)
@@ -727,7 +690,9 @@ public partial class GymManagementContext : DbContext
         {
             entity.HasKey(e => e.NotificationId).HasName("PRIMARY");
 
-            entity.ToTable("forum_notifications", tb => tb.HasComment("Thông báo tương tác trong cộng đồng"));
+            entity
+                .ToTable("forum_notifications", tb => tb.HasComment("Thông báo tương tác trong cộng đồng"))
+                .UseCollation("utf8mb4_unicode_ci");
 
             entity.HasIndex(e => e.LikeId, "FK_notifications_like");
 
@@ -739,34 +704,20 @@ public partial class GymManagementContext : DbContext
 
             entity.HasIndex(e => new { e.RecipientMemberId, e.IsRead }, "IX_forum_notifications_recipient");
 
-            entity.Property(e => e.NotificationId)
-                .HasComment("Mã thông báo — khóa chính tự tăng")
-                .HasColumnName("notification_id");
-            entity.Property(e => e.ActorMemberId)
-                .HasComment("Hội viên thực hiện hành động (người tym/bình luận/trả lời) — FK tới members.member_id")
-                .HasColumnName("actor_member_id");
-            entity.Property(e => e.CommentId)
-                .HasComment("Bình luận liên quan — FK tới forum_comments.comment_id. Bắt buộc điền khi notify_type = Comment/Reply, NULL khi notify_type = Like")
-                .HasColumnName("comment_id");
+            entity.Property(e => e.NotificationId).HasColumnName("notification_id");
+            entity.Property(e => e.ActorMemberId).HasColumnName("actor_member_id");
+            entity.Property(e => e.CommentId).HasColumnName("comment_id");
             entity.Property(e => e.CreatedAt)
                 .HasDefaultValueSql("CURRENT_TIMESTAMP")
-                .HasComment("Thời điểm phát sinh thông báo")
                 .HasColumnType("datetime")
                 .HasColumnName("created_at");
-            entity.Property(e => e.IsRead)
-                .HasComment("0 = chưa đọc, 1 = đã đọc")
-                .HasColumnName("is_read");
+            entity.Property(e => e.IsRead).HasColumnName("is_read");
             entity.Property(e => e.LikeId).HasColumnName("like_id");
             entity.Property(e => e.NotifyType)
-                .HasComment("Loại thông báo: Like=có người tym bài, Comment=có người bình luận bài, Reply=có người trả lời đích danh bình luận của mình")
                 .HasColumnType("enum('Like','Comment','Reply')")
                 .HasColumnName("notify_type");
-            entity.Property(e => e.PostId)
-                .HasComment("Bài đăng liên quan — FK tới forum_posts.post_id")
-                .HasColumnName("post_id");
-            entity.Property(e => e.RecipientMemberId)
-                .HasComment("Hội viên nhận thông báo — FK tới members.member_id")
-                .HasColumnName("recipient_member_id");
+            entity.Property(e => e.PostId).HasColumnName("post_id");
+            entity.Property(e => e.RecipientMemberId).HasColumnName("recipient_member_id");
 
             entity.HasOne(d => d.ActorMember).WithMany(p => p.ForumNotificationActorMembers)
                 .HasForeignKey(d => d.ActorMemberId)
@@ -795,7 +746,9 @@ public partial class GymManagementContext : DbContext
         {
             entity.HasKey(e => e.PostId).HasName("PRIMARY");
 
-            entity.ToTable("forum_posts", tb => tb.HasComment("Bài đăng trên forum của hội viên, gồm cả bài gốc và bài đăng lại"));
+            entity
+                .ToTable("forum_posts", tb => tb.HasComment("Bài đăng cộng đồng"))
+                .UseCollation("utf8mb4_unicode_ci");
 
             entity.HasIndex(e => e.CategoryId, "idx_forum_posts_category");
 
@@ -803,42 +756,26 @@ public partial class GymManagementContext : DbContext
 
             entity.HasIndex(e => e.OriginalPostId, "idx_post_original");
 
-            entity.Property(e => e.PostId)
-                .HasComment("Mã bài đăng — khóa chính tự tăng")
-                .HasColumnName("post_id");
+            entity.Property(e => e.PostId).HasColumnName("post_id");
             entity.Property(e => e.CategoryId).HasColumnName("category_id");
-            entity.Property(e => e.CommentCount)
-                .HasComment("Số lượt bình luận — đồng bộ mỗi khi forum_comments thay đổi")
-                .HasColumnName("comment_count");
+            entity.Property(e => e.CommentCount).HasColumnName("comment_count");
             entity.Property(e => e.Content)
-                .HasComment("Nội dung bài viết. Có thể NULL nếu là Repost không kèm lời bình")
                 .HasColumnType("text")
                 .HasColumnName("content");
             entity.Property(e => e.CreatedAt)
                 .HasDefaultValueSql("CURRENT_TIMESTAMP")
-                .HasComment("Thời điểm đăng bài")
                 .HasColumnType("datetime")
                 .HasColumnName("created_at");
-            entity.Property(e => e.LikeCount)
-                .HasComment("Số lượt tym — đồng bộ mỗi khi forum_likes thay đổi")
-                .HasColumnName("like_count");
-            entity.Property(e => e.MemberId)
-                .HasComment("Hội viên tạo bài đăng — FK tới members.member_id")
-                .HasColumnName("member_id");
-            entity.Property(e => e.OriginalPostId)
-                .HasComment("Bài viết gốc được đăng lại — FK tự tham chiếu tới forum_posts.post_id. Bắt buộc khi post_type = Repost, NULL khi Original")
-                .HasColumnName("original_post_id");
+            entity.Property(e => e.LikeCount).HasColumnName("like_count");
+            entity.Property(e => e.MemberId).HasColumnName("member_id");
+            entity.Property(e => e.OriginalPostId).HasColumnName("original_post_id");
             entity.Property(e => e.PostType)
                 .HasDefaultValueSql("'Original'")
-                .HasComment("Loại bài: Original = bài gốc, Repost = đăng lại bài của người khác")
                 .HasColumnType("enum('Original','Repost')")
                 .HasColumnName("post_type");
-            entity.Property(e => e.RepostCount)
-                .HasComment("Số lượt được đăng lại — đồng bộ mỗi khi có bài Repost mới trỏ tới bài này")
-                .HasColumnName("repost_count");
+            entity.Property(e => e.RepostCount).HasColumnName("repost_count");
             entity.Property(e => e.Status)
                 .HasDefaultValueSql("'Active'")
-                .HasComment("Trạng thái: Active=đang hiển thị, Hidden=bị Admin ẩn do vi phạm, Deleted=hội viên tự xóa (soft delete)")
                 .HasColumnType("enum('Active','Hidden','Deleted')")
                 .HasColumnName("status");
             entity.Property(e => e.Title)
@@ -847,7 +784,6 @@ public partial class GymManagementContext : DbContext
             entity.Property(e => e.UpdatedAt)
                 .ValueGeneratedOnAddOrUpdate()
                 .HasDefaultValueSql("CURRENT_TIMESTAMP")
-                .HasComment("Thời điểm chỉnh sửa gần nhất")
                 .HasColumnType("datetime")
                 .HasColumnName("updated_at");
 
@@ -860,32 +796,30 @@ public partial class GymManagementContext : DbContext
                 .HasForeignKey(d => d.MemberId)
                 .OnDelete(DeleteBehavior.ClientSetNull)
                 .HasConstraintName("fk_post_member");
+
+            entity.HasOne(d => d.OriginalPost).WithMany(p => p.InverseOriginalPost)
+                .HasForeignKey(d => d.OriginalPostId)
+                .HasConstraintName("fk_forum_posts_original");
         });
 
         modelBuilder.Entity<ForumPostImage>(entity =>
         {
             entity.HasKey(e => e.ImageId).HasName("PRIMARY");
 
-            entity.ToTable("forum_post_images", tb => tb.HasComment("Ảnh đính kèm trong bài đăng forum, 1 bài có thể có nhiều ảnh"));
+            entity
+                .ToTable("forum_post_images", tb => tb.HasComment("Ảnh đính kèm trong bài đăng forum"))
+                .UseCollation("utf8mb4_unicode_ci");
 
             entity.HasIndex(e => e.PostId, "idx_postimg_post");
 
-            entity.Property(e => e.ImageId)
-                .HasComment("Mã ảnh — khóa chính tự tăng")
-                .HasColumnName("image_id");
+            entity.Property(e => e.ImageId).HasColumnName("image_id");
             entity.Property(e => e.ImageUrl)
                 .HasMaxLength(500)
-                .HasComment("URL ảnh lưu trên S3")
                 .HasColumnName("image_url");
-            entity.Property(e => e.PostId)
-                .HasComment("Bài đăng sở hữu ảnh — FK tới forum_posts.post_id")
-                .HasColumnName("post_id");
-            entity.Property(e => e.SortOrder)
-                .HasComment("Thứ tự hiển thị trong bài (ảnh 1, ảnh 2...), số nhỏ hiển thị trước")
-                .HasColumnName("sort_order");
+            entity.Property(e => e.PostId).HasColumnName("post_id");
+            entity.Property(e => e.SortOrder).HasColumnName("sort_order");
             entity.Property(e => e.UploadedAt)
                 .HasDefaultValueSql("CURRENT_TIMESTAMP")
-                .HasComment("Thời điểm tải ảnh lên")
                 .HasColumnType("datetime")
                 .HasColumnName("uploaded_at");
 
@@ -898,21 +832,16 @@ public partial class GymManagementContext : DbContext
         {
             entity.HasKey(e => e.DensityId).HasName("PRIMARY");
 
-            entity.ToTable("gym_density", tb => tb.HasComment("Snapshot mật độ người tập theo thời gian — dữ liệu do job ngoài hoặc cảm biến ghi vào"));
+            entity
+                .ToTable("gym_density", tb => tb.HasComment("Snapshot mật độ người tập theo thời gian"))
+                .UseCollation("utf8mb4_unicode_ci");
 
             entity.HasIndex(e => new { e.BranchId, e.RecordedAt }, "idx_mat_do_cn_tg");
 
-            entity.Property(e => e.DensityId)
-                .HasComment("Mã bản ghi — khóa chính tự tăng")
-                .HasColumnName("density_id");
-            entity.Property(e => e.BranchId)
-                .HasComment("Chi nhánh được ghi nhận — FK tới branches.branch_id")
-                .HasColumnName("branch_id");
-            entity.Property(e => e.Headcount)
-                .HasComment("Số người đang có mặt tại chi nhánh tại thời điểm ghi nhận")
-                .HasColumnName("headcount");
+            entity.Property(e => e.DensityId).HasColumnName("density_id");
+            entity.Property(e => e.BranchId).HasColumnName("branch_id");
+            entity.Property(e => e.Headcount).HasColumnName("headcount");
             entity.Property(e => e.RecordedAt)
-                .HasComment("Thời điểm ghi nhận snapshot, VD: mỗi 15 phút job tự chạy")
                 .HasColumnType("datetime")
                 .HasColumnName("recorded_at");
 
@@ -926,41 +855,32 @@ public partial class GymManagementContext : DbContext
         {
             entity.HasKey(e => e.ImageId).HasName("PRIMARY");
 
-            entity.ToTable("home_images", tb => tb.HasComment("Ảnh hiển thị trên trang chủ (banner/slideshow) — chỉ Admin quản lý"));
+            entity
+                .ToTable("home_images", tb => tb.HasComment("Ảnh hiển thị trên trang chủ (banner/slideshow)"))
+                .UseCollation("utf8mb4_unicode_ci");
 
             entity.HasIndex(e => e.UploadedBy, "fk_home_img_nv");
 
-            entity.Property(e => e.ImageId)
-                .HasComment("Mã ảnh — khóa chính tự tăng")
-                .HasColumnName("image_id");
+            entity.Property(e => e.ImageId).HasColumnName("image_id");
             entity.Property(e => e.ImageUrl)
                 .HasMaxLength(500)
-                .HasComment("URL ảnh lưu trên S3")
                 .HasColumnName("image_url");
             entity.Property(e => e.LinkUrl)
                 .HasMaxLength(500)
-                .HasComment("Đường dẫn khi người dùng bấm vào ảnh (VD: liên kết tới gói tập, khuyến mãi), có thể NULL")
                 .HasColumnName("link_url");
-            entity.Property(e => e.SortOrder)
-                .HasComment("Thứ tự hiển thị trên trang home, số nhỏ hiển thị trước")
-                .HasColumnName("sort_order");
+            entity.Property(e => e.SortOrder).HasColumnName("sort_order");
             entity.Property(e => e.Status)
                 .HasDefaultValueSql("'Active'")
-                .HasComment("Trạng thái hiển thị: Active = đang hiện, Inactive = đang ẩn")
                 .HasColumnType("enum('Active','Inactive')")
                 .HasColumnName("status");
             entity.Property(e => e.Title)
                 .HasMaxLength(255)
-                .HasComment("Tiêu đề/chú thích hiển thị kèm ảnh, có thể NULL")
                 .HasColumnName("title");
             entity.Property(e => e.UploadedAt)
                 .HasDefaultValueSql("CURRENT_TIMESTAMP")
-                .HasComment("Thời điểm tải ảnh lên")
                 .HasColumnType("datetime")
                 .HasColumnName("uploaded_at");
-            entity.Property(e => e.UploadedBy)
-                .HasComment("Nhân viên (Admin) tải ảnh lên — FK tới employees.employee_id")
-                .HasColumnName("uploaded_by");
+            entity.Property(e => e.UploadedBy).HasColumnName("uploaded_by");
 
             entity.HasOne(d => d.UploadedByNavigation).WithMany(p => p.HomeImages)
                 .HasForeignKey(d => d.UploadedBy)
@@ -972,7 +892,9 @@ public partial class GymManagementContext : DbContext
         {
             entity.HasKey(e => e.IncidentId).HasName("PRIMARY");
 
-            entity.ToTable("incidents", tb => tb.HasComment("Báo cáo sự cố thiết bị/cơ sở vật chất — hội viên hoặc nhân viên đều có thể tạo"));
+            entity
+                .ToTable("incidents", tb => tb.HasComment("Báo cáo sự cố"))
+                .UseCollation("utf8mb4_unicode_ci");
 
             entity.HasIndex(e => e.ApprovedBy, "fk_su_co_approved");
 
@@ -984,49 +906,32 @@ public partial class GymManagementContext : DbContext
 
             entity.HasIndex(e => e.EquipmentId, "fk_su_co_tb");
 
-            entity.Property(e => e.IncidentId)
-                .HasComment("Mã sự cố — khóa chính tự tăng")
-                .HasColumnName("incident_id");
-            entity.Property(e => e.ApprovedBy)
-                .HasComment("Nhân viên (Manager/Admin) duyệt hoặc từ chối sự cố — FK tới employees.employee_id")
-                .HasColumnName("approved_by");
-            entity.Property(e => e.BranchId)
-                .HasComment("Chi nhánh xảy ra sự cố — FK tới branches.branch_id")
-                .HasColumnName("branch_id");
+            entity.Property(e => e.IncidentId).HasColumnName("incident_id");
+            entity.Property(e => e.ApprovedBy).HasColumnName("approved_by");
+            entity.Property(e => e.BranchId).HasColumnName("branch_id");
             entity.Property(e => e.CreatedAt)
                 .HasDefaultValueSql("CURRENT_TIMESTAMP")
-                .HasComment("Thời điểm tạo báo cáo sự cố")
                 .HasColumnType("datetime")
                 .HasColumnName("created_at");
             entity.Property(e => e.Description)
-                .HasComment("Mô tả chi tiết hiện trạng sự cố")
                 .HasColumnType("text")
                 .HasColumnName("description");
-            entity.Property(e => e.EquipmentId)
-                .HasComment("Thiết bị liên quan — FK tới equipment.equipment_id. NULL nếu sự cố không liên quan thiết bị cụ thể")
-                .HasColumnName("equipment_id");
+            entity.Property(e => e.EquipmentId).HasColumnName("equipment_id");
             entity.Property(e => e.RejectReason)
-                .HasComment("Lý do từ chối sự cố — bắt buộc điền khi status = Rejected")
                 .HasColumnType("text")
                 .HasColumnName("reject_reason");
-            entity.Property(e => e.ReportedByEmployeeId)
-                .HasComment("Nhân viên báo cáo sự cố — FK tới employees.employee_id. Điền khi người báo cáo là nhân viên")
-                .HasColumnName("reported_by_employee_id");
-            entity.Property(e => e.ReportedByMemberId)
-                .HasComment("Hội viên báo cáo sự cố — FK tới members.member_id. Điền khi người báo cáo là hội viên")
-                .HasColumnName("reported_by_member_id");
+            entity.Property(e => e.ReportedByEmployeeId).HasColumnName("reported_by_employee_id");
+            entity.Property(e => e.ReportedByMemberId).HasColumnName("reported_by_member_id");
             entity.Property(e => e.Status)
                 .HasDefaultValueSql("'PendingApproval'")
                 .HasColumnType("enum('PendingApproval','Approved','Completed','Cancelled')")
                 .HasColumnName("status");
             entity.Property(e => e.Title)
                 .HasMaxLength(255)
-                .HasComment("Tiêu đề ngắn gọn mô tả sự cố")
                 .HasColumnName("title");
             entity.Property(e => e.UpdatedAt)
                 .ValueGeneratedOnAddOrUpdate()
                 .HasDefaultValueSql("CURRENT_TIMESTAMP")
-                .HasComment("Thời điểm cập nhật trạng thái gần nhất")
                 .HasColumnType("datetime")
                 .HasColumnName("updated_at");
 
@@ -1056,7 +961,9 @@ public partial class GymManagementContext : DbContext
         {
             entity.HasKey(e => e.MediaId).HasName("PRIMARY");
 
-            entity.ToTable("incident_medias");
+            entity
+                .ToTable("incident_medias")
+                .UseCollation("utf8mb4_unicode_ci");
 
             entity.HasIndex(e => e.IncidentId, "fk_incident_media_incident");
 
@@ -1072,62 +979,49 @@ public partial class GymManagementContext : DbContext
             entity.Property(e => e.MediaUrl)
                 .HasMaxLength(1000)
                 .HasColumnName("media_url");
+
+            entity.HasOne(d => d.Incident).WithMany(p => p.IncidentMedia)
+                .HasForeignKey(d => d.IncidentId)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("fk_incident_media_incident");
         });
 
         modelBuilder.Entity<Member>(entity =>
         {
             entity.HasKey(e => e.MemberId).HasName("PRIMARY");
 
-            entity.ToTable("members", tb => tb.HasComment("Hội viên phòng gym"));
+            entity
+                .ToTable("members", tb => tb.HasComment("Hồ sơ hội viên — thông tin đăng nhập nằm ở bảng accounts"))
+                .UseCollation("utf8mb4_unicode_ci");
 
             entity.HasIndex(e => e.CreatedBy, "fk_member_creator");
 
-            entity.HasIndex(e => e.Phone, "uq_member_phone").IsUnique();
-
-            entity.Property(e => e.MemberId)
-                .HasComment("Mã hội viên — khóa chính tự tăng")
-                .HasColumnName("member_id");
+            entity.Property(e => e.MemberId).HasColumnName("member_id");
             entity.Property(e => e.CreatedAt)
                 .HasDefaultValueSql("CURRENT_TIMESTAMP")
-                .HasComment("Thời điểm tạo tài khoản")
                 .HasColumnType("datetime")
                 .HasColumnName("created_at");
             entity.Property(e => e.CreatedBy)
-                .HasComment("Nhân viên tạo tài khoản hội viên này — FK tới employees.employee_id")
+                .HasComment("Nhân viên tạo hồ sơ hội viên — FK tới employees.employee_id")
                 .HasColumnName("created_by");
             entity.Property(e => e.FullName)
                 .HasMaxLength(100)
-                .HasComment("Họ và tên đầy đủ của hội viên")
                 .HasColumnName("full_name");
             entity.Property(e => e.Gender)
-                .HasComment("Giới tính của hội viên")
                 .HasColumnType("enum('Male','Female','Other')")
                 .HasColumnName("gender");
             entity.Property(e => e.InternalNotes)
-                .HasComment("Ghi chú nội bộ dành cho nhân viên, hội viên không thấy")
+                .HasComment("Ghi chú nội bộ, hội viên không thấy")
                 .HasColumnType("text")
                 .HasColumnName("internal_notes");
-            entity.Property(e => e.PasswordHash)
-                .HasMaxLength(255)
-                .HasComment("Mật khẩu đã mã hóa bcrypt, không lưu bản rõ")
-                .HasColumnName("password_hash");
-            entity.Property(e => e.Phone)
-                .HasMaxLength(15)
-                .HasComment("Số điện thoại — dùng làm tên đăng nhập, phải duy nhất")
-                .HasColumnName("phone");
             entity.Property(e => e.Status)
                 .HasDefaultValueSql("'PendingActivation'")
-                .HasComment("Trạng thái tài khoản: PendingActivation=chờ kích hoạt, Active=đang hoạt động, Expired=hết hạn, Suspended=bị khóa")
-                .HasColumnType("enum('PendingActivation','Active','Expired','Suspended')")
+                .HasComment("PendingActivation=chờ kích hoạt, Active=đang hoạt động. Việc khóa đăng nhập nay do accounts.status quản lý, không còn Expired/Suspended ở đây.")
+                .HasColumnType("enum('PendingActivation','Active')")
                 .HasColumnName("status");
-            entity.Property(e => e.SuspendReason)
-                .HasComment("Lý do tạm khóa — bắt buộc điền khi status = Suspended")
-                .HasColumnType("text")
-                .HasColumnName("suspend_reason");
             entity.Property(e => e.UpdatedAt)
                 .ValueGeneratedOnAddOrUpdate()
                 .HasDefaultValueSql("CURRENT_TIMESTAMP")
-                .HasComment("Thời điểm cập nhật gần nhất")
                 .HasColumnType("datetime")
                 .HasColumnName("updated_at");
 
@@ -1140,7 +1034,9 @@ public partial class GymManagementContext : DbContext
         {
             entity.HasKey(e => e.MemberPackageId).HasName("PRIMARY");
 
-            entity.ToTable("member_packages", tb => tb.HasComment("Gói tập đã mua của từng hội viên, lưu ngày hiệu lực và trạng thái"));
+            entity
+                .ToTable("member_packages", tb => tb.HasComment("Gói tập đã mua của từng hội viên. LƯU Ý: package_status (trạng thái của gói tập cụ thể) vẫn giữ Expired — đây khác với members.status (trạng thái tài khoản hội viên nói chung), cái đã bỏ Expired theo yêu cầu."))
+                .UseCollation("utf8mb4_unicode_ci");
 
             entity.HasIndex(e => e.BranchId, "fk_member_packages_branch");
 
@@ -1152,48 +1048,32 @@ public partial class GymManagementContext : DbContext
 
             entity.HasIndex(e => e.TransactionId, "fk_mp_transaction");
 
-            entity.Property(e => e.MemberPackageId)
-                .HasComment("Mã gói hội viên — khóa chính tự tăng")
-                .HasColumnName("member_package_id");
+            entity.Property(e => e.MemberPackageId).HasColumnName("member_package_id");
             entity.Property(e => e.Amount)
                 .HasPrecision(12)
-                .HasComment("Số tiền thực thu sau khuyến mãi (VNĐ), sao chép từ transactions.amount")
                 .HasColumnName("amount");
             entity.Property(e => e.BranchId).HasColumnName("branch_id");
             entity.Property(e => e.CreatedAt)
                 .HasDefaultValueSql("CURRENT_TIMESTAMP")
-                .HasComment("Thời điểm tạo bản ghi")
                 .HasColumnType("datetime")
                 .HasColumnName("created_at");
             entity.Property(e => e.ExpiryDate).HasColumnName("expiry_date");
             entity.Property(e => e.GiaGoc)
                 .HasPrecision(12)
-                .HasComment("Giá niêm yết của gói tại thời điểm mua (VNĐ)")
                 .HasColumnName("gia_goc");
-            entity.Property(e => e.MemberId)
-                .HasComment("Hội viên sở hữu gói — FK tới members.member_id")
-                .HasColumnName("member_id");
+            entity.Property(e => e.MemberId).HasColumnName("member_id");
             entity.Property(e => e.PackageStatus)
                 .HasDefaultValueSql("'PendingActivation'")
                 .HasColumnType("enum('PendingActivation','Active','Expired','Cancelled')")
                 .HasColumnName("package_status");
-            entity.Property(e => e.PlanId)
-                .HasComment("Gói tập được mua — FK tới membership_plans.plan_id")
-                .HasColumnName("plan_id");
-            entity.Property(e => e.PromotionId)
-                .HasComment("Khuyến mãi được áp dụng — FK tới promotions.promotion_id, NULL nếu không có")
-                .HasColumnName("promotion_id");
-            entity.Property(e => e.SoNgayTangThucTe)
-                .HasComment("Số ngày tặng thêm đã quy đổi thực tế: TangNgay=so_ngay_tang, TangChuKy=so_chu_ky_tang×duration_days, không KM=0")
-                .HasColumnName("so_ngay_tang_thuc_te");
+            entity.Property(e => e.PlanId).HasColumnName("plan_id");
+            entity.Property(e => e.PromotionId).HasColumnName("promotion_id");
+            entity.Property(e => e.SoNgayTangThucTe).HasColumnName("so_ngay_tang_thuc_te");
             entity.Property(e => e.StartDate).HasColumnName("start_date");
-            entity.Property(e => e.TransactionId)
-                .HasComment("Giao dịch thanh toán tương ứng — FK tới transactions.transaction_id")
-                .HasColumnName("transaction_id");
+            entity.Property(e => e.TransactionId).HasColumnName("transaction_id");
             entity.Property(e => e.UpdatedAt)
                 .ValueGeneratedOnAddOrUpdate()
                 .HasDefaultValueSql("CURRENT_TIMESTAMP")
-                .HasComment("Thời điểm cập nhật gần nhất")
                 .HasColumnType("datetime")
                 .HasColumnName("updated_at");
 
@@ -1226,7 +1106,9 @@ public partial class GymManagementContext : DbContext
         {
             entity.HasKey(e => e.Id).HasName("PRIMARY");
 
-            entity.ToTable("member_update_logs", tb => tb.HasComment("Lịch sử cập nhật thông tin hội viên (theo từng field) — chỉ ghi thêm, không sửa xóa"));
+            entity
+                .ToTable("member_update_logs", tb => tb.HasComment("Lịch sử cập nhật thông tin hội viên — chỉ ghi thêm"))
+                .UseCollation("utf8mb4_unicode_ci");
 
             entity.HasIndex(e => e.UpdatedByEmployeeId, "fk_mul_employee");
 
@@ -1234,30 +1116,20 @@ public partial class GymManagementContext : DbContext
 
             entity.HasIndex(e => e.UpdateSessionId, "idx_mul_session");
 
-            entity.Property(e => e.Id)
-                .HasComment("Mã bản ghi — khóa chính tự tăng")
-                .HasColumnName("id");
+            entity.Property(e => e.Id).HasColumnName("id");
             entity.Property(e => e.FieldName)
                 .HasMaxLength(100)
-                .HasComment("Tên trường dữ liệu bị thay đổi, VD: phone, full_name, gender")
                 .HasColumnName("field_name");
-            entity.Property(e => e.MemberId)
-                .HasComment("Hội viên được cập nhật thông tin — FK tới members.member_id")
-                .HasColumnName("member_id");
+            entity.Property(e => e.MemberId).HasColumnName("member_id");
             entity.Property(e => e.NewValue)
-                .HasComment("Giá trị mới sau khi thay đổi")
                 .HasColumnType("text")
                 .HasColumnName("new_value");
             entity.Property(e => e.OldValue)
-                .HasComment("Giá trị cũ trước khi thay đổi — NULL nếu trường trước đó chưa có giá trị")
                 .HasColumnType("text")
                 .HasColumnName("old_value");
-            entity.Property(e => e.UpdateSessionId)
-                .HasComment("Mã phiên cập nhật (UUID) — nhóm các field_name cùng thay đổi trong 1 lần lưu")
-                .HasColumnName("update_session_id");
+            entity.Property(e => e.UpdateSessionId).HasColumnName("update_session_id");
             entity.Property(e => e.UpdatedAt)
                 .HasDefaultValueSql("CURRENT_TIMESTAMP")
-                .HasComment("Thời điểm thực hiện cập nhật")
                 .HasColumnType("datetime")
                 .HasColumnName("updated_at");
             entity.Property(e => e.UpdatedByEmployeeId).HasColumnName("updated_by_employee_id");
@@ -1276,39 +1148,28 @@ public partial class GymManagementContext : DbContext
         {
             entity.HasKey(e => e.PlanId).HasName("PRIMARY");
 
-            entity.ToTable("membership_plans", tb => tb.HasComment("Danh sách gói tập phòng gym"));
+            entity
+                .ToTable("membership_plans", tb => tb.HasComment("Danh sách gói tập — không còn phân loại Customer/Internal"))
+                .UseCollation("utf8mb4_unicode_ci");
 
-            entity.Property(e => e.PlanId)
-                .HasComment("Mã gói tập — khóa chính tự tăng")
-                .HasColumnName("plan_id");
+            entity.Property(e => e.PlanId).HasColumnName("plan_id");
             entity.Property(e => e.CreatedAt)
                 .HasDefaultValueSql("CURRENT_TIMESTAMP")
-                .HasComment("Thời điểm tạo gói tập")
                 .HasColumnType("datetime")
                 .HasColumnName("created_at");
             entity.Property(e => e.Description)
-                .HasComment("Mô tả quyền lợi gói tập hiển thị cho hội viên")
                 .HasColumnType("text")
                 .HasColumnName("description");
-            entity.Property(e => e.DurationDays)
-                .HasComment("Thời hạn gói tính bằng số ngày kể từ ngày bắt đầu")
-                .HasColumnName("duration_days");
+            entity.Property(e => e.DurationDays).HasColumnName("duration_days");
             entity.Property(e => e.IsPopular).HasColumnName("is_popular");
             entity.Property(e => e.PlanName)
                 .HasMaxLength(150)
-                .HasComment("Tên hiển thị của gói tập, VD: Gói 1 Tháng, Gói PRO 3 Tháng")
                 .HasColumnName("plan_name");
-            entity.Property(e => e.PlanType)
-                .HasDefaultValueSql("'Customer'")
-                .HasColumnType("enum('Customer','Internal')")
-                .HasColumnName("plan_type");
             entity.Property(e => e.Price)
                 .HasPrecision(12)
-                .HasComment("Giá niêm yết của gói (VNĐ), không có số thập phân")
                 .HasColumnName("price");
             entity.Property(e => e.Status)
                 .HasDefaultValueSql("'OnSale'")
-                .HasComment("Trạng thái bán: OnSale = đang bán, Discontinued = ngừng bán")
                 .HasColumnType("enum('OnSale','Discontinued')")
                 .HasColumnName("status");
         });
@@ -1317,7 +1178,9 @@ public partial class GymManagementContext : DbContext
         {
             entity.HasKey(e => e.NewsId).HasName("PRIMARY");
 
-            entity.ToTable("news", tb => tb.HasComment("Tin tức / bài viết hiển thị cho hội viên"));
+            entity
+                .ToTable("news", tb => tb.HasComment("Tin tức hiển thị cho hội viên"))
+                .UseCollation("utf8mb4_unicode_ci");
 
             entity.HasIndex(e => e.BranchId, "FK_news_branch");
 
@@ -1325,38 +1188,29 @@ public partial class GymManagementContext : DbContext
 
             entity.HasIndex(e => e.Status, "idx_news_status");
 
-            entity.Property(e => e.NewsId)
-                .HasComment("Mã tin tức — khóa chính tự tăng")
-                .HasColumnName("news_id");
+            entity.Property(e => e.NewsId).HasColumnName("news_id");
             entity.Property(e => e.BranchId).HasColumnName("branch_id");
             entity.Property(e => e.Content)
-                .HasComment("Nội dung đầy đủ của bài tin tức")
                 .HasColumnType("text")
                 .HasColumnName("content");
             entity.Property(e => e.CreatedAt)
                 .HasDefaultValueSql("CURRENT_TIMESTAMP")
-                .HasComment("Thời điểm tạo bài viết")
                 .HasColumnType("datetime")
                 .HasColumnName("created_at");
-            entity.Property(e => e.CreatedBy)
-                .HasComment("Nhân viên soạn bài — FK tới employees.employee_id")
-                .HasColumnName("created_by");
+            entity.Property(e => e.CreatedBy).HasColumnName("created_by");
             entity.Property(e => e.Status)
                 .HasDefaultValueSql("'Active'")
                 .HasColumnType("enum('Active','Hidden')")
                 .HasColumnName("status");
             entity.Property(e => e.Summary)
                 .HasMaxLength(500)
-                .HasComment("Tóm tắt ngắn hiển thị ở danh sách tin tức")
                 .HasColumnName("summary");
             entity.Property(e => e.Title)
                 .HasMaxLength(255)
-                .HasComment("Tiêu đề tin tức")
                 .HasColumnName("title");
             entity.Property(e => e.UpdatedAt)
                 .ValueGeneratedOnAddOrUpdate()
                 .HasDefaultValueSql("CURRENT_TIMESTAMP")
-                .HasComment("Thời điểm cập nhật gần nhất")
                 .HasColumnType("datetime")
                 .HasColumnName("updated_at");
 
@@ -1375,40 +1229,31 @@ public partial class GymManagementContext : DbContext
         {
             entity.HasKey(e => e.OtpId).HasName("PRIMARY");
 
-            entity.ToTable("otp", tb => tb.HasComment("Mã OTP xác thực một lần gửi qua SMS"));
+            entity
+                .ToTable("otp", tb => tb.HasComment("Mã OTP xác thực một lần — dữ liệu tạm thời, không cần seed"))
+                .UseCollation("utf8mb4_unicode_ci");
 
             entity.HasIndex(e => e.ExpiresAt, "idx_otp_het_han");
 
             entity.HasIndex(e => new { e.Phone, e.Purpose }, "idx_otp_phone_purpose");
 
-            entity.Property(e => e.OtpId)
-                .HasComment("Mã bản ghi — khóa chính tự tăng")
-                .HasColumnName("otp_id");
+            entity.Property(e => e.OtpId).HasColumnName("otp_id");
             entity.Property(e => e.CreatedAt)
                 .HasDefaultValueSql("CURRENT_TIMESTAMP")
-                .HasComment("Thời điểm tạo và gửi OTP")
                 .HasColumnType("datetime")
                 .HasColumnName("created_at");
             entity.Property(e => e.ExpiresAt)
-                .HasComment("Thời điểm OTP hết hạn — thường 5 phút kể từ lúc tạo")
                 .HasColumnType("datetime")
                 .HasColumnName("expires_at");
-            entity.Property(e => e.FailedAttempts)
-                .HasComment("Số lần nhập sai liên tiếp — ứng dụng khóa sau N lần")
-                .HasColumnName("failed_attempts");
-            entity.Property(e => e.IsUsed)
-                .HasComment("0 = chưa dùng, 1 = đã dùng thành công")
-                .HasColumnName("is_used");
+            entity.Property(e => e.FailedAttempts).HasColumnName("failed_attempts");
+            entity.Property(e => e.IsUsed).HasColumnName("is_used");
             entity.Property(e => e.OtpCode)
                 .HasMaxLength(10)
-                .HasComment("Mã OTP gửi cho người dùng (lưu dạng hash nếu cần bảo mật cao hơn)")
                 .HasColumnName("otp_code");
             entity.Property(e => e.Phone)
                 .HasMaxLength(15)
-                .HasComment("Số điện thoại nhận OTP")
                 .HasColumnName("phone");
             entity.Property(e => e.Purpose)
-                .HasComment("Mục đích: DangKy=đăng ký mới, QuenMatKhau=đặt lại mật khẩu, DoiSoDienThoai=xác nhận đổi số")
                 .HasColumnType("enum('DangKy','QuenMatKhau','DoiSoDienThoai')")
                 .HasColumnName("purpose");
         });
@@ -1417,7 +1262,9 @@ public partial class GymManagementContext : DbContext
         {
             entity.HasKey(e => e.PromotionId).HasName("PRIMARY");
 
-            entity.ToTable("promotions", tb => tb.HasComment("Chương trình khuyến mãi do Admin/Manager tạo"));
+            entity
+                .ToTable("promotions", tb => tb.HasComment("Chương trình khuyến mãi"))
+                .UseCollation("utf8mb4_unicode_ci");
 
             entity.HasIndex(e => e.NguoiTao, "fk_km_nguoi_tao");
 
@@ -1425,71 +1272,48 @@ public partial class GymManagementContext : DbContext
 
             entity.HasIndex(e => new { e.TrangThai, e.NgayBatDau, e.NgayKetThuc }, "idx_km_trangthai_thoigian");
 
-            entity.Property(e => e.PromotionId)
-                .HasComment("Mã khuyến mãi — khóa chính tự tăng")
-                .HasColumnName("promotion_id");
+            entity.Property(e => e.PromotionId).HasColumnName("promotion_id");
             entity.Property(e => e.CreatedAt)
                 .HasDefaultValueSql("CURRENT_TIMESTAMP")
-                .HasComment("Thời điểm tạo chương trình")
                 .HasColumnType("datetime")
                 .HasColumnName("created_at");
-            entity.Property(e => e.GioiHanLuot)
-                .HasComment("Tổng số lượt dùng tối đa toàn chương trình. NULL = không giới hạn")
-                .HasColumnName("gioi_han_luot");
+            entity.Property(e => e.GioiHanLuot).HasColumnName("gioi_han_luot");
             entity.Property(e => e.MoTa)
-                .HasComment("Mô tả chi tiết quyền lợi hiển thị cho hội viên")
                 .HasColumnType("text")
                 .HasColumnName("mo_ta");
             entity.Property(e => e.MucGiamToiDa)
                 .HasPrecision(12)
-                .HasComment("[GiamPhanTram] Số tiền giảm tối đa (VNĐ). NULL = không giới hạn mức giảm")
                 .HasColumnName("muc_giam_toi_da");
             entity.Property(e => e.NgayBatDau)
-                .HasComment("Thời điểm bắt đầu áp dụng khuyến mãi")
                 .HasColumnType("datetime")
                 .HasColumnName("ngay_bat_dau");
             entity.Property(e => e.NgayKetThuc)
-                .HasComment("Thời điểm kết thúc — sau mốc này không áp dụng nữa")
                 .HasColumnType("datetime")
                 .HasColumnName("ngay_ket_thuc");
-            entity.Property(e => e.NguoiTao)
-                .HasComment("Nhân viên (Admin/Manager) tạo chương trình — FK tới employees.employee_id")
-                .HasColumnName("nguoi_tao");
+            entity.Property(e => e.NguoiTao).HasColumnName("nguoi_tao");
             entity.Property(e => e.PhanTramGiam)
                 .HasPrecision(5, 2)
-                .HasComment("[GiamPhanTram] Phần trăm giảm, VD: 50.00 = giảm 50%. NULL nếu không phải loại này")
                 .HasColumnName("phan_tram_giam");
             entity.Property(e => e.PlanId).HasColumnName("plan_id");
             entity.Property(e => e.PromoType)
-                .HasComment("Loại khuyến mãi: GiamPhanTram=giảm %, GiamTienMat=giảm tiền cố định, TangNgay=tặng N ngày, TangChuKy=tặng N chu kỳ")
                 .HasColumnType("enum('GiamPhanTram','GiamTienMat','TangNgay','TangChuKy')")
                 .HasColumnName("promo_type");
-            entity.Property(e => e.SoChuKyTang)
-                .HasComment("[TangChuKy] Số chu kỳ tặng thêm, 1 chu kỳ = duration_days của gói. NULL nếu không phải loại này")
-                .HasColumnName("so_chu_ky_tang");
-            entity.Property(e => e.SoLuotDaDung)
-                .HasComment("Số lượt đã dùng, tự tăng mỗi khi khuyến mãi được áp dụng thành công")
-                .HasColumnName("so_luot_da_dung");
-            entity.Property(e => e.SoNgayTang)
-                .HasComment("[TangNgay] Số ngày tặng thêm vào ngày hết hạn. NULL nếu không phải loại này")
-                .HasColumnName("so_ngay_tang");
+            entity.Property(e => e.SoChuKyTang).HasColumnName("so_chu_ky_tang");
+            entity.Property(e => e.SoLuotDaDung).HasColumnName("so_luot_da_dung");
+            entity.Property(e => e.SoNgayTang).HasColumnName("so_ngay_tang");
             entity.Property(e => e.SoTienGiam)
                 .HasPrecision(12)
-                .HasComment("[GiamTienMat] Số tiền giảm cố định (VNĐ). NULL nếu không phải loại này")
                 .HasColumnName("so_tien_giam");
             entity.Property(e => e.TenKhuyenMai)
                 .HasMaxLength(200)
-                .HasComment("Tên hiển thị chương trình, VD: Giảm 50% Gói PRO tháng 6")
                 .HasColumnName("ten_khuyen_mai");
             entity.Property(e => e.TrangThai)
                 .HasDefaultValueSql("'NhapLieu'")
-                .HasComment("Trạng thái: NhapLieu=đang soạn, HoatDong=đang chạy, TamDung=tạm dừng, HetHan=đã kết thúc")
                 .HasColumnType("enum('NhapLieu','HoatDong','TamDung','HetHan')")
                 .HasColumnName("trang_thai");
             entity.Property(e => e.UpdatedAt)
                 .ValueGeneratedOnAddOrUpdate()
                 .HasDefaultValueSql("CURRENT_TIMESTAMP")
-                .HasComment("Thời điểm cập nhật gần nhất")
                 .HasColumnType("datetime")
                 .HasColumnName("updated_at");
 
@@ -1508,7 +1332,9 @@ public partial class GymManagementContext : DbContext
         {
             entity.HasKey(e => e.UsageId).HasName("PRIMARY");
 
-            entity.ToTable("promotion_usages", tb => tb.HasComment("Lịch sử áp dụng khuyến mãi — chỉ ghi thêm, không sửa xóa"));
+            entity
+                .ToTable("promotion_usages", tb => tb.HasComment("Lịch sử áp dụng khuyến mãi"))
+                .UseCollation("utf8mb4_unicode_ci");
 
             entity.HasIndex(e => e.PlanId, "fk_su_dung_goi");
 
@@ -1518,32 +1344,18 @@ public partial class GymManagementContext : DbContext
 
             entity.HasIndex(e => e.MemberPackageId, "uq_su_dung_package").IsUnique();
 
-            entity.Property(e => e.UsageId)
-                .HasComment("Mã bản ghi — khóa chính tự tăng")
-                .HasColumnName("usage_id");
+            entity.Property(e => e.UsageId).HasColumnName("usage_id");
             entity.Property(e => e.ApDungLuc)
                 .HasDefaultValueSql("CURRENT_TIMESTAMP")
-                .HasComment("Thời điểm khuyến mãi được áp dụng")
                 .HasColumnType("datetime")
                 .HasColumnName("ap_dung_luc");
-            entity.Property(e => e.MemberId)
-                .HasComment("Hội viên được hưởng — FK tới members.member_id, lưu để truy vấn nhanh")
-                .HasColumnName("member_id");
-            entity.Property(e => e.MemberPackageId)
-                .HasComment("Gói hội viên được hưởng khuyến mãi — FK tới member_packages.member_package_id")
-                .HasColumnName("member_package_id");
-            entity.Property(e => e.PlanId)
-                .HasComment("Gói tập tương ứng — FK tới membership_plans.plan_id, lưu để truy vấn nhanh")
-                .HasColumnName("plan_id");
-            entity.Property(e => e.PromotionId)
-                .HasComment("Khuyến mãi được áp dụng — FK tới promotions.promotion_id")
-                .HasColumnName("promotion_id");
-            entity.Property(e => e.SoNgayDuocTang)
-                .HasComment("Số ngày thực tế được cộng thêm vào ngày hết hạn. = 0 nếu loại GiamPhanTram hoặc GiamTienMat")
-                .HasColumnName("so_ngay_duoc_tang");
+            entity.Property(e => e.MemberId).HasColumnName("member_id");
+            entity.Property(e => e.MemberPackageId).HasColumnName("member_package_id");
+            entity.Property(e => e.PlanId).HasColumnName("plan_id");
+            entity.Property(e => e.PromotionId).HasColumnName("promotion_id");
+            entity.Property(e => e.SoNgayDuocTang).HasColumnName("so_ngay_duoc_tang");
             entity.Property(e => e.SoTienDaGiam)
                 .HasPrecision(12)
-                .HasComment("Số tiền thực tế được giảm (VNĐ). = 0 nếu loại TangNgay hoặc TangChuKy")
                 .HasColumnName("so_tien_da_giam");
 
             entity.HasOne(d => d.Member).WithMany(p => p.PromotionUsages)
@@ -1571,58 +1383,56 @@ public partial class GymManagementContext : DbContext
         {
             entity.HasKey(e => e.TokenId).HasName("PRIMARY");
 
-            entity.ToTable("refresh_tokens", tb => tb.HasComment("Refresh token cho hội viên và nhân viên"));
+            entity
+                .ToTable("refresh_tokens", tb => tb.HasComment("Refresh token — dữ liệu tạm thời, không cần seed"))
+                .UseCollation("utf8mb4_unicode_ci");
 
-            entity.HasIndex(e => new { e.EntityId, e.EntityType }, "idx_rt_entity");
+            entity.HasIndex(e => e.AccountId, "idx_rt_account");
 
             entity.HasIndex(e => e.TokenHash, "uq_token_hash").IsUnique();
 
-            entity.Property(e => e.TokenId)
-                .HasComment("Mã token — khóa chính tự tăng")
-                .HasColumnName("token_id");
+            entity.Property(e => e.TokenId).HasColumnName("token_id");
+            entity.Property(e => e.AccountId)
+                .HasComment("Tài khoản sở hữu token — FK tới accounts.account_id")
+                .HasColumnName("account_id");
             entity.Property(e => e.CreatedAt)
                 .HasDefaultValueSql("CURRENT_TIMESTAMP")
-                .HasComment("Thời điểm tạo token")
                 .HasColumnType("datetime")
                 .HasColumnName("created_at");
-            entity.Property(e => e.EntityId)
-                .HasComment("ID của tài khoản sở hữu token (member_id hoặc employee_id)")
-                .HasColumnName("entity_id");
-            entity.Property(e => e.EntityType)
-                .HasComment("Loại tài khoản sở hữu token")
-                .HasColumnType("enum('Member','Employee')")
-                .HasColumnName("entity_type");
             entity.Property(e => e.ExpiresAt)
-                .HasComment("Thời điểm token hết hạn")
                 .HasColumnType("datetime")
                 .HasColumnName("expires_at");
             entity.Property(e => e.RevokedAt)
-                .HasComment("Thời điểm token bị thu hồi")
                 .HasColumnType("datetime")
                 .HasColumnName("revoked_at");
             entity.Property(e => e.Role)
                 .HasMaxLength(50)
-                .HasComment("Role tại thời điểm đăng nhập")
+                .HasComment("Role tại thời điểm đăng nhập, VD: Member, Staff, Manager, Admin")
                 .HasColumnName("role");
-            entity.Property(e => e.TokenHash)
-                .HasComment("SHA-256 hash của refresh token")
-                .HasColumnName("token_hash");
+            entity.Property(e => e.TokenHash).HasColumnName("token_hash");
+
+            entity.HasOne(d => d.Account).WithMany(p => p.RefreshTokens)
+                .HasForeignKey(d => d.AccountId)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("fk_rt_account");
         });
 
         modelBuilder.Entity<Role>(entity =>
         {
             entity.HasKey(e => e.RoleId).HasName("PRIMARY");
 
-            entity.ToTable("roles", tb => tb.HasComment("Vai trò của nhân viên trong hệ thống"));
+            entity
+                .ToTable("roles", tb => tb.HasComment("Vai trò của nhân viên"))
+                .UseCollation("utf8mb4_unicode_ci");
 
             entity.HasIndex(e => e.RoleName, "uq_role_name").IsUnique();
 
             entity.Property(e => e.RoleId)
-                .HasComment("Mã vai trò — khóa chính tự tăng")
+                .HasComment("Mã vai trò")
                 .HasColumnName("role_id");
             entity.Property(e => e.RoleName)
                 .HasMaxLength(50)
-                .HasComment("Tên vai trò, VD: Staff, Manager, Admin, Technician")
+                .HasComment("Tên vai trò: Staff, Manager, Admin")
                 .HasColumnName("role_name");
         });
 
@@ -1630,7 +1440,9 @@ public partial class GymManagementContext : DbContext
         {
             entity.HasKey(e => e.TransactionId).HasName("PRIMARY");
 
-            entity.ToTable("transactions", tb => tb.HasComment("Giao dịch thanh toán mua hoặc gia hạn gói tập"));
+            entity
+                .ToTable("transactions", tb => tb.HasComment("Giao dịch thanh toán mua hoặc gia hạn gói tập"))
+                .UseCollation("utf8mb4_unicode_ci");
 
             entity.HasIndex(e => e.BankReferenceCode, "UX_Transactions_BankReferenceCode").IsUnique();
 
@@ -1646,12 +1458,9 @@ public partial class GymManagementContext : DbContext
 
             entity.HasIndex(e => e.OrderCode, "order_code").IsUnique();
 
-            entity.Property(e => e.TransactionId)
-                .HasComment("Mã giao dịch — khóa chính tự tăng")
-                .HasColumnName("transaction_id");
+            entity.Property(e => e.TransactionId).HasColumnName("transaction_id");
             entity.Property(e => e.Amount)
                 .HasPrecision(12)
-                .HasComment("Số tiền thực thu sau khi áp khuyến mãi (VNĐ). Bằng gia_goc nếu không có KM")
                 .HasColumnName("amount");
             entity.Property(e => e.BankReferenceCode)
                 .HasMaxLength(100)
@@ -1659,43 +1468,31 @@ public partial class GymManagementContext : DbContext
             entity.Property(e => e.BranchId).HasColumnName("branch_id");
             entity.Property(e => e.CreatedAt)
                 .HasDefaultValueSql("CURRENT_TIMESTAMP")
-                .HasComment("Thời điểm tạo giao dịch")
                 .HasColumnType("datetime")
                 .HasColumnName("created_at");
-            entity.Property(e => e.EmployeeId)
-                .HasComment("Nhân viên tạo giao dịch, NULL nếu khách tự mua")
-                .HasColumnName("employee_id");
+            entity.Property(e => e.EmployeeId).HasColumnName("employee_id");
             entity.Property(e => e.GiaGoc)
                 .HasPrecision(12)
-                .HasComment("Giá niêm yết của gói trước khi áp khuyến mãi (VNĐ)")
                 .HasColumnName("gia_goc");
-            entity.Property(e => e.MemberId)
-                .HasComment("Hội viên thực hiện giao dịch — FK tới members.member_id")
-                .HasColumnName("member_id");
+            entity.Property(e => e.MemberId).HasColumnName("member_id");
             entity.Property(e => e.OrderCode)
                 .HasMaxLength(50)
                 .HasColumnName("order_code");
             entity.Property(e => e.PaymentMethod)
-                .HasComment("Phương thức thanh toán: Cash = tiền mặt, BankTransfer = chuyển khoản")
                 .HasColumnType("enum('Cash','BankTransfer')")
                 .HasColumnName("payment_method");
             entity.Property(e => e.PaymentStatus)
                 .HasDefaultValueSql("'Pending'")
-                .HasComment("Trạng thái thanh toán: Pending=chờ xác nhận, Paid=đã thanh toán, Failed=thất bại")
                 .HasColumnType("enum('Pending','Paid','Cancelled')")
                 .HasColumnName("payment_status");
-            entity.Property(e => e.PlanId)
-                .HasComment("Gói tập được mua trong giao dịch này — FK tới membership_plans.plan_id")
-                .HasColumnName("plan_id");
+            entity.Property(e => e.PlanId).HasColumnName("plan_id");
             entity.Property(e => e.PromotionId).HasColumnName("promotion_id");
             entity.Property(e => e.ReceiptImage)
                 .HasMaxLength(500)
-                .HasComment("URL ảnh biên lai / chứng từ chuyển khoản lưu trên S3")
                 .HasColumnName("receipt_image");
             entity.Property(e => e.UpdatedAt)
                 .ValueGeneratedOnAddOrUpdate()
                 .HasDefaultValueSql("CURRENT_TIMESTAMP")
-                .HasComment("Thời điểm cập nhật gần nhất")
                 .HasColumnType("datetime")
                 .HasColumnName("updated_at");
 
@@ -1729,8 +1526,8 @@ public partial class GymManagementContext : DbContext
             entity.HasKey(e => e.AdjustmentId).HasName("PRIMARY");
 
             entity
-                .ToTable("transaction_adjustment_logs")
-                .UseCollation("utf8mb4_0900_ai_ci");
+                .ToTable("transaction_adjustment_logs", tb => tb.HasComment("Lịch sử chỉnh sửa giao dịch — không cần seed"))
+                .UseCollation("utf8mb4_unicode_ci");
 
             entity.HasIndex(e => e.AdjustedBy, "fk_adjustment_employee");
 

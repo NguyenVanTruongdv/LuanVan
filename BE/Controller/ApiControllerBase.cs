@@ -1,6 +1,7 @@
 // BE/Controllers/ApiControllerBase.cs
 using Microsoft.AspNetCore.Mvc;
 using System.Security.Claims;
+using BE.Helpers;
 
 namespace BE.Controllers
 {
@@ -16,20 +17,30 @@ namespace BE.Controllers
             return userId;
         }
 
-        // TODO: đổi "Staff" cho đúng tên role bạn đang dùng khi tạo token (User.IsInRole).
-        protected bool IsEmployee() => User.IsInRole("Staff") || User.IsInRole("Manager") || User.IsInRole("Admin");
+        protected bool IsEmployee() =>
+            User.IsInRole("Staff") || User.IsInRole("Manager") || User.IsInRole("Admin");
 
         // performedBy = id nhân viên nếu người gọi là nhân viên, null nếu là khách tự thao tác.
         protected long? GetPerformedByOrNull() => IsEmployee() ? GetCurrentUserId() : null;
 
-        // Lấy chi nhánh của nhân viên đang đăng nhập từ claim "BranchId" nhúng lúc login.
-        // TODO: đổi tên claim nếu bạn đặt tên khác lúc tạo token.
+        // Lấy 1 chi nhánh (chi nhánh đầu tiên) của nhân viên — giữ để tương thích code cũ.
+        // Nếu nhân viên thuộc nhiều chi nhánh, nên dùng GetCurrentUserBranchIds() thay vì hàm này.
         protected int? GetCurrentUserBranchId()
         {
-            var claim = User.FindFirst("BranchId");
+            var claim = User.FindFirst(JwtHelper.ClaimBranchId);
             if (claim == null || !int.TryParse(claim.Value, out var branchId))
                 return null;
             return branchId;
+        }
+
+        // MỚI: lấy đầy đủ danh sách chi nhánh nhân viên đang làm việc.
+        protected List<int> GetCurrentUserBranchIds()
+        {
+            return User.FindAll(JwtHelper.ClaimBranchId)
+                .Select(c => int.TryParse(c.Value, out var id) ? id : (int?)null)
+                .Where(id => id.HasValue)
+                .Select(id => id!.Value)
+                .ToList();
         }
     }
 }

@@ -2,11 +2,12 @@ using Amazon;
 using Amazon.Rekognition;
 using Amazon.S3;
 using BE.Data;
+using BE.Helpers;
 using BE.Models;
 using BE.Services;
 using BE.Services.FaceRecognition;
 using BE.Services.GymDensity;
-using BE.Services.Identify;
+// using BE.Services.Identify;
 using BE.Services.Storage;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
@@ -75,22 +76,22 @@ builder.Services.AddScoped<AuthService>();
 builder.Services.AddScoped<SmsService>();
 builder.Services.AddScoped<NewsService>();
 
-builder.Services.AddScoped<PaymentService>();
-builder.Services.AddScoped<TransactionService>();
+// builder.Services.AddScoped<PaymentService>();
+// builder.Services.AddScoped<TransactionService>();
 builder.Services.AddScoped<HomeImageService>();
 builder.Services.AddScoped<EquipmentCategoryService>();
 builder.Services.AddScoped<EquipmentService>();
 builder.Services.AddScoped<BranchService>();
 builder.Services.AddScoped<BranchImageService>();
-builder.Services.AddScoped<FaceIdService>();
-builder.Services.AddScoped<MemberService>();
-builder.Services.AddScoped<MembershipPlanService>();
-builder.Services.AddScoped<MemberPackageService>();
-builder.Services.AddScoped<IdentifyService>();
+// builder.Services.AddScoped<FaceIdService>();
+// builder.Services.AddScoped<MemberService>();
+// builder.Services.AddScoped<MembershipPlanService>();
+// builder.Services.AddScoped<MemberPackageService>();
+// builder.Services.AddScoped<IdentifyService>();
 builder.Services.AddScoped<GymDensityService>();
 builder.Services.AddScoped<PromotionService>();
-builder.Services.AddScoped<EmployeeService>();
-builder.Services.AddScoped<IncidentService>();
+// builder.Services.AddScoped<EmployeeService>();
+// builder.Services.AddScoped<IncidentService>();
 builder.Services.AddScoped<S3StorageService>(); // chỗ lưu file và ảnh trên s3
 builder.Services.AddScoped<InvoiceService>(); // tạo hóa pdf
 builder.Services.AddScoped<ReportService>();
@@ -104,7 +105,7 @@ builder.Services.AddScoped<ForumCommentService>();
 builder.Services.AddScoped<ForumNotificationService>();
 
 builder.Services.AddHttpClient();
-builder.Services.AddScoped<TransactionService>();
+// builder.Services.AddScoped<TransactionService>();
 builder.Services.AddScoped<RekognitionFaceService>();
 
 

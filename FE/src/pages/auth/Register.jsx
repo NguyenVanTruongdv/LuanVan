@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import authApi from "../../api/authApi";
-import memberApi from "../../api/memberApi";
 
 /* ─── Design tokens (đồng bộ tông cam-đỏ / nền tối như trang Đăng nhập) ─── */
 const C = {
@@ -46,6 +45,14 @@ function useOnClickOutside(ref, handler) {
             document.removeEventListener("touchstart", listener);
         };
     }, [ref, handler]);
+}
+
+/* ─── format giây -> m:ss ─── */
+function formatMMSS(totalSeconds) {
+    const safe = Math.max(0, totalSeconds);
+    const m = Math.floor(safe / 60);
+    const s = safe % 60;
+    return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
 /* ─── Styles (mobile-first, dynamic) ─── */
@@ -424,13 +431,8 @@ function useInputFocus() {
 }
 
 /* ─── Chuẩn hoá dữ liệu chi nhánh từ API ─── */
-function mapBranch(b) {
-    return {
-        id: String(b.branchId),
-        name: b.branchName,
-        address: b.address,
-    };
-}
+
+
 
 /* ─── Logo ─── */
 function Logo() {
@@ -458,112 +460,59 @@ function Logo() {
 }
 
 /* ─── Branch select (custom, đẹp hơn <select> mặc định) ─── */
-function BranchSelect({ value, branches, loading, error, onChange, isFocused, onOpenChange, hasError }) {
-    const isMobile = useIsMobile();
-    const S = getStyles(isMobile);
-    const [open, setOpen] = useState(false);
-    const wrapRef = useRef(null);
-    useOnClickOutside(wrapRef, () => setOpen(false));
-
-    const selected = branches.find((b) => b.id === value);
-
-    const toggle = () => {
-        if (loading) return;
-        setOpen((o) => !o);
-        onOpenChange && onOpenChange(!open);
-    };
-
-    return (
-        <div style={{ position: "relative" }} ref={wrapRef}>
-            <div style={S.inputWrap}>
-                <span style={S.inputIcon}>📍</span>
-                <div
-                    style={{
-                        ...S.branchTrigger(open || isFocused, hasError),
-                        paddingLeft: "38px",
-                        opacity: loading ? 0.7 : 1,
-                    }}
-                    onClick={toggle}
-                    tabIndex={0}
-                    role="button"
-                    onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && toggle()}
-                >
-                    <span style={{
-                        overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-                        color: selected ? C.textInput : "#8892a0", fontWeight: selected ? 600 : 400,
-                    }}>
-                        {loading
-                            ? "Đang tải chi nhánh…"
-                            : selected
-                                ? selected.name
-                                : "— Chọn chi nhánh gần bạn —"}
-                    </span>
-                    <span style={{
-                        color: "#8892a0", fontSize: "11px", flexShrink: 0,
-                        transform: open ? "rotate(180deg)" : "none", transition: "transform .18s",
-                    }}>▾</span>
-                </div>
-            </div>
-
-            {open && !loading && (
-                <div style={S.branchDropdown}>
-                    {error && (
-                        <div style={{ padding: "12px 14px", fontSize: "12.5px", color: C.error }}>
-                            {error}
-                        </div>
-                    )}
-                    {!error && branches.length === 0 && (
-                        <div style={{ padding: "12px 14px", fontSize: "12.5px", color: "#8892a0" }}>
-                            Không có chi nhánh nào.
-                        </div>
-                    )}
-                    {!error && branches.length > 0 && (
-                        <div style={S.branchList}>
-                            {branches.map((b) => {
-                                const active = b.id === value;
-                                return (
-                                    <div
-                                        key={b.id}
-                                        style={S.branchItem(active)}
-                                        onClick={() => { onChange(b.id); setOpen(false); }}
-                                    >
-                                        <div style={S.branchItemName(active)}>
-                                            {active ? "✓ " : ""}{b.name}
-                                        </div>
-                                        {b.address && <div style={S.branchItemAddr}>{b.address}</div>}
-                                    </div>
-                                );
-                            })}
-                        </div>
-                    )}
-                </div>
-            )}
-        </div>
-    );
-}
 
 /* ─── OTP Step ─── */
-function OTPStep({ phone, fullName, password, gender, branchId, onBack, onSuccess }) {
+function OTPStep({ phone, fullName, password, gender, onBack, onSuccess }) {
     const OTP_LEN = 6;
+    // Khớp với BE: Otp.ExpiresAt = DateTime.UtcNow.AddMinutes(5)
+    const OTP_VALID_SECONDS = 5 * 60;
+    // Khớp với BE: khoảng cách tối thiểu giữa 2 lần gửi OTP (60 giây)
+    const RESEND_COOLDOWN = 60;
+
     const isMobile = useIsMobile();
     const S = getStyles(isMobile);
 
     const [otp, setOtp] = useState(Array(OTP_LEN).fill(""));
     const [activeIdx, setActiveIdx] = useState(0);
-    const [countdown, setCountdown] = useState(60);
+    const [resendCountdown, setResendCountdown] = useState(RESEND_COOLDOWN);
+    const [expiresIn, setExpiresIn] = useState(OTP_VALID_SECONDS);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState("");
+    // locked = true khi BE trả lỗi "OTP đã bị khóa" do sai quá số lần cho phép
+    // (hiện tại BE giới hạn 3 lần - xem AuthService.VerifyOtpRegister).
+    // Bắt theo nội dung lỗi từ BE thay vì hard-code số lần ở FE, để luôn khớp BE.
+    const [locked, setLocked] = useState(false);
+    const [attemptsLeft, setAttemptsLeft] = useState(null);
     const refs = useRef([]);
+
+    const expired = expiresIn <= 0;
+    const canType = !expired && !locked;
+    // Khi OTP đã hết hạn/bị khóa thì cho gửi lại ngay, không cần chờ đủ 60s
+    const canResend = expired || locked || resendCountdown <= 0;
 
     useEffect(() => { refs.current[0]?.focus(); }, []);
 
     useEffect(() => {
-        if (countdown <= 0) return;
-        const t = setTimeout(() => setCountdown((c) => c - 1), 1000);
+        if (resendCountdown <= 0) return;
+        const t = setTimeout(() => setResendCountdown((c) => c - 1), 1000);
         return () => clearTimeout(t);
-    }, [countdown]);
+    }, [resendCountdown]);
+
+    useEffect(() => {
+        if (expiresIn <= 0) return;
+        const t = setTimeout(() => setExpiresIn((s) => s - 1), 1000);
+        return () => clearTimeout(t);
+    }, [expiresIn]);
+
+    useEffect(() => {
+        if (expired && !locked) {
+            setError('Mã OTP đã hết hạn. Vui lòng bấm "Gửi lại mã OTP" để nhận mã mới.');
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [expired]);
 
     const handleKey = (e, idx) => {
+        if (!canType) return;
         if (e.key === "Backspace") {
             if (otp[idx]) {
                 const next = [...otp]; next[idx] = ""; setOtp(next);
@@ -577,6 +526,7 @@ function OTPStep({ phone, fullName, password, gender, branchId, onBack, onSucces
     };
 
     const handleChange = (e, idx) => {
+        if (!canType) return;
         const val = e.target.value.replace(/\D/g, "").slice(-1);
         if (!val) return;
         const next = [...otp]; next[idx] = val; setOtp(next);
@@ -585,6 +535,7 @@ function OTPStep({ phone, fullName, password, gender, branchId, onBack, onSucces
 
     const handlePaste = (e) => {
         e.preventDefault();
+        if (!canType) return;
         const pasted = e.clipboardData.getData("text").replace(/\D/g, "").slice(0, OTP_LEN);
         const next = Array(OTP_LEN).fill("");
         pasted.split("").forEach((c, i) => (next[i] = c));
@@ -594,6 +545,7 @@ function OTPStep({ phone, fullName, password, gender, branchId, onBack, onSucces
     };
 
     const handleVerify = async () => {
+        if (!canType) return;
         const code = otp.join("");
         if (code.length < OTP_LEN) { setError("Vui lòng nhập đủ 6 chữ số."); return; }
         setError(""); setLoading(true);
@@ -604,21 +556,48 @@ function OTPStep({ phone, fullName, password, gender, branchId, onBack, onSucces
                 fullName,
                 password,
                 gender,
-                branchId,
             });
             onSuccess();
         } catch (err) {
-            setError(err.message || "Mã OTP không hợp lệ hoặc đã hết hạn.");
+            const msg = err.message || "Mã OTP không hợp lệ hoặc đã hết hạn.";
+            setError(msg);
+
+            if (/khóa/i.test(msg)) {
+                // "OTP đã bị khóa. Vui lòng yêu cầu OTP mới." -> bắt buộc gửi lại
+                setLocked(true);
+                setAttemptsLeft(0);
+            } else if (/hết hạn/i.test(msg)) {
+                // "Mã OTP đã hết hạn" -> bắt buộc gửi lại
+                setExpiresIn(0);
+            } else {
+                // "OTP không đúng. Còn N lần thử." -> cho nhập lại
+                const match = msg.match(/Còn\s+(\d+)\s+lần thử/i);
+                if (match) setAttemptsLeft(Number(match[1]));
+                setOtp(Array(OTP_LEN).fill(""));
+                refs.current[0]?.focus();
+                setActiveIdx(0);
+            }
         } finally { setLoading(false); }
     };
 
     const handleResend = async () => {
-        setOtp(Array(OTP_LEN).fill(""));
+        if (!canResend || loading) return;
+        setLoading(true);
         setError("");
-        refs.current[0]?.focus();
-        setActiveIdx(0);
-        setCountdown(60);
-        await authApi.sendOtp({ phone });
+        try {
+            await authApi.sendOtp({ phone });
+            setOtp(Array(OTP_LEN).fill(""));
+            setAttemptsLeft(null);
+            setLocked(false);
+            setExpiresIn(OTP_VALID_SECONDS);
+            setResendCountdown(RESEND_COOLDOWN);
+            refs.current[0]?.focus();
+            setActiveIdx(0);
+        } catch (err) {
+            setError(err.message || "Không thể gửi lại mã, vui lòng thử lại sau.");
+        } finally {
+            setLoading(false);
+        }
     };
 
     return (
@@ -628,50 +607,101 @@ function OTPStep({ phone, fullName, password, gender, branchId, onBack, onSucces
             <h2 style={S.heading}>Xác minh số điện thoại 📲</h2>
             <p style={S.otpDesc}>
                 Chúng tôi đã gửi mã gồm 6 chữ số đến{" "}
-                <span style={S.otpPhone}>{phone}</span>. Mã có hiệu lực trong 5 phút.
-            </p>
-            <div style={S.otpGrid}>
-                {otp.map((digit, i) => (
-                    <input
-                        key={i}
-                        ref={(el) => (refs.current[i] = el)}
-                        type="text"
-                        inputMode="numeric"
-                        maxLength={1}
-                        value={digit}
-                        style={S.otpCell(activeIdx === i, !!digit)}
-                        onFocus={() => setActiveIdx(i)}
-                        onChange={(e) => handleChange(e, i)}
-                        onKeyDown={(e) => handleKey(e, i)}
-                        onPaste={handlePaste}
-                    />
-                ))}
-            </div>
-            {error && (
-                <div style={{ ...S.errorMsg, justifyContent: "center", marginBottom: "8px" }}>
-                    ⚠ {error}
-                </div>
-            )}
-            <div style={S.resendRow}>
-                {countdown > 0 ? (
-                    <>Gửi lại mã sau <strong style={{ color: C.accent }}>{countdown}s</strong></>
-                ) : (
-                    <>Chưa nhận được mã? <button style={S.resendBtn(true)} onClick={handleResend}>Gửi lại</button></>
+                <span style={S.otpPhone}>{phone}</span>.{" "}
+                {!expired && !locked && (
+                    <>
+                        Mã có hiệu lực trong{" "}
+                        <strong style={{ color: expiresIn <= 30 ? C.error : C.accent }}>
+                            {formatMMSS(expiresIn)}
+                        </strong>.
+                    </>
                 )}
-            </div>
-            <button
-                style={{ ...S.btnPrimary, marginTop: "20px", opacity: loading ? 0.75 : 1 }}
-                onClick={handleVerify}
-                disabled={loading}
-            >
-                {loading ? "Đang xác thực…" : "XÁC NHẬN"}
-            </button>
+            </p>
+
+            {expired || locked ? (
+                <div style={{
+                    background: "rgba(240,80,80,0.08)",
+                    border: `1.5px solid rgba(240,80,80,0.3)`,
+                    borderRadius: "12px",
+                    padding: "18px 16px",
+                    marginBottom: "8px",
+                    textAlign: "center",
+                }}>
+                    <div style={{ fontSize: "28px", marginBottom: "8px" }}>⏱</div>
+                    <div style={{ fontSize: "13px", color: C.muted, marginBottom: "14px", lineHeight: 1.5 }}>
+                        {locked
+                            ? "Bạn đã nhập sai OTP quá số lần cho phép. Vui lòng bấm nút bên dưới để nhận mã mới."
+                            : "Mã OTP đã hết hạn. Vui lòng bấm nút bên dưới để nhận mã mới."}
+                    </div>
+                    <button
+                        style={{ ...S.btnPrimary, marginTop: 0, opacity: loading ? 0.75 : 1 }}
+                        onClick={handleResend}
+                        disabled={loading}
+                    >
+                        {loading ? "Đang gửi…" : "GỬI LẠI MÃ OTP"}
+                    </button>
+                </div>
+            ) : (
+                <>
+                    <div style={S.otpGrid}>
+                        {otp.map((digit, i) => (
+                            <input
+                                key={i}
+                                ref={(el) => (refs.current[i] = el)}
+                                type="text"
+                                inputMode="numeric"
+                                maxLength={1}
+                                value={digit}
+                                style={{ ...S.otpCell(activeIdx === i, !!digit), opacity: canType ? 1 : 0.6 }}
+                                onFocus={() => setActiveIdx(i)}
+                                onChange={(e) => handleChange(e, i)}
+                                onKeyDown={(e) => handleKey(e, i)}
+                                onPaste={handlePaste}
+                                disabled={!canType}
+                            />
+                        ))}
+                    </div>
+
+                    {error && (
+                        <div style={{ ...S.errorMsg, justifyContent: "center", marginBottom: "8px" }}>
+                            ⚠ {error}
+                        </div>
+                    )}
+
+                    {attemptsLeft !== null && attemptsLeft > 0 && (
+                        <div style={{ textAlign: "center", fontSize: "12px", color: C.subtle, marginBottom: "8px" }}>
+                            Còn {attemptsLeft} lần thử
+                        </div>
+                    )}
+
+                    <div style={S.resendRow}>
+                        {!canResend ? (
+                            <>Gửi lại mã sau <strong style={{ color: C.accent }}>{resendCountdown}s</strong></>
+                        ) : (
+                            <>
+                                Chưa nhận được mã?{" "}
+                                <button style={S.resendBtn(true)} onClick={handleResend} disabled={loading}>
+                                    Gửi lại
+                                </button>
+                            </>
+                        )}
+                    </div>
+
+                    <button
+                        style={{ ...S.btnPrimary, marginTop: "20px", opacity: loading ? 0.75 : 1 }}
+                        onClick={handleVerify}
+                        disabled={loading}
+                    >
+                        {loading ? "Đang xác thực…" : "XÁC NHẬN"}
+                    </button>
+                </>
+            )}
         </>
     );
 }
 
 /* ─── Confirm Step ─── */
-function ConfirmStep({ formData, branches, onConfirm, onBack }) {
+function ConfirmStep({ formData, onConfirm, onBack }) {
     const isMobile = useIsMobile();
     const S = getStyles(isMobile);
     const [loading, setLoading] = useState(false);
@@ -687,13 +717,11 @@ function ConfirmStep({ formData, branches, onConfirm, onBack }) {
         } finally { setLoading(false); }
     };
 
-    const branchName = branches.find((b) => b.id === formData.branchId)?.name || "—";
 
     const infoRows = [
         { icon: "👤", label: "HỌ VÀ TÊN", value: formData.fullName, highlight: false },
         { icon: "📞", label: "SỐ ĐIỆN THOẠI", value: formData.phone, highlight: true },
         { icon: "🧑", label: "GIỚI TÍNH", value: GENDERS.find((g) => g.value === formData.gender)?.label, highlight: false },
-        { icon: "🏋️", label: "CHI NHÁNH", value: branchName, highlight: false },
     ];
 
     return (
@@ -877,7 +905,7 @@ function clearDraft() {
 }
 
 /* ─── Register Step ─── */
-function RegisterStep({ onSendOTP, initialData, branches, branchesLoading, branchesError }) {
+function RegisterStep({ onSendOTP, initialData }) {
     const isMobile = useIsMobile();
     const S = getStyles(isMobile);
     const navigate = useNavigate();
@@ -885,7 +913,7 @@ function RegisterStep({ onSendOTP, initialData, branches, branchesLoading, branc
 
     const [formData, setFormData] = useState(
         location.state?.formData || initialData || loadDraft() || {
-            fullName: "", phone: "", password: "", confirmPassword: "", gender: "Male", branchId: "",
+            fullName: "", phone: "", password: "", confirmPassword: "", gender: "Male",
         }
     );
     const [errors, setErrors] = useState({});
@@ -896,7 +924,7 @@ function RegisterStep({ onSendOTP, initialData, branches, branchesLoading, branc
     useEffect(() => { saveDraft(formData); }, [formData]);
 
     const handleChange = (e) => setFormData({ ...formData, [e.target.name]: e.target.value });
-    const handleBranchChange = (id) => setFormData((f) => ({ ...f, branchId: id }));
+
 
     const validate = () => {
         const errs = {};
@@ -906,7 +934,6 @@ function RegisterStep({ onSendOTP, initialData, branches, branchesLoading, branc
         if (!formData.password) errs.password = "Vui lòng nhập mật khẩu.";
         else if (formData.password.length < 6) errs.password = "Mật khẩu tối thiểu 6 ký tự.";
         if (formData.confirmPassword !== formData.password) errs.confirmPassword = "Mật khẩu xác nhận không khớp.";
-        if (!formData.branchId) errs.branchId = "Vui lòng chọn chi nhánh.";
         return errs;
     };
 
@@ -969,26 +996,6 @@ function RegisterStep({ onSendOTP, initialData, branches, branchesLoading, branc
                 {field("password", "MẬT KHẨU", "🔒", "password", { placeholder: "Tối thiểu 6 ký tự" })}
                 {field("confirmPassword", "XÁC NHẬN MẬT KHẨU", "🔒", "password", { placeholder: "Nhập lại mật khẩu" })}
 
-                {/* Chọn chi nhánh */}
-                <div style={S.fieldGroup}>
-                    <label style={S.label}>CHI NHÁNH TẬP LUYỆN</label>
-                    <BranchSelect
-                        value={formData.branchId}
-                        branches={branches}
-                        loading={branchesLoading}
-                        error={branchesError}
-                        hasError={!!errors.branchId}
-                        onChange={handleBranchChange}
-                    />
-                    {errors.branchId && <div style={S.errorMsg}>⚠ {errors.branchId}</div>}
-                    <button
-                        type="button"
-                        style={S.helperLink}
-                        onClick={() => navigate("/member/branches", { state: { formData } })}
-                    >
-                        Xem danh sách chi nhánh →
-                    </button>
-                </div>
 
                 <div style={S.fieldGroup}>
                     <label style={S.label}>GIỚI TÍNH</label>
@@ -1030,27 +1037,9 @@ function Register() {
     const [step, setStep] = useState("register");   // "register" | "confirm" | "otp" | "success"
     const [formData, setFormData] = useState(null);
 
-    const [branches, setBranches] = useState([]);
-    const [branchesLoading, setBranchesLoading] = useState(true);
-    const [branchesError, setBranchesError] = useState("");
 
-    useEffect(() => {
-        let cancelled = false;
-        (async () => {
-            setBranchesLoading(true);
-            setBranchesError("");
-            try {
-                const res = await memberApi.getBranches({ status: "Active" });
-                const items = res?.items || [];
-                if (!cancelled) setBranches(items.map(mapBranch));
-            } catch (err) {
-                if (!cancelled) setBranchesError(err.message || "Không thể tải danh sách chi nhánh.");
-            } finally {
-                if (!cancelled) setBranchesLoading(false);
-            }
-        })();
-        return () => { cancelled = true; };
-    }, []);
+
+
 
     const handleGoConfirm = (data) => { setFormData(data); setStep("confirm"); };
     const handleConfirmed = () => setStep("otp");
@@ -1067,15 +1056,12 @@ function Register() {
                     <RegisterStep
                         onSendOTP={handleGoConfirm}
                         initialData={formData}
-                        branches={branches}
-                        branchesLoading={branchesLoading}
-                        branchesError={branchesError}
+
                     />
                 )}
                 {step === "confirm" && (
                     <ConfirmStep
                         formData={formData}
-                        branches={branches}
                         onConfirm={handleConfirmed}
                         onBack={handleBackToRegister}
                     />
@@ -1086,7 +1072,6 @@ function Register() {
                         fullName={formData.fullName}
                         password={formData.password}
                         gender={formData.gender}
-                        branchId={formData.branchId}
                         onBack={handleBackToConfirm}
                         onSuccess={handleSuccess}
                     />

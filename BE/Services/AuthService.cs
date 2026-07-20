@@ -27,61 +27,72 @@ public class AuthService
     // ĐĂNG NHẬP
     // ───────────────────────────────────────────────
 
-    // Đăng nhập nhân viên
     public async Task<LoginResponseDto> LoginEmployeeAsync(LoginRequestDto req)
     {
-        var emp = await _db.Employees
-            .Include(e => e.Role)
-            .FirstOrDefaultAsync(e => e.Phone == req.Phone && e.Status == "Active")
+        var account = await _db.Accounts
+            .Include(a => a.Employee).ThenInclude(e => e!.Role)
+            .Include(a => a.Employee).ThenInclude(e => e!.EmployeeBranches) // MỚI: load chi nhánh
+            .FirstOrDefaultAsync(a =>
+                a.Phone == req.Phone &&
+                a.EmployeeId != null &&
+                a.Employee!.Status == "Active")
             ?? throw new UnauthorizedException("Sai tài khoản hoặc mật khẩu");
 
-        if (!PasswordHelper.VerifyPassword(req.Password, emp.PasswordHash))
-            throw new UnauthorizedException("Sai tài khoản hoặc mật khẩu");
-
-        return await IssueTokens(
-    emp.EmployeeId,
-    emp.FullName,
-    emp.Role.RoleName,
-    "Employee",
-    emp.Status
-);
-    }
-
-    // Đăng nhập hội viên
-    // Chặn Suspended; cho phép PendingActivation đăng nhập để xem trạng thái
-    public async Task<LoginResponseDto> LoginMemberAsync(LoginRequestDto req)
-    {
-        var member = await _db.Members
-            .FirstOrDefaultAsync(m => m.Phone == req.Phone)
-            ?? throw new UnauthorizedException("Sai tài khoản hoặc mật khẩu");
-
-        if (member.Status == MemberStatus.Suspended.ToString())
+        if (account.Status == "Suspended")
             throw new UnauthorizedException("Tài khoản đã bị tạm khóa");
 
-        if (!PasswordHelper.VerifyPassword(req.Password, member.PasswordHash))
+        if (!PasswordHelper.VerifyPassword(req.Password, account.PasswordHash))
             throw new UnauthorizedException("Sai tài khoản hoặc mật khẩu");
 
+        var emp = account.Employee!;
+        var branchIds = emp.EmployeeBranches.Select(eb => eb.BranchId).ToList(); // MỚI
+
         return await IssueTokens(
-    member.MemberId,
-    member.FullName,
-    "Member",
-    "Member",
-    member.Status
-);
+            account.AccountId,
+            emp.EmployeeId,
+            emp.FullName,
+            emp.Role.RoleName,
+            "Employee",
+            emp.Status,
+            branchIds // MỚI
+        );
+    }
+
+    // Chặn account.Status = Suspended; cho phép Member.Status = PendingActivation đăng nhập để xem trạng thái
+    public async Task<LoginResponseDto> LoginMemberAsync(LoginRequestDto req)
+    {
+        var account = await _db.Accounts
+            .Include(a => a.Member)
+            .FirstOrDefaultAsync(a => a.Phone == req.Phone && a.MemberId != null)
+            ?? throw new UnauthorizedException("Sai tài khoản hoặc mật khẩu");
+
+        if (account.Status == "Suspended")
+            throw new UnauthorizedException("Tài khoản đã bị tạm khóa");
+
+        if (!PasswordHelper.VerifyPassword(req.Password, account.PasswordHash))
+            throw new UnauthorizedException("Sai tài khoản hoặc mật khẩu");
+
+        var member = account.Member!;
+
+        return await IssueTokens(
+            account.AccountId,
+            member.MemberId,
+            member.FullName,
+            "Member",
+            "Member",
+            member.Status
+        );
     }
 
     // ───────────────────────────────────────────────
     // ĐĂNG KÝ
     // ───────────────────────────────────────────────
 
-    // Gửi OTP đăng ký
     public async Task SendRegisterOtpAsync(string phone)
     {
-        // Kiểm tra số điện thoại đã tồn tại chưa
-        if (await _db.Members.AnyAsync(m => m.Phone == phone))
+        if (await _db.Accounts.AnyAsync(a => a.Phone == phone))
             throw new BadRequestException("Số điện thoại đã được đăng ký");
 
-        // Chống spam: chỉ gửi lại sau 60 giây (lọc đúng Purpose)
         var lastOtp = await _db.Otps
             .Where(x => x.Phone == phone
                 && x.Purpose == Auth.DangKy.ToString()
@@ -108,10 +119,10 @@ public class AuthService
         await _smsService.SendOtpAsync(phone, otp.OtpCode);
     }
 
-    // Xác minh OTP và tạo tài khoản hội viên
+    // Xác minh OTP, tạo Member + Account tương ứng
     public async Task VerifyOtpRegister(VerifyRegisterOtpDto req)
     {
-        if (await _db.Members.AnyAsync(m => m.Phone == req.Phone))
+        if (await _db.Accounts.AnyAsync(a => a.Phone == req.Phone))
             throw new BadRequestException("Số điện thoại đã tồn tại");
 
         var otp = await _db.Otps
@@ -125,7 +136,6 @@ public class AuthService
         if (otp.ExpiresAt < DateTime.UtcNow)
             throw new BadRequestException("Mã OTP đã hết hạn");
 
-        // Guard: đề phòng edge case FailedAttempts bị lệch
         if (otp.FailedAttempts >= 3)
             throw new BadRequestException("OTP đã bị khóa. Vui lòng yêu cầu OTP mới.");
 
@@ -145,13 +155,22 @@ public class AuthService
         }
 
         otp.IsUsed = true;
-        _db.Members.Add(new Member
+
+        var member = new Member
         {
             FullName = req.FullName,
-            Phone = req.Phone,
-            PasswordHash = BCrypt.Net.BCrypt.HashPassword(req.Password),
             Gender = req.Gender,
             Status = MemberStatus.PendingActivation.ToString(),
+        };
+        _db.Members.Add(member);
+        await _db.SaveChangesAsync(); // cần MemberId trước khi gắn Account
+
+        _db.Accounts.Add(new Account
+        {
+            Phone = req.Phone,
+            PasswordHash = BCrypt.Net.BCrypt.HashPassword(req.Password),
+            MemberId = member.MemberId,
+            Status = "Active",
         });
 
         await _db.SaveChangesAsync();
@@ -161,14 +180,12 @@ public class AuthService
     // QUÊN MẬT KHẨU
     // ───────────────────────────────────────────────
 
-    // Gửi OTP quên mật khẩu
     public async Task SendForgotPasswordOtpAsync(string phone)
     {
-        var member = await _db.Members
-            .FirstOrDefaultAsync(x => x.Phone == phone)
+        var account = await _db.Accounts
+            .FirstOrDefaultAsync(a => a.Phone == phone && a.MemberId != null)
             ?? throw new BadRequestException("Số điện thoại không tồn tại");
 
-        // Chống spam: chỉ gửi lại sau 60 giây (lọc đúng Purpose)
         var lastOtp = await _db.Otps
             .Where(x => x.Phone == phone
                 && x.Purpose == Auth.QuenMatKhau.ToString()
@@ -196,11 +213,10 @@ public class AuthService
         await _smsService.SendOtpAsync(phone, otpCode);
     }
 
-    // Xác thực OTP và reset mật khẩu
     public async Task ResetPasswordAsync(ResetPasswordDto req)
     {
-        var member = await _db.Members
-            .FirstOrDefaultAsync(x => x.Phone == req.Phone)
+        var account = await _db.Accounts
+            .FirstOrDefaultAsync(a => a.Phone == req.Phone && a.MemberId != null)
             ?? throw new BadRequestException("Tài khoản không tồn tại");
 
         var otp = await _db.Otps
@@ -215,7 +231,6 @@ public class AuthService
         if (otp.ExpiresAt < DateTime.UtcNow)
             throw new BadRequestException("OTP đã hết hạn");
 
-        // Guard: đề phòng edge case FailedAttempts bị lệch
         if (otp.FailedAttempts >= 3)
             throw new BadRequestException("OTP đã bị khóa. Vui lòng yêu cầu OTP mới.");
 
@@ -234,17 +249,12 @@ public class AuthService
             throw new BadRequestException($"OTP không đúng. Còn {3 - otp.FailedAttempts} lần thử.");
         }
 
-        // Đánh dấu OTP đã dùng + cập nhật mật khẩu — lưu trước
         otp.IsUsed = true;
-        member.PasswordHash = BCrypt.Net.BCrypt.HashPassword(req.NewPassword);
+        account.PasswordHash = BCrypt.Net.BCrypt.HashPassword(req.NewPassword);
         await _db.SaveChangesAsync();
 
-        // Đăng xuất tất cả thiết bị (ExecuteUpdateAsync chạy trực tiếp xuống DB)
         await _db.RefreshTokens
-            .Where(x =>
-                x.EntityId == member.MemberId &&
-                x.EntityType == "Member" &&
-                x.RevokedAt == null)
+            .Where(x => x.AccountId == account.AccountId && x.RevokedAt == null)
             .ExecuteUpdateAsync(x =>
                 x.SetProperty(t => t.RevokedAt, DateTime.UtcNow));
     }
@@ -253,48 +263,26 @@ public class AuthService
     // ĐỔI MẬT KHẨU
     // ───────────────────────────────────────────────
 
-    public async Task ChangePassAsync(ChangePasswordDto req, long userId, string EntityType)
+    public async Task ChangePassAsync(ChangePasswordDto req, long accountId)
     {
         if (req.NewPassword != req.ConfirmPassx)
             throw new BadRequestException("Xác nhận mật khẩu không đúng!");
 
-        if (EntityType == "Member")
-        {
-            var member = await _db.Members
-                .FirstOrDefaultAsync(m => m.MemberId == userId)
-                ?? throw new NotFoundException("Vui lòng đăng nhập lại!");
+        var account = await _db.Accounts
+            .FirstOrDefaultAsync(a => a.AccountId == accountId)
+            ?? throw new NotFoundException("Vui lòng đăng nhập lại!");
 
-            if (!PasswordHelper.VerifyPassword(req.CurrentPassword, member.PasswordHash))
-                throw new BadRequestException("Mật khẩu hiện tại không đúng");
+        if (!PasswordHelper.VerifyPassword(req.CurrentPassword, account.PasswordHash))
+            throw new BadRequestException("Mật khẩu hiện tại không đúng");
 
-            if (PasswordHelper.VerifyPassword(req.NewPassword, member.PasswordHash))
-                throw new BadRequestException("Mật khẩu mới phải khác mật khẩu cũ");
+        if (PasswordHelper.VerifyPassword(req.NewPassword, account.PasswordHash))
+            throw new BadRequestException("Mật khẩu mới phải khác mật khẩu cũ");
 
-            member.PasswordHash = BCrypt.Net.BCrypt.HashPassword(req.NewPassword);
-            await _db.SaveChangesAsync();
-        }
-        else
-        {
-            var employee = await _db.Employees
-                .FirstOrDefaultAsync(x => x.EmployeeId == userId)
-                ?? throw new NotFoundException("Không tìm thấy tài khoản");
+        account.PasswordHash = BCrypt.Net.BCrypt.HashPassword(req.NewPassword);
+        await _db.SaveChangesAsync();
 
-            if (!PasswordHelper.VerifyPassword(req.CurrentPassword, employee.PasswordHash))
-                throw new BadRequestException("Mật khẩu hiện tại không đúng");
-
-            if (PasswordHelper.VerifyPassword(req.NewPassword, employee.PasswordHash))
-                throw new BadRequestException("Mật khẩu mới phải khác mật khẩu cũ");
-
-            employee.PasswordHash = BCrypt.Net.BCrypt.HashPassword(req.NewPassword);
-            await _db.SaveChangesAsync();
-        }
-
-        // Đăng xuất tất cả thiết bị (ExecuteUpdateAsync chạy trực tiếp xuống DB)
         await _db.RefreshTokens
-            .Where(x =>
-                x.EntityId == userId &&
-                x.EntityType == EntityType &&
-                x.RevokedAt == null)
+            .Where(x => x.AccountId == accountId && x.RevokedAt == null)
             .ExecuteUpdateAsync(x =>
                 x.SetProperty(t => t.RevokedAt, DateTime.UtcNow));
     }
@@ -303,60 +291,71 @@ public class AuthService
     // TOKEN
     // ───────────────────────────────────────────────
 
-    // Làm mới token (Rotation)
-    public async Task<LoginResponseDto> RefreshAsync(RefreshRequestDto req)
-    {
-        var hash = JwtHelper.ComputeSha256(req.RefreshToken);
-
-        var stored = await _db.RefreshTokens
-            .FirstOrDefaultAsync(t => t.TokenHash == hash)
-            ?? throw new UnauthorizedAccessException("Token không hợp lệ");
-
-        if (stored.RevokedAt != null || stored.ExpiresAt < DateTime.UtcNow)
-            throw new UnauthorizedAccessException("Phiên đã hết hạn, vui lòng đăng nhập lại");
-
-        // Thu hồi refresh token cũ
-        stored.RevokedAt = DateTime.UtcNow;
-        await _db.SaveChangesAsync();
-
-        string fullName;
-        string role = stored.Role;
-        string? status = null;
-
-        if (stored.EntityType == "Employee")
+        public async Task<LoginResponseDto> RefreshAsync(RefreshRequestDto req)
         {
-            var emp = await _db.Employees
-                .Include(e => e.Role)
-                .FirstOrDefaultAsync(e =>
-                    e.EmployeeId == stored.EntityId &&
-                    e.Status == "Active")
-                ?? throw new UnauthorizedAccessException("Tài khoản không còn hoạt động");
+            var hash = JwtHelper.ComputeSha256(req.RefreshToken);
 
-            fullName = emp.FullName;
-            role = emp.Role.RoleName;
-            status = emp.Status;
+            var stored = await _db.RefreshTokens
+                .FirstOrDefaultAsync(t => t.TokenHash == hash)
+                ?? throw new UnauthorizedAccessException("Token không hợp lệ");
+
+            if (stored.RevokedAt != null || stored.ExpiresAt < DateTime.UtcNow)
+                throw new UnauthorizedAccessException("Phiên đã hết hạn, vui lòng đăng nhập lại");
+
+            stored.RevokedAt = DateTime.UtcNow;
+            await _db.SaveChangesAsync();
+
+            var account = await _db.Accounts
+                .Include(a => a.Employee).ThenInclude(e => e!.Role)
+                .Include(a => a.Employee).ThenInclude(e => e!.EmployeeBranches) // MỚI
+                .Include(a => a.Member)
+                .FirstOrDefaultAsync(a => a.AccountId == stored.AccountId)
+                ?? throw new UnauthorizedAccessException("Tài khoản không còn tồn tại");
+
+            if (account.Status == "Suspended")
+                throw new UnauthorizedAccessException("Tài khoản không còn hoạt động");
+
+            long entityId;
+            string fullName;
+            string role;
+            string entityType;
+            string? status;
+            List<int>? branchIds = null; // MỚI
+
+            if (account.EmployeeId != null)
+            {
+                var emp = account.Employee!;
+                if (emp.Status != "Active")
+                    throw new UnauthorizedAccessException("Tài khoản không còn hoạt động");
+
+                entityId = emp.EmployeeId;
+                fullName = emp.FullName;
+                role = emp.Role.RoleName;
+                entityType = "Employee";
+                status = emp.Status;
+                branchIds = emp.EmployeeBranches.Select(eb => eb.BranchId).ToList(); // MỚI
+            }
+            else
+            {
+                var member = account.Member!;
+                entityId = member.MemberId;
+                fullName = member.FullName;
+                role = "Member";
+                entityType = "Member";
+                status = member.Status;
+            }
+
+            return await IssueTokens(
+                account.AccountId,
+                entityId,
+                fullName,
+                role,
+                entityType,
+                status,
+                branchIds // MỚI
+            );
         }
-        else
-        {
-            var member = await _db.Members
-                .FirstOrDefaultAsync(m =>
-                    m.MemberId == stored.EntityId &&
-                    m.Status != MemberStatus.Suspended.ToString())
-                ?? throw new UnauthorizedAccessException("Tài khoản không còn hoạt động");
 
-            fullName = member.FullName;
-            status = member.Status;
-        }
-
-        return await IssueTokens(
-            stored.EntityId,
-            fullName,
-            role,
-            stored.EntityType,
-            status
-        );
-    }
-    // Đăng xuất
     public async Task LogoutAsync(RefreshRequestDto req)
     {
         var hash = JwtHelper.ComputeSha256(req.RefreshToken);
@@ -371,21 +370,24 @@ public class AuthService
         }
     }
 
-    // Tạo cặp access + refresh token rồi lưu vào DB
     private async Task<LoginResponseDto> IssueTokens(
+    long accountId,
     long entityId,
     string fullName,
     string role,
     string entityType,
-    string? status = null)
+    string? status = null,
+    List<int>? branchIds = null) // MỚI — mặc định null để không phá các lệnh gọi cũ (LoginMember, Refresh)
     {
         var userInfo = new JwtUserInfo
         {
             Id = entityId,
+            AccountId = accountId,
             FullName = fullName,
             Role = role,
             EntityType = entityType,
-            Status = status
+            Status = status,
+            BranchIds = branchIds ?? new List<int>() // MỚI
         };
 
         var accessToken = _jwt.GenerateAccessToken(userInfo);
@@ -394,8 +396,7 @@ public class AuthService
 
         _db.RefreshTokens.Add(new RefreshToken
         {
-            EntityId = entityId,
-            EntityType = entityType,
+            AccountId = accountId,
             Role = role,
             TokenHash = hash,
             ExpiresAt = DateTime.UtcNow.AddDays(ttlDays)
@@ -411,6 +412,7 @@ public class AuthService
             Role = role,
             EntityType = entityType,
             Status = status
-        };
+        }; // response DTO không đổi field nào — FE không cần sửa
     }
+
 }

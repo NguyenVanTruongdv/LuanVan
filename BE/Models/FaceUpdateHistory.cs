@@ -4,53 +4,29 @@ using System.Collections.Generic;
 namespace BE.Models;
 
 /// <summary>
-/// Lịch sử mỗi lần cập nhật khuôn mặt hội viên
+/// Lịch sử mỗi lần tạo/cập nhật khuôn mặt hội viên — chỉ ghi thêm, không sửa/xóa
 /// </summary>
 public partial class FaceUpdateHistory
 {
-    /// <summary>
-    /// Mã bản ghi — khóa chính tự tăng
-    /// </summary>
     public long HistoryId { get; set; }
 
-    /// <summary>
-    /// Hội viên được cập nhật khuôn mặt — FK tới members.member_id
-    /// </summary>
     public long MemberId { get; set; }
 
-    /// <summary>
-    /// Face ID cũ trên AWS — NULL nếu đây là lần đăng ký đầu tiên
-    /// </summary>
     public string? OldFaceIdAws { get; set; }
 
-    /// <summary>
-    /// Face ID mới trên AWS sau khi cập nhật
-    /// </summary>
     public string NewFaceIdAws { get; set; } = null!;
 
-    /// <summary>
-    /// Lý do thay đổi khuôn mặt, VD: ảnh cũ không rõ, hội viên yêu cầu
-    /// </summary>
     public string? Reason { get; set; }
 
     /// <summary>
-    /// Nhân viên thực hiện thao tác — FK tới employees.employee_id
+    /// Nhân viên thực hiện tạo/cập nhật faceId — FK tới employees.employee_id
     /// </summary>
     public long PerformedBy { get; set; }
 
-    /// <summary>
-    /// Thời điểm thực hiện thay đổi
-    /// </summary>
     public DateTime PerformedAt { get; set; }
 
-    /// <summary>
-    /// Ảnh đại diện cũ trên S3, NULL nếu lần đầu đăng ký
-    /// </summary>
     public string? OldProfileImage { get; set; }
 
-    /// <summary>
-    /// Ảnh đại diện mới trên S3
-    /// </summary>
     public string NewProfileImage { get; set; } = null!;
 
     public virtual Member Member { get; set; } = null!;

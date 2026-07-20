@@ -4,69 +4,36 @@ using System.Collections.Generic;
 namespace BE.Models;
 
 /// <summary>
-/// Tài khoản nhân viên vận hành phòng gym
+/// Hồ sơ nhân viên — thông tin đăng nhập nằm ở bảng accounts
 /// </summary>
 public partial class Employee
 {
-    /// <summary>
-    /// Mã nhân viên — khóa chính tự tăng
-    /// </summary>
     public long EmployeeId { get; set; }
 
-    /// <summary>
-    /// Họ và tên đầy đủ của nhân viên
-    /// </summary>
     public string FullName { get; set; } = null!;
 
-    /// <summary>
-    /// Số điện thoại — dùng làm tên đăng nhập, phải duy nhất
-    /// </summary>
-    public string Phone { get; set; } = null!;
-
-    /// <summary>
-    /// Địa chỉ email của nhân viên, dùng để nhận thông báo/khôi phục mật khẩu, có thể NULL nhưng phải duy nhất nếu có
-    /// </summary>
-    public string? Email { get; set; }
-
-    /// <summary>
-    /// Mật khẩu đã mã hóa bcrypt, không lưu bản rõ
-    /// </summary>
-    public string PasswordHash { get; set; } = null!;
-
-    /// <summary>
-    /// Giới tính của nhân viên
-    /// </summary>
     public string Gender { get; set; } = null!;
 
     /// <summary>
-    /// Vai trò của nhân viên — FK tới roles.role_id
-    /// </summary>
-    public sbyte RoleId { get; set; }
-
-    /// <summary>
-    /// Trạng thái tài khoản: Active = đang hoạt động, Suspended = bị tạm khóa
+    /// Trạng thái làm việc của nhân viên: Active = đang làm việc, Inactive = đã nghỉ việc/ngưng hoạt động
     /// </summary>
     public string Status { get; set; } = null!;
 
     /// <summary>
-    /// Lý do tạm khóa — bắt buộc điền khi status = Suspended
+    /// FK tới roles.role_id
     /// </summary>
-    public string? SuspendReason { get; set; }
+    public sbyte RoleId { get; set; }
 
     /// <summary>
-    /// Nhân viên tạo tài khoản này — FK tự tham chiếu, NULL cho tài khoản khởi tạo đầu tiên
+    /// Nhân viên tạo tài khoản này — tự tham chiếu, NULL cho tài khoản khởi tạo đầu tiên
     /// </summary>
     public long? CreatedBy { get; set; }
 
-    /// <summary>
-    /// Thời điểm tạo tài khoản
-    /// </summary>
     public DateTime CreatedAt { get; set; }
 
-    /// <summary>
-    /// Thời điểm cập nhật gần nhất
-    /// </summary>
     public DateTime UpdatedAt { get; set; }
+
+    public virtual Account? Account { get; set; }
 
     public virtual ICollection<CheckIn> CheckInCheckOutStaffs { get; set; } = new List<CheckIn>();
 

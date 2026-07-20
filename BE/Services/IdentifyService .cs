@@ -1,458 +1,458 @@
-using System.Reflection.Emit;
-using BE.Data;
-using BE.DTOs.Identify;
-using BE.Models;
-using BE.Services.FaceRecognition;
-using BE.Services.GymDensity;
-using Microsoft.EntityFrameworkCore;
-
-namespace BE.Services.Identify;
-
-public class IdentifyService
-{
-    private readonly GymManagementContext _context;
-    private readonly RekognitionFaceService _faceService;
-    private readonly GymDensityService _densityService;
-
-    public IdentifyService(
-        GymManagementContext context,
-        RekognitionFaceService faceService,
-        GymDensityService densityService)
-    {
-        _context = context;
-        _faceService = faceService;
-        _densityService = densityService;
-    }
-
-    // =====================================================================
-    // Nhận diện khuôn mặt qua camera — dùng chung cho cả check-in và check-out.
-    // FE gửi ảnh + action ("checkin" hoặc "checkout") + branchId.
-    // =====================================================================
-    public async Task<IdentifyAttendanceResponseDto> IdentifyAttendanceAsync(IdentifyAttendanceRequestDto request)
-    {
-        byte[]? imageBytes = DecodeBase64Image(request.Image);
-        if (imageBytes == null)
-        {
-            return new IdentifyAttendanceResponseDto { Status = "no_face" };
-        }
-
-        FaceSearchResult searchResult = await _faceService.SearchFaceByImageAsync(imageBytes);
-
-        if (searchResult.Status == FaceSearchStatus.NoFace)
-        {
-            return new IdentifyAttendanceResponseDto { Status = "no_face" };
-        }
-
-        if (searchResult.Status == FaceSearchStatus.NotRecognized)
-        {
-            return new IdentifyAttendanceResponseDto { Status = "not_recognized" };
-        }
-
-        Member? member = await LoadMemberWithDetailsAsync(searchResult.MemberId!.Value);
-        if (member == null)
-        {
-            return new IdentifyAttendanceResponseDto { Status = "not_recognized" };
-        }
-
-        if (request.Action == "checkout")
-        {
-            return await DoAutoCheckoutAsync(member, request.BranchId);
-        }
-        else
-        {
-            return await DoAutoCheckinAsync(member, request.BranchId);
-        }
-    }
-
-    // ------------------------ CHECK-IN TỰ ĐỘNG (camera) ------------------------
-    private async Task<IdentifyAttendanceResponseDto> DoAutoCheckinAsync(Member member, int branchId)
-    {
-        MemberPackage? activePackage = GetLatestPackage(member);
-        string? reason = GetCheckinIneligibleReason(member, activePackage);
-
-        if (reason != null)
-        {
-            return new IdentifyAttendanceResponseDto
-            {
-                Status = "ineligible",
-                Member = MapMember(member, activePackage),
-                Reason = reason
-            };
-        }
-
-        var checkIn = new Models.CheckIn
-        {
-            MemberId = member.MemberId,
-            MemberPackageId = activePackage!.MemberPackageId,
-            BranchId = branchId,
-            CheckInTime = DateTime.Now,
-            Method = "Auto"
-        };
-
-        _context.CheckIns.Add(checkIn);
-        await _context.SaveChangesAsync();
-
-        await _densityService.AdjustAsync(branchId, 1);
-
-        return new IdentifyAttendanceResponseDto
-        {
-            Status = "success",
-            Member = MapMember(member, activePackage),
-            CheckInId = checkIn.CheckInId
-        };
-    }
-
-    // ------------------------ CHECK-OUT TỰ ĐỘNG (camera) ------------------------
-    private async Task<IdentifyAttendanceResponseDto> DoAutoCheckoutAsync(Member member, int branchId)
-    {
-        Models.CheckIn? openSession = await _context.CheckIns
-            .Where(c => c.MemberId == member.MemberId && c.CheckOutTime == null)
-            .OrderByDescending(c => c.CheckInTime)
-            .FirstOrDefaultAsync();
-
-        if (openSession == null)
-        {
-            return new IdentifyAttendanceResponseDto
-            {
-                Status = "no_open_session",
-                Member = MapMember(member, GetLatestPackage(member))
-            };
-        }
-
-        if (member.Status == "PendingActivation")
-        {
-            return new IdentifyAttendanceResponseDto
-            {
-                Status = "ineligible",
-                Member = MapMember(member, GetLatestPackage(member)),
-                Reason = "Tài khoản chưa được kích hoạt."
-            };
-        }
-
-        openSession.CheckOutTime = DateTime.Now;
-        openSession.CheckOutMethod = "Auto";
-        await _context.SaveChangesAsync();
-
-        await _densityService.AdjustAsync(branchId, -1);
-
-        return new IdentifyAttendanceResponseDto
-        {
-            Status = "success",
-            Member = MapMember(member, GetLatestPackage(member)),
-            CheckInId = openSession.CheckInId
-        };
-    }
-
-    // ===================== TRA CỨU THEO SĐT =====================
-    public async Task<MemberDto?> LookupMemberByPhoneAsync(string phone)
-    {
-        Member? member = await LoadMemberByPhoneAsync(phone);
-        if (member == null)
-        {
-            return null;
-        }
-
-        return MapMember(member, GetLatestPackage(member));
-    }
-
-    // ===================== CHECK-IN THỦ CÔNG (quầy) =====================
-    public async Task<ManualCheckinResponseDto> CheckinManualAsync(ManualCheckinRequestDto request, long? staffId)
-    {
-        Member? member = await LoadMemberWithDetailsAsync(request.MemberId);
-        if (member == null)
-        {
-            throw new KeyNotFoundException("Không tìm thấy hội viên.");
-        }
-
-        MemberPackage? activePackage = GetLatestPackage(member);
-        string? reason = GetCheckinIneligibleReason(member, activePackage);
-        if (reason != null)
-        {
-            throw new InvalidOperationException(reason);
-        }
-
-        var checkIn = new Models.CheckIn
-        {
-            MemberId = member.MemberId,
-            MemberPackageId = activePackage!.MemberPackageId,
-            BranchId = request.BranchId,
-            CheckInTime = DateTime.Now,
-            Method = "Manual",
-            StaffId = staffId,
-            ManualReason = request.ManualReason
-        };
-
-        _context.CheckIns.Add(checkIn);
-        await _context.SaveChangesAsync();
-
-        // Không cộng thêm mật độ ở đây vì đã tính lúc bấm "Mở cửa" rồi
-
-        return new ManualCheckinResponseDto
-        {
-            CheckInId = checkIn.CheckInId,
-            Member = MapMember(member, activePackage)
-        };
-    }
-
-    // ===================== MỞ CỬA =====================
-    public async Task OpenDoorAsync(long employeeId , OpenDoorRequestDto request)
-    {
-        var branchId= await _context.EmployeeBranches.Where(eb=>eb.EmployeeId==employeeId).Select(x=>x.BranchId).FirstOrDefaultAsync();
-
-        if (request.Side == "checkout")
-        {
-            await _densityService.AdjustAsync(branchId, -1);
-        }
-        else
-        {
-            await _densityService.AdjustAsync(branchId, 1);
-        }
-    }
-
-    // ===================== HÀM PHỤ TRỢ =====================
-
-    private async Task<Member?> LoadMemberWithDetailsAsync(long memberId)
-    {
-        return await _context.Members
-
-            .Include(m => m.FaceDatum)
-            .Include(m => m.MemberPackages).ThenInclude(mp => mp.Plan)
-            .FirstOrDefaultAsync(m => m.MemberId == memberId);
-    }
-
-    private async Task<Member?> LoadMemberByPhoneAsync(string phone)
-    {
-        return await _context.Members
-            .Include(m => m.FaceDatum)
-            .Include(m => m.MemberPackages).ThenInclude(mp => mp.Plan)
-            .FirstOrDefaultAsync(m => m.Phone == phone);
-    }
-
-    private MemberPackage? GetLatestPackage(Member member)
-    {
-        if (member.MemberPackages == null || member.MemberPackages.Count == 0)
-        {
-            return null;
-        }
-
-        MemberPackage? activePackage = member.MemberPackages
-            .Where(p => p.PackageStatus == "Active")
-            .OrderByDescending(p => p.ExpiryDate)
-            .FirstOrDefault();
-
-        if (activePackage != null)
-        {
-            return activePackage;
-        }
-
-        return member.MemberPackages
-            .OrderByDescending(p => p.ExpiryDate)
-            .FirstOrDefault();
-    }
-
-    private string? GetCheckinIneligibleReason(Member member, MemberPackage? package)
-    {
-        if (member.Status == "Suspended")
-        {
-            if (string.IsNullOrWhiteSpace(member.SuspendReason))
-            {
-                return "Tài khoản đã bị khoá.";
-            }
-            return "Tài khoản đã bị khoá: " + member.SuspendReason;
-        }
-
-        if (member.Status == "Expired")
-        {
-            return "Tài khoản đã hết hạn sử dụng. Không thể check-in.";
-        }
-
-        if (member.Status == "PendingActivation")
-        {
-            return "Tài khoản chưa được kích hoạt. Không thể check-in.";
-        }
-
-        if (package == null || package.PackageStatus != "Active")
-        {
-            return "Gói tập đã hết hạn. Vui lòng gia hạn trước khi check-in.";
-        }
-
-        return null;
-    }
-
-    private MemberDto MapMember(Member member, MemberPackage? package)
-    {
-        var dto = new MemberDto
-        {
-            MemberId = member.MemberId,
-            FullName = member.FullName,
-            Phone = member.Phone,
-            PhotoUrl = member.FaceDatum?.ProfileImage,
-            AccountStatus = member.Status,
-            SuspendReason = member.SuspendReason,
-            InternalNotes = member.InternalNotes,
-        };
-
-        if (package != null)
-        {
-            dto.Package = package.Plan?.PlanName;
-            dto.PackageStatus = package.PackageStatus == "Active" ? "active" : "expired";
-            dto.ExpiryDate = package.ExpiryDate?.ToString("dd/MM/yyyy"); // TODO: đổi nếu ExpiryDate là DateOnly
-        }
-
-        return dto;
-    }
-
-    private byte[]? DecodeBase64Image(string dataUrl)
-    {
-        if (string.IsNullOrWhiteSpace(dataUrl))
-        {
-            return null;
-        }
-
-        string base64 = dataUrl;
-        int commaIndex = dataUrl.IndexOf(',');
-        if (commaIndex >= 0)
-        {
-            base64 = dataUrl.Substring(commaIndex + 1);
-        }
-
-        try
-        {
-            return Convert.FromBase64String(base64);
-        }
-        catch
-        {
-            return null;
-        }
-    }
-
-        public async Task<CheckInHistoryResponseDto> GetCheckInHistoryByStaffAsync(long staffId, CheckInHistoryQueryDto query)
-        {
-            Employee? employee = await _context.Employees
-                .AsNoTracking()
-                .Include(e => e.Role)
-                .Include(e => e.EmployeeBranches)
-                .FirstOrDefaultAsync(e => e.EmployeeId == staffId);
-
-            if (employee == null)
-            {
-                throw new KeyNotFoundException("Không tìm thấy nhân viên.");
-            }
-
-            bool isAdmin = employee.Role.RoleId == 3;
-            bool isManager = employee.Role.RoleId == 2;
-            // còn lại mặc định là Staff (RoleId == 1)
-
-            List<int> assignedBranchIds = employee.EmployeeBranches
-                .Select(eb => eb.BranchId)
-                .ToList();
-
-            IQueryable<Models.CheckIn> baseQuery = _context.CheckIns
-                .AsNoTracking()
-                .Include(c => c.Member).ThenInclude(m => m.FaceDatum)
-                .Include(c => c.Branch)
-                .Include(c => c.Staff)
-                .Include(c => c.CheckOutStaff)
-                .AsQueryable();
-
-            if (isAdmin)
-            {
-                // Admin: xem toàn bộ, chỉ lọc branch nếu FE có truyền lên
-                if (query.branchId.HasValue)
-                {
-                    bool branchExists = await _context.Branches
-                        .AsNoTracking()
-                        .AnyAsync(b => b.BranchId == query.branchId.Value);
-
-                    if (!branchExists)
-                        throw new KeyNotFoundException("Chi nhánh không tồn tại.");
-
-                    baseQuery = baseQuery.Where(c => c.BranchId == query.branchId.Value);
-                }
-                // Không truyền branchId -> không filter, lấy toàn bộ chi nhánh
-            }
-            else if (isManager)
-            {
-                if (assignedBranchIds.Count == 0)
-                    throw new InvalidOperationException("Nhân viên chưa được gán chi nhánh nào.");
-
-                if (query.branchId.HasValue)
-                {
-                    if (!assignedBranchIds.Contains(query.branchId.Value))
-                        throw new UnauthorizedAccessException("Bạn không có quyền xem chi nhánh này.");
-
-                    baseQuery = baseQuery.Where(c => c.BranchId == query.branchId.Value);
-                }
-                else
-                {
-                    baseQuery = baseQuery.Where(c => assignedBranchIds.Contains(c.BranchId));
-                }
-            }
-            else
-            {
-                // Staff: luôn lấy theo chi nhánh được gán, KHÔNG nhận branchId từ FE
-                if (assignedBranchIds.Count == 0)
-                    throw new InvalidOperationException("Nhân viên chưa được gán chi nhánh nào.");
-
-                baseQuery = baseQuery.Where(c => assignedBranchIds.Contains(c.BranchId));
-            }
-
-            // Lấy phần Date thô (bỏ time/kind) để không bị lệch khi FE gửi kèm timezone/Z
-            if (query.FromDate.HasValue)
-            {
-                DateTime from = DateTime.SpecifyKind(query.FromDate.Value.Date, DateTimeKind.Unspecified);
-                baseQuery = baseQuery.Where(c => c.CheckInTime >= from);
-            }
-
-            if (query.ToDate.HasValue)
-            {
-                DateTime to = DateTime.SpecifyKind(query.ToDate.Value.Date, DateTimeKind.Unspecified).AddDays(1);
-                baseQuery = baseQuery.Where(c => c.CheckInTime < to);
-            }
-
-            if (!string.IsNullOrWhiteSpace(query.Keyword))
-            {
-                string kw = query.Keyword.Trim();
-                baseQuery = baseQuery.Where(c =>
-                    c.Member.FullName.Contains(kw) ||
-                    (c.Member.Phone != null && c.Member.Phone.Contains(kw)));
-            }
-
-            int totalCount = await baseQuery.CountAsync();
-
-            int page = query.Page < 1 ? 1 : query.Page;
-            int pageSize = query.PageSize < 1 ? 20 : query.PageSize;
-
-            List<Models.CheckIn> records = await baseQuery
-                .OrderByDescending(c => c.CheckInTime)
-                .Skip((page - 1) * pageSize)
-                .Take(pageSize)
-                .ToListAsync();
-
-            List<CheckInHistoryItemDto> items = records.Select(c => new CheckInHistoryItemDto
-            {
-                CheckInId = c.CheckInId,
-                MemberId = c.MemberId,
-                MemberName = c.Member.FullName,
-                MemberPhone = c.Member.Phone,
-                MemberAvatar = c.Member.FaceDatum?.ProfileImage,
-                BranchId = c.BranchId,
-                BranchName = c.Branch?.BranchName,
-                CheckInTime = c.CheckInTime,
-                CheckInMethod = c.Method,
-                CheckInStaffName = c.Staff?.FullName,
-                CheckOutTime = c.CheckOutTime,
-                CheckOutMethod = c.CheckOutMethod,
-                CheckOutStaffName = c.CheckOutStaff?.FullName
-            }).ToList();
-
-            return new CheckInHistoryResponseDto
-            {
-                Items = items,
-                TotalCount = totalCount,
-                Page = page,
-                PageSize = pageSize
-            };
-        }
-        }
+// using System.Reflection.Emit;
+// using BE.Data;
+// using BE.DTOs.Identify;
+// using BE.Models;
+// using BE.Services.FaceRecognition;
+// using BE.Services.GymDensity;
+// using Microsoft.EntityFrameworkCore;
+
+// namespace BE.Services.Identify;
+
+// public class IdentifyService
+// {
+//     private readonly GymManagementContext _context;
+//     private readonly RekognitionFaceService _faceService;
+//     private readonly GymDensityService _densityService;
+
+//     public IdentifyService(
+//         GymManagementContext context,
+//         RekognitionFaceService faceService,
+//         GymDensityService densityService)
+//     {
+//         _context = context;
+//         _faceService = faceService;
+//         _densityService = densityService;
+//     }
+
+//     // =====================================================================
+//     // Nhận diện khuôn mặt qua camera — dùng chung cho cả check-in và check-out.
+//     // FE gửi ảnh + action ("checkin" hoặc "checkout") + branchId.
+//     // =====================================================================
+//     public async Task<IdentifyAttendanceResponseDto> IdentifyAttendanceAsync(IdentifyAttendanceRequestDto request)
+//     {
+//         byte[]? imageBytes = DecodeBase64Image(request.Image);
+//         if (imageBytes == null)
+//         {
+//             return new IdentifyAttendanceResponseDto { Status = "no_face" };
+//         }
+
+//         FaceSearchResult searchResult = await _faceService.SearchFaceByImageAsync(imageBytes);
+
+//         if (searchResult.Status == FaceSearchStatus.NoFace)
+//         {
+//             return new IdentifyAttendanceResponseDto { Status = "no_face" };
+//         }
+
+//         if (searchResult.Status == FaceSearchStatus.NotRecognized)
+//         {
+//             return new IdentifyAttendanceResponseDto { Status = "not_recognized" };
+//         }
+
+//         Member? member = await LoadMemberWithDetailsAsync(searchResult.MemberId!.Value);
+//         if (member == null)
+//         {
+//             return new IdentifyAttendanceResponseDto { Status = "not_recognized" };
+//         }
+
+//         if (request.Action == "checkout")
+//         {
+//             return await DoAutoCheckoutAsync(member, request.BranchId);
+//         }
+//         else
+//         {
+//             return await DoAutoCheckinAsync(member, request.BranchId);
+//         }
+//     }
+
+//     // ------------------------ CHECK-IN TỰ ĐỘNG (camera) ------------------------
+//     private async Task<IdentifyAttendanceResponseDto> DoAutoCheckinAsync(Member member, int branchId)
+//     {
+//         MemberPackage? activePackage = GetLatestPackage(member);
+//         string? reason = GetCheckinIneligibleReason(member, activePackage);
+
+//         if (reason != null)
+//         {
+//             return new IdentifyAttendanceResponseDto
+//             {
+//                 Status = "ineligible",
+//                 Member = MapMember(member, activePackage),
+//                 Reason = reason
+//             };
+//         }
+
+//         var checkIn = new Models.CheckIn
+//         {
+//             MemberId = member.MemberId,
+//             MemberPackageId = activePackage!.MemberPackageId,
+//             BranchId = branchId,
+//             CheckInTime = DateTime.Now,
+//             Method = "Auto"
+//         };
+
+//         _context.CheckIns.Add(checkIn);
+//         await _context.SaveChangesAsync();
+
+//         await _densityService.AdjustAsync(branchId, 1);
+
+//         return new IdentifyAttendanceResponseDto
+//         {
+//             Status = "success",
+//             Member = MapMember(member, activePackage),
+//             CheckInId = checkIn.CheckInId
+//         };
+//     }
+
+//     // ------------------------ CHECK-OUT TỰ ĐỘNG (camera) ------------------------
+//     private async Task<IdentifyAttendanceResponseDto> DoAutoCheckoutAsync(Member member, int branchId)
+//     {
+//         Models.CheckIn? openSession = await _context.CheckIns
+//             .Where(c => c.MemberId == member.MemberId && c.CheckOutTime == null)
+//             .OrderByDescending(c => c.CheckInTime)
+//             .FirstOrDefaultAsync();
+
+//         if (openSession == null)
+//         {
+//             return new IdentifyAttendanceResponseDto
+//             {
+//                 Status = "no_open_session",
+//                 Member = MapMember(member, GetLatestPackage(member))
+//             };
+//         }
+
+//         if (member.Status == "PendingActivation")
+//         {
+//             return new IdentifyAttendanceResponseDto
+//             {
+//                 Status = "ineligible",
+//                 Member = MapMember(member, GetLatestPackage(member)),
+//                 Reason = "Tài khoản chưa được kích hoạt."
+//             };
+//         }
+
+//         openSession.CheckOutTime = DateTime.Now;
+//         openSession.CheckOutMethod = "Auto";
+//         await _context.SaveChangesAsync();
+
+//         await _densityService.AdjustAsync(branchId, -1);
+
+//         return new IdentifyAttendanceResponseDto
+//         {
+//             Status = "success",
+//             Member = MapMember(member, GetLatestPackage(member)),
+//             CheckInId = openSession.CheckInId
+//         };
+//     }
+
+//     // ===================== TRA CỨU THEO SĐT =====================
+//     public async Task<MemberDto?> LookupMemberByPhoneAsync(string phone)
+//     {
+//         Member? member = await LoadMemberByPhoneAsync(phone);
+//         if (member == null)
+//         {
+//             return null;
+//         }
+
+//         return MapMember(member, GetLatestPackage(member));
+//     }
+
+//     // ===================== CHECK-IN THỦ CÔNG (quầy) =====================
+//     public async Task<ManualCheckinResponseDto> CheckinManualAsync(ManualCheckinRequestDto request, long? staffId)
+//     {
+//         Member? member = await LoadMemberWithDetailsAsync(request.MemberId);
+//         if (member == null)
+//         {
+//             throw new KeyNotFoundException("Không tìm thấy hội viên.");
+//         }
+
+//         MemberPackage? activePackage = GetLatestPackage(member);
+//         string? reason = GetCheckinIneligibleReason(member, activePackage);
+//         if (reason != null)
+//         {
+//             throw new InvalidOperationException(reason);
+//         }
+
+//         var checkIn = new Models.CheckIn
+//         {
+//             MemberId = member.MemberId,
+//             MemberPackageId = activePackage!.MemberPackageId,
+//             BranchId = request.BranchId,
+//             CheckInTime = DateTime.Now,
+//             Method = "Manual",
+//             StaffId = staffId,
+//             ManualReason = request.ManualReason
+//         };
+
+//         _context.CheckIns.Add(checkIn);
+//         await _context.SaveChangesAsync();
+
+//         // Không cộng thêm mật độ ở đây vì đã tính lúc bấm "Mở cửa" rồi
+
+//         return new ManualCheckinResponseDto
+//         {
+//             CheckInId = checkIn.CheckInId,
+//             Member = MapMember(member, activePackage)
+//         };
+//     }
+
+//     // ===================== MỞ CỬA =====================
+//     public async Task OpenDoorAsync(long employeeId , OpenDoorRequestDto request)
+//     {
+//         var branchId= await _context.EmployeeBranches.Where(eb=>eb.EmployeeId==employeeId).Select(x=>x.BranchId).FirstOrDefaultAsync();
+
+//         if (request.Side == "checkout")
+//         {
+//             await _densityService.AdjustAsync(branchId, -1);
+//         }
+//         else
+//         {
+//             await _densityService.AdjustAsync(branchId, 1);
+//         }
+//     }
+
+//     // ===================== HÀM PHỤ TRỢ =====================
+
+//     private async Task<Member?> LoadMemberWithDetailsAsync(long memberId)
+//     {
+//         return await _context.Members
+
+//             .Include(m => m.FaceDatum)
+//             .Include(m => m.MemberPackages).ThenInclude(mp => mp.Plan)
+//             .FirstOrDefaultAsync(m => m.MemberId == memberId);
+//     }
+
+//     private async Task<Member?> LoadMemberByPhoneAsync(string phone)
+//     {
+//         return await _context.Members
+//             .Include(m => m.FaceDatum)
+//             .Include(m => m.MemberPackages).ThenInclude(mp => mp.Plan)
+//             .FirstOrDefaultAsync(m => m.Phone == phone);
+//     }
+
+//     private MemberPackage? GetLatestPackage(Member member)
+//     {
+//         if (member.MemberPackages == null || member.MemberPackages.Count == 0)
+//         {
+//             return null;
+//         }
+
+//         MemberPackage? activePackage = member.MemberPackages
+//             .Where(p => p.PackageStatus == "Active")
+//             .OrderByDescending(p => p.ExpiryDate)
+//             .FirstOrDefault();
+
+//         if (activePackage != null)
+//         {
+//             return activePackage;
+//         }
+
+//         return member.MemberPackages
+//             .OrderByDescending(p => p.ExpiryDate)
+//             .FirstOrDefault();
+//     }
+
+//     private string? GetCheckinIneligibleReason(Member member, MemberPackage? package)
+//     {
+//         if (member.Status == "Suspended")
+//         {
+//             if (string.IsNullOrWhiteSpace(member.SuspendReason))
+//             {
+//                 return "Tài khoản đã bị khoá.";
+//             }
+//             return "Tài khoản đã bị khoá: " + member.SuspendReason;
+//         }
+
+//         if (member.Status == "Expired")
+//         {
+//             return "Tài khoản đã hết hạn sử dụng. Không thể check-in.";
+//         }
+
+//         if (member.Status == "PendingActivation")
+//         {
+//             return "Tài khoản chưa được kích hoạt. Không thể check-in.";
+//         }
+
+//         if (package == null || package.PackageStatus != "Active")
+//         {
+//             return "Gói tập đã hết hạn. Vui lòng gia hạn trước khi check-in.";
+//         }
+
+//         return null;
+//     }
+
+//     private MemberDto MapMember(Member member, MemberPackage? package)
+//     {
+//         var dto = new MemberDto
+//         {
+//             MemberId = member.MemberId,
+//             FullName = member.FullName,
+//             Phone = member.Phone,
+//             PhotoUrl = member.FaceDatum?.ProfileImage,
+//             AccountStatus = member.Status,
+//             SuspendReason = member.SuspendReason,
+//             InternalNotes = member.InternalNotes,
+//         };
+
+//         if (package != null)
+//         {
+//             dto.Package = package.Plan?.PlanName;
+//             dto.PackageStatus = package.PackageStatus == "Active" ? "active" : "expired";
+//             dto.ExpiryDate = package.ExpiryDate?.ToString("dd/MM/yyyy"); // TODO: đổi nếu ExpiryDate là DateOnly
+//         }
+
+//         return dto;
+//     }
+
+//     private byte[]? DecodeBase64Image(string dataUrl)
+//     {
+//         if (string.IsNullOrWhiteSpace(dataUrl))
+//         {
+//             return null;
+//         }
+
+//         string base64 = dataUrl;
+//         int commaIndex = dataUrl.IndexOf(',');
+//         if (commaIndex >= 0)
+//         {
+//             base64 = dataUrl.Substring(commaIndex + 1);
+//         }
+
+//         try
+//         {
+//             return Convert.FromBase64String(base64);
+//         }
+//         catch
+//         {
+//             return null;
+//         }
+//     }
+
+//         public async Task<CheckInHistoryResponseDto> GetCheckInHistoryByStaffAsync(long staffId, CheckInHistoryQueryDto query)
+//         {
+//             Employee? employee = await _context.Employees
+//                 .AsNoTracking()
+//                 .Include(e => e.Role)
+//                 .Include(e => e.EmployeeBranches)
+//                 .FirstOrDefaultAsync(e => e.EmployeeId == staffId);
+
+//             if (employee == null)
+//             {
+//                 throw new KeyNotFoundException("Không tìm thấy nhân viên.");
+//             }
+
+//             bool isAdmin = employee.Role.RoleId == 3;
+//             bool isManager = employee.Role.RoleId == 2;
+//             // còn lại mặc định là Staff (RoleId == 1)
+
+//             List<int> assignedBranchIds = employee.EmployeeBranches
+//                 .Select(eb => eb.BranchId)
+//                 .ToList();
+
+//             IQueryable<Models.CheckIn> baseQuery = _context.CheckIns
+//                 .AsNoTracking()
+//                 .Include(c => c.Member).ThenInclude(m => m.FaceDatum)
+//                 .Include(c => c.Branch)
+//                 .Include(c => c.Staff)
+//                 .Include(c => c.CheckOutStaff)
+//                 .AsQueryable();
+
+//             if (isAdmin)
+//             {
+//                 // Admin: xem toàn bộ, chỉ lọc branch nếu FE có truyền lên
+//                 if (query.branchId.HasValue)
+//                 {
+//                     bool branchExists = await _context.Branches
+//                         .AsNoTracking()
+//                         .AnyAsync(b => b.BranchId == query.branchId.Value);
+
+//                     if (!branchExists)
+//                         throw new KeyNotFoundException("Chi nhánh không tồn tại.");
+
+//                     baseQuery = baseQuery.Where(c => c.BranchId == query.branchId.Value);
+//                 }
+//                 // Không truyền branchId -> không filter, lấy toàn bộ chi nhánh
+//             }
+//             else if (isManager)
+//             {
+//                 if (assignedBranchIds.Count == 0)
+//                     throw new InvalidOperationException("Nhân viên chưa được gán chi nhánh nào.");
+
+//                 if (query.branchId.HasValue)
+//                 {
+//                     if (!assignedBranchIds.Contains(query.branchId.Value))
+//                         throw new UnauthorizedAccessException("Bạn không có quyền xem chi nhánh này.");
+
+//                     baseQuery = baseQuery.Where(c => c.BranchId == query.branchId.Value);
+//                 }
+//                 else
+//                 {
+//                     baseQuery = baseQuery.Where(c => assignedBranchIds.Contains(c.BranchId));
+//                 }
+//             }
+//             else
+//             {
+//                 // Staff: luôn lấy theo chi nhánh được gán, KHÔNG nhận branchId từ FE
+//                 if (assignedBranchIds.Count == 0)
+//                     throw new InvalidOperationException("Nhân viên chưa được gán chi nhánh nào.");
+
+//                 baseQuery = baseQuery.Where(c => assignedBranchIds.Contains(c.BranchId));
+//             }
+
+//             // Lấy phần Date thô (bỏ time/kind) để không bị lệch khi FE gửi kèm timezone/Z
+//             if (query.FromDate.HasValue)
+//             {
+//                 DateTime from = DateTime.SpecifyKind(query.FromDate.Value.Date, DateTimeKind.Unspecified);
+//                 baseQuery = baseQuery.Where(c => c.CheckInTime >= from);
+//             }
+
+//             if (query.ToDate.HasValue)
+//             {
+//                 DateTime to = DateTime.SpecifyKind(query.ToDate.Value.Date, DateTimeKind.Unspecified).AddDays(1);
+//                 baseQuery = baseQuery.Where(c => c.CheckInTime < to);
+//             }
+
+//             if (!string.IsNullOrWhiteSpace(query.Keyword))
+//             {
+//                 string kw = query.Keyword.Trim();
+//                 baseQuery = baseQuery.Where(c =>
+//                     c.Member.FullName.Contains(kw) ||
+//                     (c.Member.Phone != null && c.Member.Phone.Contains(kw)));
+//             }
+
+//             int totalCount = await baseQuery.CountAsync();
+
+//             int page = query.Page < 1 ? 1 : query.Page;
+//             int pageSize = query.PageSize < 1 ? 20 : query.PageSize;
+
+//             List<Models.CheckIn> records = await baseQuery
+//                 .OrderByDescending(c => c.CheckInTime)
+//                 .Skip((page - 1) * pageSize)
+//                 .Take(pageSize)
+//                 .ToListAsync();
+
+//             List<CheckInHistoryItemDto> items = records.Select(c => new CheckInHistoryItemDto
+//             {
+//                 CheckInId = c.CheckInId,
+//                 MemberId = c.MemberId,
+//                 MemberName = c.Member.FullName,
+//                 MemberPhone = c.Member.Phone,
+//                 MemberAvatar = c.Member.FaceDatum?.ProfileImage,
+//                 BranchId = c.BranchId,
+//                 BranchName = c.Branch?.BranchName,
+//                 CheckInTime = c.CheckInTime,
+//                 CheckInMethod = c.Method,
+//                 CheckInStaffName = c.Staff?.FullName,
+//                 CheckOutTime = c.CheckOutTime,
+//                 CheckOutMethod = c.CheckOutMethod,
+//                 CheckOutStaffName = c.CheckOutStaff?.FullName
+//             }).ToList();
+
+//             return new CheckInHistoryResponseDto
+//             {
+//                 Items = items,
+//                 TotalCount = totalCount,
+//                 Page = page,
+//                 PageSize = pageSize
+//             };
+//         }
+//         }
 

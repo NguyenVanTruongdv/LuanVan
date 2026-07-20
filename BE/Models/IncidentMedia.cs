@@ -14,4 +14,6 @@ public partial class IncidentMedia
     public string MediaUrl { get; set; } = null!;
 
     public DateTime CreatedAt { get; set; }
+
+    public virtual Incident Incident { get; set; } = null!;
 }

@@ -3,6 +3,9 @@ using System.Collections.Generic;
 
 namespace BE.Models;
 
+/// <summary>
+/// Lịch sử chỉnh sửa giao dịch — không cần seed
+/// </summary>
 public partial class TransactionAdjustmentLog
 {
     public long AdjustmentId { get; set; }

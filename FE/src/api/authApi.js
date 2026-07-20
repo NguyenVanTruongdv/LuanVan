@@ -2,6 +2,27 @@ const BASE_URL =
     import.meta.env.VITE_API_BASE_URL || "http://localhost:5231";
 
 // ─────────────────────────────────────────────
+// JWT Decode Helper
+// ─────────────────────────────────────────────
+// Giải mã phần payload của access token (KHÔNG xác thực chữ ký — chỉ đọc claim
+// để FE dùng hiển thị/logic, việc xác thực thật sự vẫn do BE đảm nhiệm).
+function decodeJwtPayload(token) {
+    try {
+        const base64Url = token.split(".")[1];
+        const base64 = base64Url.replace(/-/g, "+").replace(/_/g, "/");
+        const json = decodeURIComponent(
+            atob(base64)
+                .split("")
+                .map((c) => "%" + c.charCodeAt(0).toString(16).padStart(2, "0"))
+                .join("")
+        );
+        return JSON.parse(json);
+    } catch {
+        return null;
+    }
+}
+
+// ─────────────────────────────────────────────
 // Token Helpers
 // ─────────────────────────────────────────────
 
@@ -20,6 +41,19 @@ export function saveTokens(data) {
     localStorage.setItem("role", data.role || "");
     localStorage.setItem("entityType", data.entityType || "");
     localStorage.setItem("status", data.status || "");
+
+    // MỚI: accountId và branchIds không nằm trong response body (BE không đổi
+    // LoginResponseDto), mà nằm trong claim "account_id" / "BranchId" của access
+    // token — giải mã ra để FE dùng khi cần (hiển thị chi nhánh, lọc dữ liệu...).
+    const payload = decodeJwtPayload(data.accessToken);
+    const accountId = payload?.account_id || "";
+    // Nhân viên có thể thuộc nhiều chi nhánh → BE nhét nhiều claim "BranchId" cùng
+    // tên, JWT gộp thành mảng nếu >1 giá trị, hoặc string đơn nếu chỉ 1 — chuẩn hoá
+    // về mảng cho FE dùng thống nhất.
+    const branchIds = payload ? [].concat(payload["BranchId"] || []) : [];
+
+    localStorage.setItem("accountId", accountId);
+    localStorage.setItem("branchIds", JSON.stringify(branchIds));
 }
 
 export function clearTokens() {
@@ -29,6 +63,8 @@ export function clearTokens() {
     localStorage.removeItem("role");
     localStorage.removeItem("entityType");
     localStorage.removeItem("status");
+    localStorage.removeItem("accountId");
+    localStorage.removeItem("branchIds");
 }
 
 export function isLoggedIn() {
@@ -41,9 +77,10 @@ export function getCurrentUser() {
         role: localStorage.getItem("role") || "",
         entityType: localStorage.getItem("entityType") || "",
         status: localStorage.getItem("status") || "",
+        accountId: localStorage.getItem("accountId") || "",
+        branchIds: JSON.parse(localStorage.getItem("branchIds") || "[]"),
     };
 }
-
 // ─────────────────────────────────────────────
 // Base Request (JSON)
 // ─────────────────────────────────────────────

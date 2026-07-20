@@ -100,7 +100,7 @@ function AppRoutes() {
                 <Route path="/thong-ke" element={<ThongKe />} />
                 <Route path="/issue" element={isLoggedIn() && getCurrentUser().status === "Active" ? < IssueReportForm /> : <Navigate to="/" replace />} />
                 <Route path="/payment" element={<Payment />} />
-                <Route path="my-info" element={<MemberProfilePage />} />
+                <Route path="my-profile" element={<MemberProfilePage />} />
 
             </Route>
 

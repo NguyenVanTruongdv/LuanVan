@@ -55,6 +55,8 @@ namespace BE.DTOs.Employee
         public string? Email { get; set; }
         [Required, MinLength(6, ErrorMessage = "Mật khẩu tối thiểu 6 ký tự.")]
         public string Password { get; set; } = null!;
+        public IFormFile? ProfileImage { get; set; }
+        public string? FaceIdReason { get; set; }
         [Required] public string Gender { get; set; } = null!;
         [Required] public sbyte RoleId { get; set; }
         public List<int>? BranchIds { get; set; } = new();
