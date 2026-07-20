@@ -1,8 +1,8 @@
 {
   "version": 2,
-  "dgSpecHash": "dl+UjKoVBPM=",
+  "dgSpecHash": "dmHz8kUpGlo=",
   "success": true,
-  "projectFilePath": "E:\\HK2_2025_2026\\Luận Van Tốt Nghiệp\\be\\BE.csproj",
+  "projectFilePath": "E:\\HK2_2025_2026\\Luận Van Tốt Nghiệp\\BE\\BE.csproj",
   "expectedPackageFiles": [
     "C:\\Users\\truon\\.nuget\\packages\\awssdk.core\\4.0.100.2\\awssdk.core.4.0.100.2.nupkg.sha512",
     "C:\\Users\\truon\\.nuget\\packages\\awssdk.extensions.netcore.setup\\4.0.100.2\\awssdk.extensions.netcore.setup.4.0.100.2.nupkg.sha512",

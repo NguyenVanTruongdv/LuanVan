@@ -1,17 +1,17 @@
 {
   "format": 1,
   "restore": {
-    "E:\\HK2_2025_2026\\Luận Van Tốt Nghiệp\\be\\BE.csproj": {}
+    "E:\\HK2_2025_2026\\Luận Van Tốt Nghiệp\\BE\\BE.csproj": {}
   },
   "projects": {
-    "E:\\HK2_2025_2026\\Luận Van Tốt Nghiệp\\be\\BE.csproj": {
+    "E:\\HK2_2025_2026\\Luận Van Tốt Nghiệp\\BE\\BE.csproj": {
       "version": "1.0.0",
       "restore": {
-        "projectUniqueName": "E:\\HK2_2025_2026\\Luận Van Tốt Nghiệp\\be\\BE.csproj",
+        "projectUniqueName": "E:\\HK2_2025_2026\\Luận Van Tốt Nghiệp\\BE\\BE.csproj",
         "projectName": "BE",
-        "projectPath": "E:\\HK2_2025_2026\\Luận Van Tốt Nghiệp\\be\\BE.csproj",
+        "projectPath": "E:\\HK2_2025_2026\\Luận Van Tốt Nghiệp\\BE\\BE.csproj",
         "packagesPath": "C:\\Users\\truon\\.nuget\\packages\\",
-        "outputPath": "E:\\HK2_2025_2026\\Luận Van Tốt Nghiệp\\be\\obj\\",
+        "outputPath": "E:\\HK2_2025_2026\\Luận Van Tốt Nghiệp\\BE\\obj\\",
         "projectStyle": "PackageReference",
         "configFilePaths": [
           "C:\\Users\\truon\\AppData\\Roaming\\NuGet\\NuGet.Config"
