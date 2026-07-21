@@ -12,6 +12,10 @@ public partial class Employee
 
     public string FullName { get; set; } = null!;
 
+/// <summary>
+/// Số điện thoại liên hệ của nhân viên
+/// </summary>
+public string Phone { get; set; } = null!;
     public string Gender { get; set; } = null!;
 
     /// <summary>
@@ -43,9 +47,17 @@ public partial class Employee
 
     public virtual ICollection<EmployeeBranch> EmployeeBranches { get; set; } = new List<EmployeeBranch>();
 
-    public virtual ICollection<FaceDatum> FaceData { get; set; } = new List<FaceDatum>();
+    public virtual ICollection<EmployeeUpdateLog> EmployeeUpdateLogEmployees { get; set; } = new List<EmployeeUpdateLog>();
 
-    public virtual ICollection<FaceUpdateHistory> FaceUpdateHistories { get; set; } = new List<FaceUpdateHistory>();
+    public virtual ICollection<EmployeeUpdateLog> EmployeeUpdateLogUpdatedByEmployees { get; set; } = new List<EmployeeUpdateLog>();
+
+    public virtual ICollection<FaceDatum> FaceDatumCreatedByNavigations { get; set; } = new List<FaceDatum>();
+
+    public virtual FaceDatum? FaceDatumEmployee { get; set; }
+
+    public virtual ICollection<FaceUpdateHistory> FaceUpdateHistoryEmployees { get; set; } = new List<FaceUpdateHistory>();
+
+    public virtual ICollection<FaceUpdateHistory> FaceUpdateHistoryPerformedByNavigations { get; set; } = new List<FaceUpdateHistory>();
 
     public virtual ICollection<HomeImage> HomeImages { get; set; } = new List<HomeImage>();
 

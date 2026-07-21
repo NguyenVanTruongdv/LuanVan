@@ -17,6 +17,14 @@ public class MemberDto
     public string? ExpiryDate { get; set; }
 }
 
+/// <summary>Thông tin nhân viên trả về khi camera nhận diện ra NHÂN VIÊN thay vì hội viên.</summary>
+public class EmployeeIdentifyDto
+{
+    public long EmployeeId { get; set; }
+    public string FullName { get; set; } = null!;
+    public string Status { get; set; } = null!;
+}
+
 public class IdentifyAttendanceRequestDto
 {
     public string Image { get; set; } = null!;
@@ -30,6 +38,10 @@ public class IdentifyAttendanceResponseDto
     public MemberDto? Member { get; set; }
     public long? CheckInId { get; set; }
     public string? Reason { get; set; }
+
+    /// <summary>true nếu khuôn mặt nhận diện được là NHÂN VIÊN (không phải hội viên).</summary>
+    public bool IsEmployee { get; set; }
+    public EmployeeIdentifyDto? Employee { get; set; }
 }
 
 public class PhoneLookupResponseDto

@@ -12,12 +12,19 @@ namespace BE.DTOs.Employee
     {
         public long EmployeeId { get; set; }
         public string FullName { get; set; } = "";
-        public string Phone { get; set; } = "";
-        public string? Email { get; set; }
+        public string Phone { get; set; } = "";        // Employee.Phone — số liên hệ
         public string Gender { get; set; } = "";
-        public string Status { get; set; } = "";
-        public string? SuspendReason { get; set; }
+        public string Status { get; set; } = "";        // Employee.Status — Active/Inactive (đi làm/nghỉ việc)
         public string Role { get; set; } = "";
+
+        // Thông tin tài khoản đăng nhập — null nếu nhân viên chưa được cấp tài khoản
+        public long? AccountId { get; set; }
+        public string? LoginPhone { get; set; }
+        public string? LoginEmail { get; set; }
+        public string? AccountStatus { get; set; }       // Active/Suspended
+        public string? SuspendReason { get; set; }
+
+        public bool HasFaceId { get; set; }
 
         // Chi nhánh đang được chọn mặc định (chi nhánh đầu tiên gán cho nhân viên)
         public int? DefaultBranchId { get; set; }
@@ -31,11 +38,15 @@ namespace BE.DTOs.Employee
         public long EmployeeId { get; set; }
         public string FullName { get; set; } = "";
         public string Phone { get; set; } = "";
-        public string? Email { get; set; }
         public string Gender { get; set; } = "";
         public string Status { get; set; } = "";
-        public string? SuspendReason { get; set; }
         public string Role { get; set; } = "";
+
+        public string? LoginPhone { get; set; }
+        public string? LoginEmail { get; set; }
+        public string? AccountStatus { get; set; }
+        public string? SuspendReason { get; set; }
+
         public List<EmployeeBranchDto> Branches { get; set; } = new();
     }
 
@@ -48,33 +59,55 @@ namespace BE.DTOs.Employee
         public int PageSize { get; set; } = 20;
     }
 
-    public class CreateEmployeeDto
+    /// <summary>Thông tin cơ bản dùng chung để tạo hồ sơ nhân viên (không gồm login/FaceID).</summary>
+    public class CreateEmployeeInfoDto
     {
         [Required] public string FullName { get; set; } = null!;
         [Required] public string Phone { get; set; } = null!;
-        public string? Email { get; set; }
-        [Required, MinLength(6, ErrorMessage = "Mật khẩu tối thiểu 6 ký tự.")]
-        public string Password { get; set; } = null!;
-        public IFormFile? ProfileImage { get; set; }
-        public string? FaceIdReason { get; set; }
         [Required] public string Gender { get; set; } = null!;
         [Required] public sbyte RoleId { get; set; }
-        public List<int>? BranchIds { get; set; } = new();
+        public List<int> BranchIds { get; set; } = new();
     }
 
+    /// <summary>Dùng khi tạo nhân viên đầy đủ: info + tài khoản đăng nhập + FaceID tùy chọn.</summary>
+    public class CreateEmployeeWithAccountDto : CreateEmployeeInfoDto
+    {
+        [Required] public string LoginPhone { get; set; } = null!;
+        public string? LoginEmail { get; set; }
+
+        [Required, MinLength(6, ErrorMessage = "Mật khẩu tối thiểu 6 ký tự.")]
+        public string Password { get; set; } = null!;
+
+        public IFormFile? ProfileImage { get; set; }
+        public string? FaceIdReason { get; set; }
+    }
+
+    /// <summary>Dùng khi tạo hồ sơ + FaceID nhưng chưa cấp tài khoản đăng nhập.</summary>
+    public class CreateEmployeeWithFaceIdDto : CreateEmployeeInfoDto
+    {
+        [Required] public IFormFile ProfileImage { get; set; } = null!;
+        public string? FaceIdReason { get; set; }
+    }
+
+    /// <summary>Sửa thông tin nhân viên — không đụng tới Account/FaceID.</summary>
     public class UpdateEmployeeDto
     {
         [Required] public string FullName { get; set; } = null!;
         [Required] public string Phone { get; set; } = null!;
-        public string? Email { get; set; }
         [Required] public string Gender { get; set; } = null!;
         [Required] public sbyte RoleId { get; set; }
         public List<int> BranchIds { get; set; } = new();
+    }
 
-        // Tùy chọn: chỉ đổi mật khẩu khi người dùng nhập giá trị mới.
-        // Để trống (null hoặc rỗng) thì giữ nguyên mật khẩu cũ.
-        [MinLength(6, ErrorMessage = "Mật khẩu tối thiểu 6 ký tự.")]
-        public string? Password { get; set; }
+    public class UpdateEmployeeFaceIdDto
+    {
+        [Required] public IFormFile ProfileImage { get; set; } = null!;
+        public string? Reason { get; set; }
+    }
+
+    public class LockEmployeeDto
+    {
+        [Required] public string Reason { get; set; } = null!;
     }
 
     public class HideEmployeeDto

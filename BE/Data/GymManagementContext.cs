@@ -2,16 +2,11 @@
 using System.Collections.Generic;
 using BE.Models;
 using Microsoft.EntityFrameworkCore;
-using Pomelo.EntityFrameworkCore.MySql.Scaffolding.Internal;
 
 namespace BE.Data;
 
 public partial class GymManagementContext : DbContext
 {
-    public GymManagementContext()
-    {
-    }
-
     public GymManagementContext(DbContextOptions<GymManagementContext> options)
         : base(options)
     {
@@ -28,6 +23,8 @@ public partial class GymManagementContext : DbContext
     public virtual DbSet<Employee> Employees { get; set; }
 
     public virtual DbSet<EmployeeBranch> EmployeeBranches { get; set; }
+
+    public virtual DbSet<EmployeeUpdateLog> EmployeeUpdateLogs { get; set; }
 
     public virtual DbSet<Equipment> Equipment { get; set; }
 
@@ -84,10 +81,6 @@ public partial class GymManagementContext : DbContext
     public virtual DbSet<Transaction> Transactions { get; set; }
 
     public virtual DbSet<TransactionAdjustmentLog> TransactionAdjustmentLogs { get; set; }
-
-    protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
-#warning To protect potentially sensitive information in your connection string, you should move it out of source code. You can avoid scaffolding the connection string by using the Name= syntax to read it from configuration - see https://go.microsoft.com/fwlink/?linkid=2131148. For more guidance on storing connection strings, see https://go.microsoft.com/fwlink/?LinkId=723263.
-        => optionsBuilder.UseMySql("server=localhost;database=Gym_Management;user=root", Microsoft.EntityFrameworkCore.ServerVersion.Parse("9.1.0-mysql"));
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -309,6 +302,10 @@ public partial class GymManagementContext : DbContext
             entity.Property(e => e.FullName)
                 .HasMaxLength(100)
                 .HasColumnName("full_name");
+                entity.Property(e => e.Phone)
+                .HasMaxLength(15)
+                .HasComment("Số điện thoại liên hệ của nhân viên")
+                .HasColumnName("phone");
             entity.Property(e => e.Gender)
                 .HasColumnType("enum('Male','Female','Other')")
                 .HasColumnName("gender");
@@ -361,6 +358,52 @@ public partial class GymManagementContext : DbContext
             entity.HasOne(d => d.Employee).WithMany(p => p.EmployeeBranches)
                 .HasForeignKey(d => d.EmployeeId)
                 .HasConstraintName("fk_employee_branches_employee");
+        });
+
+        modelBuilder.Entity<EmployeeUpdateLog>(entity =>
+        {
+            entity.HasKey(e => e.Id).HasName("PRIMARY");
+
+            entity
+                .ToTable("employee_update_logs", tb => tb.HasComment("Lịch sử cập nhật thông tin nhân viên — chỉ ghi thêm"))
+                .UseCollation("utf8mb4_unicode_ci");
+
+            entity.HasIndex(e => e.UpdatedByEmployeeId, "fk_eul_updated_by");
+
+            entity.HasIndex(e => new { e.EmployeeId, e.FieldName }, "idx_eul_employee");
+
+            entity.HasIndex(e => e.UpdateSessionId, "idx_eul_session");
+
+            entity.Property(e => e.Id).HasColumnName("id");
+            entity.Property(e => e.EmployeeId)
+                .HasComment("Nhân viên bị thay đổi thông tin — FK tới employees.employee_id")
+                .HasColumnName("employee_id");
+            entity.Property(e => e.FieldName)
+                .HasMaxLength(100)
+                .HasColumnName("field_name");
+            entity.Property(e => e.NewValue)
+                .HasColumnType("text")
+                .HasColumnName("new_value");
+            entity.Property(e => e.OldValue)
+                .HasColumnType("text")
+                .HasColumnName("old_value");
+            entity.Property(e => e.UpdateSessionId).HasColumnName("update_session_id");
+            entity.Property(e => e.UpdatedAt)
+                .HasDefaultValueSql("CURRENT_TIMESTAMP")
+                .HasColumnType("datetime")
+                .HasColumnName("updated_at");
+            entity.Property(e => e.UpdatedByEmployeeId)
+                .HasComment("Nhân viên thực hiện thay đổi — FK tới employees.employee_id")
+                .HasColumnName("updated_by_employee_id");
+
+            entity.HasOne(d => d.Employee).WithMany(p => p.EmployeeUpdateLogEmployees)
+                .HasForeignKey(d => d.EmployeeId)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("fk_eul_employee");
+
+            entity.HasOne(d => d.UpdatedByEmployee).WithMany(p => p.EmployeeUpdateLogUpdatedByEmployees)
+                .HasForeignKey(d => d.UpdatedByEmployeeId)
+                .HasConstraintName("fk_eul_updated_by");
         });
 
         modelBuilder.Entity<Equipment>(entity =>
@@ -455,10 +498,12 @@ public partial class GymManagementContext : DbContext
             entity.HasKey(e => e.FaceDataId).HasName("PRIMARY");
 
             entity
-                .ToTable("face_data", tb => tb.HasComment("Dữ liệu nhận diện khuôn mặt hội viên (AWS Rekognition) — chỉ nhân viên mới được tạo faceId"))
+                .ToTable("face_data", tb => tb.HasComment("Dữ liệu nhận diện khuôn mặt (AWS Rekognition) dùng chung cho hội viên và nhân viên — chỉ nhân viên mới được tạo faceId"))
                 .UseCollation("utf8mb4_unicode_ci");
 
             entity.HasIndex(e => e.CreatedBy, "fk_face_creator");
+
+            entity.HasIndex(e => e.EmployeeId, "uq_face_employee").IsUnique();
 
             entity.HasIndex(e => e.FaceIdAws, "uq_face_id_aws").IsUnique();
 
@@ -472,22 +517,30 @@ public partial class GymManagementContext : DbContext
             entity.Property(e => e.CreatedBy)
                 .HasComment("Nhân viên đã đăng ký/tạo faceId này — FK tới employees.employee_id")
                 .HasColumnName("created_by");
+            entity.Property(e => e.EmployeeId)
+                .HasComment("Nhân viên sở hữu faceId — FK tới employees.employee_id. NULL nếu đây là faceId của hội viên")
+                .HasColumnName("employee_id");
             entity.Property(e => e.FaceIdAws)
                 .HasMaxLength(100)
                 .HasColumnName("face_id_aws");
-            entity.Property(e => e.MemberId).HasColumnName("member_id");
+            entity.Property(e => e.MemberId)
+                .HasComment("Hội viên sở hữu faceId — FK tới members.member_id. NULL nếu đây là faceId của nhân viên")
+                .HasColumnName("member_id");
             entity.Property(e => e.ProfileImage)
                 .HasMaxLength(500)
                 .HasColumnName("profile_image");
 
-            entity.HasOne(d => d.CreatedByNavigation).WithMany(p => p.FaceData)
+            entity.HasOne(d => d.CreatedByNavigation).WithMany(p => p.FaceDatumCreatedByNavigations)
                 .HasForeignKey(d => d.CreatedBy)
                 .OnDelete(DeleteBehavior.ClientSetNull)
                 .HasConstraintName("fk_face_creator");
 
+            entity.HasOne(d => d.Employee).WithOne(p => p.FaceDatumEmployee)
+                .HasForeignKey<FaceDatum>(d => d.EmployeeId)
+                .HasConstraintName("fk_face_employee");
+
             entity.HasOne(d => d.Member).WithOne(p => p.FaceDatum)
                 .HasForeignKey<FaceDatum>(d => d.MemberId)
-                .OnDelete(DeleteBehavior.ClientSetNull)
                 .HasConstraintName("fk_face_member");
         });
 
@@ -496,15 +549,22 @@ public partial class GymManagementContext : DbContext
             entity.HasKey(e => e.HistoryId).HasName("PRIMARY");
 
             entity
-                .ToTable("face_update_history", tb => tb.HasComment("Lịch sử mỗi lần tạo/cập nhật khuôn mặt hội viên — chỉ ghi thêm, không sửa/xóa"))
+                .ToTable("face_update_history", tb => tb.HasComment("Lịch sử mỗi lần tạo/cập nhật khuôn mặt (hội viên hoặc nhân viên) — chỉ ghi thêm, không sửa/xóa"))
                 .UseCollation("utf8mb4_unicode_ci");
+
+            entity.HasIndex(e => e.EmployeeId, "fk_facehistory_employee");
 
             entity.HasIndex(e => e.MemberId, "fk_facehistory_member");
 
             entity.HasIndex(e => e.PerformedBy, "fk_facehistory_staff");
 
             entity.Property(e => e.HistoryId).HasColumnName("history_id");
-            entity.Property(e => e.MemberId).HasColumnName("member_id");
+            entity.Property(e => e.EmployeeId)
+                .HasComment("Nhân viên liên quan (chủ sở hữu faceId) — FK tới employees.employee_id. NULL nếu đây là lịch sử của hội viên")
+                .HasColumnName("employee_id");
+            entity.Property(e => e.MemberId)
+                .HasComment("Hội viên liên quan — FK tới members.member_id. NULL nếu đây là lịch sử của nhân viên")
+                .HasColumnName("member_id");
             entity.Property(e => e.NewFaceIdAws)
                 .HasMaxLength(100)
                 .HasColumnName("new_face_id_aws");
@@ -528,12 +588,15 @@ public partial class GymManagementContext : DbContext
                 .HasColumnType("text")
                 .HasColumnName("reason");
 
+            entity.HasOne(d => d.Employee).WithMany(p => p.FaceUpdateHistoryEmployees)
+                .HasForeignKey(d => d.EmployeeId)
+                .HasConstraintName("fk_facehistory_employee");
+
             entity.HasOne(d => d.Member).WithMany(p => p.FaceUpdateHistories)
                 .HasForeignKey(d => d.MemberId)
-                .OnDelete(DeleteBehavior.ClientSetNull)
                 .HasConstraintName("fk_facehistory_member");
 
-            entity.HasOne(d => d.PerformedByNavigation).WithMany(p => p.FaceUpdateHistories)
+            entity.HasOne(d => d.PerformedByNavigation).WithMany(p => p.FaceUpdateHistoryPerformedByNavigations)
                 .HasForeignKey(d => d.PerformedBy)
                 .OnDelete(DeleteBehavior.ClientSetNull)
                 .HasConstraintName("fk_facehistory_staff");
