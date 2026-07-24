@@ -3,6 +3,15 @@
 // Trang danh sách thiết bị — khớp với EquipmentService.GetListAsync / SetStatusAsync.
 //
 // CẬP NHẬT LẦN NÀY:
+// - Đổi theme màu sang bộ Navy/Slate/Cyan đồng bộ với trang login:
+//   nền #0B1120, khối/panel #1E293B, viền #334155, điểm nhấn cyan #06B6D4
+//   (thay cho gradient tím-indigo cũ), chữ tiêu đề #F1F5F9, chữ phụ
+//   #94A3B8 / #64748B.
+// - Đổi bố cục hiển thị thiết bị từ dạng LƯỚI THẺ (grid card) sang DẠNG LIST
+//   (bảng hàng ngang: ảnh nhỏ | tên + mô tả | danh mục | chi nhánh | trạng thái
+//   | hành động), có header cột trên desktop.
+// - Responsive cho điện thoại: mỗi hàng list tự bọc lại thành dạng "card dọc",
+//   ẩn header cột, hiện nhãn (label) trước từng giá trị, nút hành động full-width.
 // - Thay <select> gốc của trình duyệt bằng CustomSelect (tự vẽ dropdown) cho
 //   bộ lọc "Danh mục" và "Chi nhánh" -> style được toàn bộ danh sách khi mở,
 //   không còn bị giao diện mặc định xấu của browser.
@@ -22,23 +31,22 @@ import managerApi from "../../../api/managerApi";
 
 const EQUIPMENT_STYLES = `
 :root {
-    --eqm-navy-900: #0b1324;
-    --eqm-navy-800: #111c34;
-    --eqm-navy-700: #16223e;
-    --eqm-cyan-500: #17b6d4;
-    --eqm-cyan-600: #0ea5c0;
-    --eqm-cyan-100: rgba(23, 182, 212, 0.16);
-    --eqm-purple-500: #7c5cff;
+    --eqm-navy-900: #0b1120;
+    --eqm-navy-800: #1e293b;
+    --eqm-navy-700: #24304a;
+    --eqm-cyan-500: #06b6d4;
+    --eqm-cyan-600: #0891b2;
+    --eqm-cyan-100: rgba(6, 182, 212, 0.16);
 
     --eqm-bg: var(--eqm-navy-900);
     --eqm-surface: var(--eqm-navy-800);
     --eqm-surface-muted: var(--eqm-navy-700);
-    --eqm-surface-hover: #1c2947;
-    --eqm-border: rgba(255, 255, 255, 0.08);
+    --eqm-surface-hover: #2b3a54;
+    --eqm-border: #334155;
 
-    --eqm-text-900: #eaf2f8;
-    --eqm-text-600: #a9b7cc;
-    --eqm-text-400: #76839c;
+    --eqm-text-900: #f1f5f9;
+    --eqm-text-600: #94a3b8;
+    --eqm-text-400: #64748b;
 
     --eqm-danger: #f87171;
     --eqm-danger-bg: rgba(248, 113, 113, 0.14);
@@ -68,8 +76,8 @@ const EQUIPMENT_STYLES = `
 .eqm-header-icon {
     display: flex; align-items: center; justify-content: center;
     width: 44px; height: 44px; border-radius: 12px; font-size: 20px;
-    background: linear-gradient(135deg, rgba(23, 182, 212, 0.25), rgba(124, 92, 255, 0.25));
-    box-shadow: inset 0 0 0 1px rgba(23, 182, 212, 0.4);
+    background: linear-gradient(135deg, rgba(6, 182, 212, 0.3), rgba(6, 182, 212, 0.08));
+    box-shadow: inset 0 0 0 1px rgba(6, 182, 212, 0.4);
 }
 .eqm-header-titles h1 { margin: 0; font-size: 22px; font-weight: 700; color: var(--eqm-text-900); }
 .eqm-header-titles p { margin: 2px 0 0; font-size: 13.5px; color: var(--eqm-text-400); }
@@ -82,7 +90,7 @@ const EQUIPMENT_STYLES = `
 }
 .eqm-btn:disabled { opacity: 0.6; cursor: not-allowed; }
 .eqm-btn:active:not(:disabled) { transform: translateY(1px); }
-.eqm-btn-primary { background: linear-gradient(135deg, var(--eqm-cyan-500), var(--eqm-navy-800)); color: #fff; }
+.eqm-btn-primary { background: linear-gradient(135deg, var(--eqm-cyan-500), var(--eqm-cyan-600)); color: #fff; }
 .eqm-btn-primary:hover:not(:disabled) { filter: brightness(1.08); }
 .eqm-btn-secondary { background: var(--eqm-surface-muted); color: var(--eqm-text-600); box-shadow: inset 0 0 0 1px var(--eqm-border); }
 .eqm-btn-secondary:hover:not(:disabled) { background: var(--eqm-surface-hover); }
@@ -97,13 +105,14 @@ const EQUIPMENT_STYLES = `
     font-size: 14px; color: var(--eqm-text-900); background: var(--eqm-surface); outline: none;
     transition: border-color 0.15s ease, box-shadow 0.15s ease; font-family: inherit;
 }
-.eqm-input:focus { border-color: var(--eqm-cyan-500); box-shadow: 0 0 0 3px rgba(23, 182, 212, 0.15); }
+.eqm-input:focus { border-color: var(--eqm-cyan-500); box-shadow: 0 0 0 3px var(--eqm-cyan-100); }
 .eqm-input::placeholder { color: var(--eqm-text-400); }
 
 .eqm-filters {
     display: flex; flex-wrap: wrap; align-items: flex-end; gap: 14px;
     background: var(--eqm-surface); border-radius: var(--eqm-radius); box-shadow: var(--eqm-shadow);
     padding: 18px 20px; margin-bottom: 20px;
+    border: 1px solid var(--eqm-border);
 }
 .eqm-filters .eqm-field { min-width: 190px; }
 
@@ -120,7 +129,7 @@ const EQUIPMENT_STYLES = `
     transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
 }
 .eqm-dropdown-trigger:hover:not(:disabled) { background: var(--eqm-surface-hover); }
-.eqm-dropdown-open .eqm-dropdown-trigger { border-color: var(--eqm-cyan-500); box-shadow: 0 0 0 3px rgba(23, 182, 212, 0.15); }
+.eqm-dropdown-open .eqm-dropdown-trigger { border-color: var(--eqm-cyan-500); box-shadow: 0 0 0 3px var(--eqm-cyan-100); }
 .eqm-dropdown-trigger:disabled { background: var(--eqm-surface-muted); color: var(--eqm-text-400); cursor: not-allowed; }
 .eqm-dropdown-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .eqm-dropdown-placeholder { color: var(--eqm-text-400); }
@@ -147,36 +156,64 @@ const EQUIPMENT_STYLES = `
 .eqm-dropdown-menu::-webkit-scrollbar { width: 8px; }
 .eqm-dropdown-menu::-webkit-scrollbar-thumb { background: var(--eqm-surface-hover); border-radius: 8px; }
 
-.eqm-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 18px; }
+/* ---------- Danh sách dạng LIST (thay cho lưới thẻ) ---------- */
+.eqm-list {
+    display: flex; flex-direction: column;
+    background: var(--eqm-surface); border-radius: var(--eqm-radius);
+    box-shadow: var(--eqm-shadow); border: 1px solid var(--eqm-border);
+    overflow: hidden;
+}
 
-.eqm-card { background: var(--eqm-surface); border-radius: var(--eqm-radius); box-shadow: var(--eqm-shadow); overflow: hidden; display: flex; flex-direction: column; transition: opacity 0.15s ease; }
-.eqm-card-busy { opacity: 0.6; pointer-events: none; }
-.eqm-card-image { height: 150px; background: var(--eqm-navy-700); display: flex; align-items: center; justify-content: center; }
-.eqm-card-image img { width: 100%; height: 100%; object-fit: cover; }
-.eqm-card-image-placeholder { color: rgba(234, 242, 248, 0.45); font-size: 13px; }
-.eqm-card-body { padding: 14px 16px 16px; display: flex; flex-direction: column; gap: 8px; flex: 1; }
-.eqm-card-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
-.eqm-card-title { margin: 0; font-size: 15px; font-weight: 700; color: var(--eqm-text-900); }
+.eqm-list-header, .eqm-list-row {
+    display: grid;
+    grid-template-columns: 56px minmax(180px, 2.3fr) minmax(110px, 1fr) minmax(110px, 1fr) 108px 190px;
+    align-items: center; gap: 16px; padding: 14px 20px;
+}
+.eqm-list-header {
+    font-size: 11px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase;
+    color: var(--eqm-text-400); background: var(--eqm-surface-muted);
+    border-bottom: 1px solid var(--eqm-border);
+}
+.eqm-list-row { border-bottom: 1px solid var(--eqm-border); transition: background 0.12s ease, opacity 0.15s ease; }
+.eqm-list-row:last-child { border-bottom: none; }
+.eqm-list-row:hover { background: var(--eqm-surface-hover); }
+.eqm-list-row-busy { opacity: 0.55; pointer-events: none; }
 
-.eqm-badge { flex-shrink: 0; font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 999px; white-space: nowrap; }
+.eqm-list-thumb {
+    width: 52px; height: 52px; border-radius: 10px; overflow: hidden; flex-shrink: 0;
+    background: var(--eqm-surface-muted); display: flex; align-items: center; justify-content: center;
+}
+.eqm-list-thumb img { width: 100%; height: 100%; object-fit: cover; }
+.eqm-list-thumb-placeholder { font-size: 17px; opacity: 0.45; }
+
+.eqm-list-main { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.eqm-list-name { font-size: 14.5px; font-weight: 700; color: var(--eqm-text-900); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.eqm-list-desc { font-size: 12.5px; color: var(--eqm-text-400); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.eqm-list-meta-mobile { display: none; }
+
+.eqm-list-cell { font-size: 13px; color: var(--eqm-text-600); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.eqm-list-cell-label { display: none; }
+
+.eqm-badge { flex-shrink: 0; font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 999px; white-space: nowrap; display: inline-flex; }
 .eqm-badge-active { background: var(--eqm-success-bg); color: var(--eqm-success); }
 .eqm-badge-deleted { background: var(--eqm-danger-bg); color: var(--eqm-danger); }
 
-.eqm-card-meta { display: flex; flex-wrap: wrap; gap: 10px; font-size: 12.5px; color: var(--eqm-text-600); }
-.eqm-card-desc { margin: 0; font-size: 13px; color: var(--eqm-text-400); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-.eqm-card-actions { display: flex; gap: 8px; margin-top: auto; padding-top: 6px; }
-.eqm-card-actions .eqm-btn { flex: 1; padding: 8px 10px; font-size: 13px; }
+.eqm-list-actions { display: flex; gap: 8px; justify-content: flex-end; }
+.eqm-list-actions .eqm-btn { padding: 7px 12px; font-size: 12.5px; }
 
-.eqm-skeleton-card {
-    height: 236px; border-radius: var(--eqm-radius);
+.eqm-skeleton-row {
+    height: 80px;
     background: linear-gradient(100deg, var(--eqm-surface-muted) 30%, var(--eqm-surface-hover) 50%, var(--eqm-surface-muted) 70%);
     background-size: 200% 100%; animation: eqm-shimmer 1.3s ease-in-out infinite;
+    border-bottom: 1px solid var(--eqm-border);
 }
+.eqm-skeleton-row:last-child { border-bottom: none; }
 @keyframes eqm-shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
 
 .eqm-state {
     display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: 4px;
     background: var(--eqm-surface); border-radius: var(--eqm-radius); box-shadow: var(--eqm-shadow);
+    border: 1px solid var(--eqm-border);
     padding: 48px 20px; color: var(--eqm-text-400);
 }
 .eqm-state strong { color: var(--eqm-text-900); font-size: 15px; }
@@ -206,6 +243,7 @@ const EQUIPMENT_STYLES = `
 @keyframes eqm-fade-in { from { opacity: 0; } to { opacity: 1; } }
 .eqm-modal {
     background: var(--eqm-surface); border-radius: var(--eqm-radius); box-shadow: var(--eqm-shadow);
+    border: 1px solid var(--eqm-border);
     padding: 22px; max-width: 380px; width: 100%;
 }
 .eqm-modal h3 { margin: 0 0 8px; font-size: 16px; color: var(--eqm-text-900); }
@@ -221,6 +259,7 @@ const EQUIPMENT_STYLES = `
 
 .eqm-form-card {
     background: var(--eqm-surface); border-radius: var(--eqm-radius); box-shadow: var(--eqm-shadow);
+    border: 1px solid var(--eqm-border);
     padding: 26px 26px 24px;
 }
 .eqm-form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-top: 4px; }
@@ -234,7 +273,7 @@ const EQUIPMENT_STYLES = `
     font-family: inherit; resize: vertical; min-height: 96px;
     transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
-.eqm-textarea:focus { border-color: var(--eqm-cyan-500); box-shadow: 0 0 0 3px rgba(23, 182, 212, 0.15); }
+.eqm-textarea:focus { border-color: var(--eqm-cyan-500); box-shadow: 0 0 0 3px var(--eqm-cyan-100); }
 .eqm-textarea::placeholder { color: var(--eqm-text-400); }
 
 .eqm-field-error { font-size: 12px; color: var(--eqm-danger); }
@@ -282,10 +321,13 @@ const EQUIPMENT_STYLES = `
 /* Tablet ngang / màn nhỏ hơn container tối đa */
 @media (max-width: 1024px) {
     .eqm-container { max-width: 100%; }
-    .eqm-grid { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+    .eqm-list-header, .eqm-list-row {
+        grid-template-columns: 52px minmax(160px, 2fr) minmax(90px, 1fr) minmax(90px, 1fr) 96px 170px;
+        gap: 12px;
+    }
 }
 
-/* Tablet đứng / mobile ngang: bộ lọc và form xếp dọc, chạm ngón tay dễ hơn */
+/* Tablet đứng / mobile ngang: bộ lọc xếp dọc, list chuyển sang dạng "card dọc" */
 @media (max-width: 760px) {
     .eqm-page { padding: 20px 16px 48px; }
 
@@ -300,7 +342,24 @@ const EQUIPMENT_STYLES = `
     .eqm-dropdown { min-width: 0; width: 100%; }
     .eqm-checkbox-field { padding-bottom: 0; }
 
-    .eqm-grid { grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; }
+    /* List -> mỗi hàng tự bọc lại thành 1 "card" dọc, ẩn header cột */
+    .eqm-list-header { display: none; }
+    .eqm-list-row {
+        display: flex; flex-wrap: wrap; align-items: flex-start;
+        gap: 4px 14px; padding: 14px 16px;
+    }
+    .eqm-list-thumb { order: 1; width: 48px; height: 48px; }
+    .eqm-list-main { order: 2; flex: 1 1 calc(100% - 62px); min-width: 140px; }
+    .eqm-list-name { white-space: normal; }
+    .eqm-list-meta-mobile {
+        display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+        margin-top: 4px; font-size: 12px; color: var(--eqm-text-400);
+    }
+    .eqm-list-cell { display: none; }
+    .eqm-list-actions {
+        order: 4; flex: 1 1 100%; justify-content: stretch; margin-top: 10px;
+    }
+    .eqm-list-actions .eqm-btn { flex: 1; }
 
     .eqm-form-card { padding: 20px 18px; }
     .eqm-form-grid { grid-template-columns: 1fr; gap: 16px; }
@@ -309,16 +368,14 @@ const EQUIPMENT_STYLES = `
     .eqm-modal { padding: 18px; }
 }
 
-/* Điện thoại nhỏ: 1 cột, control full-width, dễ bấm bằng ngón tay */
+/* Điện thoại nhỏ: control full-width, dễ bấm bằng ngón tay */
 @media (max-width: 480px) {
     .eqm-header-icon { width: 38px; height: 38px; font-size: 17px; }
     .eqm-header-titles h1 { font-size: 19px; }
     .eqm-header-titles p { font-size: 12.5px; }
 
-    .eqm-grid { grid-template-columns: 1fr; }
-
-    .eqm-card-actions { flex-direction: column; }
-    .eqm-card-actions .eqm-btn { width: 100%; }
+    .eqm-list-row { padding: 12px 14px; }
+    .eqm-list-actions { flex-direction: column; }
 
     .eqm-dropzone { flex-direction: column; text-align: center; padding: 22px 14px; }
 
@@ -563,7 +620,7 @@ function EquipmentForm({ equipmentId, categories, branches, onSaved, onCancel, p
             description: form.description,
             image: imageFile,
         };
-
+EquipmentListPageOfManager
         try {
             if (isEdit) {
                 await managerApi.updateEquipment(equipmentId, payload);
@@ -709,55 +766,74 @@ function EquipmentForm({ equipmentId, categories, branches, onSaved, onCancel, p
     );
 }
 
-function EquipmentCard({ equipment, canManage, busy, onEdit, onToggleStatus }) {
+// ---------------------------------------------------------------------------
+// EquipmentListRow: một hàng trong danh sách (thay cho EquipmentCard dạng
+// lưới trước đây). Desktop hiển thị dạng bảng theo cột; mobile tự bọc lại
+// thành "card dọc" qua CSS (xem media query max-width: 760px).
+// ---------------------------------------------------------------------------
+function EquipmentListRow({ equipment, canManage, busy, onEdit, onToggleStatus }) {
     const isDeleted = equipment.status === STATUS_DELETED;
     const thumbnail = equipment.imageUrls?.[0];
 
     return (
-        <div className={`eqm-card ${busy ? "eqm-card-busy" : ""}`}>
-            <div className="eqm-card-image">
+        <div className={`eqm-list-row ${busy ? "eqm-list-row-busy" : ""}`}>
+            <div className="eqm-list-thumb">
                 {thumbnail ? (
                     <img src={thumbnail} alt={equipment.equipmentName} loading="lazy" />
                 ) : (
-                    <span className="eqm-card-image-placeholder">Chưa có ảnh</span>
+                    <span className="eqm-list-thumb-placeholder" aria-hidden="true">🏋️</span>
                 )}
             </div>
 
-            <div className="eqm-card-body">
-                <div className="eqm-card-top">
-                    <h3 className="eqm-card-title">{equipment.equipmentName}</h3>
+            <div className="eqm-list-main">
+                <span className="eqm-list-name">{equipment.equipmentName}</span>
+                {equipment.description && <span className="eqm-list-desc">{equipment.description}</span>}
+                <div className="eqm-list-meta-mobile">
+                    {equipment.categoryName && <span>📦 {equipment.categoryName}</span>}
+                    {equipment.branchName && <span>📍 {equipment.branchName}</span>}
                     <span className={`eqm-badge ${isDeleted ? "eqm-badge-deleted" : "eqm-badge-active"}`}>
                         {isDeleted ? "Đã ẩn" : "Đang dùng"}
                     </span>
                 </div>
-
-                <div className="eqm-card-meta">
-                    {equipment.categoryName && <span>📦 {equipment.categoryName}</span>}
-                    {equipment.branchName && <span>📍 {equipment.branchName}</span>}
-                </div>
-
-                {equipment.description && <p className="eqm-card-desc">{equipment.description}</p>}
-
-                {canManage && (
-                    <div className="eqm-card-actions">
-                        <button className="eqm-btn eqm-btn-secondary" onClick={onEdit} disabled={busy}>
-                            Sửa
-                        </button>
-                        <button
-                            className={`eqm-btn ${isDeleted ? "eqm-btn-secondary" : "eqm-btn-danger"}`}
-                            onClick={onToggleStatus}
-                            disabled={busy}
-                        >
-                            {isDeleted ? "Kích hoạt" : "Ẩn"}
-                        </button>
-                    </div>
-                )}
             </div>
+
+            <div className="eqm-list-cell">
+                <span className="eqm-list-cell-label">Danh mục: </span>
+                {equipment.categoryName || "—"}
+            </div>
+
+            <div className="eqm-list-cell">
+                <span className="eqm-list-cell-label">Chi nhánh: </span>
+                {equipment.branchName || "—"}
+            </div>
+
+            <div className="eqm-list-cell">
+                <span className={`eqm-badge ${isDeleted ? "eqm-badge-deleted" : "eqm-badge-active"}`}>
+                    {isDeleted ? "Đã ẩn" : "Đang dùng"}
+                </span>
+            </div>
+
+            {canManage ? (
+                <div className="eqm-list-actions">
+                    <button className="eqm-btn eqm-btn-secondary" onClick={onEdit} disabled={busy}>
+                        Sửa
+                    </button>
+                    <button
+                        className={`eqm-btn ${isDeleted ? "eqm-btn-secondary" : "eqm-btn-danger"}`}
+                        onClick={onToggleStatus}
+                        disabled={busy}
+                    >
+                        {isDeleted ? "Kích hoạt" : "Ẩn"}
+                    </button>
+                </div>
+            ) : (
+                <div />
+            )}
         </div>
     );
 }
 
-export default function EquipmentListPage() {
+export default  function EquipmentListPageOfManager () {
     const [role, setRole] = useState(null);
     const canManage = role === "Admin" || role === "Manager";
 
@@ -945,7 +1021,7 @@ export default function EquipmentListPage() {
         if (message) pushToast("success", message);
     };
 
-    const skeletons = useMemo(() => Array.from({ length: 8 }), []);
+    const skeletons = useMemo(() => Array.from({ length: 6 }), []);
 
     if (viewMode === "add" || viewMode === "edit") {
         return (
@@ -1055,9 +1131,9 @@ export default function EquipmentListPage() {
                 </div>
 
                 {loading && (
-                    <div className="eqm-grid">
+                    <div className="eqm-list">
                         {skeletons.map((_, i) => (
-                            <div className="eqm-skeleton-card" key={i} />
+                            <div className="eqm-skeleton-row" key={i} />
                         ))}
                     </div>
                 )}
@@ -1080,9 +1156,17 @@ export default function EquipmentListPage() {
                 )}
 
                 {!loading && !error && equipments.length > 0 && (
-                    <div className="eqm-grid">
+                    <div className="eqm-list">
+                        <div className="eqm-list-header">
+                            <span></span>
+                            <span>Tên thiết bị</span>
+                            <span>Danh mục</span>
+                            <span>Chi nhánh</span>
+                            <span>Trạng thái</span>
+                            <span></span>
+                        </div>
                         {equipments.map((eq) => (
-                            <EquipmentCard
+                            <EquipmentListRow
                                 key={eq.equipmentId}
                                 equipment={eq}
                                 canManage={canManage}

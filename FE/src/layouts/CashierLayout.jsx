@@ -138,17 +138,6 @@ const NAV_ITEMS = [
         ],
     },
     {
-        id: "staff",
-        icon: Icons.members,
-        label: "Nhân viên",
-        matchPrefix: "/cashier/staff",
-        children: [
-            { id: "incidents-report", icon: Icons.report, label: "Danh sách nhân viên", path: "/cashier/staffs" },
-            { id: "incidents-list", icon: Icons.members, label: "Tạo nhân viên", path: "/cashier/staff-create" },
-            { id: "incidents-list", icon: Icons.packages, label: "Tạo gói nhân viên", path: "/cashier/staff/create-pack" },
-        ],
-    },
-    {
         id: "report",
         icon: Icons.Staff,
         label: "Báo cáo",

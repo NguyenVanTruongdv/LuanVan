@@ -22,7 +22,7 @@ public class BranchService
     {
         var query = _context.Branches
             .Include(b => b.BranchImages)
-            .Include(b => b.EmployeeBranches).ThenInclude(eb => eb.Employee)
+            .Include(b => b.EmployeeBranches).ThenInclude(eb => eb.Employee).ThenInclude(e => e.Account)
             .Where(b => b.Status != BranchSatusEnum.Inactive.ToString())
             .AsQueryable();
 
@@ -61,7 +61,7 @@ public class BranchService
     {
         var branch = await _context.Branches
             .Include(b => b.BranchImages)
-            .Include(b => b.EmployeeBranches).ThenInclude(eb => eb.Employee)
+            .Include(b => b.EmployeeBranches).ThenInclude(eb => eb.Employee).ThenInclude(e => e.Account)
             .FirstOrDefaultAsync(b => b.BranchId == branchId && b.Status != BranchSatusEnum.Inactive.ToString());
 
         return branch is null ? null : MapToDto(branch);
@@ -103,6 +103,11 @@ public class BranchService
         foreach (var eb in branch.EmployeeBranches)
         {
             await _context.Entry(eb).Reference(x => x.Employee).LoadAsync();
+
+            // Cần load thêm Account để MapToDto lấy được Phone (không có include này thì
+            // Employee.Account luôn null nếu lazy loading không bật -> NullReferenceException).
+            if (eb.Employee != null)
+                await _context.Entry(eb.Employee).Reference(e => e.Account).LoadAsync();
         }
 
         return MapToDto(branch);
@@ -112,7 +117,7 @@ public class BranchService
     {
         var branch = await _context.Branches
             .Include(b => b.BranchImages)
-            .Include(b => b.EmployeeBranches).ThenInclude(eb => eb.Employee)
+            .Include(b => b.EmployeeBranches).ThenInclude(eb => eb.Employee).ThenInclude(e => e.Account)
             .FirstOrDefaultAsync(b => b.BranchId == branchId && b.Status != BranchSatusEnum.Inactive.ToString());
 
         if (branch is null) return null;
@@ -150,7 +155,7 @@ public class BranchService
     {
         var branch = await _context.Branches
             .Include(b => b.BranchImages)
-            .Include(b => b.EmployeeBranches).ThenInclude(eb => eb.Employee)
+            .Include(b => b.EmployeeBranches).ThenInclude(eb => eb.Employee).ThenInclude(e => e.Account)
             .FirstOrDefaultAsync(b => b.BranchId == branchId && b.Status == BranchSatusEnum.Inactive.ToString());
 
         if (branch is null) return null;
@@ -241,7 +246,10 @@ public class BranchService
             {
                 EmployeeId = eb.EmployeeId,
                 FullName = eb.Employee?.FullName ?? "",
-                Phone = eb.Employee?.Account.Phone,
+                // [SỬA] eb.Employee?.Account.Phone -> eb.Employee?.Account?.Phone:
+                // Account có thể null nếu chưa Include/Load, hoặc do dữ liệu thiếu; ?. chỉ chặn
+                // null cho Employee, không chặn cho Account phía sau -> gây NullReferenceException.
+                Phone = eb.Employee?.Account?.Phone,
             })
             .ToList(),
         Images = b.BranchImages
@@ -250,20 +258,21 @@ public class BranchService
             .Select(BranchImageService.MapImageToDto)
             .ToList()
     };
-        public async Task<List<ManagerLookupDto>> GetAvailableManagersAsync()
-        {
-            return await _context.Employees.Include(e=>e.Role)
-                .Where(e => e.Role.RoleId==2
-                            && e.Status == "Active")
-                .Select(e => new ManagerLookupDto
-                {
-                    EmployeeId = e.EmployeeId,
-                    FullName = e.FullName,
-                    TotalBranches = e.EmployeeBranches.Count(eb => eb.BranchRole == "Manager")
-                })
-                .Where(x => x.TotalBranches < 3)
-                .OrderBy(x => x.TotalBranches)
-                .ThenBy(x => x.FullName)
-                .ToListAsync();
-        }
+
+    public async Task<List<ManagerLookupDto>> GetAvailableManagersAsync()
+    {
+        return await _context.Employees.Include(e => e.Role)
+            .Where(e => e.Role.RoleId == 2
+                        && e.Status == "Active")
+            .Select(e => new ManagerLookupDto
+            {
+                EmployeeId = e.EmployeeId,
+                FullName = e.FullName,
+                TotalBranches = e.EmployeeBranches.Count(eb => eb.BranchRole == "Manager")
+            })
+            .Where(x => x.TotalBranches < 3)
+            .OrderBy(x => x.TotalBranches)
+            .ThenBy(x => x.FullName)
+            .ToListAsync();
+    }
 }

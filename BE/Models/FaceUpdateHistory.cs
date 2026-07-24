@@ -3,9 +3,6 @@ using System.Collections.Generic;
 
 namespace BE.Models;
 
-/// <summary>
-/// Lịch sử mỗi lần tạo/cập nhật khuôn mặt (hội viên hoặc nhân viên) — chỉ ghi thêm, không sửa/xóa
-/// </summary>
 public partial class FaceUpdateHistory
 {
     public long HistoryId { get; set; }

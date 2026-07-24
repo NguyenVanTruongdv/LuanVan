@@ -3,9 +3,6 @@ using System.Collections.Generic;
 
 namespace BE.Models;
 
-/// <summary>
-/// Dữ liệu nhận diện khuôn mặt (AWS Rekognition) dùng chung cho hội viên và nhân viên — chỉ nhân viên mới được tạo faceId
-/// </summary>
 public partial class FaceDatum
 {
     public long FaceDataId { get; set; }

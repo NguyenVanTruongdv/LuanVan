@@ -75,7 +75,7 @@ const NAV_ITEMS = [
         children: [
             { id: "staff-list", icon: ListTree, label: "Nhân viên", path: "/manager/staff" },
             // TODO: đổi path cho khớp route thực tế của "Nhân viên hệ thống"
-            { id: "staff-system", icon: ShieldCheck, label: "Nhân viên hệ thống", path: "/manager/staff/system" },
+            { id: "staff-create", icon: ShieldCheck, label: "Tạo nhân viên", path: "/manager/staff/create" },
         ],
     },
     {

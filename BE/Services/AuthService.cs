@@ -27,13 +27,16 @@ public class AuthService
     // ĐĂNG NHẬP
     // ───────────────────────────────────────────────
 
-    public async Task<LoginResponseDto> LoginEmployeeAsync(LoginRequestDto req)
+    public async Task<LoginResponseDto> LoginEmployeeAsync(LoginEmployeeRequestDto req)
     {
+        var email = req.Email.Trim().ToLower();
+
         var account = await _db.Accounts
             .Include(a => a.Employee).ThenInclude(e => e!.Role)
-            .Include(a => a.Employee).ThenInclude(e => e!.EmployeeBranches) // MỚI: load chi nhánh
+            .Include(a => a.Employee).ThenInclude(e => e!.EmployeeBranches)
             .FirstOrDefaultAsync(a =>
-                a.Phone == req.Phone &&
+                a.Email != null &&
+                a.Email.ToLower() == email &&
                 a.EmployeeId != null &&
                 a.Employee!.Status == "Active")
             ?? throw new UnauthorizedException("Sai tài khoản hoặc mật khẩu");
@@ -45,7 +48,7 @@ public class AuthService
             throw new UnauthorizedException("Sai tài khoản hoặc mật khẩu");
 
         var emp = account.Employee!;
-        var branchIds = emp.EmployeeBranches.Select(eb => eb.BranchId).ToList(); // MỚI
+        var branchIds = emp.EmployeeBranches.Select(eb => eb.BranchId).ToList();
 
         return await IssueTokens(
             account.AccountId,
@@ -54,36 +57,35 @@ public class AuthService
             emp.Role.RoleName,
             "Employee",
             emp.Status,
-            branchIds // MỚI
+            branchIds
         );
     }
 
     // Chặn account.Status = Suspended; cho phép Member.Status = PendingActivation đăng nhập để xem trạng thái
-    public async Task<LoginResponseDto> LoginMemberAsync(LoginRequestDto req)
-    {
-        var account = await _db.Accounts
-            .Include(a => a.Member)
-            .FirstOrDefaultAsync(a => a.Phone == req.Phone && a.MemberId != null)
-            ?? throw new UnauthorizedException("Sai tài khoản hoặc mật khẩu");
+   public async Task<LoginResponseDto> LoginMemberAsync(LoginMemberRequestDto req)
+{
+    var account = await _db.Accounts
+        .Include(a => a.Member)
+        .FirstOrDefaultAsync(a => a.Phone == req.Phone && a.MemberId != null)
+        ?? throw new UnauthorizedException("Sai tài khoản hoặc mật khẩu");
 
-        if (account.Status == "Suspended")
-            throw new UnauthorizedException("Tài khoản đã bị tạm khóa");
+    if (account.Status == "Suspended")
+        throw new UnauthorizedException("Tài khoản đã bị tạm khóa");
 
-        if (!PasswordHelper.VerifyPassword(req.Password, account.PasswordHash))
-            throw new UnauthorizedException("Sai tài khoản hoặc mật khẩu");
+    if (!PasswordHelper.VerifyPassword(req.Password, account.PasswordHash))
+        throw new UnauthorizedException("Sai tài khoản hoặc mật khẩu");
 
-        var member = account.Member!;
+    var member = account.Member!;
 
-        return await IssueTokens(
-            account.AccountId,
-            member.MemberId,
-            member.FullName,
-            "Member",
-            "Member",
-            member.Status
-        );
-    }
-
+    return await IssueTokens(
+        account.AccountId,
+        member.MemberId,
+        member.FullName,
+        "Member",
+        "Member",
+        member.Status
+    );
+}
     // ───────────────────────────────────────────────
     // ĐĂNG KÝ
     // ───────────────────────────────────────────────
@@ -291,70 +293,70 @@ public class AuthService
     // TOKEN
     // ───────────────────────────────────────────────
 
-        public async Task<LoginResponseDto> RefreshAsync(RefreshRequestDto req)
+    public async Task<LoginResponseDto> RefreshAsync(RefreshRequestDto req)
+    {
+        var hash = JwtHelper.ComputeSha256(req.RefreshToken);
+
+        var stored = await _db.RefreshTokens
+            .FirstOrDefaultAsync(t => t.TokenHash == hash)
+            ?? throw new UnauthorizedAccessException("Token không hợp lệ");
+
+        if (stored.RevokedAt != null || stored.ExpiresAt < DateTime.UtcNow)
+            throw new UnauthorizedAccessException("Phiên đã hết hạn, vui lòng đăng nhập lại");
+
+        stored.RevokedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync();
+
+        var account = await _db.Accounts
+            .Include(a => a.Employee).ThenInclude(e => e!.Role)
+            .Include(a => a.Employee).ThenInclude(e => e!.EmployeeBranches) // MỚI
+            .Include(a => a.Member)
+            .FirstOrDefaultAsync(a => a.AccountId == stored.AccountId)
+            ?? throw new UnauthorizedAccessException("Tài khoản không còn tồn tại");
+
+        if (account.Status == "Suspended")
+            throw new UnauthorizedAccessException("Tài khoản không còn hoạt động");
+
+        long entityId;
+        string fullName;
+        string role;
+        string entityType;
+        string? status;
+        List<int>? branchIds = null; // MỚI
+
+        if (account.EmployeeId != null)
         {
-            var hash = JwtHelper.ComputeSha256(req.RefreshToken);
-
-            var stored = await _db.RefreshTokens
-                .FirstOrDefaultAsync(t => t.TokenHash == hash)
-                ?? throw new UnauthorizedAccessException("Token không hợp lệ");
-
-            if (stored.RevokedAt != null || stored.ExpiresAt < DateTime.UtcNow)
-                throw new UnauthorizedAccessException("Phiên đã hết hạn, vui lòng đăng nhập lại");
-
-            stored.RevokedAt = DateTime.UtcNow;
-            await _db.SaveChangesAsync();
-
-            var account = await _db.Accounts
-                .Include(a => a.Employee).ThenInclude(e => e!.Role)
-                .Include(a => a.Employee).ThenInclude(e => e!.EmployeeBranches) // MỚI
-                .Include(a => a.Member)
-                .FirstOrDefaultAsync(a => a.AccountId == stored.AccountId)
-                ?? throw new UnauthorizedAccessException("Tài khoản không còn tồn tại");
-
-            if (account.Status == "Suspended")
+            var emp = account.Employee!;
+            if (emp.Status != "Active")
                 throw new UnauthorizedAccessException("Tài khoản không còn hoạt động");
 
-            long entityId;
-            string fullName;
-            string role;
-            string entityType;
-            string? status;
-            List<int>? branchIds = null; // MỚI
-
-            if (account.EmployeeId != null)
-            {
-                var emp = account.Employee!;
-                if (emp.Status != "Active")
-                    throw new UnauthorizedAccessException("Tài khoản không còn hoạt động");
-
-                entityId = emp.EmployeeId;
-                fullName = emp.FullName;
-                role = emp.Role.RoleName;
-                entityType = "Employee";
-                status = emp.Status;
-                branchIds = emp.EmployeeBranches.Select(eb => eb.BranchId).ToList(); // MỚI
-            }
-            else
-            {
-                var member = account.Member!;
-                entityId = member.MemberId;
-                fullName = member.FullName;
-                role = "Member";
-                entityType = "Member";
-                status = member.Status;
-            }
-
-            return await IssueTokens(
-                account.AccountId,
-                entityId,
-                fullName,
-                role,
-                entityType,
-                status,
-                branchIds // MỚI
-            );
+            entityId = emp.EmployeeId;
+            fullName = emp.FullName;
+            role = emp.Role.RoleName;
+            entityType = "Employee";
+            status = emp.Status;
+            branchIds = emp.EmployeeBranches.Select(eb => eb.BranchId).ToList(); // MỚI
         }
+        else
+        {
+            var member = account.Member!;
+            entityId = member.MemberId;
+            fullName = member.FullName;
+            role = "Member";
+            entityType = "Member";
+            status = member.Status;
+        }
+
+        return await IssueTokens(
+            account.AccountId,
+            entityId,
+            fullName,
+            role,
+            entityType,
+            status,
+            branchIds // MỚI
+        );
+    }
 
     public async Task LogoutAsync(RefreshRequestDto req)
     {

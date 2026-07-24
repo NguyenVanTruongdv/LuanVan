@@ -18,7 +18,49 @@ function buildEquipmentFormData(payload = {}) {
     }
     if (payload.image instanceof File) {
         formData.append("Image", payload.image);
-    } 
+    }
+    return formData;
+}
+
+// Helper build multipart/form-data cho tạo nhân viên — BE luôn bắt buộc ProfileImage
+// (CreateEmployeeWithAccountDto / CreateEmployeeWithFaceIdDto đều [Required] IFormFile ProfileImage)
+// vì mọi nhân viên tạo mới đều phải đăng ký FaceID ngay. withAccount = true thì gửi kèm
+// LoginPhone/LoginEmail/Password để BE tạo luôn tài khoản đăng nhập (CreateWithAccountAsync),
+// false thì chỉ tạo hồ sơ + FaceID, chưa có tài khoản (CreateWithFaceIdAsync).
+function buildEmployeeFormData(payload = {}, withAccount) {
+    const formData = new FormData();
+    formData.append("FullName", payload.fullName ?? "");
+    formData.append("Phone", payload.phone ?? "");
+    formData.append("Gender", payload.gender ?? "");
+    formData.append("RoleId", payload.roleId ?? "");
+    (payload.branchIds || []).forEach((id) => formData.append("BranchIds", id));
+
+    if (payload.profileImage instanceof File) {
+        formData.append("ProfileImage", payload.profileImage);
+    }
+    if (payload.faceIdReason) {
+        formData.append("FaceIdReason", payload.faceIdReason);
+    }
+
+    if (withAccount) {
+        formData.append("LoginPhone", payload.loginPhone ?? "");
+        if (payload.loginEmail) formData.append("LoginEmail", payload.loginEmail);
+        formData.append("Password", payload.password ?? "");
+    }
+
+    return formData;
+}
+
+// Helper build multipart/form-data cho sửa/đăng ký lại FaceID — PUT /api/employee/{id}/face
+// (UpdateEmployeeFaceIdDto: [Required] IFormFile ProfileImage, string? Reason).
+function buildFaceIdFormData(payload = {}) {
+    const formData = new FormData();
+    if (payload.profileImage instanceof File) {
+        formData.append("ProfileImage", payload.profileImage);
+    }
+    if (payload.reason) {
+        formData.append("Reason", payload.reason);
+    }
     return formData;
 }
 
@@ -45,7 +87,7 @@ function toReportQuery({ fromDate, toDate } = {}) {
 
 const managerApi = {
     // =========================================================================
-    // NHÂN VIÊN
+    // NHÂN VIÊN — map 1-1 với EmployeeController (BE).
     // =========================================================================
     getEmployeeProfile() {
         return authApi.get(`/api/employee/profile`);
@@ -54,17 +96,73 @@ const managerApi = {
         const query = toQuery(params);
         return authApi.get(`/api/employee${query ? `?${query}` : ""}`);
     },
-    createEmployee(payload) {
-        return authApi.post(`/api/employee`, payload);
+    // Xem chi tiết 1 nhân viên — GET /api/employee/{id} (EmployeeController.GetById).
+    getEmployeeDetail(employeeId) {
+        return authApi.get(`/api/employee/${employeeId}`);
     },
+    // Tạo nhân viên + FaceID + tài khoản đăng nhập ngay — POST /api/employee/with-account.
+    createEmployeeWithAccount(payload) {
+        return authApi.post(`/api/employee/with-account`, buildEmployeeFormData(payload, true));
+    },
+    // Tạo nhân viên + FaceID, CHƯA cấp tài khoản đăng nhập — POST /api/employee/with-faceid.
+    // Dùng cái này làm mặc định cho form "Thêm nhân viên"; tài khoản đăng nhập sẽ được
+    // thêm sau ở trang Xem chi tiết (nút tròn +).
+    createEmployeeWithFaceId(payload) {
+        return authApi.post(`/api/employee/with-faceid`, buildEmployeeFormData(payload, false));
+    },
+    // Sửa thông tin cơ bản (không đụng Account/FaceID) — PUT /api/employee/{id}.
+    // Chỉ gửi đúng 5 field UpdateEmployeeDto nhận, không gửi email/password (BE sẽ bỏ qua
+    // nếu gửi thừa, nhưng gửi đúng cho rõ ràng và tránh nhầm lẫn khi đọc code).
     updateEmployee(employeeId, payload) {
-        return authApi.put(`/api/employee/${employeeId}`, payload);
+        return authApi.put(`/api/employee/${employeeId}`, {
+            fullName: payload.fullName,
+            phone: payload.phone,
+            gender: payload.gender,
+            roleId: payload.roleId,
+            branchIds: payload.branchIds,
+        });
     },
+    // Thêm tài khoản đăng nhập cho nhân viên CHƯA có — POST /api/employee/{id}/account.
+    addEmployeeAccount(employeeId, payload) {
+        return authApi.post(`/api/employee/${employeeId}/account`, {
+            loginPhone: payload.loginPhone,
+            loginEmail: payload.loginEmail || null,
+            password: payload.password,
+        });
+    },
+    // Sửa tài khoản đăng nhập ĐÃ có — PUT /api/employee/{id}/account.
+    // newPassword để trống/undefined thì BE giữ nguyên mật khẩu cũ.
+    updateEmployeeAccount(employeeId, payload) {
+        return authApi.put(`/api/employee/${employeeId}/account`, {
+            loginPhone: payload.loginPhone,
+            loginEmail: payload.loginEmail || null,
+            newPassword: payload.newPassword || undefined,
+        });
+    },
+    // Sửa / đăng ký lại FaceID cho nhân viên — PUT /api/employee/{id}/face (multipart/form-data).
+    // profileImage bắt buộc (BE [Required]); reason tùy chọn, không truyền thì BE dùng lý do mặc định.
+    updateEmployeeFace(employeeId, payload) {
+        return authApi.put(`/api/employee/${employeeId}/face`, buildFaceIdFormData(payload));
+    },
+    // Lịch sử cập nhật FaceID của nhân viên — GET /api/employee/{id}/face-history.
+    getEmployeeFaceHistory(employeeId) {
+        return authApi.get(`/api/employee/${employeeId}/face-history`);
+    },
+    // Khóa toàn diện nhân viên (Employee.Status + Account nếu có) — PATCH /api/employee/{id}/hide.
     hideEmployee(employeeId, reason) {
         return authApi.patch(`/api/employee/${employeeId}/hide`, { reason });
     },
+    // Mở khóa toàn diện nhân viên — PATCH /api/employee/{id}/activate.
     activateEmployee(employeeId) {
         return authApi.patch(`/api/employee/${employeeId}/activate`);
+    },
+    // Khóa/mở khóa CHỈ tài khoản đăng nhập, không đụng Employee.Status — dự phòng cho sau
+    // này nếu cần nút riêng ở trang chi tiết (chưa gắn UI ở bước này).
+    lockAccountOnly(employeeId, reason) {
+        return authApi.patch(`/api/employee/${employeeId}/account/lock`, { reason });
+    },
+    unlockAccountOnly(employeeId) {
+        return authApi.patch(`/api/employee/${employeeId}/account/unlock`);
     },
 
     // =========================================================================

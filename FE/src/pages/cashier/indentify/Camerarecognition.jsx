@@ -43,10 +43,16 @@ import cashierApi from "../../../api/cashierApi";
  *     POST /api/identify   { image, action: "checkin"|"checkout", branchId }
  *   BE tự làm hết trong 1 request: nhận diện khuôn mặt qua AWS Rekognition
  *   (SearchFacesByImage trên RekognitionFaceService — KHÔNG gửi FaceId từ
- *   FE, FE chỉ gửi ẢNH) -> map ra memberId -> kiểm tra điều kiện -> nếu
- *   action=checkin thì INSERT dòng check_ins mới; nếu action=checkout thì
- *   tìm dòng check_ins đang mở (check_out_time IS NULL) của hội viên đó và
- *   UPDATE check_out_time/check_out_method.
+ *   FE, FE chỉ gửi ẢNH) -> map ra memberId (hoặc employeeId nếu khuôn mặt
+ *   là của nhân viên) -> kiểm tra điều kiện -> nếu action=checkin thì
+ *   INSERT dòng check_ins mới; nếu action=checkout thì tìm dòng check_ins
+ *   đang mở (check_out_time IS NULL) của hội viên đó và UPDATE
+ *   check_out_time/check_out_method.
+ *   BE có thể trả về `isEmployee: true` kèm object `employee` (thay vì
+ *   `member`) khi khuôn mặt nhận diện được là của NHÂN VIÊN chứ không
+ *   phải hội viên — trường hợp này KHÔNG tạo/khớp bản ghi check_ins nào
+ *   cả (nhân viên không cần check-in/check-out tập luyện), FE chỉ hiển
+ *   thị thông tin nhận diện được cho nhân viên đứng gác biết.
  * - Toàn bộ lời gọi dữ liệu dùng chung `cashierApi` (import từ ./cashierApi,
  *   vốn đã bọc authApi để tự đính kèm Authorization header).
  * ======================================================================= */
@@ -100,7 +106,6 @@ const MEDIAPIPE_FACE_MODEL_URL = "https://storage.googleapis.com/mediapipe-model
 /* Chi nhánh nơi đặt 2 camera này (check_ins.branch_id là cột bắt buộc,
  * không nullable). TODO: thay bằng branchId lấy từ thông tin đăng nhập
  * của nhân viên / context chi nhánh thực tế thay vì hằng số cứng. */
-const BRANCH_ID = 6;
 
 function StatusBadge({ status }) {
     const s = PACKAGE_STATUS_MAP[status] || PACKAGE_STATUS_MAP.active;
@@ -255,7 +260,7 @@ export default function CameraRecognition() {
 
     const handleOpenDoor = async (side) => {
         try {
-            await cashierApi.openDoor(side, BRANCH_ID);
+            await cashierApi.openDoor(side);
             showToast("success", "Đã gửi lệnh mở cửa");
         } catch (err) {
             showToast("error", "Mở cửa thất bại. Vui lòng thử lại.");
@@ -479,7 +484,7 @@ export default function CameraRecognition() {
     };
 
     const [ckRecognizeResult, setCkRecognizeResult] = useState(null);
-    const [ckRecognizeStatus, setCkRecognizeStatus] = useState(null); // "loading" | "success" | "error"
+    const [ckRecognizeStatus, setCkRecognizeStatus] = useState(null); // "loading" | "success" | "error" | "employee"
     const [ckRecognizeReason, setCkRecognizeReason] = useState(""); // lý do không check-in được, hiển thị ngay trên khung camera
 
     /* Cờ điều khiển vòng lặp quét tự động của camera check-in (giống hệt
@@ -576,8 +581,20 @@ export default function CameraRecognition() {
             // 1 lệnh gọi DUY NHẤT: BE tự nhận diện khuôn mặt (Rekognition) +
             // kiểm tra điều kiện + ghi nhận check-in, không cần FE tự lấy
             // memberId rồi gọi thêm getMemberById/checkinByCamera nữa.
-            const result = await cashierApi.identifyAttendance(frame, "checkin", BRANCH_ID);
+            const result = await cashierApi.identifyAttendance(frame, "checkin");
             console.log("[CheckIn] BE trả về:", result.status);
+
+            // Khuôn mặt nhận diện được là NHÂN VIÊN chứ không phải hội viên
+            // -> không có bản ghi check_ins nào liên quan, chỉ hiển thị
+            // thông tin nhận diện cho nhân viên đứng camera biết, không
+            // ghi vào lịch sử "check-in gần nhất".
+            if (result.isEmployee) {
+                setCkRecognizeResult(result.employee);
+                setCkRecognizeStatus("employee");
+                showToast("info", `Nhân viên — ${result.employee?.fullName || ""}`);
+                console.log("[CheckIn] Nhận diện là nhân viên (bỏ qua check-in):", result.employee?.fullName);
+                return;
+            }
 
             if (result.status === "no_face" || result.status === "not_recognized") {
                 // Không có khuôn mặt rõ ràng, hoặc có mặt nhưng không khớp hội
@@ -713,7 +730,7 @@ export default function CameraRecognition() {
 
         setManualCheckinState("loading");
         try {
-            await cashierApi.checkinManual(member.memberId, reasonLabel, BRANCH_ID);
+            await cashierApi.checkinManual(member.memberId, reasonLabel);
             setManualCheckinState("success");
             recordCheckin(member, "phone", "success", reasonLabel);
             showToast("success", `Check-in thành công — ${member.fullName}`);
@@ -739,10 +756,12 @@ export default function CameraRecognition() {
      * ...) thay vì "checkin" — BE tự xét điều kiện (đủ điều kiện hay
      * không, có phiên check-in nào đang mở để đóng lại hay không) và trả
      * về qua các status "ineligible" / "no_open_session" kèm `reason`.
+     * Cũng như Check-in, nếu khuôn mặt là của NHÂN VIÊN (result.isEmployee)
+     * thì chỉ hiển thị thông tin nhận diện, không xử lý check-out.
      */
     const [lastCheckout, setLastCheckout] = useState(null); // { member, result, at }
     const [coRecognizeResult, setCoRecognizeResult] = useState(null);
-    const [coRecognizeStatus, setCoRecognizeStatus] = useState(null); // "loading" | "success" | "error"
+    const [coRecognizeStatus, setCoRecognizeStatus] = useState(null); // "loading" | "success" | "error" | "employee"
     const [coRecognizeReason, setCoRecognizeReason] = useState(""); // lý do không check-out được, hiển thị ngay trên khung camera
 
     const coProcessingRef = useRef(false);
@@ -811,8 +830,18 @@ export default function CameraRecognition() {
             // Cùng 1 endpoint với check-in, chỉ khác action="checkout" — BE
             // sẽ tìm dòng check_ins đang mở (check_out_time NULL) của hội
             // viên này và cập nhật check_out_time, không tạo dòng mới.
-            const result = await cashierApi.identifyAttendance(frame, "checkout", BRANCH_ID);
+            const result = await cashierApi.identifyAttendance(frame, "checkout");
             console.log("[CheckOut] BE trả về:", result.status);
+
+            // Khuôn mặt là của NHÂN VIÊN -> không có phiên check_ins nào để
+            // đóng lại, chỉ hiển thị thông tin nhận diện.
+            if (result.isEmployee) {
+                setCoRecognizeResult(result.employee);
+                setCoRecognizeStatus("employee");
+                showToast("info", `Nhân viên — ${result.employee?.fullName || ""}`);
+                console.log("[CheckOut] Nhận diện là nhân viên (bỏ qua check-out):", result.employee?.fullName);
+                return;
+            }
 
             if (result.status === "no_face" || result.status === "not_recognized") {
                 setCoRecognizeStatus(null);
@@ -897,7 +926,7 @@ export default function CameraRecognition() {
           --primary: #0891b2; --primary-dark: #0e5a6b; --primary-light: #e0f7fb;
           --warning: #d97706; --warning-light: #fef3c7;
           --danger: #dc2626; --danger-light: #fee2e2;
-          --indigo: #6366f1; --indigo-light: #eef2ff;
+          --indigo: #6366f1; --indigo-light: #eef2ff; --indigo-dark: #4338ca;
           --cko-primary: #dc2626; --cko-primary-dark: #b91c1c; --cko-primary-light: #fee2e2;
           --radius-lg: 14px; --radius-md: 10px; --radius-sm: 7px;
         }
@@ -1030,6 +1059,7 @@ export default function CameraRecognition() {
         .rec-viewport-overlay.loading { background: rgba(15,23,42,.5); }
         .rec-viewport-overlay.success.checkout { background: rgba(185,28,28,.7); }
         .rec-viewport-overlay.error   { background: rgba(220,38,38,.7); }
+        .rec-viewport-overlay.employee { background: rgba(67,56,202,.7); }
         .rec-viewport-overlay p { margin: 0; color: #fff; font-weight: 700; font-size: 13px; text-align: center; padding: 0 12px; }
         .rec-viewport-overlay .rec-overlay-reason { margin-top: 2px; font-weight: 500; font-size: 11.5px; opacity: .92; }
 
@@ -1046,6 +1076,11 @@ export default function CameraRecognition() {
         .rec-overlay-note.success svg { color: var(--primary-dark); }
         .rec-overlay-note.success .rec-overlay-note-text,
         .rec-overlay-note.success .rec-overlay-note-label { color: var(--primary-dark); }
+
+        .rec-overlay-note.employee { border-color: #c7d2fe; box-shadow: 0 6px 18px rgba(0,0,0,.2); }
+        .rec-overlay-note.employee svg { color: var(--indigo-dark); }
+        .rec-overlay-note.employee .rec-overlay-note-text,
+        .rec-overlay-note.employee .rec-overlay-note-label { color: var(--indigo-dark); }
 
         /* Đẩy nội dung overlay (icon + tên) xuống sát mép dưới của khung
          * camera thay vì canh giữa — dùng cho overlay kết quả check-in */
@@ -1130,6 +1165,7 @@ export default function CameraRecognition() {
         .rec-lc-card.success.checkin        { border-color: var(--primary); }
         .rec-lc-card.success.checkout       { border-color: var(--cko-primary); }
         .rec-lc-card.error                  { border-color: var(--danger); }
+        .rec-lc-card.employee               { border-color: var(--indigo); }
         .rec-lc-card.lookup-ok              { border-color: var(--primary); }
         .rec-lc-card.lookup-blocked         { border-color: var(--danger); }
 
@@ -1142,6 +1178,7 @@ export default function CameraRecognition() {
         .rec-lc-card.success.checkout .rec-lc-top { background: var(--cko-primary-light); }
         .rec-lc-card.error .rec-lc-top,
         .rec-lc-card.lookup-blocked .rec-lc-top { background: var(--danger-light); }
+        .rec-lc-card.employee .rec-lc-top       { background: var(--indigo-light); }
 
         .rec-lc-avatar {
           width: 34%; aspect-ratio: 1 / 1; max-width: 130px; min-width: 64px; border-radius: 20%;
@@ -1154,12 +1191,14 @@ export default function CameraRecognition() {
         .rec-lc-card.error .rec-lc-avatar,
         .rec-lc-card.lookup-blocked .rec-lc-avatar { background: var(--danger); }
         .rec-lc-card.success.checkout .rec-lc-avatar { background: var(--cko-primary-dark); }
+        .rec-lc-card.employee .rec-lc-avatar { background: var(--indigo-dark); }
 
         .rec-lc-name { font-weight: 700; font-size: 13.5px; margin: 0; word-break: break-word; }
         .rec-lc-result-line { display: flex; align-items: center; justify-content: center; gap: 5px; font-size: 11.5px; font-weight: 700; }
         .rec-lc-result-line.success.checkin  { color: var(--primary-dark); }
         .rec-lc-result-line.success.checkout { color: var(--cko-primary-dark); }
         .rec-lc-result-line.error   { color: var(--danger); }
+        .rec-lc-result-line.employee { color: var(--indigo-dark); }
 
         .rec-lc-source {
           position: absolute; top: 10px; right: 10px; flex-shrink: 0;
@@ -1181,6 +1220,13 @@ export default function CameraRecognition() {
         .rec-lc-internal-note-text { font-size: 12px; font-weight: 700; color: var(--danger); line-height: 1.45; word-break: break-word; }
         .rec-lc-internal-note-label { display: block; font-size: 10px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; color: var(--danger); margin-bottom: 2px; }
 
+        .rec-lc-employee-note {
+          margin-top: 10px; padding: 9px 10px; border-radius: var(--radius-sm);
+          background: var(--indigo-light); border: 1px solid #c7d2fe; display: flex; align-items: flex-start; gap: 7px;
+        }
+        .rec-lc-employee-note svg { flex-shrink: 0; margin-top: 1px; color: var(--indigo-dark); }
+        .rec-lc-employee-note-text { font-size: 12px; font-weight: 600; color: var(--indigo-dark); line-height: 1.45; word-break: break-word; }
+
         .rec-lc-suspend-note {
           margin-top: 8px; padding: 9px 10px; border-radius: var(--radius-sm);
           background: #fff7ed; border: 1px solid #fed7aa; font-size: 12px; color: var(--warning); font-weight: 600;
@@ -1195,6 +1241,7 @@ export default function CameraRecognition() {
         .badge-success { background: var(--primary-light); color: var(--primary-dark); }
         .badge-warning { background: var(--warning-light); color: var(--warning); }
         .badge-danger  { background: var(--danger-light);  color: var(--danger); }
+        .badge-indigo  { background: var(--indigo-light);  color: var(--indigo-dark); }
 
         .rec-overlay {
           position: fixed; inset: 0; z-index: 999; background: rgba(15,23,42,.45);
@@ -1270,6 +1317,7 @@ export default function CameraRecognition() {
         @keyframes rec-toast-in { from { opacity: 0; transform: translateX(-50%) translateY(8px); } to { opacity: 1; transform: translateX(-50%) translateY(0); } }
         .rec-toast.success { background: var(--primary); color: #fff; }
         .rec-toast.error   { background: var(--danger);  color: #fff; }
+        .rec-toast.info    { background: var(--indigo-dark); color: #fff; }
 
         .rec-spinner { border-radius: 50%; border: 3px solid var(--primary-light); border-top-color: var(--primary); animation: rec-spin .7s linear infinite; }
         @keyframes rec-spin { to { transform: rotate(360deg); } }
@@ -1367,6 +1415,17 @@ export default function CameraRecognition() {
                                                 <span className="rec-overlay-note-label">Không thể check-in</span>
                                                 {ckRecognizeResult.fullName}
                                                 {ckRecognizeReason ? ` — ${ckRecognizeReason}` : ""}
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+                                {ckRecognizeStatus === "employee" && ckRecognizeResult && (
+                                    <div className="rec-viewport-overlay transparent bottom-align">
+                                        <div className="rec-overlay-note employee">
+                                            <ShieldAlert size={18} />
+                                            <div className="rec-overlay-note-text">
+                                                <span className="rec-overlay-note-label">Nhận diện nhân viên</span>
+                                                {ckRecognizeResult.fullName} — không cần check-in
                                             </div>
                                         </div>
                                     </div>
@@ -1471,6 +1530,33 @@ export default function CameraRecognition() {
                                         <button className="rec-btn rec-btn-primary checkin rec-lc-checkin-btn" onClick={openReasonModal} disabled={!canCheckin(ckInfoMember)}>
                                             <LogIn size={13} /> Check-in cho hội viên này
                                         </button>
+                                    </div>
+                                </div>
+                            ) : ckRecognizeStatus === "employee" && ckRecognizeResult ? (
+                                <div className="rec-lc-card employee">
+                                    <MemberTop
+                                        member={ckRecognizeResult}
+                                        onViewPhoto={setPhotoViewMember}
+                                        nameContent={
+                                            <>
+                                                <p className="rec-lc-name">{ckRecognizeResult.fullName}</p>
+                                                <div className="rec-lc-result-line employee">
+                                                    <ShieldAlert size={13} /> Nhân viên — không cần check-in
+                                                </div>
+                                                <div className="rec-lc-badges">
+                                                    <span className="rec-badge badge-indigo">{ckRecognizeResult.status || "Active"}</span>
+                                                </div>
+                                            </>
+                                        }
+                                    />
+                                    <div className="rec-lc-body">
+                                        <div className="rec-lc-row"><span className="rec-lc-row-label">Mã nhân viên</span><span className="rec-lc-row-value">#{ckRecognizeResult.employeeId}</span></div>
+                                        <div className="rec-lc-employee-note">
+                                            <ShieldAlert size={15} />
+                                            <div className="rec-lc-employee-note-text">
+                                                Khuôn mặt nhận diện được là của nhân viên, không phải hội viên nên hệ thống không tạo lượt check-in.
+                                            </div>
+                                        </div>
                                     </div>
                                 </div>
                             ) : (
@@ -1610,6 +1696,12 @@ export default function CameraRecognition() {
                                         </p>
                                     </div>
                                 )}
+                                {coRecognizeStatus === "employee" && coRecognizeResult && (
+                                    <div className="rec-viewport-overlay employee">
+                                        <ShieldAlert size={40} color="#fff" />
+                                        <p>Nhận diện nhân viên<br />{coRecognizeResult.fullName}</p>
+                                    </div>
+                                )}
                             </div>
                         </div>
 
@@ -1637,7 +1729,34 @@ export default function CameraRecognition() {
                         </div>
 
                         <div className="rec-info-area">
-                            {!coInfoMember ? (
+                            {coRecognizeStatus === "employee" && coRecognizeResult ? (
+                                <div className="rec-lc-card employee">
+                                    <MemberTop
+                                        member={coRecognizeResult}
+                                        onViewPhoto={setPhotoViewMember}
+                                        nameContent={
+                                            <>
+                                                <p className="rec-lc-name">{coRecognizeResult.fullName}</p>
+                                                <div className="rec-lc-result-line employee">
+                                                    <ShieldAlert size={13} /> Nhân viên — không cần check-out
+                                                </div>
+                                                <div className="rec-lc-badges">
+                                                    <span className="rec-badge badge-indigo">{coRecognizeResult.status || "Active"}</span>
+                                                </div>
+                                            </>
+                                        }
+                                    />
+                                    <div className="rec-lc-body">
+                                        <div className="rec-lc-row"><span className="rec-lc-row-label">Mã nhân viên</span><span className="rec-lc-row-value">#{coRecognizeResult.employeeId}</span></div>
+                                        <div className="rec-lc-employee-note">
+                                            <ShieldAlert size={15} />
+                                            <div className="rec-lc-employee-note-text">
+                                                Khuôn mặt nhận diện được là của nhân viên, không phải hội viên nên hệ thống không tìm/đóng phiên check-out.
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            ) : !coInfoMember ? (
                                 <div className="rec-lastcheckin-empty">
                                     <UserRound size={22} />
                                     <p>Chưa có lượt check-out nào</p>
@@ -1776,7 +1895,7 @@ export default function CameraRecognition() {
             {/* ── Toast ── */}
             {toast && (
                 <div className={`rec-toast ${toast.type}`}>
-                    {toast.type === "success" ? <CheckCircle2 size={14} /> : <XCircle size={14} />}
+                    {toast.type === "success" ? <CheckCircle2 size={14} /> : toast.type === "error" ? <XCircle size={14} /> : <ShieldAlert size={14} />}
                     {toast.text}
                 </div>
             )}

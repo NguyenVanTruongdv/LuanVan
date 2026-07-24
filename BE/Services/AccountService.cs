@@ -26,15 +26,40 @@ namespace BE.Services
 
         /// <summary>
         /// Tạo tài khoản cho member HOẶC employee. Truyền đúng MỘT trong hai: memberId hoặc employeeId.
+        /// Quy tắc đăng nhập theo loại tài khoản:
+        ///   - Member (khách hàng): BẮT BUỘC có Phone, KHÔNG được truyền Email (đăng nhập bằng SĐT + mật khẩu).
+        ///   - Employee (nhân viên): BẮT BUỘC có Email, KHÔNG được truyền Phone (đăng nhập bằng Email + mật khẩu).
         /// </summary>
         public async Task<Account> CreateAccountAsync(
             long? memberId,
             long? employeeId,
-            string phone,
+            string? phone,
             string? email,
             string password)
         {
             ValidateOwner(memberId, employeeId);
+
+            if (memberId.HasValue)
+            {
+                if (string.IsNullOrWhiteSpace(phone))
+                    throw new ArgumentException("Tài khoản khách hàng bắt buộc phải có Số điện thoại.", nameof(phone));
+
+                if (!string.IsNullOrWhiteSpace(email))
+                    throw new ArgumentException("Tài khoản khách hàng chỉ đăng nhập bằng Số điện thoại, không được cung cấp Email.", nameof(email));
+
+                email = null;
+            }
+            else
+            {
+                if (string.IsNullOrWhiteSpace(email))
+                    throw new ArgumentException("Tài khoản nhân viên bắt buộc phải có Email.", nameof(email));
+
+                if (!string.IsNullOrWhiteSpace(phone))
+                    throw new ArgumentException("Tài khoản nhân viên chỉ đăng nhập bằng Email, không được cung cấp Số điện thoại.", nameof(phone));
+
+                phone = null;
+            }
+
             await EnsurePhoneAndEmailAvailableAsync(phone, email, excludeAccountId: null);
 
             var now = DateTime.UtcNow;
@@ -63,7 +88,10 @@ namespace BE.Services
         // ------------------------------------------------------------------
 
         /// <summary>
-        /// Cập nhật số điện thoại và/hoặc email của tài khoản. Truyền null cho field không muốn đổi.
+        /// Cập nhật thông tin đăng nhập của tài khoản. Truyền null cho field không muốn đổi.
+        /// Quy tắc theo loại tài khoản:
+        ///   - Member (khách hàng): chỉ được cập nhật Phone. Truyền newEmail sẽ báo lỗi.
+        ///   - Employee (nhân viên): chỉ được cập nhật Email. Truyền newPhone sẽ báo lỗi.
         /// </summary>
         public async Task<Account> UpdateAccountInfoAsync(
             long accountId,
@@ -72,15 +100,34 @@ namespace BE.Services
         {
             var account = await GetAccountOrThrowAsync(accountId);
 
-            var phoneToCheck = newPhone ?? account.Phone;
-            var emailToCheck = newEmail ?? account.Email;
-            await EnsurePhoneAndEmailAvailableAsync(phoneToCheck, emailToCheck, excludeAccountId: accountId);
+            if (account.MemberId.HasValue)
+            {
+                if (newEmail != null)
+                    throw new ArgumentException("Tài khoản khách hàng không sử dụng Email, không thể cập nhật.", nameof(newEmail));
 
-            if (newPhone != null)
-                account.Phone = newPhone;
+                if (newPhone != null)
+                {
+                    if (string.IsNullOrWhiteSpace(newPhone))
+                        throw new ArgumentException("Tài khoản khách hàng bắt buộc phải có Số điện thoại.", nameof(newPhone));
 
-            if (newEmail != null)
-                account.Email = newEmail;
+                    await EnsurePhoneAndEmailAvailableAsync(newPhone, null, excludeAccountId: accountId);
+                    account.Phone = newPhone;
+                }
+            }
+            else
+            {
+                if (newPhone != null)
+                    throw new ArgumentException("Tài khoản nhân viên không sử dụng Số điện thoại, không thể cập nhật.", nameof(newPhone));
+
+                if (newEmail != null)
+                {
+                    if (string.IsNullOrWhiteSpace(newEmail))
+                        throw new ArgumentException("Tài khoản nhân viên bắt buộc phải có Email.", nameof(newEmail));
+
+                    await EnsurePhoneAndEmailAvailableAsync(null, newEmail, excludeAccountId: accountId);
+                    account.Email = newEmail;
+                }
+            }
 
             account.UpdatedAt = DateTime.UtcNow;
             await _context.SaveChangesAsync();
@@ -191,6 +238,17 @@ namespace BE.Services
                 .FirstOrDefaultAsync(a => a.Phone == phone);
         }
 
+        /// <summary>
+        /// Tìm tài khoản theo Email — dùng cho đăng nhập bằng Email (VD: nhân viên chỉ có Email, không có Phone).
+        /// </summary>
+        public async Task<Account?> GetByEmailAsync(string email)
+        {
+            return await _context.Accounts
+                .Include(a => a.Member)
+                .Include(a => a.Employee)
+                .FirstOrDefaultAsync(a => a.Email == email);
+        }
+
         public async Task<Account?> GetByMemberIdAsync(long memberId)
         {
             return await _context.Accounts.FirstOrDefaultAsync(a => a.MemberId == memberId);
@@ -224,15 +282,25 @@ namespace BE.Services
             return account;
         }
 
-        private async Task EnsurePhoneAndEmailAvailableAsync(string phone, string? email, long? excludeAccountId)
+        /// <summary>
+        /// Kiểm tra Phone/Email không trùng tài khoản khác — chỉ kiểm tra field nào THỰC SỰ có giá trị.
+        /// Bắt buộc phải có ít nhất 1 trong 2 (Phone hoặc Email) để tài khoản còn đăng nhập được.
+        /// </summary>
+        private async Task EnsurePhoneAndEmailAvailableAsync(string? phone, string? email, long? excludeAccountId)
         {
-            var phoneTaken = await _context.Accounts
-                .AnyAsync(a => a.Phone == phone && a.AccountId != excludeAccountId);
+            if (string.IsNullOrWhiteSpace(phone) && string.IsNullOrWhiteSpace(email))
+                throw new ArgumentException("Phải cung cấp ít nhất Số điện thoại hoặc Email để đăng nhập.");
 
-            if (phoneTaken)
-                throw new InvalidOperationException($"Số điện thoại '{phone}' đã được sử dụng.");
+            if (!string.IsNullOrWhiteSpace(phone))
+            {
+                var phoneTaken = await _context.Accounts
+                    .AnyAsync(a => a.Phone == phone && a.AccountId != excludeAccountId);
 
-            if (!string.IsNullOrEmpty(email))
+                if (phoneTaken)
+                    throw new InvalidOperationException($"Số điện thoại '{phone}' đã được sử dụng.");
+            }
+
+            if (!string.IsNullOrWhiteSpace(email))
             {
                 var emailTaken = await _context.Accounts
                     .AnyAsync(a => a.Email == email && a.AccountId != excludeAccountId);

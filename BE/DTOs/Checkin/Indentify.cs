@@ -29,7 +29,7 @@ public class IdentifyAttendanceRequestDto
 {
     public string Image { get; set; } = null!;
     public string Action { get; set; } = null!; // "checkin" | "checkout"
-    public int BranchId { get; set; }
+
 }
 
 public class IdentifyAttendanceResponseDto
@@ -53,7 +53,6 @@ public class ManualCheckinRequestDto
 {
     public long MemberId { get; set; }
     public string ManualReason { get; set; } = null!;
-    public int BranchId { get; set; }
 }
 
 public class ManualCheckinResponseDto
@@ -69,9 +68,9 @@ public class OpenDoorRequestDto
 public class CheckInHistoryQueryDto
 {
     public DateTime? FromDate { get; set; }
-    public DateTime? ToDate { get; set; } 
+    public DateTime? ToDate { get; set; }
 
-    public int? branchId {get; set; }
+    public int? branchId { get; set; }
 
     /// <summary>Tìm theo tên hoặc SĐT hội viên (không bắt buộc)</summary>
     public string? Keyword { get; set; }

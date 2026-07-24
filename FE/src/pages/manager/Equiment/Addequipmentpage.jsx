@@ -10,6 +10,11 @@
 // "../../../api/managerApi". Lùi 2 cấp như trước sẽ ra ngoài src/ -> Vite báo
 // "Failed to resolve import" và toàn bộ trang crash ngay khi load.
 //
+// CẬP NHẬT LẦN NÀY: đổi theme màu đồng bộ với EquipmentListPage.jsx — nền
+// navy #0B1120, khối/panel #1E293B, viền slate #334155, điểm nhấn cyan
+// #06B6D4 (thay cho gradient tím-indigo cũ), chữ tiêu đề #F1F5F9, chữ phụ
+// #94A3B8 / #64748B.
+//
 // TODO: nếu app đã có route guard chặn Staff/Guest vào trang này thì bỏ qua phần check role ở đây.
 
 import { useEffect, useRef, useState } from "react";
@@ -21,23 +26,22 @@ import managerApi from "../../../api/managerApi";
 const EQUIPMENT_STYLES = `
 :root {
     /* Đồng bộ hẳn với nền/tông của sidebar (navy đậm), không chỉ mượn màu nhấn */
-    --eqm-navy-900: #0b1324;
-    --eqm-navy-800: #111c34;
-    --eqm-navy-700: #16223e;
-    --eqm-cyan-500: #17b6d4;
-    --eqm-cyan-600: #0ea5c0;
-    --eqm-cyan-100: rgba(23, 182, 212, 0.16);
-    --eqm-purple-500: #7c5cff;
+    --eqm-navy-900: #0b1120;
+    --eqm-navy-800: #1e293b;
+    --eqm-navy-700: #24304a;
+    --eqm-cyan-500: #06b6d4;
+    --eqm-cyan-600: #0891b2;
+    --eqm-cyan-100: rgba(6, 182, 212, 0.16);
 
     --eqm-bg: var(--eqm-navy-900);
     --eqm-surface: var(--eqm-navy-800);
     --eqm-surface-muted: var(--eqm-navy-700);
-    --eqm-surface-hover: #1c2947;
-    --eqm-border: rgba(255, 255, 255, 0.08);
+    --eqm-surface-hover: #2b3a54;
+    --eqm-border: #334155;
 
-    --eqm-text-900: #eaf2f8;
-    --eqm-text-600: #a9b7cc;
-    --eqm-text-400: #76839c;
+    --eqm-text-900: #f1f5f9;
+    --eqm-text-600: #94a3b8;
+    --eqm-text-400: #64748b;
 
     --eqm-danger: #f87171;
     --eqm-danger-bg: rgba(248, 113, 113, 0.14);
@@ -60,18 +64,18 @@ const EQUIPMENT_STYLES = `
 .eqm-container { max-width: 1180px; margin: 0 auto; }
 
 .eqm-back-link {
-    background: none; border: none; color: var(--eqm-cyan-600);
+    background: none; border: none; color: var(--eqm-cyan-500);
     font-size: 14px; font-weight: 600; cursor: pointer; padding: 0; margin-bottom: 16px;
 }
-.eqm-back-link:hover { text-decoration: underline; }
+.eqm-back-link:hover { text-decoration: underline; filter: brightness(1.1); }
 
 .eqm-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 20px; flex-wrap: wrap; }
 .eqm-header-titles { display: flex; align-items: center; gap: 14px; }
 .eqm-header-icon {
     display: flex; align-items: center; justify-content: center;
     width: 44px; height: 44px; border-radius: 12px; font-size: 20px;
-    background: linear-gradient(135deg, rgba(23, 182, 212, 0.25), rgba(124, 92, 255, 0.25));
-    box-shadow: inset 0 0 0 1px rgba(23, 182, 212, 0.4);
+    background: linear-gradient(135deg, rgba(6, 182, 212, 0.3), rgba(6, 182, 212, 0.08));
+    box-shadow: inset 0 0 0 1px rgba(6, 182, 212, 0.4);
 }
 .eqm-header-titles h1 { margin: 0; font-size: 22px; font-weight: 700; color: var(--eqm-text-900); }
 .eqm-header-titles p { margin: 2px 0 0; font-size: 13.5px; color: var(--eqm-text-400); }
@@ -84,7 +88,7 @@ const EQUIPMENT_STYLES = `
 }
 .eqm-btn:disabled { opacity: 0.6; cursor: not-allowed; }
 .eqm-btn:active:not(:disabled) { transform: translateY(1px); }
-.eqm-btn-primary { background: linear-gradient(135deg, var(--eqm-cyan-500), var(--eqm-navy-800)); color: #fff; }
+.eqm-btn-primary { background: linear-gradient(135deg, var(--eqm-cyan-500), var(--eqm-cyan-600)); color: #fff; }
 .eqm-btn-primary:hover:not(:disabled) { filter: brightness(1.08); }
 .eqm-btn-secondary { background: var(--eqm-surface-muted); color: var(--eqm-text-600); box-shadow: inset 0 0 0 1px var(--eqm-border); }
 .eqm-btn-secondary:hover:not(:disabled) { background: var(--eqm-surface-hover); }
@@ -97,7 +101,7 @@ const EQUIPMENT_STYLES = `
 .eqm-banner-actions { margin-top: 8px; display: flex; gap: 8px; }
 .eqm-banner-link { background: none; border: none; padding: 0; font: inherit; font-weight: 700; text-decoration: underline; cursor: pointer; color: inherit; }
 
-.eqm-form-card { background: var(--eqm-surface); border-radius: var(--eqm-radius); box-shadow: var(--eqm-shadow); padding: 26px; }
+.eqm-form-card { background: var(--eqm-surface); border: 1px solid var(--eqm-border); border-radius: var(--eqm-radius); box-shadow: var(--eqm-shadow); padding: 26px; }
 .eqm-form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px 20px; }
 .eqm-field-full { grid-column: 1 / -1; }
 .eqm-field { display: flex; flex-direction: column; gap: 6px; }
@@ -109,7 +113,7 @@ const EQUIPMENT_STYLES = `
     font-size: 14px; color: var(--eqm-text-900); background: var(--eqm-surface); outline: none;
     transition: border-color 0.15s ease, box-shadow 0.15s ease; font-family: inherit;
 }
-.eqm-input:focus, .eqm-select:focus, .eqm-textarea:focus { border-color: var(--eqm-cyan-500); box-shadow: 0 0 0 3px rgba(23, 182, 212, 0.15); }
+.eqm-input:focus, .eqm-select:focus, .eqm-textarea:focus { border-color: var(--eqm-cyan-500); box-shadow: 0 0 0 3px var(--eqm-cyan-100); }
 .eqm-input:disabled, .eqm-select:disabled { background: var(--eqm-surface-muted); color: var(--eqm-text-400); cursor: not-allowed; }
 .eqm-textarea { min-height: 96px; resize: vertical; }
 .eqm-input::placeholder, .eqm-textarea::placeholder { color: var(--eqm-text-400); }
@@ -143,7 +147,7 @@ const EQUIPMENT_STYLES = `
 
 const MAX_IMAGE_MB = 5;
 
-export default function AddEquipmentPage() {
+export default function AddEquipmentPageofManager() {
     const navigate = useNavigate();
     const fileInputRef = useRef(null);
 
@@ -266,7 +270,7 @@ export default function AddEquipmentPage() {
         <div className="eqm-page">
             <style>{EQUIPMENT_STYLES}</style>
             <div className="eqm-container">
-                <button className="eqm-back-link" onClick={() => navigate("/manager/equipment")}>
+                <button className="eqm-back-link" onClick={() => navigate("/admin/equipment")}>
                     ← Quay lại danh sách
                 </button>
 

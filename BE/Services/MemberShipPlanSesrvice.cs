@@ -1,96 +1,122 @@
-// using BE.Data;
-// using BE.DTOs.Payment;
-// using BE.Models;
-// using Microsoft.EntityFrameworkCore;
+using BE.Data;
+using BE.Models;
 
-// namespace BE.Services;
+using Microsoft.EntityFrameworkCore;
 
-// // Quản lý DANH SÁCH GÓI TẬP (MembershipPlan) — catalog gói bán: tên, giá, số ngày, mô tả.
-// // KHÔNG liên quan đến việc 1 hội viên đang đăng ký gói nào (đó là MemberPackage, xem PackageService).
-// public class MembershipPlanService
-// {
-//     private readonly GymManagementContext _db;
+namespace BE.Services;
 
-//     public MembershipPlanService(GymManagementContext db)
-//     {
-//         _db = db;
-//     }
+// Quản lý danh sách gói tập
+public class MembershipPlanService
+{
+    private readonly GymManagementContext _db;
 
-//     public async Task<List<MembershipPlan>> GetAllAsync(string? packageName)
-//     {
-//         var query = _db.MembershipPlans.Where(p => p.Status == MembershipPlanEnum.OnSale.ToString() && p.PlanType == "Customer").AsQueryable();
+    public MembershipPlanService(GymManagementContext db)
+    {
+        _db = db;
+    }
 
-//         if (!string.IsNullOrWhiteSpace(packageName))
-//         {
-//             query = query.Where(p => p.PlanName.Contains(packageName));
-//         }
+    // Lấy danh sách gói tập đang bán
+    public async Task<List<MembershipPlan>> GetAllAsync(string? packageName)
+    {
+        var query = _db.MembershipPlans
+            .Where(p => p.Status == MembershipPlanEnum.OnSale.ToString())
+            .AsQueryable();
 
-//         return await query.ToListAsync();
-//     }
+        if (!string.IsNullOrWhiteSpace(packageName))
+        {
+            query = query.Where(p => p.PlanName.Contains(packageName));
+        }
 
-//     public async Task<MembershipPlan> GetById(int id)
-//     {
-//         return await _db.MembershipPlans.FindAsync(id);
-//     }
+        return await query
+            .OrderByDescending(p => p.IsPopular)
+            .ThenBy(p => p.Price)
+            .ToListAsync();
+    }
 
-//     public async Task<MembershipPlan> CreateAsync(MembershipPlan mbp)
-//     {
-//         mbp.Status = MembershipPlanEnum.OnSale.ToString();
-//         mbp.CreatedAt = DateTime.UtcNow;
-//         _db.Add(mbp);
-//         await _db.SaveChangesAsync();
-//         return mbp;
-//     }
+    // Lấy chi tiết gói tập
+    public async Task<MembershipPlan?> GetByIdAsync(int id)
+    {
+        return await _db.MembershipPlans
+            .FirstOrDefaultAsync(p => p.PlanId == id);
+    }
 
-//     public async Task<bool> UpdateAsync(int id, MembershipPlan mbp)
-//     {
-//         var existing = await _db.MembershipPlans.FindAsync(id);
-//         if (existing == null)
-//             return false;
-//         existing.PlanName = mbp.PlanName;
-//         existing.Price = mbp.Price;
-//         existing.DurationDays = mbp.DurationDays;
-//         existing.Description = mbp.Description;
-//         await _db.SaveChangesAsync();
-//         return true;
-//     }
+    // Tạo gói tập — Status luôn do service set, không nhận từ client
+    public async Task<MembershipPlan> CreateAsync(MembershipPlanRequest request)
+    {
+        var plan = new MembershipPlan
+        {
+            PlanName = request.PlanName,
+            Price = request.Price,
+            DurationDays = request.DurationDays,
+            Description = request.Description,
+            IsPopular = request.IsPopular,
+            Status = MembershipPlanEnum.OnSale.ToString(),
+            CreatedAt = DateTime.UtcNow,
+        };
 
-//     // Xóa gói tập (soft delete: chuyển sang Discontinued, không xóa record thật)
-//     public async Task<bool> DeleteAsync(int id)
-//     {
-//         var existing = await _db.MembershipPlans.FindAsync(id);
-//         if (existing == null)
-//             return false;
-//         existing.Status = MembershipPlanEnum.Discontinued.ToString();
-//         await _db.SaveChangesAsync();
-//         return true;
-//     }
-//     public async Task<List<InternalMembershipPlanDto>> GetAllInternalAsync(string? packageName)
-//     {
-//         var query = _db.MembershipPlans
-//             .Where(p => p.Status == MembershipPlanEnum.OnSale.ToString()
-//                     && p.PlanType == "Internal")
-//             .AsQueryable();
+        _db.MembershipPlans.Add(plan);
+        await _db.SaveChangesAsync();
 
-//         if (!string.IsNullOrWhiteSpace(packageName))
-//         {
-//             query = query.Where(p => p.PlanName.Contains(packageName));
-//         }
+        return plan;
+    }
 
-//         return await query
-//             .Select(p => new InternalMembershipPlanDto
-//             {
-//                 PlanId = p.PlanId,
-//                 PlanName = p.PlanName,
-//                 Price = p.Price,
-//                 DurationDays = p.DurationDays,
-//                 Description = p.Description,
-//                 PlanType = p.PlanType,
-//                 Status = p.Status,
-//                 CreatedAt = p.CreatedAt,
-//                 IsPopular = p.IsPopular
-//             })
-//             .ToListAsync();
-//     }
+    // Cập nhật thông tin gói tập — KHÔNG đụng tới Status ở đây.
+    // Đổi trạng thái (ngừng bán / mở bán lại) đi qua UpdateStatusAsync / DeleteAsync riêng.
+    public async Task<bool> UpdateAsync(int id, MembershipPlanRequest request)
+    {
+        var existing = await _db.MembershipPlans.FindAsync(id);
 
-// }
+        if (existing == null)
+            return false;
+
+        existing.PlanName = request.PlanName;
+        existing.Price = request.Price;
+        existing.DurationDays = request.DurationDays;
+        existing.Description = request.Description;
+        existing.IsPopular = request.IsPopular;
+
+        await _db.SaveChangesAsync();
+
+        return true;
+    }
+
+    // Đổi trạng thái gói tập (tách riêng khỏi UpdateAsync).
+    // status truyền vào phải khớp tên value của MembershipPlanEnum (vd: "OnSale", "Discontinued").
+    public async Task<bool> UpdateStatusAsync(int id, MembershipPlanEnum status)
+    {
+        var existing = await _db.MembershipPlans.FindAsync(id);
+
+        if (existing == null)
+            return false;
+
+        existing.Status = status.ToString();
+        await _db.SaveChangesAsync();
+
+        return true;
+    }
+
+    // Ngừng kinh doanh gói tập (Soft Delete)
+    public async Task<bool> DeleteAsync(int id)
+    {
+        return await UpdateStatusAsync(id, MembershipPlanEnum.Discontinued);
+    }
+            public class MembershipPlanRequest
+        {
+            public string PlanName { get; set; } = null!;
+        
+            public decimal Price { get; set; }
+        
+            public short DurationDays { get; set; }
+        
+            public string? Description { get; set; }
+        
+            public bool IsPopular { get; set; }
+        }
+        
+        // Dùng riêng cho endpoint PATCH /api/packages/{id}/status.
+        // Status là MembershipPlanEnum nên body chỉ cần { "status": "OnSale" } hoặc { "status": "Discontinued" }.
+        public class UpdateMembershipPlanStatusRequest
+        {
+            public MembershipPlanEnum Status { get; set; }
+}
+}

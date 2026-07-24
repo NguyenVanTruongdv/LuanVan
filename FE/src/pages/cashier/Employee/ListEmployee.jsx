@@ -973,7 +973,7 @@ export default function ListEmployee() {
     const fetchList = useCallback(() => {
         setLoadingList(true);
         setListError("");
-        return cashierApi.getListMembersEmployee({})
+        return cashierApi.getListEmployee({})
             .then(data => setMembers((data || []).map(normalizeListItem)))
             .catch(() => setListError("Không tải được danh sách nhân viên."))
             .finally(() => setLoadingList(false));

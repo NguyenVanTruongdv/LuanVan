@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using Microsoft.AspNetCore.Http;
 
 namespace BE.DTOs.Equipment
@@ -15,7 +14,7 @@ namespace BE.DTOs.Equipment
         public string Status { get; set; } = null!;
         public string? Description { get; set; }
         public DateTime AddedAt { get; set; }
-        public List<string> ImageUrls { get; set; } = new();
+        public string? ImageUrl { get; set; }
     }
 
     /// <summary>

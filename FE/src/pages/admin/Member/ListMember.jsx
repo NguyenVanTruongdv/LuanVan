@@ -78,14 +78,13 @@ const FIELD_LABELS = {
     internal_notes: "Ghi chú nội bộ",
     CREATE_MEMBER: "Tạo hội viên",
 };
-
 function normalizeListItem(m) {
     const pkg = m.currentPackages?.[0];
     return {
         id: m.memberId,
-        hoTen: m.fullName,
-        sdt: m.phone,
-        chiNhanh: m.branchName,
+        hoTen: m.fullName || "",   // ← thêm fallback
+        sdt: m.phone || "",        // ← thêm fallback
+        chiNhanh: m.branchName || "",
         goiTap: pkg?.planName || "Chưa có gói",
         trangThai: STATUS_MAP[m.status] || m.status,
         gioiTinh: "",
@@ -93,6 +92,7 @@ function normalizeListItem(m) {
         avatar: m.profileImage || "",
         ngayDangKy: pkg?.startDate || "",
     };
+
 }
 
 function normalizeDetail(m) {
@@ -608,8 +608,8 @@ function ListPage({ members, onView, onEdit, loading = false }) {
     }, [members]);
 
     const filtered = useMemo(() => members.filter(m =>
-        m.hoTen.toLowerCase().includes(fName.trim().toLowerCase())
-        && m.sdt.includes(fPhone.trim())
+        (m.hoTen || "").toLowerCase().includes(fName.trim().toLowerCase())
+        && (m.sdt || "").includes(fPhone.trim())
         && (fBranch === "Tất cả" || m.chiNhanh === fBranch)
     ), [members, fName, fPhone, fBranch]);
 

@@ -3,9 +3,6 @@ using System.Collections.Generic;
 
 namespace BE.Models;
 
-/// <summary>
-/// Tài khoản đăng nhập dùng chung cho hội viên và nhân viên
-/// </summary>
 public partial class Account
 {
     /// <summary>
@@ -23,10 +20,7 @@ public partial class Account
     /// </summary>
     public long? EmployeeId { get; set; }
 
-    /// <summary>
-    /// Số điện thoại — dùng làm tên đăng nhập, duy nhất toàn hệ thống
-    /// </summary>
-    public string Phone { get; set; } = null!;
+    public string? Phone { get; set; }
 
     /// <summary>
     /// Email, dùng khôi phục mật khẩu/nhận thông báo, có thể NULL nhưng phải duy nhất nếu có

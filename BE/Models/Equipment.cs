@@ -20,13 +20,16 @@ public partial class Equipment
 
     public string? Description { get; set; }
 
+    /// <summary>
+    /// Ảnh thiết bị — quan hệ 1-1, mỗi thiết bị chỉ có 1 ảnh
+    /// </summary>
+    public string? ImageUrl { get; set; }
+
     public DateTime AddedAt { get; set; }
 
     public virtual Branch Branch { get; set; } = null!;
 
     public virtual EquipmentCategory Category { get; set; } = null!;
-
-    public virtual ICollection<EquipmentImage> EquipmentImages { get; set; } = new List<EquipmentImage>();
 
     public virtual ICollection<Incident> Incidents { get; set; } = new List<Incident>();
 }

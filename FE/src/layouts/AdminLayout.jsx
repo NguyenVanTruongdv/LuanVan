@@ -54,14 +54,23 @@ const NAV_ITEMS = [
         ],
     },
     {
+        id: "home",
+        icon: Building2,
+        label: "Quản lý trang chủ",
+        matchPrefix: "/admin/homepage",
+        children: [
+            { id: "home", icon: ListTree, label: "Hình ảnh trang chủ", path: "/admin/homepage/images" },
+
+        ],
+    },
+    {
         id: "staff",
         icon: UserCog,
         label: "Quản lý nhân viên",
         matchPrefix: "/admin/staff",
         children: [
-            { id: "staff/system", icon: ListTree, label: "Nhân viên hệ thống", path: "/admin/staffs/system" },
-            { id: "staff-list", icon: ListTree, label: "Nhân viên ", path: "/admin/staffs" },
-            { id: "staff-add", icon: ListTree, label: "Tạo nhân viên hệ thống", path: "/admin/staff-create" },
+            { id: "staff/system", icon: ListTree, label: "Danh sách nhân viên", path: "/admin/staffs" },
+            { id: "staff-add", icon: ListTree, label: "Tạo nhân viên", path: "/admin/staff-create" },
         ],
     },
     {

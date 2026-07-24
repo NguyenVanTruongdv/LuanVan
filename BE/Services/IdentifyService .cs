@@ -35,11 +35,11 @@ public class IdentifyService
     // FE gửi ảnh + action ("checkin" hoặc "checkout") + branchId.
     //
     //   - OwnerType = Employee -> luồng riêng cho NHÂN VIÊN (chỉ kiểm tra
-    //     Employee.Status, trả về Employee thay vì Member).
+    //     Employee.Status, ghi CheckIn với EmployeeId thay vì MemberId).
     //   - OwnerType = Member   -> luồng cũ cho HỘI VIÊN, trạng thái khoá tài
     //     khoản lấy từ Account.Status (Member luôn đi kèm Account).
     // =====================================================================
-    public async Task<IdentifyAttendanceResponseDto> IdentifyAttendanceAsync(IdentifyAttendanceRequestDto request)
+    public async Task<IdentifyAttendanceResponseDto> IdentifyAttendanceAsync(IdentifyAttendanceRequestDto request, int branchId)
     {
         byte[]? imageBytes = DecodeBase64Image(request.Image);
         if (imageBytes == null)
@@ -61,15 +61,16 @@ public class IdentifyService
 
         return searchResult.OwnerType switch
         {
-            FaceOwnerType.Employee => await IdentifyEmployeeAsync(searchResult.EmployeeId!.Value, request.BranchId, request.Action),
-            FaceOwnerType.Member => await IdentifyMemberAsync(searchResult.MemberId!.Value, request.BranchId, request.Action),
+            FaceOwnerType.Employee => await IdentifyEmployeeAsync(searchResult.EmployeeId!.Value, branchId, request.Action),
+            FaceOwnerType.Member => await IdentifyMemberAsync(searchResult.MemberId!.Value, branchId, request.Action),
             _ => new IdentifyAttendanceResponseDto { Status = "not_recognized" }
         };
     }
 
     // =====================================================================
     // LUỒNG NHÂN VIÊN — chỉ kiểm tra Employee.Status, không đụng tới gói tập
-    // hay bảng CheckIn của hội viên. Vẫn cộng/trừ mật độ phòng gym.
+    // của hội viên. Ghi nhận CheckIn với EmployeeId (MemberId/MemberPackageId
+    // để null), đồng thời cộng/trừ mật độ phòng gym.
     // =====================================================================
     private async Task<IdentifyAttendanceResponseDto> IdentifyEmployeeAsync(long employeeId, int branchId, string? action)
     {
@@ -102,18 +103,71 @@ public class IdentifyService
 
         if (action == "checkout")
         {
-            await _densityService.AdjustAsync(branchId, -1);
+            return await DoEmployeeAutoCheckoutAsync(employee.EmployeeId, branchId, employeeDto);
         }
         else
         {
-            await _densityService.AdjustAsync(branchId, 1);
+            return await DoEmployeeAutoCheckinAsync(employee.EmployeeId, branchId, employeeDto);
         }
+    }
+
+    // ------------------------ CHECK-IN TỰ ĐỘNG (camera) — NHÂN VIÊN ------------------------
+    private async Task<IdentifyAttendanceResponseDto> DoEmployeeAutoCheckinAsync(long employeeId, int branchId, EmployeeIdentifyDto employeeDto)
+    {
+        var checkIn = new Models.CheckIn
+        {
+            EmployeeId = employeeId,
+            MemberId = null,
+            MemberPackageId = null,
+            BranchId = branchId,
+            CheckInTime = DateTime.Now,
+            Method = "Auto"
+        };
+
+        _context.CheckIns.Add(checkIn);
+        await _context.SaveChangesAsync();
+
+        await _densityService.AdjustAsync(branchId, 1);
 
         return new IdentifyAttendanceResponseDto
         {
             Status = "success",
             IsEmployee = true,
-            Employee = employeeDto
+            Employee = employeeDto,
+            CheckInId = checkIn.CheckInId
+        };
+    }
+
+    // ------------------------ CHECK-OUT TỰ ĐỘNG (camera) — NHÂN VIÊN ------------------------
+    private async Task<IdentifyAttendanceResponseDto> DoEmployeeAutoCheckoutAsync(long employeeId, int branchId, EmployeeIdentifyDto employeeDto)
+    {
+        Models.CheckIn? openSession = await _context.CheckIns
+            .Where(c => c.EmployeeId == employeeId && c.CheckOutTime == null)
+            .OrderByDescending(c => c.CheckInTime)
+            .FirstOrDefaultAsync();
+
+        if (openSession == null)
+        {
+            return new IdentifyAttendanceResponseDto
+            {
+                Status = "no_open_session",
+                IsEmployee = true,
+                Employee = employeeDto
+            };
+        }
+
+        openSession.CheckOutTime = DateTime.Now;
+        openSession.CheckOutMethod = "Auto";
+        await _context.SaveChangesAsync();
+
+        await _densityService.AdjustAsync(branchId, -1);
+
+        return new IdentifyAttendanceResponseDto
+        {
+            Status = "success",
+            IsEmployee = true,
+            Employee = employeeDto,
+            CheckInId = openSession.CheckInId
         };
     }
 
@@ -232,7 +286,7 @@ public class IdentifyService
     }
 
     // ===================== CHECK-IN THỦ CÔNG (quầy) — HỘI VIÊN =====================
-    public async Task<ManualCheckinResponseDto> CheckinManualAsync(ManualCheckinRequestDto request, long? staffId)
+    public async Task<ManualCheckinResponseDto> CheckinManualAsync(ManualCheckinRequestDto request, long? staffId, int branchId)
     {
         Member? member = await LoadMemberWithDetailsAsync(request.MemberId);
         if (member == null)
@@ -251,7 +305,7 @@ public class IdentifyService
         {
             MemberId = member.MemberId,
             MemberPackageId = activePackage!.MemberPackageId,
-            BranchId = request.BranchId,
+            BranchId = branchId,
             CheckInTime = DateTime.Now,
             Method = "Manual",
             StaffId = staffId,
@@ -271,13 +325,8 @@ public class IdentifyService
     }
 
     // ===================== MỞ CỬA =====================
-    public async Task OpenDoorAsync(long employeeId, OpenDoorRequestDto request)
+    public async Task OpenDoorAsync(int branchId, OpenDoorRequestDto request)
     {
-        var branchId = await _context.EmployeeBranches
-            .Where(eb => eb.EmployeeId == employeeId)
-            .Select(x => x.BranchId)
-            .FirstOrDefaultAsync();
-
         if (request.Side == "checkout")
         {
             await _densityService.AdjustAsync(branchId, -1);
@@ -421,6 +470,11 @@ public class IdentifyService
     // ===================== LỊCH SỬ CHECK-IN THEO NHÂN VIÊN =====================
     // Xác định quyền Admin/Manager theo RoleName (chuỗi) để nhất quán với
     // EmployeeService, không dựa cứng vào RoleId số.
+    //
+    // Lưu ý: từ khi CheckIn hỗ trợ cả lượt của nhân viên (MemberId = null,
+    // EmployeeId khác null), endpoint này chỉ lọc lịch sử check-in của HỘI VIÊN
+    // (c.MemberId != null) để không đổi hành vi/DTO hiện có. Nếu cần xem chấm
+    // công của nhân viên, nên làm API riêng.
     public async Task<CheckInHistoryResponseDto> GetCheckInHistoryByStaffAsync(long staffId, CheckInHistoryQueryDto query)
     {
         Employee? employee = await _context.Employees
@@ -444,6 +498,7 @@ public class IdentifyService
 
         IQueryable<Models.CheckIn> baseQuery = _context.CheckIns
             .AsNoTracking()
+            .Where(c => c.MemberId != null)
             .Include(c => c.Member).ThenInclude(m => m.FaceDatum)
             .Include(c => c.Member).ThenInclude(m => m.Account)
             .Include(c => c.Branch)
@@ -506,8 +561,8 @@ public class IdentifyService
         {
             string kw = query.Keyword.Trim();
             baseQuery = baseQuery.Where(c =>
-                c.Member.FullName.Contains(kw) ||
-                (c.Member.Account != null && c.Member.Account.Phone != null && c.Member.Account.Phone.Contains(kw)));
+                c.Member!.FullName.Contains(kw) ||
+                (c.Member!.Account != null && c.Member.Account.Phone != null && c.Member.Account.Phone.Contains(kw)));
         }
 
         int totalCount = await baseQuery.CountAsync();
@@ -524,8 +579,8 @@ public class IdentifyService
         List<CheckInHistoryItemDto> items = records.Select(c => new CheckInHistoryItemDto
         {
             CheckInId = c.CheckInId,
-            MemberId = c.MemberId,
-            MemberName = c.Member.FullName,
+            MemberId = c.MemberId!.Value,
+            MemberName = c.Member!.FullName,
             MemberPhone = c.Member.Account != null ? c.Member.Account.Phone : null,
             MemberAvatar = c.Member.FaceDatum?.ProfileImage,
             BranchId = c.BranchId,

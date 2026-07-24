@@ -53,13 +53,13 @@ const cashierApi = {
         ).toString();
         return authApi.get(`/api/members${query ? `?${query}` : ""}`);
     },
-    getListMembersEmployee(params = {}) {
+    getListEmployee(params = {}) {
         const query = new URLSearchParams(
             Object.entries(params).filter(
                 ([, v]) => v !== undefined && v !== null && v !== ""
             )
         ).toString();
-        return authApi.get(`/api/members/employee${query ? `?${query}` : ""}`);
+        return authApi.get(`/api/employee${query ? `?${query}` : ""}`);
     },
     getAll(params = {}) {
         const query = new URLSearchParams(
@@ -192,7 +192,7 @@ const cashierApi = {
     // -> response: { status, member, checkInId, reason }
     //    status: "success" | "no_face" | "not_recognized" | "ineligible" | "no_open_session"
     identifyAttendance(imageBase64, action, branchId) {
-        return authApi.post(`/api/identify`, { image: imageBase64, action, branchId }, false);
+        return authApi.post(`/api/identify`, { image: imageBase64, action, branchId });
     },
 
     // =========================================================================

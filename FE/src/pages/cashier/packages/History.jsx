@@ -21,6 +21,7 @@ import managerApi from "../../../api/managerApi";
 // Trạng thái của MemberPackage (gói tập đã đăng ký) — khác với paymentStatus của Transaction.
 const STATUS_CONFIG = {
   Active: { label: "Đang hoạt động", icon: CheckCircle2, bg: "rgba(4,120,87,0.16)", color: "#34d399" },
+  PendingActivation: { label: "Chờ hoạt động", icon: Clock, bg: "rgba(180,140,0,0.16)", color: "#facc15" },
   Expired: { label: "Hết hạn", icon: Clock, bg: "rgba(100,116,139,0.16)", color: "#94a3b8" },
   Cancelled: { label: "Đã hủy", icon: XCircle, bg: "rgba(190,18,60,0.16)", color: "#fb7185" },
 };
@@ -377,11 +378,12 @@ export default function LichSuDangKyGoiTap() {
                 onChange={setStatusFilter}
                 placeholder="Tất cả trạng thái"
                 options={[
-                  { value: "all", label: "Tất cả trạng thái" },
-                  { value: "Active", label: "Đang hoạt động" },
-                  { value: "Expired", label: "Hết hạn" },
-                  { value: "Cancelled", label: "Đã hủy" },
-                ]}
+    { value: "all", label: "Tất cả trạng thái" },
+    { value: "Active", label: "Đang hoạt động" },
+    { value: "PendingActivation", label: "Chờ hoạt động" },
+    { value: "Expired", label: "Hết hạn" },
+    { value: "Cancelled", label: "Đã hủy" },
+  ]}
               />
 
               <CustomSelect

@@ -12,10 +12,8 @@ public partial class Employee
 
     public string FullName { get; set; } = null!;
 
-/// <summary>
-/// Số điện thoại liên hệ của nhân viên
-/// </summary>
-public string Phone { get; set; } = null!;
+    public string Phone { get; set; } = null!;
+
     public string Gender { get; set; } = null!;
 
     /// <summary>
@@ -40,6 +38,8 @@ public string Phone { get; set; } = null!;
     public virtual Account? Account { get; set; }
 
     public virtual ICollection<CheckIn> CheckInCheckOutStaffs { get; set; } = new List<CheckIn>();
+
+    public virtual ICollection<CheckIn> CheckInEmployees { get; set; } = new List<CheckIn>();
 
     public virtual ICollection<CheckIn> CheckInStaffs { get; set; } = new List<CheckIn>();
 

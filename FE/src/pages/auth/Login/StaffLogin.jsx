@@ -1,204 +1,201 @@
 import { useState } from "react";
-  import { useNavigate } from "react-router-dom";
-  import authApi from "../../../api/authApi";
+import { useNavigate } from "react-router-dom";
+import authApi from "../../../api/authApi";
 
-  // Map role trả về từ BE -> route tương ứng sau khi đăng nhập.
-  // ⚠️ Kiểm tra lại đúng giá trị chuỗi role mà BE trả (vd: "Manager", "MANAGER",
-  // "manager"...) rồi chỉnh key cho khớp. Có thể để so sánh không phân biệt hoa/thường
-  // bằng cách .toLowerCase() như bên dưới cho an toàn.
-  const ROLE_HOME_ROUTES = {
-    manager: "/manager",
-    admin: "/admin",
-    staff: "/cashier",
+// Map role trả về từ BE -> route tương ứng sau khi đăng nhập.
+// ⚠️ Kiểm tra lại đúng giá trị chuỗi role mà BE trả (vd: "Manager", "MANAGER",
+// "manager"...) rồi chỉnh key cho khớp. Có thể để so sánh không phân biệt hoa/thường
+// bằng cách .toLowerCase() như bên dưới cho an toàn.
+const ROLE_HOME_ROUTES = {
+  manager: "/manager",
+  admin: "/admin",
+  staff: "/cashier",
+};
+
+function getHomeRouteByRole(role) {
+  if (!role) return "/cashier";
+  const key = String(role).toLowerCase();
+  return ROLE_HOME_ROUTES[key] || "/cashier";
+}
+
+export default function StaffLogin() {
+  const navigate = useNavigate();
+
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  const handleLogin = async () => {
+    setError("");
+
+    if (!email || !password) {
+      setError("Vui lòng nhập đầy đủ email và mật khẩu");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      // ⚠️ Kiểm tra lại tên field backend yêu cầu (email) khớp với
+      // LoginEmployeeRequestDto bên BE.
+      const data = await authApi.loginEmployee({
+        email,
+        password,
+      });
+
+      navigate(getHomeRouteByRole(data?.role));
+    } catch (err) {
+      setError(err.message || "Đăng nhập thất bại");
+    } finally {
+      setLoading(false);
+    }
   };
 
-  function getHomeRouteByRole(role) {
-    if (!role) return "/cashier";
-    const key = String(role).toLowerCase();
-    return ROLE_HOME_ROUTES[key] || "/cashier";
-  }
+  return (
+    <div style={styles.root}>
+      {/* Decorative background shapes */}
+      <div style={styles.bgCircle1} />
+      <div style={styles.bgCircle2} />
 
-  export default function StaffLogin() {
-    const navigate = useNavigate();
-
-    const [phone, setPhone] = useState("");
-    const [password, setPassword] = useState("");
-    const [showPassword, setShowPassword] = useState(false);
-    const [loading, setLoading] = useState(false);
-    const [error, setError] = useState("");
-
-    const handleLogin = async () => {
-      setError("");
-
-      if (!phone || !password) {
-        setError("Vui lòng nhập đầy đủ số điện thoại và mật khẩu");
-        return;
-      }
-
-      setLoading(true);
-      try {
-        // ⚠️ Kiểm tra lại tên field backend yêu cầu (phoneNumber/phone/username...)
-        // authApi.loginEmployee() trả thẳng data JSON từ BE (không phải response
-        // axios), dạng { accessToken, refreshToken, fullName, role, entityType, status }
-        // — saveTokens() bên trong authApi đã lưu role vào localStorage rồi, ở đây
-        // chỉ cần đọc thẳng data.role để điều hướng.
-        const data = await authApi.loginEmployee({
-            phone,
-             password,
-        });
-
-        navigate(getHomeRouteByRole(data?.role));
-      } catch (err) {
-        setError(err.message || "Đăng nhập thất bại");
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    return (
-      <div style={styles.root}>
-        {/* Decorative background shapes */}
-        <div style={styles.bgCircle1} />
-        <div style={styles.bgCircle2} />
-
-        <div style={styles.container}>
-          {/* Left accent panel */}
-          <div style={styles.sidePanel}>
-            <div style={styles.sidePanelInner}>
-              <div style={styles.brandMark}>
-                <svg width="44" height="44" viewBox="0 0 44 44" fill="none">
-                  <rect width="44" height="44" rx="12" fill="rgba(6,182,212,0.15)" />
-                  <path d="M8 22h6M30 22h6M14 14v16M30 14v16M14 18h16M14 26h16" stroke="#06B6D4" strokeWidth="2.5" strokeLinecap="round" />
-                </svg>
-              </div>
-              <h2 style={styles.sideTitle}>Staff Portal</h2>
-              <p style={styles.sideDesc}>Quản lý phòng gym chuyên nghiệp dành cho đội ngũ nội bộ</p>
-
-              <div style={styles.sideStats}>
-                <div style={styles.statItem}>
-                  <span style={styles.statNum}>248</span>
-                  <span style={styles.statLabel}>Members Active</span>
-                </div>
-                <div style={styles.statDivider} />
-                <div style={styles.statItem}>
-                  <span style={styles.statNum}>12</span>
-                  <span style={styles.statLabel}>Sessions Today</span>
-                </div>
-              </div>
-
-              <div style={styles.sideFooterTag}>VT Gym Management System v2.1</div>
+      <div style={styles.container}>
+        {/* Left accent panel */}
+        <div style={styles.sidePanel}>
+          <div style={styles.sidePanelInner}>
+            <div style={styles.brandMark}>
+              <svg width="44" height="44" viewBox="0 0 44 44" fill="none">
+                <rect width="44" height="44" rx="12" fill="rgba(6,182,212,0.15)" />
+                <path d="M8 22h6M30 22h6M14 14v16M30 14v16M14 18h16M14 26h16" stroke="#06B6D4" strokeWidth="2.5" strokeLinecap="round" />
+              </svg>
             </div>
+            <h2 style={styles.sideTitle}>Staff Portal</h2>
+            <p style={styles.sideDesc}>Quản lý phòng gym chuyên nghiệp dành cho đội ngũ nội bộ</p>
+
+            <div style={styles.sideStats}>
+              <div style={styles.statItem}>
+                <span style={styles.statNum}>248</span>
+                <span style={styles.statLabel}>Members Active</span>
+              </div>
+              <div style={styles.statDivider} />
+              <div style={styles.statItem}>
+                <span style={styles.statNum}>12</span>
+                <span style={styles.statLabel}>Sessions Today</span>
+              </div>
+            </div>
+
+            <div style={styles.sideFooterTag}>VT Gym Management System v2.1</div>
           </div>
+        </div>
 
-          {/* Right login form */}
-          <div style={styles.formPanel}>
-            <div style={styles.formInner}>
-              <div style={styles.formHeader}>
-                <h1 style={styles.formTitle}>Đăng nhập</h1>
-                <p style={styles.formSubtitle}>Chào mừng trở lại, vui lòng xác thực để tiếp tục</p>
-              </div>
+        {/* Right login form */}
+        <div style={styles.formPanel}>
+          <div style={styles.formInner}>
+            <div style={styles.formHeader}>
+              <h1 style={styles.formTitle}>Đăng nhập</h1>
+              <p style={styles.formSubtitle}>Chào mừng trở lại, vui lòng xác thực để tiếp tục</p>
+            </div>
 
-              {/* Phone */}
-              <div style={styles.formGroup}>
-                <label style={styles.label}>Số Điện Thoại Nhân Viên</label>
-                <div style={styles.inputWrapper}>
-                  <svg style={styles.inputIcon} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" strokeWidth="2">
-                    <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" />
-                    <polyline points="22,6 12,13 2,6" />
-                  </svg>
-                  <input
-                    style={styles.input}
-                    type="text"
-                    placeholder="0901234567"
-                    value={phone}
-                    onChange={(e) => setPhone(e.target.value)}
-                    onFocus={e => { e.target.style.borderColor = "#06B6D4"; e.target.style.boxShadow = "0 0 0 3px rgba(6,182,212,0.12)"; }}
-                    onBlur={e => { e.target.style.borderColor = "#334155"; e.target.style.boxShadow = "none"; }}
-                  />
-                </div>
-              </div>
-
-              {/* Password */}
-              <div style={styles.formGroup}>
-                <label style={styles.label}>Mật khẩu</label>
-                <div style={styles.inputWrapper}>
-                  <svg style={styles.inputIcon} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" strokeWidth="2">
-                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
-                    <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-                  </svg>
-                  <input
-                    style={styles.input}
-                    type={showPassword ? "text" : "password"}
-                    placeholder="••••••••"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    onKeyDown={(e) => { if (e.key === "Enter") handleLogin(); }}
-                    onFocus={e => { e.target.style.borderColor = "#06B6D4"; e.target.style.boxShadow = "0 0 0 3px rgba(6,182,212,0.12)"; }}
-                    onBlur={e => { e.target.style.borderColor = "#334155"; e.target.style.boxShadow = "none"; }}
-                  />
-                  <button
-                    type="button"
-                    style={styles.eyeBtn}
-                    onClick={() => setShowPassword(!showPassword)}
-                  >
-                    {showPassword ? (
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" strokeWidth="2">
-                        <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94" />
-                        <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19" />
-                        <line x1="1" y1="1" x2="23" y2="23" />
-                      </svg>
-                    ) : (
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" strokeWidth="2">
-                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-                        <circle cx="12" cy="12" r="3" />
-                      </svg>
-                    )}
-                  </button>
-                </div>
-              </div>
-
-              {/* Error message */}
-              {error && (
-                <div style={{ color: "#F87171", fontSize: "13px", marginBottom: "16px" }}>
-                  {error}
-                </div>
-              )}
-
-              {/* Login button */}
-              <button
-                style={{ ...styles.loginBtn, opacity: loading ? 0.7 : 1, cursor: loading ? "not-allowed" : "pointer" }}
-                onClick={handleLogin}
-                disabled={loading}
-                onMouseEnter={e => { if (!loading) { e.target.style.background = "#0891B2"; e.target.style.transform = "translateY(-1px)"; e.target.style.boxShadow = "0 8px 24px rgba(6,182,212,0.35)"; } }}
-                onMouseLeave={e => { e.target.style.background = "#06B6D4"; e.target.style.transform = "translateY(0)"; e.target.style.boxShadow = "0 4px 16px rgba(6,182,212,0.2)"; }}
-              >
-                {loading ? "Đang đăng nhập..." : "Đăng nhập hệ thống"}
-              </button>
-
-              {/* Security notice */}
-              <div style={styles.securityNote}>
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#475569" strokeWidth="2">
-                  <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+            {/* Email */}
+            <div style={styles.formGroup}>
+              <label style={styles.label}>Email Nhân Viên</label>
+              <div style={styles.inputWrapper}>
+                <svg style={styles.inputIcon} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" strokeWidth="2">
+                  <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" />
+                  <polyline points="22,6 12,13 2,6" />
                 </svg>
-                <span>Phiên đăng nhập được mã hóa SSL · Chỉ dành cho nhân viên nội bộ</span>
+                <input
+                  style={styles.input}
+                  type="email"
+                  placeholder="nhanvien@vtgym.com"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  onFocus={e => { e.target.style.borderColor = "#06B6D4"; e.target.style.boxShadow = "0 0 0 3px rgba(6,182,212,0.12)"; }}
+                  onBlur={e => { e.target.style.borderColor = "#334155"; e.target.style.boxShadow = "none"; }}
+                />
               </div>
+            </div>
 
-              {/* Forgot */}
-              <div style={styles.forgotRow}>
+            {/* Password */}
+            <div style={styles.formGroup}>
+              <label style={styles.label}>Mật khẩu</label>
+              <div style={styles.inputWrapper}>
+                <svg style={styles.inputIcon} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" strokeWidth="2">
+                  <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                  <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                </svg>
+                <input
+                  style={styles.input}
+                  type={showPassword ? "text" : "password"}
+                  placeholder="••••••••"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter") handleLogin(); }}
+                  onFocus={e => { e.target.style.borderColor = "#06B6D4"; e.target.style.boxShadow = "0 0 0 3px rgba(6,182,212,0.12)"; }}
+                  onBlur={e => { e.target.style.borderColor = "#334155"; e.target.style.boxShadow = "none"; }}
+                />
                 <button
-                  style={styles.forgotBtn}
-                  onMouseEnter={e => { e.target.style.color = "#06B6D4"; }}
-                  onMouseLeave={e => { e.target.style.color = "#64748B"; }}
+                  type="button"
+                  style={styles.eyeBtn}
+                  onClick={() => setShowPassword(!showPassword)}
                 >
-                  Quên mật khẩu? Liên hệ Admin
+                  {showPassword ? (
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" strokeWidth="2">
+                      <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94" />
+                      <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19" />
+                      <line x1="1" y1="1" x2="23" y2="23" />
+                    </svg>
+                  ) : (
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" strokeWidth="2">
+                      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                      <circle cx="12" cy="12" r="3" />
+                    </svg>
+                  )}
                 </button>
               </div>
+            </div>
+
+            {/* Error message */}
+            {error && (
+              <div style={{ color: "#F87171", fontSize: "13px", marginBottom: "16px" }}>
+                {error}
+              </div>
+            )}
+
+            {/* Login button */}
+            <button
+              style={{ ...styles.loginBtn, opacity: loading ? 0.7 : 1, cursor: loading ? "not-allowed" : "pointer" }}
+              onClick={handleLogin}
+              disabled={loading}
+              onMouseEnter={e => { if (!loading) { e.target.style.background = "#0891B2"; e.target.style.transform = "translateY(-1px)"; e.target.style.boxShadow = "0 8px 24px rgba(6,182,212,0.35)"; } }}
+              onMouseLeave={e => { e.target.style.background = "#06B6D4"; e.target.style.transform = "translateY(0)"; e.target.style.boxShadow = "0 4px 16px rgba(6,182,212,0.2)"; }}
+            >
+              {loading ? "Đang đăng nhập..." : "Đăng nhập hệ thống"}
+            </button>
+
+            {/* Security notice */}
+            <div style={styles.securityNote}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#475569" strokeWidth="2">
+                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+              </svg>
+              <span>Phiên đăng nhập được mã hóa SSL · Chỉ dành cho nhân viên nội bộ</span>
+            </div>
+
+            {/* Forgot */}
+            <div style={styles.forgotRow}>
+              <button
+                style={styles.forgotBtn}
+                onMouseEnter={e => { e.target.style.color = "#06B6D4"; }}
+                onMouseLeave={e => { e.target.style.color = "#64748B"; }}
+              >
+                Quên mật khẩu? Liên hệ Admin
+              </button>
             </div>
           </div>
         </div>
       </div>
-    );
-  }
+    </div>
+  );
+}
 
   const styles = {
     root: {

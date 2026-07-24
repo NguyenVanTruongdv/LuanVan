@@ -26,6 +26,9 @@ namespace BE.DTOs.Employee
 
         public bool HasFaceId { get; set; }
 
+        // Ảnh khuôn mặt đã đăng ký (FaceDatum.ProfileImage) — null nếu chưa có FaceID
+        public string? FaceProfileImage { get; set; }
+
         // Chi nhánh đang được chọn mặc định (chi nhánh đầu tiên gán cho nhân viên)
         public int? DefaultBranchId { get; set; }
 
@@ -47,6 +50,11 @@ namespace BE.DTOs.Employee
         public string? AccountStatus { get; set; }
         public string? SuspendReason { get; set; }
 
+        public bool HasFaceId { get; set; }
+
+        // Ảnh khuôn mặt đã đăng ký (FaceDatum.ProfileImage) — null nếu chưa có FaceID
+        public string? FaceProfileImage { get; set; }
+
         public List<EmployeeBranchDto> Branches { get; set; } = new();
     }
 
@@ -54,6 +62,13 @@ namespace BE.DTOs.Employee
     {
         public int? BranchId { get; set; }
         public string? Name { get; set; }
+
+        // Tìm theo sđt liên hệ (Employee.Phone) hoặc sđt đăng nhập (Account.Phone)
+        public string? Phone { get; set; }
+
+        // Tìm theo email đăng nhập (Account.Email)
+        public string? Email { get; set; }
+
         public string? Status { get; set; }
         public int Page { get; set; } = 1;
         public int PageSize { get; set; } = 20;
@@ -69,16 +84,16 @@ namespace BE.DTOs.Employee
         public List<int> BranchIds { get; set; } = new();
     }
 
-    /// <summary>Dùng khi tạo nhân viên đầy đủ: info + tài khoản đăng nhập + FaceID tùy chọn.</summary>
+    /// <summary>Dùng khi tạo nhân viên đầy đủ: info + tài khoản đăng nhập + FaceID (bắt buộc).</summary>
     public class CreateEmployeeWithAccountDto : CreateEmployeeInfoDto
     {
-        [Required] public string LoginPhone { get; set; } = null!;
+        public string? LoginPhone { get; set; } = null!;
         public string? LoginEmail { get; set; }
 
         [Required, MinLength(6, ErrorMessage = "Mật khẩu tối thiểu 6 ký tự.")]
         public string Password { get; set; } = null!;
 
-        public IFormFile? ProfileImage { get; set; }
+        [Required] public IFormFile ProfileImage { get; set; } = null!;
         public string? FaceIdReason { get; set; }
     }
 
@@ -105,12 +120,38 @@ namespace BE.DTOs.Employee
         public string? Reason { get; set; }
     }
 
+    /// <summary>Thêm tài khoản đăng nhập cho nhân viên đã có info/FaceID nhưng chưa có tài khoản.</summary>
+    public class AddEmployeeAccountDto
+    {
+        [Required] public string LoginPhone { get; set; } = null!;
+        public string? LoginEmail { get; set; }
+
+        [Required, MinLength(6, ErrorMessage = "Mật khẩu tối thiểu 6 ký tự.")]
+        public string Password { get; set; } = null!;
+    }
+
+    /// <summary>Sửa tài khoản đăng nhập đã có của nhân viên.</summary>
+    public class UpdateEmployeeAccountDto
+    {
+        [Required] public string LoginPhone { get; set; } = null!;
+        public string? LoginEmail { get; set; }
+
+        // Để trống nếu không đổi mật khẩu
+        [MinLength(6, ErrorMessage = "Mật khẩu tối thiểu 6 ký tự.")]
+        public string? NewPassword { get; set; }
+    }
+
     public class LockEmployeeDto
     {
         [Required] public string Reason { get; set; } = null!;
     }
 
     public class HideEmployeeDto
+    {
+        [Required] public string Reason { get; set; } = null!;
+    }
+
+    public class LockAccountOnlyDto
     {
         [Required] public string Reason { get; set; } = null!;
     }

@@ -42,7 +42,6 @@ namespace BE.Services
             var query = _context.Equipment
                 .Include(e => e.Category)
                 .Include(e => e.Branch)
-                .Include(e => e.EquipmentImages)
                 .AsQueryable();
 
             if (!filter.IncludeDeleted)
@@ -87,7 +86,6 @@ namespace BE.Services
             var equipment = await _context.Equipment
                 .Include(e => e.Category)
                 .Include(e => e.Branch)
-                .Include(e => e.EquipmentImages)
                 .FirstOrDefaultAsync(e => e.EquipmentId == equipmentId);
 
             if (equipment == null)
@@ -146,13 +144,13 @@ namespace BE.Services
                 AddedAt = DateTime.UtcNow
             };
 
-            _context.Equipment.Add(equipment);
-            await _context.SaveChangesAsync(); // cần EquipmentId trước khi gắn ảnh
-
             if (dto.Image is { Length: > 0 })
             {
-                await AddImageAsync(equipment.EquipmentId, dto.Image);
+                equipment.ImageUrl = await _fileStorageService.UploadFileAsync(dto.Image, ImageFolder);
             }
+
+            _context.Equipment.Add(equipment);
+            await _context.SaveChangesAsync();
 
             return (await GetByIdAsync(equipment.EquipmentId, currentEmployeeId))!;
         }
@@ -216,13 +214,20 @@ namespace BE.Services
                 equipment.Description = dto.Description;
             }
 
-            await _context.SaveChangesAsync();
-
             // Chỉ đụng vào ảnh khi có truyền ảnh mới lên. Không truyền (null) => giữ nguyên ảnh cũ.
             if (dto.Image is { Length: > 0 })
             {
-                await ReplaceImageAsync(equipment.EquipmentId, dto.Image);
+                // Xoá ảnh cũ trên storage (nếu có) trước khi thay bằng ảnh mới
+                if (!string.IsNullOrWhiteSpace(equipment.ImageUrl))
+                {
+                    // DeleteFileAsync tự nuốt lỗi bên trong nên không cần try/catch ở đây
+                    await _fileStorageService.DeleteFileAsync(equipment.ImageUrl);
+                }
+
+                equipment.ImageUrl = await _fileStorageService.UploadFileAsync(dto.Image, ImageFolder);
             }
+
+            await _context.SaveChangesAsync();
 
             return true;
         }
@@ -291,39 +296,6 @@ namespace BE.Services
             }
         }
 
-        private async Task AddImageAsync(int equipmentId, IFormFile image)
-        {
-            var url = await _fileStorageService.UploadFileAsync(image, ImageFolder);
-
-            _context.EquipmentImages.Add(new EquipmentImage
-            {
-                EquipmentId = equipmentId,
-                ImageUrl = url,
-                SortOrder = 0,
-                UploadedAt = DateTime.UtcNow
-            });
-
-            await _context.SaveChangesAsync();
-        }
-
-        private async Task ReplaceImageAsync(int equipmentId, IFormFile image)
-        {
-            var oldImages = await _context.EquipmentImages
-                .Where(i => i.EquipmentId == equipmentId)
-                .ToListAsync();
-
-            foreach (var oldImage in oldImages)
-            {
-                // DeleteFileAsync tự nuốt lỗi bên trong nên không cần try/catch ở đây
-                await _fileStorageService.DeleteFileAsync(oldImage.ImageUrl);
-            }
-
-            _context.EquipmentImages.RemoveRange(oldImages);
-            await _context.SaveChangesAsync();
-
-            await AddImageAsync(equipmentId, image);
-        }
-
         /// <summary>
         /// Tra role hệ thống (Employee.Role - int, map với bảng roles: 1=Staff, 2=Manager, 3=Admin)
         /// + danh sách chi nhánh mà employee đang quản lý (qua EmployeeBranch.BranchRole == "Manager").
@@ -384,10 +356,7 @@ namespace BE.Services
                 Status = e.Status,
                 Description = e.Description,
                 AddedAt = e.AddedAt,
-                ImageUrls = e.EquipmentImages
-                    .OrderBy(img => img.SortOrder)
-                    .Select(img => img.ImageUrl)
-                    .ToList()
+                ImageUrl = e.ImageUrl
             };
         }
     }

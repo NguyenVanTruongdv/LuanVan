@@ -390,37 +390,53 @@ INSERT INTO `promotion_usages` (`usage_id`, `promotion_id`, `member_package_id`,
 (1, 1, 1, 1, 1, 0, 5, '2026-07-05 09:05:00'),
 (2, 2, 2, 2, 2, 80000, 0, '2026-07-06 10:05:00');
 
--- ---------------------------------------------------------------------
--- 16. face_data — hồ sơ khuôn mặt hiện tại của hội viên
---     do nhân viên (created_by) trực tiếp tạo/đăng ký
--- ---------------------------------------------------------------------
+-- =======================================================================
+-- 16. face_data — hồ sơ khuôn mặt hiện tại.
+--     >>> ĐÃ CHỈNH: dùng chung cho CẢ hội viên (member) và nhân viên
+--     (employee), theo cùng mẫu thiết kế với bảng `accounts`.
+--     Mỗi bản ghi chỉ gắn với đúng 1 trong 2 (member_id XOR employee_id).
+--     `created_by` vẫn là nhân viên thao tác đăng ký/tạo faceId (có thể
+--     là chính nhân viên đó nếu tự đăng ký khuôn mặt của mình).
+-- =======================================================================
 DROP TABLE IF EXISTS `face_data`;
 CREATE TABLE `face_data` (
   `face_data_id` bigint NOT NULL AUTO_INCREMENT,
-  `member_id` bigint NOT NULL,
+  `member_id` bigint DEFAULT NULL COMMENT 'Hội viên sở hữu faceId — FK tới members.member_id. NULL nếu đây là faceId của nhân viên',
+  `employee_id` bigint DEFAULT NULL COMMENT 'Nhân viên sở hữu faceId — FK tới employees.employee_id. NULL nếu đây là faceId của hội viên',
   `face_id_aws` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL,
   `profile_image` varchar(500) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `created_by` bigint NOT NULL COMMENT 'Nhân viên đã đăng ký/tạo faceId này — FK tới employees.employee_id',
   `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`face_data_id`),
   UNIQUE KEY `uq_face_member` (`member_id`),
+  UNIQUE KEY `uq_face_employee` (`employee_id`),
   UNIQUE KEY `uq_face_id_aws` (`face_id_aws`),
   KEY `fk_face_creator` (`created_by`),
   CONSTRAINT `fk_face_member` FOREIGN KEY (`member_id`) REFERENCES `members` (`member_id`),
-  CONSTRAINT `fk_face_creator` FOREIGN KEY (`created_by`) REFERENCES `employees` (`employee_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Dữ liệu nhận diện khuôn mặt hội viên (AWS Rekognition) — chỉ nhân viên mới được tạo faceId';
+  CONSTRAINT `fk_face_employee` FOREIGN KEY (`employee_id`) REFERENCES `employees` (`employee_id`),
+  CONSTRAINT `fk_face_creator` FOREIGN KEY (`created_by`) REFERENCES `employees` (`employee_id`),
+  CONSTRAINT `chk_face_owner` CHECK (
+    (`member_id` IS NOT NULL AND `employee_id` IS NULL) OR
+    (`member_id` IS NULL AND `employee_id` IS NOT NULL)
+  )
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Dữ liệu nhận diện khuôn mặt (AWS Rekognition) dùng chung cho hội viên và nhân viên — chỉ nhân viên mới được tạo faceId';
 
-INSERT INTO `face_data` (`face_data_id`, `member_id`, `face_id_aws`, `profile_image`, `created_by`, `created_at`) VALUES
-(1, 1, 'faceid-0000-0000-0000-000000000001', 'https://gym-face-recognition.s3.amazonaws.com/members/faces/member1.jpg', 3, '2026-07-05 09:10:00');
+INSERT INTO `face_data` (`face_data_id`, `member_id`, `employee_id`, `face_id_aws`, `profile_image`, `created_by`, `created_at`) VALUES
+(1, 1, NULL, 'faceid-0000-0000-0000-000000000001', 'https://gym-face-recognition.s3.amazonaws.com/members/faces/member1.jpg', 3, '2026-07-05 09:10:00'),
+(2, NULL, 3, 'faceid-emp-0000-0000-000000000001', 'https://gym-face-recognition.s3.amazonaws.com/employees/faces/employee3.jpg', 2, '2026-07-01 08:25:00');
 
--- ---------------------------------------------------------------------
--- 17. face_update_history — ghi lại mọi lần tạo/cập nhật faceId,
---     luôn gắn với nhân viên (performed_by) thực hiện thao tác
--- ---------------------------------------------------------------------
+-- =======================================================================
+-- 17. face_update_history — ghi lại mọi lần tạo/cập nhật faceId.
+--     >>> ĐÃ CHỈNH: dùng chung cho cả hội viên và nhân viên, tương ứng
+--     với thay đổi ở bảng `face_data`. `performed_by` luôn là nhân viên
+--     thực hiện thao tác (có thể trùng với `employee_id` nếu tự thao
+--     tác trên faceId của chính mình).
+-- =======================================================================
 DROP TABLE IF EXISTS `face_update_history`;
 CREATE TABLE `face_update_history` (
   `history_id` bigint NOT NULL AUTO_INCREMENT,
-  `member_id` bigint NOT NULL,
+  `member_id` bigint DEFAULT NULL COMMENT 'Hội viên liên quan — FK tới members.member_id. NULL nếu đây là lịch sử của nhân viên',
+  `employee_id` bigint DEFAULT NULL COMMENT 'Nhân viên liên quan (chủ sở hữu faceId) — FK tới employees.employee_id. NULL nếu đây là lịch sử của hội viên',
   `old_face_id_aws` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `new_face_id_aws` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL,
   `reason` text COLLATE utf8mb4_unicode_ci,
@@ -430,13 +446,20 @@ CREATE TABLE `face_update_history` (
   `new_profile_image` varchar(500) COLLATE utf8mb4_unicode_ci NOT NULL,
   PRIMARY KEY (`history_id`),
   KEY `fk_facehistory_member` (`member_id`),
+  KEY `fk_facehistory_employee` (`employee_id`),
   KEY `fk_facehistory_staff` (`performed_by`),
   CONSTRAINT `fk_facehistory_member` FOREIGN KEY (`member_id`) REFERENCES `members` (`member_id`),
-  CONSTRAINT `fk_facehistory_staff` FOREIGN KEY (`performed_by`) REFERENCES `employees` (`employee_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Lịch sử mỗi lần tạo/cập nhật khuôn mặt hội viên — chỉ ghi thêm, không sửa/xóa';
+  CONSTRAINT `fk_facehistory_employee` FOREIGN KEY (`employee_id`) REFERENCES `employees` (`employee_id`),
+  CONSTRAINT `fk_facehistory_staff` FOREIGN KEY (`performed_by`) REFERENCES `employees` (`employee_id`),
+  CONSTRAINT `chk_facehistory_owner` CHECK (
+    (`member_id` IS NOT NULL AND `employee_id` IS NULL) OR
+    (`member_id` IS NULL AND `employee_id` IS NOT NULL)
+  )
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Lịch sử mỗi lần tạo/cập nhật khuôn mặt (hội viên hoặc nhân viên) — chỉ ghi thêm, không sửa/xóa';
 
-INSERT INTO `face_update_history` (`history_id`, `member_id`, `old_face_id_aws`, `new_face_id_aws`, `reason`, `performed_by`, `performed_at`, `old_profile_image`, `new_profile_image`) VALUES
-(1, 1, NULL, 'faceid-0000-0000-0000-000000000001', 'Đăng ký khuôn mặt lần đầu', 3, '2026-07-05 09:10:00', NULL, 'https://gym-face-recognition.s3.amazonaws.com/members/faces/member1.jpg');
+INSERT INTO `face_update_history` (`history_id`, `member_id`, `employee_id`, `old_face_id_aws`, `new_face_id_aws`, `reason`, `performed_by`, `performed_at`, `old_profile_image`, `new_profile_image`) VALUES
+(1, 1, NULL, NULL, 'faceid-0000-0000-0000-000000000001', 'Đăng ký khuôn mặt lần đầu', 3, '2026-07-05 09:10:00', NULL, 'https://gym-face-recognition.s3.amazonaws.com/members/faces/member1.jpg'),
+(2, NULL, 3, NULL, 'faceid-emp-0000-0000-000000000001', 'Đăng ký khuôn mặt nhân viên lần đầu', 2, '2026-07-01 08:25:00', NULL, 'https://gym-face-recognition.s3.amazonaws.com/employees/faces/employee3.jpg');
 
 -- ---------------------------------------------------------------------
 -- 18. check_ins
@@ -587,8 +610,38 @@ INSERT INTO `member_update_logs` (`id`, `update_session_id`, `member_id`, `field
 (1, '11111111-1111-1111-1111-111111111111', 1, 'CREATE_MEMBER', NULL, 'Tạo hội viên \'Nguyễn Văn Trường\' - Hóa đơn HD20260705090001', 3, '2026-07-05 09:00:00'),
 (2, '22222222-2222-2222-2222-222222222222', 2, 'CREATE_MEMBER', NULL, 'Tạo hội viên \'Trần Thị Hương\' - Hóa đơn HD20260706100001', 3, '2026-07-06 10:00:00');
 
+-- =======================================================================
+-- 24. employee_update_logs — MỚI THÊM: nhật ký thay đổi thông tin nhân
+--     viên (hồ sơ, vai trò, trạng thái làm việc, v.v...), cùng mẫu với
+--     `member_update_logs`, chỉ ghi thêm (append-only), không sửa/xóa.
+--     `updated_by_employee_id` là nhân viên thực hiện thao tác (có thể
+--     là chính nhân viên bị chỉnh sửa, hoặc NULL nếu do hệ thống).
+-- =======================================================================
+DROP TABLE IF EXISTS `employee_update_logs`;
+CREATE TABLE `employee_update_logs` (
+  `id` bigint NOT NULL AUTO_INCREMENT,
+  `update_session_id` char(36) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `employee_id` bigint NOT NULL COMMENT 'Nhân viên bị thay đổi thông tin — FK tới employees.employee_id',
+  `field_name` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `old_value` text COLLATE utf8mb4_unicode_ci,
+  `new_value` text COLLATE utf8mb4_unicode_ci NOT NULL,
+  `updated_by_employee_id` bigint DEFAULT NULL COMMENT 'Nhân viên thực hiện thay đổi — FK tới employees.employee_id',
+  `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_eul_session` (`update_session_id`),
+  KEY `idx_eul_employee` (`employee_id`,`field_name`),
+  KEY `fk_eul_updated_by` (`updated_by_employee_id`),
+  CONSTRAINT `fk_eul_employee` FOREIGN KEY (`employee_id`) REFERENCES `employees` (`employee_id`),
+  CONSTRAINT `fk_eul_updated_by` FOREIGN KEY (`updated_by_employee_id`) REFERENCES `employees` (`employee_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Lịch sử cập nhật thông tin nhân viên — chỉ ghi thêm';
+
+INSERT INTO `employee_update_logs` (`id`, `update_session_id`, `employee_id`, `field_name`, `old_value`, `new_value`, `updated_by_employee_id`, `updated_at`) VALUES
+(1, '33333333-3333-3333-3333-333333333333', 2, 'CREATE_EMPLOYEE', NULL, 'Tạo nhân viên \'Trần Thị Quản Lý\' - vai trò Manager', 1, '2026-07-01 08:10:00'),
+(2, '44444444-4444-4444-4444-444444444444', 3, 'CREATE_EMPLOYEE', NULL, 'Tạo nhân viên \'Lê Văn Nhân Viên\' - vai trò Staff', 2, '2026-07-01 08:20:00'),
+(3, '55555555-5555-5555-5555-555555555555', 3, 'REGISTER_FACE', NULL, 'Đăng ký khuôn mặt nhân viên lần đầu - faceid-emp-0000-0000-000000000001', 2, '2026-07-01 08:25:00');
+
 -- ---------------------------------------------------------------------
--- 24. news
+-- 25. news
 -- ---------------------------------------------------------------------
 DROP TABLE IF EXISTS `news`;
 CREATE TABLE `news` (
@@ -613,7 +666,7 @@ INSERT INTO `news` (`news_id`, `title`, `summary`, `content`, `status`, `created
 (1, 'Khai trương chi nhánh Quận 1', 'GymFit chính thức đi vào hoạt động.', 'Chi nhánh GymFit Quận 1 chính thức khai trương và đón hội viên từ ngày 01/07/2026.', 'Active', 1, 1, '2026-07-01 08:00:00', '2026-07-01 08:00:00');
 
 -- ---------------------------------------------------------------------
--- 25. forum_categories
+-- 26. forum_categories
 -- ---------------------------------------------------------------------
 DROP TABLE IF EXISTS `forum_categories`;
 CREATE TABLE `forum_categories` (
@@ -637,7 +690,7 @@ INSERT INTO `forum_categories` (`category_id`, `category_name`, `slug`, `icon`, 
 (7, 'Thông báo', 'thong-bao', 'campaign', 7, 'Active', '2026-07-01 08:00:00');
 
 -- ---------------------------------------------------------------------
--- 26. forum_posts
+-- 27. forum_posts
 -- ---------------------------------------------------------------------
 DROP TABLE IF EXISTS `forum_posts`;
 CREATE TABLE `forum_posts` (
@@ -668,7 +721,7 @@ INSERT INTO `forum_posts` (`post_id`, `member_id`, `title`, `category_id`, `cont
 (2, 2, 'Ăn gì để tăng cơ?', 2, 'Mình nặng 60kg, nên ăn bao nhiêu protein mỗi ngày để tăng cơ?', 'Original', NULL, 0, 0, 0, 'Active', '2026-07-09 11:00:00', '2026-07-09 11:00:00');
 
 -- ---------------------------------------------------------------------
--- 27. forum_comments
+-- 28. forum_comments
 -- ---------------------------------------------------------------------
 DROP TABLE IF EXISTS `forum_comments`;
 CREATE TABLE `forum_comments` (
@@ -697,7 +750,7 @@ INSERT INTO `forum_comments` (`comment_id`, `post_id`, `member_id`, `parent_comm
 (1, 1, 2, NULL, NULL, 'Bạn nên tập 3 buổi/tuần theo lịch full-body cho người mới nhé.', 0, 'Active', '2026-07-08 12:00:00', '2026-07-08 12:00:00');
 
 -- ---------------------------------------------------------------------
--- 28. forum_comment_likes
+-- 29. forum_comment_likes
 -- ---------------------------------------------------------------------
 DROP TABLE IF EXISTS `forum_comment_likes`;
 CREATE TABLE `forum_comment_likes` (
@@ -713,7 +766,7 @@ CREATE TABLE `forum_comment_likes` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Lượt tym bình luận';
 
 -- ---------------------------------------------------------------------
--- 29. forum_likes
+-- 30. forum_likes
 -- ---------------------------------------------------------------------
 DROP TABLE IF EXISTS `forum_likes`;
 CREATE TABLE `forum_likes` (
@@ -732,7 +785,7 @@ INSERT INTO `forum_likes` (`like_id`, `post_id`, `member_id`, `created_at`) VALU
 (1, 1, 3, '2026-07-08 13:00:00');
 
 -- ---------------------------------------------------------------------
--- 30. forum_notifications
+-- 31. forum_notifications
 -- ---------------------------------------------------------------------
 DROP TABLE IF EXISTS `forum_notifications`;
 CREATE TABLE `forum_notifications` (
@@ -762,7 +815,7 @@ INSERT INTO `forum_notifications` (`notification_id`, `recipient_member_id`, `ac
 (1, 1, 3, 'Like', 1, NULL, 1, 0, '2026-07-08 13:00:00');
 
 -- ---------------------------------------------------------------------
--- 31. forum_post_images
+-- 32. forum_post_images
 -- ---------------------------------------------------------------------
 DROP TABLE IF EXISTS `forum_post_images`;
 CREATE TABLE `forum_post_images` (
@@ -777,7 +830,7 @@ CREATE TABLE `forum_post_images` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Ảnh đính kèm trong bài đăng forum';
 
 -- ---------------------------------------------------------------------
--- 32. refresh_tokens — trỏ tới accounts.account_id
+-- 33. refresh_tokens — trỏ tới accounts.account_id
 -- ---------------------------------------------------------------------
 DROP TABLE IF EXISTS `refresh_tokens`;
 CREATE TABLE `refresh_tokens` (
@@ -795,7 +848,7 @@ CREATE TABLE `refresh_tokens` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Refresh token — dữ liệu tạm thời, không cần seed';
 
 -- ---------------------------------------------------------------------
--- 33. otp
+-- 34. otp
 -- ---------------------------------------------------------------------
 DROP TABLE IF EXISTS `otp`;
 CREATE TABLE `otp` (
@@ -813,7 +866,7 @@ CREATE TABLE `otp` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Mã OTP xác thực một lần — dữ liệu tạm thời, không cần seed';
 
 -- ---------------------------------------------------------------------
--- 34. transaction_adjustment_logs
+-- 35. transaction_adjustment_logs
 -- ---------------------------------------------------------------------
 DROP TABLE IF EXISTS `transaction_adjustment_logs`;
 CREATE TABLE `transaction_adjustment_logs` (
@@ -854,11 +907,25 @@ CREATE TABLE `transaction_adjustment_logs` (
 --    lý trạng thái làm việc của nhân viên, tách biệt với
 --    `accounts.status` (Active/Suspended) vốn chỉ quản lý việc được
 --    phép đăng nhập hay không.
--- 3. `face_data` và `face_update_history` vẫn giữ nguyên thiết kế:
---    chỉ nhân viên (employees, qua `created_by` / `performed_by`) mới
---    được tạo/cập nhật faceId, và mọi lần tạo/cập nhật đều được ghi
---    lại đầy đủ trong `face_update_history`.
--- 4. Đã LOẠI BỎ stored procedure `sp_gan_khuyen_mai_vao_goi` của bản
+-- 3. [MỚI] `face_data` và `face_update_history` ĐÃ được chỉnh để dùng
+--    chung cho CẢ hội viên (member) và nhân viên (employee), theo
+--    đúng mẫu thiết kế "1 trong 2" (XOR) giống bảng `accounts`:
+--      - Thêm cột `employee_id` (nullable), cột `member_id` chuyển
+--        thành nullable.
+--      - Thêm CHECK constraint `chk_face_owner` /
+--        `chk_facehistory_owner` đảm bảo mỗi bản ghi chỉ gắn với
+--        đúng 1 trong 2 chủ thể.
+--      - Thêm UNIQUE KEY `uq_face_employee` (mỗi nhân viên chỉ có
+--        1 faceId, giống hội viên).
+--      - `created_by` / `performed_by` vẫn luôn là nhân viên thao
+--        tác (có thể là chính nhân viên sở hữu faceId nếu tự đăng
+--        ký/cập nhật khuôn mặt của mình).
+-- 4. [MỚI] Thêm bảng `employee_update_logs` — nhật ký cập nhật thông
+--    tin nhân viên (hồ sơ, vai trò, đăng ký khuôn mặt, v.v.), cùng
+--    mẫu thiết kế append-only với `member_update_logs`. Đã seed sẵn
+--    log CREATE_EMPLOYEE cho nhân viên #2, #3 và log REGISTER_FACE
+--    cho nhân viên #3 tương ứng với dữ liệu mẫu trong `face_data`.
+-- 5. Đã LOẠI BỎ stored procedure `sp_gan_khuyen_mai_vao_goi` của bản
 --    cũ vì nó thao tác trên bảng `promotion_plans` (quan hệ nhiều-
 --    nhiều khuyến mãi <-> gói tập) — bảng này không tồn tại trong dump
 --    gốc; `promotions` trong schema thực tế đã có sẵn cột `plan_id`
