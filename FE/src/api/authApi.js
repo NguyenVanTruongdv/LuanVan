@@ -234,7 +234,16 @@ const authApi = {
             payload
         );
     },
-
+    sendForgotPasswordOtp(phone) {
+        return authApi.post("/api/auth/forgot-password/send-otp", { phone }, false);
+    },
+ resetPassword({ phone, otp, newPassword }) {
+    return authApi.post(
+      "/api/auth/forgot-password/reset",
+      { phone, otp, newPassword },
+      false
+    );
+  },
     // ===== LOGIN =====
 
     async loginMember(payload) {

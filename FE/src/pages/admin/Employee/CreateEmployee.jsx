@@ -1,27 +1,28 @@
 import { useEffect, useMemo, useState } from "react";
+import adminApi from "../../../api/adminApi"; // ⚠️ chỉnh lại path nếu khác vị trí thực tế
 import managerApi from "../../../api/managerApi";
 
 /* =========================================================================
- * THEME TOKENS — đồng bộ với trang Login / trang danh sách nhân viên
+ * THEME TOKENS — tông trắng + xanh lá nhạt
  * ========================================================================= */
 const THEME = {
-  bg: "#0B1120",
-  panel: "#1E293B",
-  border: "#334155",
-  accent: "#06B6D4",
-  accentDark: "#0891B2",
-  accentSoft: "rgba(6,182,212,0.14)",
-  textPrimary: "#F1F5F9",
-  textSecondary: "#94A3B8",
-  textMuted: "#64748B",
-  danger: "#F87171",
-  dangerSoft: "rgba(248,113,113,0.14)",
-  success: "#34D399",
-  successSoft: "rgba(52,211,153,0.14)",
+  bg: "#EEFBF3",
+  panel: "#FFFFFF",
+  border: "#BBEBCB",
+  borderStrong: "#86D9A4",
+  accent: "#16A34A",
+  accentDark: "#15803D",
+  accentSoft: "rgba(22,163,74,0.08)",
+  textPrimary: "#0F172A",
+  textSecondary: "#475569",
+  textMuted: "#94A3B8",
+  danger: "#DC2626",
+  dangerSoft: "rgba(220,38,38,0.08)",
+  success: "#16A34A",
+  successSoft: "rgba(22,163,74,0.08)",
 };
 
 // ⚠️ Giả định mapping RoleId <-> tên vai trò vì BE chưa cung cấp API danh sách Role.
-// Thay bằng dữ liệu thật (gọi API roles) nếu hệ thống của bạn có endpoint tương ứng.
 const ROLE_OPTIONS = [
   { id: 1, name: "Admin" },
   { id: 2, name: "Manager" },
@@ -66,9 +67,9 @@ const Icon = {
   ),
 };
 
-/* ---------------------------- Primitives (dùng chung style) ---------------------------- */
+/* ---------------------------- Primitives ---------------------------- */
 const inputStyle = {
-  background: "#0f172a",
+  background: "#F6FDF8",
   border: `1px solid ${THEME.border}`,
   borderRadius: 8,
   padding: "10px 12px",
@@ -105,30 +106,71 @@ function Field({ label, required, children, hint, error }) {
     </label>
   );
 }
-function Button({ variant = "solid", tone = "accent", children, style, ...rest }) {
+function Button({ variant = "solid", tone = "accent", size = "md", children, style, ...rest }) {
   const base = {
     display: "inline-flex",
     alignItems: "center",
     justifyContent: "center",
     gap: 8,
-    fontSize: 13.5,
+    fontSize: size === "sm" ? 12.5 : 13.5,
     fontWeight: 600,
     borderRadius: 10,
-    padding: "10px 18px",
+    padding: size === "sm" ? "8px 14px" : "10px 18px",
     cursor: rest.disabled ? "not-allowed" : "pointer",
     opacity: rest.disabled ? 0.5 : 1,
     transition: "all .15s ease",
     border: "1px solid transparent",
   };
   const variants = {
-    solid: { background: tone === "danger" ? THEME.danger : THEME.accent, color: tone === "danger" ? "#2a0a0a" : "#042a30" },
-    outline: { background: "transparent", borderColor: THEME.border, color: THEME.textPrimary },
+    solid: {
+      background: tone === "danger" ? THEME.danger : THEME.accent,
+      color: "#FFFFFF",
+      boxShadow: tone === "danger" ? "0 6px 16px rgba(220,38,38,0.25)" : "0 6px 16px rgba(22,163,74,0.25)",
+    },
+    outline: { background: "#FFFFFF", borderColor: THEME.border, color: THEME.textSecondary },
     ghost: { background: "transparent", color: THEME.textSecondary },
   };
   return (
     <button style={{ ...base, ...variants[variant], ...style }} {...rest}>
       {children}
     </button>
+  );
+}
+
+/* ---------------------------- Face check badge ---------------------------- */
+function FaceCheckBadge({ status, message, duplicateName }) {
+  if (status === "idle") return null;
+  const map = {
+    checking: { color: THEME.accent, bg: THEME.accentSoft, text: "Đang kiểm tra khuôn mặt..." },
+    ok: { color: THEME.success, bg: THEME.successSoft, text: message || "Không phát hiện trùng khuôn mặt." },
+    duplicate: {
+      color: THEME.danger,
+      bg: THEME.dangerSoft,
+      text: `${message || "Khuôn mặt này đã tồn tại trong hệ thống."}${duplicateName ? ` — ${duplicateName}` : ""}`,
+    },
+    error: { color: THEME.danger, bg: THEME.dangerSoft, text: message || "Không thể kiểm tra khuôn mặt lúc này." },
+  };
+  const cfg = map[status];
+  if (!cfg) return null;
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 6,
+        marginTop: 10,
+        background: cfg.bg,
+        color: cfg.color,
+        border: `1px solid ${cfg.color}33`,
+        borderRadius: 8,
+        padding: "6px 10px",
+        fontSize: 12,
+        fontWeight: 600,
+      }}
+    >
+      {status === "checking" ? <span className="cew-spinner" /> : status === "duplicate" || status === "error" ? <Icon.Alert /> : <Icon.Check />}
+      {cfg.text}
+    </div>
   );
 }
 
@@ -147,6 +189,8 @@ export default function CreateEmployeePageOfAdmin({ onCreated, onBack }) {
   const [imagePreview, setImagePreview] = useState(null);
   const [imageError, setImageError] = useState("");
 
+  const [faceCheck, setFaceCheck] = useState({ status: "idle", message: "", duplicateName: "" });
+
   const [form, setForm] = useState({
     fullName: "",
     phone: "",
@@ -162,9 +206,6 @@ export default function CreateEmployeePageOfAdmin({ onCreated, onBack }) {
 
   const isManager = currentUser?.role === "Manager";
   const isAdmin = currentUser?.role === "Admin";
-  // Manager: dùng ĐÚNG danh sách chi nhánh trả về trong getEmployeeProfile() (currentUser.branches)
-  // làm nguồn duy nhất — không đối chiếu qua API getBranches() nữa để tránh lệch dữ liệu.
-  // Admin: dùng danh sách đầy đủ từ getBranches().
   const availableBranches = useMemo(
     () => (isAdmin ? branches : currentUser?.branches || []),
     [isAdmin, branches, currentUser]
@@ -177,14 +218,8 @@ export default function CreateEmployeePageOfAdmin({ onCreated, onBack }) {
       setLoadingMe(true);
       try {
         const [meRes, branchRes] = await Promise.all([managerApi.getEmployeeProfile(), managerApi.getBranches()]);
-        // authApi.get() ở một số dự án đã tự unwrap sẵn thành object JSON (không còn lớp .data),
-        // nên ở đây tự nhận diện cả 2 trường hợp để tránh currentUser bị undefined.
         const me = meRes?.data && typeof meRes.data === "object" && "role" in meRes.data ? meRes.data : meRes;
         const branchList = Array.isArray(branchRes?.data) ? branchRes.data : Array.isArray(branchRes) ? branchRes : [];
-        // eslint-disable-next-line no-console
-        console.log("[CreateEmployeePage] profile:", me);
-        // eslint-disable-next-line no-console
-        console.log("[CreateEmployeePage] branches:", branchList);
         setCurrentUser(me);
         setBranches(branchList);
       } catch (e) {
@@ -195,7 +230,6 @@ export default function CreateEmployeePageOfAdmin({ onCreated, onBack }) {
     })();
   }, []);
 
-  // Manager luôn bị BE ép về Staff -> khoá roleId, và nếu chỉ phụ trách đúng 1 chi nhánh thì tự chọn sẵn.
   useEffect(() => {
     if (isManager) {
       setForm((f) => ({
@@ -210,19 +244,52 @@ export default function CreateEmployeePageOfAdmin({ onCreated, onBack }) {
   const update = (patch) => setForm((f) => ({ ...f, ...patch }));
   const markTouched = (key) => setTouched((t) => ({ ...t, [key]: true }));
 
+  const runFaceCheck = async (file) => {
+    setFaceCheck({ status: "checking", message: "", duplicateName: "" });
+    try {
+      const fd = new FormData();
+      fd.append("ProfileImage", file);
+      const res = await adminApi.checkEmployeeFace(fd);
+      const data = res?.data ?? res;
+      // ⚠️ Giả định field: isDuplicate (bool), employeeName / matchedEmployeeName, message
+      if (data?.isDuplicate) {
+        setFaceCheck({
+          status: "duplicate",
+          message: data?.message || "Khuôn mặt này đã tồn tại trong hệ thống.",
+          duplicateName: data?.employeeName || data?.matchedEmployeeName || "",
+        });
+      } else {
+        setFaceCheck({ status: "ok", message: data?.message || "", duplicateName: "" });
+      }
+    } catch (e) {
+      setFaceCheck({
+        status: "error",
+        message: e?.response?.data?.message || "Không thể kiểm tra khuôn mặt lúc này.",
+        duplicateName: "",
+      });
+    }
+  };
+
   const handleImage = (file) => {
     setImageError("");
-    if (file && !file.type.startsWith("image/")) {
+    setFaceCheck({ status: "idle", message: "", duplicateName: "" });
+    if (!file) {
+      setImageFile(null);
+      setImagePreview(null);
+      return;
+    }
+    if (!file.type.startsWith("image/")) {
       setImageError("Vui lòng chọn 1 file ảnh hợp lệ.");
       return;
     }
-    setImageFile(file || null);
-    setImagePreview(file ? URL.createObjectURL(file) : null);
+    setImageFile(file);
+    setImagePreview(URL.createObjectURL(file));
+    runFaceCheck(file);
   };
 
   const toggleBranch = (id) => {
     if (isStaffRole) {
-      update({ branchIds: [id] }); // Staff chỉ được đúng 1 chi nhánh
+      update({ branchIds: [id] });
       return;
     }
     setForm((f) => {
@@ -231,7 +298,6 @@ export default function CreateEmployeePageOfAdmin({ onCreated, onBack }) {
     });
   };
 
-  // Khi đổi sang vai trò Staff mà đang chọn nhiều chi nhánh -> tự rút về 1
   useEffect(() => {
     if (isStaffRole && form.branchIds.length > 1) {
       update({ branchIds: [form.branchIds[0]] });
@@ -241,7 +307,6 @@ export default function CreateEmployeePageOfAdmin({ onCreated, onBack }) {
 
   const passwordsMatch = form.password.length > 0 && form.password === form.confirmPassword;
   const passwordMismatch = form.confirmPassword.length > 0 && form.password !== form.confirmPassword;
-  // Tài khoản nhân viên đăng nhập bằng Email — bắt buộc phải có Email.
   const hasLoginContact = form.loginEmail.trim().length > 0;
 
   const errors = {
@@ -249,6 +314,12 @@ export default function CreateEmployeePageOfAdmin({ onCreated, onBack }) {
     phone: !form.phone.trim() ? "Vui lòng nhập số điện thoại." : "",
     branchIds: form.branchIds.length === 0 ? "Chọn ít nhất 1 chi nhánh." : "",
     image: !imageFile ? "Bắt buộc có ảnh để đăng ký FaceID." : "",
+    faceCheck:
+      imageFile && faceCheck.status === "checking"
+        ? "Vui lòng chờ kiểm tra khuôn mặt hoàn tất."
+        : imageFile && faceCheck.status === "duplicate"
+          ? faceCheck.message || "Khuôn mặt trùng với nhân viên đã tồn tại."
+          : "",
     loginContact: showAccount && !hasLoginContact ? "Vui lòng nhập Email đăng nhập." : "",
     password: showAccount && !form.password ? "Vui lòng nhập mật khẩu." : "",
     confirmPassword: showAccount && form.password && !passwordsMatch ? "Mật khẩu nhập lại không khớp." : "",
@@ -259,7 +330,6 @@ export default function CreateEmployeePageOfAdmin({ onCreated, onBack }) {
     setShowAccount((s) => {
       const next = !s;
       if (!next) {
-        // đóng lại thì xoá dữ liệu tài khoản đã nhập để tránh gửi nhầm
         update({ loginEmail: "", password: "", confirmPassword: "" });
         setTouched((t) => ({ ...t, loginContact: false, password: false, confirmPassword: false }));
       }
@@ -272,7 +342,7 @@ export default function CreateEmployeePageOfAdmin({ onCreated, onBack }) {
       fullName: "",
       phone: "",
       gender: GENDER_OPTIONS[0],
-      roleId: isManager ? STAFF_ROLE_ID : STAFF_ROLE_ID,
+      roleId: STAFF_ROLE_ID,
       branchIds: isManager && myBranchIds.length === 1 ? [myBranchIds[0]] : [],
       faceIdReason: "",
       loginEmail: "",
@@ -281,6 +351,7 @@ export default function CreateEmployeePageOfAdmin({ onCreated, onBack }) {
     });
     setImageFile(null);
     setImagePreview(null);
+    setFaceCheck({ status: "idle", message: "", duplicateName: "" });
     setShowAccount(false);
     setTouched({});
   };
@@ -323,226 +394,230 @@ export default function CreateEmployeePageOfAdmin({ onCreated, onBack }) {
     }
   };
 
+  const canSubmit = !saving && faceCheck.status !== "checking";
+
   return (
     <div className="cew-root">
       <GlobalStyle />
       <div className="cew-page">
-        <div className="cew-topbar">
-          <button className="cew-back" onClick={() => (onBack ? onBack() : window.history.back())}>
-            <Icon.ArrowLeft /> Quay lại danh sách
-          </button>
-          <div>
-            <h1 className="cew-title">Thêm nhân viên</h1>
-            <p className="cew-subtitle">
-              {loadingMe
-                ? "Đang tải thông tin tài khoản..."
-                : isManager
-                  ? "Bạn đang tạo nhân viên (Staff) trong phạm vi chi nhánh mình phụ trách."
-                  : "Tạo hồ sơ nhân viên mới cho hệ thống."}
-            </p>
-          </div>
-        </div>
-
-        {successName && (
-          <div className="cew-success">
-            <Icon.Check /> Đã tạo nhân viên <b>&nbsp;{successName}&nbsp;</b> thành công.
-          </div>
-        )}
-        {submitError && (
-          <div className="cew-error-banner">
-            <Icon.Alert /> {submitError}
-          </div>
-        )}
-
-        <form className="cew-card" onSubmit={submit}>
-          {/* Ảnh FaceID */}
-          <div className="cew-section">
-            <div className="cew-section-title">Ảnh FaceID <span style={{ color: THEME.accent }}>*</span></div>
-            <div className="cew-face-row">
-              <label className="cew-face-drop" style={imagePreview ? { padding: 0, border: "none" } : {}}>
-                {imagePreview ? (
-                  <img src={imagePreview} alt="preview" className="cew-face-preview" />
-                ) : (
-                  <>
-                    <Icon.Camera style={{ color: THEME.textMuted }} />
-                    <span>Chọn ảnh chân dung</span>
-                  </>
-                )}
-                <input
-                  type="file"
-                  accept="image/*"
-                  hidden
-                  onChange={(e) => { handleImage(e.target.files?.[0]); markTouched("image"); }}
-                />
-              </label>
-              <div style={{ flex: 1, minWidth: 200 }}>
-                <div style={{ color: THEME.textSecondary, fontSize: 12.5, lineHeight: 1.6 }}>
-                  Mọi nhân viên tạo mới đều <b style={{ color: THEME.textPrimary }}>bắt buộc</b> đăng ký FaceID ngay
-                  bằng một ảnh chân dung rõ mặt. Ảnh này dùng để nhận diện khi chấm công / ra vào.
-                </div>
-                {imageFile && (
-                  <button type="button" className="cew-remove-img" onClick={() => handleImage(null)}>
-                    <Icon.X /> Xoá ảnh đã chọn
-                  </button>
-                )}
-                {touched.image && errors.image && (
-                  <div style={{ color: THEME.danger, fontSize: 11.5, marginTop: 8, display: "flex", alignItems: "center", gap: 4 }}>
-                    <Icon.Alert /> {errors.image}
-                  </div>
-                )}
-              </div>
+        <div className="cew-shell">
+          <div className="cew-topbar">
+            <Button variant="outline" size="sm" onClick={() => (onBack ? onBack() : window.history.back())} style={{ marginBottom: 14 }}>
+              <Icon.ArrowLeft /> Quay lại danh sách
+            </Button>
+            <div>
+              <h1 className="cew-title">Thêm nhân viên</h1>
+              <p className="cew-subtitle">
+                {loadingMe
+                  ? "Đang tải thông tin tài khoản..."
+                  : isManager
+                    ? "Bạn đang tạo nhân viên (Staff) trong phạm vi chi nhánh mình phụ trách."
+                    : "Tạo hồ sơ nhân viên mới cho hệ thống."}
+              </p>
             </div>
           </div>
 
-          {/* Thông tin cơ bản */}
-          <div className="cew-section">
-            <div className="cew-section-title">Thông tin cơ bản</div>
-            <div className="cew-grid">
-              <Field label="Họ và tên" required error={touched.fullName && errors.fullName}>
-                <TextInput
-                  value={form.fullName}
-                  onChange={(e) => update({ fullName: e.target.value })}
-                  onBlur={() => markTouched("fullName")}
-                  placeholder="Nguyễn Văn A"
-                />
-              </Field>
-              <Field label="Số điện thoại liên hệ" required error={touched.phone && errors.phone}>
-                <TextInput
-                  value={form.phone}
-                  onChange={(e) => update({ phone: e.target.value })}
-                  onBlur={() => markTouched("phone")}
-                  placeholder="09xxxxxxxx"
-                />
-              </Field>
-              <Field label="Giới tính">
-                <Select value={form.gender} onChange={(e) => update({ gender: e.target.value })}>
-                  {GENDER_OPTIONS.map((g) => <option key={g} value={g}>{g}</option>)}
-                </Select>
-              </Field>
-              {isAdmin && (
-                <Field label="Vai trò">
-                  <Select value={form.roleId} onChange={(e) => update({ roleId: Number(e.target.value) })}>
-                    {ROLE_OPTIONS.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
+          {successName && (
+            <div className="cew-success">
+              <Icon.Check /> Đã tạo nhân viên <b>&nbsp;{successName}&nbsp;</b> thành công.
+            </div>
+          )}
+          {submitError && (
+            <div className="cew-error-banner">
+              <Icon.Alert /> {submitError}
+            </div>
+          )}
+
+          <form className="cew-card" onSubmit={submit}>
+            {/* Ảnh FaceID */}
+            <div className="cew-section">
+              <div className="cew-section-title">Ảnh FaceID <span style={{ color: THEME.accent }}>*</span></div>
+              <div className="cew-face-row">
+                <label className="cew-face-drop" style={imagePreview ? { padding: 0, border: "none" } : {}}>
+                  {imagePreview ? (
+                    <img src={imagePreview} alt="preview" className="cew-face-preview" />
+                  ) : (
+                    <>
+                      <Icon.Camera style={{ color: THEME.accent }} />
+                      <span>Chọn ảnh chân dung</span>
+                    </>
+                  )}
+                  <input
+                    type="file"
+                    accept="image/*"
+                    hidden
+                    onChange={(e) => { handleImage(e.target.files?.[0]); markTouched("image"); }}
+                  />
+                </label>
+                <div style={{ flex: 1, minWidth: 200 }}>
+                  <div style={{ color: THEME.textSecondary, fontSize: 12.5, lineHeight: 1.6 }}>
+                    Mọi nhân viên tạo mới đều <b style={{ color: THEME.textPrimary }}>bắt buộc</b> đăng ký FaceID ngay
+                    bằng một ảnh chân dung rõ mặt. Ảnh sẽ được hệ thống kiểm tra trùng khuôn mặt trước khi tạo.
+                  </div>
+                  {imageFile && (
+                    <button type="button" className="cew-remove-img" onClick={() => handleImage(null)}>
+                      <Icon.X /> Xoá ảnh đã chọn
+                    </button>
+                  )}
+                  <FaceCheckBadge status={faceCheck.status} message={faceCheck.message} duplicateName={faceCheck.duplicateName} />
+                  {touched.image && errors.image && (
+                    <div style={{ color: THEME.danger, fontSize: 11.5, marginTop: 8, display: "flex", alignItems: "center", gap: 4 }}>
+                      <Icon.Alert /> {errors.image}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Thông tin cơ bản */}
+            <div className="cew-section">
+              <div className="cew-section-title">Thông tin cơ bản</div>
+              <div className="cew-grid">
+                <Field label="Họ và tên" required error={touched.fullName && errors.fullName}>
+                  <TextInput
+                    value={form.fullName}
+                    onChange={(e) => update({ fullName: e.target.value })}
+                    onBlur={() => markTouched("fullName")}
+                    placeholder="Nguyễn Văn A"
+                  />
+                </Field>
+                <Field label="Số điện thoại liên hệ" required error={touched.phone && errors.phone}>
+                  <TextInput
+                    value={form.phone}
+                    onChange={(e) => update({ phone: e.target.value })}
+                    onBlur={() => markTouched("phone")}
+                    placeholder="09xxxxxxxx"
+                  />
+                </Field>
+                <Field label="Giới tính">
+                  <Select value={form.gender} onChange={(e) => update({ gender: e.target.value })}>
+                    {GENDER_OPTIONS.map((g) => <option key={g} value={g}>{g}</option>)}
                   </Select>
                 </Field>
-              )}
-              {isManager && (
-                <Field label="Vai trò">
-                  <TextInput value="Staff (mặc định)" disabled />
-                </Field>
-              )}
-            </div>
-
-            <Field
-              label={isStaffRole ? "Chi nhánh (chỉ chọn 1 — vai trò Staff)" : "Chi nhánh"}
-              required
-              error={touched.branchIds && errors.branchIds}
-            >
-              <div className="cew-chip-row">
-                {availableBranches.length === 0 && (
-                  <span style={{ color: THEME.textMuted, fontSize: 12.5 }}>Không có chi nhánh khả dụng.</span>
+                {isAdmin && (
+                  <Field label="Vai trò">
+                    <Select value={form.roleId} onChange={(e) => update({ roleId: Number(e.target.value) })}>
+                      {ROLE_OPTIONS.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
+                    </Select>
+                  </Field>
                 )}
-                {availableBranches.map((b) => (
-                  <button
-                    type="button"
-                    key={b.branchId}
-                    className={form.branchIds.includes(b.branchId) ? "cew-chip cew-chip-active" : "cew-chip"}
-                    onClick={() => { toggleBranch(b.branchId); markTouched("branchIds"); }}
-                  >
-                    {b.branchName}
-                  </button>
-                ))}
+                {isManager && (
+                  <Field label="Vai trò">
+                    <TextInput value="Staff (mặc định)" disabled />
+                  </Field>
+                )}
               </div>
-            </Field>
 
-            <Field label="Lý do đăng ký FaceID" hint="Không bắt buộc — bỏ trống sẽ dùng lý do mặc định của hệ thống.">
-              <TextInput
-                value={form.faceIdReason}
-                onChange={(e) => update({ faceIdReason: e.target.value })}
-                placeholder="VD: Đăng ký FaceID khi tạo hồ sơ nhân viên"
-              />
-            </Field>
-          </div>
-
-          {/* Tài khoản đăng nhập — tuỳ chọn qua nút tròn */}
-          <div className="cew-section">
-            <div className="cew-account-toggle-row">
-              <div>
-                <div className="cew-section-title" style={{ marginBottom: 2 }}>Tài khoản đăng nhập</div>
-                <div style={{ color: THEME.textMuted, fontSize: 12 }}>
-                  Không bắt buộc — có thể thêm sau ở trang chi tiết nhân viên.
-                </div>
-              </div>
-              <button
-                type="button"
-                className={`cew-round-btn ${showAccount ? "cew-round-btn-active" : ""}`}
-                onClick={toggleAccountSection}
-                aria-label={showAccount ? "Ẩn phần tài khoản đăng nhập" : "Thêm tài khoản đăng nhập"}
-                title={showAccount ? "Ẩn tài khoản đăng nhập" : "Thêm tài khoản đăng nhập"}
+              <Field
+                label={isStaffRole ? "Chi nhánh (chỉ chọn 1 — vai trò Staff)" : "Chi nhánh"}
+                required
+                error={touched.branchIds && errors.branchIds}
               >
-                {showAccount ? <Icon.X /> : <Icon.Plus />}
-              </button>
+                <div className="cew-chip-row">
+                  {availableBranches.length === 0 && (
+                    <span style={{ color: THEME.textMuted, fontSize: 12.5 }}>Không có chi nhánh khả dụng.</span>
+                  )}
+                  {availableBranches.map((b) => (
+                    <button
+                      type="button"
+                      key={b.branchId}
+                      className={form.branchIds.includes(b.branchId) ? "cew-chip cew-chip-active" : "cew-chip"}
+                      onClick={() => { toggleBranch(b.branchId); markTouched("branchIds"); }}
+                    >
+                      {b.branchName}
+                    </button>
+                  ))}
+                </div>
+              </Field>
+
+              <Field label="Lý do đăng ký FaceID" hint="Không bắt buộc — bỏ trống sẽ dùng lý do mặc định của hệ thống.">
+                <TextInput
+                  value={form.faceIdReason}
+                  onChange={(e) => update({ faceIdReason: e.target.value })}
+                  placeholder="VD: Đăng ký FaceID khi tạo hồ sơ nhân viên"
+                />
+              </Field>
             </div>
 
-            {showAccount && (
-              <div className="cew-account-panel">
-                <div style={{ color: THEME.textMuted, fontSize: 11.5, marginTop: -6 }}>
-                  Tài khoản nhân viên đăng nhập bằng Email — bắt buộc phải nhập Email.
+            {/* Tài khoản đăng nhập */}
+            <div className="cew-section">
+              <div className="cew-account-toggle-row">
+                <div>
+                  <div className="cew-section-title" style={{ marginBottom: 2 }}>Tài khoản đăng nhập</div>
+                  <div style={{ color: THEME.textMuted, fontSize: 12 }}>
+                    Không bắt buộc — có thể thêm sau ở trang chi tiết nhân viên.
+                  </div>
                 </div>
-                <div className="cew-grid">
-                  <Field label="Email đăng nhập" required error={touched.loginContact && errors.loginContact}>
-                    <TextInput
-                      type="email"
-                      value={form.loginEmail}
-                      onChange={(e) => update({ loginEmail: e.target.value })}
-                      onBlur={() => markTouched("loginContact")}
-                    />
-                  </Field>
-                  <Field label="Mật khẩu" required error={touched.password && errors.password}>
-                    <TextInput
-                      type="password"
-                      value={form.password}
-                      onChange={(e) => update({ password: e.target.value })}
-                      onBlur={() => markTouched("password")}
-                    />
-                  </Field>
-                  <Field label="Nhập lại mật khẩu" required error={touched.confirmPassword && errors.confirmPassword}>
-                    <div style={{ position: "relative" }}>
+                <button
+                  type="button"
+                  className={`cew-round-btn ${showAccount ? "cew-round-btn-active" : ""}`}
+                  onClick={toggleAccountSection}
+                  aria-label={showAccount ? "Ẩn phần tài khoản đăng nhập" : "Thêm tài khoản đăng nhập"}
+                  title={showAccount ? "Ẩn tài khoản đăng nhập" : "Thêm tài khoản đăng nhập"}
+                >
+                  {showAccount ? <Icon.X /> : <Icon.Plus />}
+                </button>
+              </div>
+
+              {showAccount && (
+                <div className="cew-account-panel">
+                  <div style={{ color: THEME.textMuted, fontSize: 11.5, marginTop: -6 }}>
+                    Tài khoản nhân viên đăng nhập bằng Email — bắt buộc phải nhập Email.
+                  </div>
+                  <div className="cew-grid">
+                    <Field label="Email đăng nhập" required error={touched.loginContact && errors.loginContact}>
+                      <TextInput
+                        type="email"
+                        value={form.loginEmail}
+                        onChange={(e) => update({ loginEmail: e.target.value })}
+                        onBlur={() => markTouched("loginContact")}
+                      />
+                    </Field>
+                    <Field label="Mật khẩu" required error={touched.password && errors.password}>
                       <TextInput
                         type="password"
-                        value={form.confirmPassword}
-                        onChange={(e) => update({ confirmPassword: e.target.value })}
-                        onBlur={() => markTouched("confirmPassword")}
-                        style={{
-                          paddingRight: 34,
-                          borderColor: passwordMismatch ? THEME.danger : passwordsMatch ? THEME.success : THEME.border,
-                        }}
+                        value={form.password}
+                        onChange={(e) => update({ password: e.target.value })}
+                        onBlur={() => markTouched("password")}
                       />
+                    </Field>
+                    <Field label="Nhập lại mật khẩu" required error={touched.confirmPassword && errors.confirmPassword}>
+                      <div style={{ position: "relative" }}>
+                        <TextInput
+                          type="password"
+                          value={form.confirmPassword}
+                          onChange={(e) => update({ confirmPassword: e.target.value })}
+                          onBlur={() => markTouched("confirmPassword")}
+                          style={{
+                            paddingRight: 34,
+                            borderColor: passwordMismatch ? THEME.danger : passwordsMatch ? THEME.success : THEME.border,
+                          }}
+                        />
+                        {form.confirmPassword.length > 0 && (
+                          <span className="cew-match-icon" style={{ color: passwordsMatch ? THEME.success : THEME.danger }}>
+                            {passwordsMatch ? <Icon.Check /> : <Icon.X />}
+                          </span>
+                        )}
+                      </div>
                       {form.confirmPassword.length > 0 && (
-                        <span
-                          className="cew-match-icon"
-                          style={{ color: passwordsMatch ? THEME.success : THEME.danger }}
-                        >
-                          {passwordsMatch ? <Icon.Check /> : <Icon.X />}
+                        <span style={{ fontSize: 11.5, color: passwordsMatch ? THEME.success : THEME.danger }}>
+                          {passwordsMatch ? "Mật khẩu khớp." : "Mật khẩu không khớp."}
                         </span>
                       )}
-                    </div>
-                    {form.confirmPassword.length > 0 && (
-                      <span style={{ fontSize: 11.5, color: passwordsMatch ? THEME.success : THEME.danger }}>
-                        {passwordsMatch ? "Mật khẩu khớp." : "Mật khẩu không khớp."}
-                      </span>
-                    )}
-                  </Field>
+                    </Field>
+                  </div>
                 </div>
-              </div>
-            )}
-          </div>
+              )}
+            </div>
 
-          <div className="cew-actions">
-            <Button type="button" variant="outline" onClick={resetForm}>Làm mới</Button>
-            <Button type="submit" disabled={saving}>{saving ? "Đang tạo..." : "Tạo nhân viên"}</Button>
-          </div>
-        </form>
+            <div className="cew-actions">
+              <Button type="button" variant="outline" onClick={resetForm}>Làm mới</Button>
+              <Button type="submit" disabled={!canSubmit}>
+                {saving ? "Đang tạo..." : faceCheck.status === "checking" ? "Đang kiểm tra khuôn mặt..." : "Tạo nhân viên"}
+              </Button>
+            </div>
+          </form>
+        </div>
       </div>
     </div>
   );
@@ -554,37 +629,47 @@ function GlobalStyle() {
     <style>{`
       .cew-root {
         min-height: 100vh;
-        background: radial-gradient(1200px 600px at 100% -10%, #0f1b30 0%, ${THEME.bg} 55%);
+        background: radial-gradient(1200px 600px at 100% -10%, #DAF5E3 0%, ${THEME.bg} 55%);
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, sans-serif;
         padding: 32px 20px 60px;
         display: flex;
         justify-content: center;
       }
-      .cew-page { width: 100%; max-width: 780px; }
-      .cew-topbar { margin-bottom: 20px; }
-      .cew-back {
-        display: inline-flex; align-items: center; gap: 6px; background: transparent; border: none;
-        color: ${THEME.textSecondary}; font-size: 13px; font-weight: 600; cursor: pointer; padding: 0; margin-bottom: 14px;
+      .cew-page { width: 100%; max-width: 800px; }
+
+      .cew-shell {
+        background: ${THEME.panel};
+        border: 1.5px solid ${THEME.borderStrong};
+        border-radius: 22px;
+        padding: 24px 24px 28px;
+        box-shadow: 0 24px 50px rgba(22,163,74,0.12), 0 2px 8px rgba(22,163,74,0.06);
+        display: flex;
+        flex-direction: column;
+        gap: 18px;
       }
-      .cew-back:hover { color: ${THEME.accent}; }
+
+      .cew-topbar { }
       .cew-title { color: ${THEME.textPrimary}; font-size: 22px; font-weight: 800; margin: 0 0 4px; }
       .cew-subtitle { color: ${THEME.textMuted}; font-size: 13px; margin: 0; }
 
       .cew-success {
         display: flex; align-items: center; gap: 8px;
         background: ${THEME.successSoft}; color: ${THEME.success};
-        border: 1px solid rgba(52,211,153,0.35); border-radius: 10px; padding: 12px 16px; font-size: 13.5; margin-bottom: 16px;
+        border: 1px solid rgba(22,163,74,0.3); border-radius: 10px; padding: 12px 16px; font-size: 13.5;
       }
       .cew-error-banner {
         display: flex; align-items: center; gap: 8px;
         background: ${THEME.dangerSoft}; color: ${THEME.danger};
-        border: 1px solid rgba(248,113,113,0.35); border-radius: 10px; padding: 12px 16px; font-size: 13.5; margin-bottom: 16px;
+        border: 1px solid rgba(220,38,38,0.3); border-radius: 10px; padding: 12px 16px; font-size: 13.5;
       }
 
       .cew-card {
-        background: ${THEME.panel}; border: 1px solid ${THEME.border}; border-radius: 16px;
-        padding: 26px; display: flex; flex-direction: column; gap: 26px;
-        box-shadow: 0 20px 50px rgba(0,0,0,0.35);
+        background: #FCFFFD;
+        border: 1.5px solid ${THEME.border};
+        border-radius: 18px;
+        padding: 26px;
+        display: flex; flex-direction: column; gap: 26px;
+        box-shadow: 0 14px 30px rgba(22,163,74,0.08);
       }
       .cew-section { display: flex; flex-direction: column; gap: 14px; padding-bottom: 22px; border-bottom: 1px solid ${THEME.border}; }
       .cew-section:last-of-type { border-bottom: none; padding-bottom: 0; }
@@ -598,15 +683,15 @@ function GlobalStyle() {
 
       .cew-face-row { display: flex; gap: 18px; align-items: flex-start; flex-wrap: wrap; }
       .cew-face-drop {
-        width: 96px; height: 96px; border-radius: 14px; border: 1.5px dashed ${THEME.border};
+        width: 96px; height: 96px; border-radius: 14px; border: 1.5px dashed ${THEME.borderStrong};
         display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
         color: ${THEME.textMuted}; font-size: 10.5px; text-align: center; cursor: pointer; flex-shrink: 0;
-        overflow: hidden; background: #0f172a; transition: border-color .15s ease;
+        overflow: hidden; background: #F6FDF8; transition: all .15s ease;
       }
-      .cew-face-drop:hover { border-color: ${THEME.accent}; color: ${THEME.accent}; }
-      .cew-face-preview { width: 100%; height: 100%; object-fit: cover; border-radius: 14px; }
+      .cew-face-drop:hover { border-color: ${THEME.accent}; color: ${THEME.accent}; box-shadow: 0 0 0 4px ${THEME.accentSoft}; }
+      .cew-face-preview { width: 100%; height: 100%; object-fit: cover; border-radius: 14px; border: 1.5px solid ${THEME.borderStrong}; }
       .cew-remove-img {
-        margin-top: 10px; display: inline-flex; align-items: center; gap: 6px; background: transparent;
+        margin-top: 10px; display: inline-flex; align-items: center; gap: 6px; background: #FFFFFF;
         border: 1px solid ${THEME.border}; color: ${THEME.textSecondary}; font-size: 12px; font-weight: 600;
         border-radius: 8px; padding: 5px 10px; cursor: pointer;
       }
@@ -614,23 +699,24 @@ function GlobalStyle() {
 
       .cew-chip-row { display: flex; flex-wrap: wrap; gap: 8px; }
       .cew-chip {
-        border: 1px solid ${THEME.border}; background: #0f172a; color: ${THEME.textSecondary};
+        border: 1.5px solid ${THEME.border}; background: #F6FDF8; color: ${THEME.textSecondary};
         padding: 7px 14px; border-radius: 999px; font-size: 12.5; cursor: pointer; font-weight: 600; transition: all .15s ease;
       }
-      .cew-chip-active { border-color: ${THEME.accent}; color: ${THEME.accent}; background: ${THEME.accentSoft}; }
+      .cew-chip:hover { border-color: ${THEME.borderStrong}; }
+      .cew-chip-active { border-color: ${THEME.accent}; color: ${THEME.accent}; background: ${THEME.accentSoft}; box-shadow: 0 0 0 3px ${THEME.accentSoft}; }
 
       .cew-account-toggle-row { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
       .cew-round-btn {
         width: 42px; height: 42px; border-radius: 50%; flex-shrink: 0;
-        border: 1px solid ${THEME.border}; background: #0f172a; color: ${THEME.accent};
+        border: 1.5px solid ${THEME.border}; background: #F6FDF8; color: ${THEME.accent};
         display: flex; align-items: center; justify-content: center; cursor: pointer;
         transition: all .15s ease;
       }
       .cew-round-btn:hover { border-color: ${THEME.accent}; box-shadow: 0 0 0 4px ${THEME.accentSoft}; }
-      .cew-round-btn-active { background: ${THEME.accent}; color: #042a30; border-color: ${THEME.accent}; }
+      .cew-round-btn-active { background: ${THEME.accent}; color: #FFFFFF; border-color: ${THEME.accent}; }
 
       .cew-account-panel {
-        background: #0f172a; border: 1px solid ${THEME.border}; border-radius: 12px; padding: 18px;
+        background: #F6FDF8; border: 1.5px solid ${THEME.border}; border-radius: 12px; padding: 18px;
         animation: cew-fade .18s ease;
       }
       @keyframes cew-fade { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
@@ -640,9 +726,17 @@ function GlobalStyle() {
         display: flex; align-items: center; justify-content: center;
       }
 
+      .cew-spinner {
+        width: 12px; height: 12px; border-radius: 50%;
+        border: 2px solid ${THEME.accentSoft}; border-top-color: ${THEME.accent};
+        animation: cew-spin .7s linear infinite;
+      }
+      @keyframes cew-spin { to { transform: rotate(360deg); } }
+
       .cew-actions { display: flex; justify-content: flex-end; gap: 10px; }
 
       @media (max-width: 480px) {
+        .cew-shell { padding: 16px; border-radius: 18px; }
         .cew-card { padding: 18px; }
         .cew-face-row { flex-direction: column; }
       }

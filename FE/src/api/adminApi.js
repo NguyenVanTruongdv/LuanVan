@@ -52,6 +52,41 @@ const adminApi = {
         return authApi.post("/api/employee", formData);
     },
 
+    // ===== Home Images (api/home-images — HomeImageController ở BE) =====
+    // Quản lý ảnh hiển thị trên trang chủ (banner/slider).
+
+    // GET: api/home-images — public, chỉ trả ảnh Status = "Active", đã sort theo SortOrder
+    getHomeImages() {
+        return authApi.get("/api/home-images", false);
+    },
+
+    // GET: api/home-images/all — admin, trả toàn bộ ảnh kể cả Inactive
+    getAllHomeImages() {
+        return authApi.get("/api/home-images/all");
+    },
+
+    // GET: api/home-images/{id}
+    getHomeImageDetail(id) {
+        return authApi.get(`/api/home-images/${id}`);
+    },
+
+    // POST: api/home-images (multipart/form-data)
+    // formData: File, Title, LinkUrl, SortOrder
+    createHomeImage(formData) {
+        return authApi.post("/api/home-images", formData);
+    },
+
+    // PUT: api/home-images/{id} (multipart/form-data)
+    // formData chỉ cần chứa field nào muốn đổi: File, Title, LinkUrl, SortOrder, Status
+    updateHomeImage(id, formData) {
+        return authApi.put(`/api/home-images/${id}`, formData);
+    },
+
+    // DELETE: api/home-images/{id} — xóa cả trên S3 lẫn DB
+    deleteHomeImage(id) {
+        return authApi.delete(`/api/home-images/${id}`);
+    },
+
     // ===== Membership Plans (api/packages — MembershipPlanController ở BE) =====
 
     // GET: api/packages?packageName=...
@@ -100,25 +135,22 @@ const adminApi = {
         return authApi.get(`/api/EquipmentCategory/${id}`);
     },
 
-    // POST: api/EquipmentCategory
-    // data: { categoryName, description }
     createEquipmentCategory(data) {
         return authApi.post("/api/EquipmentCategory", data);
     },
 
-    // PUT: api/EquipmentCategory/{id}
-    // data: { categoryName, description }
     updateEquipmentCategory(id, data) {
         return authApi.put(`/api/EquipmentCategory/${id}`, data);
     },
 
-    // DELETE: api/EquipmentCategory/{id}
-    // Lưu ý: BE trả 400 kèm message "Không thể xóa danh mục vì đang có thiết
-    // bị sử dụng" nếu danh mục đang được thiết bị tham chiếu -> FE cần bắt
-    // lỗi này và hiển thị message trả về, không phải lỗi chung chung.
+
     deleteEquipmentCategory(id) {
         return authApi.delete(`/api/EquipmentCategory/${id}`);
     },
+    checkEmployeeFace(formData) {
+        return authApi.post("/api/employee/check", formData);
+    },
 };
+
 
 export default adminApi;

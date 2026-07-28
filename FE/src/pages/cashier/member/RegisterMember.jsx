@@ -3,8 +3,7 @@ import cashierApi from "../../../api/cashierApi";
 import memberApi from "../../../api/memberApi";
 
 // ============================================================
-// THEME — tông màu đồng bộ với trang đăng nhập (StaffLogin): nền navy
-// #0F172A/#1E293B, accent cyan #06B6D4, viền slate #334155.
+// THEME — tông màu đồng bộ với trang đăng nhập (StaffLogin)
 // ============================================================
 const T = {
     bgDeep: "#0F172A",
@@ -31,9 +30,6 @@ const T = {
     amberBg: "rgba(245, 158, 11, 0.14)",
     amberBorder: "rgba(245, 158, 11, 0.4)",
     amberText: "#FBBF6D",
-    // Tông màu riêng cho khuyến mãi GIẢM GIÁ (GiamTienMat / GiamPhanTram) — xanh ngọc (mint),
-    // tách biệt với tông hổ phách (amber) dùng cho khuyến mãi TẶNG NGÀY (TangNgay / TangChuKy)
-    // để nhân viên phân biệt nhanh bằng màu sắc + icon mà không cần đọc kỹ mô tả.
     discount: "#34D399",
     discountBg: "rgba(52, 211, 153, 0.14)",
     discountBorder: "rgba(52, 211, 153, 0.4)",
@@ -41,12 +37,13 @@ const T = {
     danger: "#F87171",
     dangerBg: "rgba(220, 38, 38, 0.14)",
     dangerBorder: "rgba(248, 113, 113, 0.4)",
+    success: "#4ADE80",
+    successBg: "rgba(74, 222, 128, 0.12)",
 };
 
 // ============================================================
 // HELPERS
 // ============================================================
-// Chuyển dataURL (ảnh chụp từ canvas) thành File để đưa vào FormData
 function dataUrlToFile(dataUrl, filename) {
     if (!dataUrl) return null;
     const [meta, base64] = dataUrl.split(",");
@@ -74,18 +71,6 @@ const CURRENT_BRANCH_NAME = "Chi nhánh Quận 1";
 const fmt = (n) =>
     new Intl.NumberFormat("vi-VN", { style: "currency", currency: "VND" }).format(n);
 
-// Chuẩn hoá 1 khuyến mãi trả về từ GET /api/plans/{planId}/applicable-promotions
-// thành 1 shape cố định để UI dùng. Response thật từ BE có dạng:
-// { promotionId, tenKhuyenMai, promoType, phanTramGiam, soTienGiam, mucGiamToiDa,
-//   soNgayTang, soChuKyTang, moTa }
-//
-// LƯU Ý NGHIỆP VỤ:
-// - Với CẢ "TangNgay" lẫn "TangChuKy": BE luôn tính sẵn số ngày tặng thực tế vào
-//   field soNgayTang (vd "mua 3 tháng tặng 1 chu kỳ" -> soNgayTang = 30) -> ưu tiên
-//   dùng thẳng giá trị này. soChuKyTang chỉ là fallback phòng khi BE không trả
-//   soNgayTang (giá trị null) — lúc đó mới tự nhân soChuKyTang * planDurationDays.
-// - Giảm giá: phanTramGiam (%) có thể bị giới hạn bởi mucGiamToiDa (số tiền giảm tối đa);
-//   soTienGiam là số tiền giảm cố định.
 function normalizePromotion(p, planDurationDays = 0) {
     const bonusDays =
         p.soNgayTang != null
@@ -104,16 +89,9 @@ function normalizePromotion(p, planDurationDays = 0) {
         discountCap: p.mucGiamToiDa ?? null,
     };
 }
-
-// Khuyến mãi loại "tặng ngày sử dụng" (TangNgay / TangChuKy) — hiển thị tông hổ phách
-// + icon lịch. Các loại còn lại (GiamTienMat / GiamPhanTram) là giảm giá tiền —
-// hiển thị tông xanh ngọc + icon tương ứng (tiền mặt / phần trăm).
 function isBonusDaysPromo(type) {
     return type === "TangNgay" || type === "TangChuKy";
 }
-
-// Nhãn ngắn gọn thể hiện giá trị khuyến mãi theo đúng loại, dùng ở khối tóm tắt
-// hội viên bên phải và ở từng dòng khuyến mãi.
 function promoShortLabel(promo) {
     if (!promo) return "—";
     switch (promo.promoType) {
@@ -127,6 +105,43 @@ function promoShortLabel(promo) {
         default:
             return "—";
     }
+}
+
+// ============================================================
+// SHARED VALIDATION-HINT HELPERS
+// Trạng thái check dùng chung cho cả SĐT lẫn FaceID:
+//   idle | checking | ok/valid | duplicate/invalid/error
+// Gộp lại để không phải viết lặp khối hiển thị 2 lần.
+// ============================================================
+function useDebouncedValue(value, delay) {
+    const [debounced, setDebounced] = useState(value);
+    useEffect(() => {
+        const t = setTimeout(() => setDebounced(value), delay);
+        return () => clearTimeout(t);
+    }, [value, delay]);
+    return debounced;
+}
+
+const OK_STATUSES = new Set(["ok", "valid"]);
+const DANGER_STATUSES = new Set(["duplicate", "invalid", "error"]);
+
+function SpinnerDot() {
+    return <span style={{ display: "inline-block", marginRight: 6 }}>⏳</span>;
+}
+
+/** Hiển thị 1 dòng hint theo status (checking/ok/danger) — dùng chung cho SĐT và FaceID. */
+function StatusMessage({ status, message }) {
+    if (!message) return null;
+    if (status === "checking") {
+        return <p style={g.hintChecking}><SpinnerDot /> {message}</p>;
+    }
+    if (OK_STATUSES.has(status)) {
+        return <p style={g.hintOk}>✓ {message}</p>;
+    }
+    if (DANGER_STATUSES.has(status)) {
+        return <p style={g.hintDanger}>{message}</p>;
+    }
+    return null;
 }
 
 // ============================================================
@@ -170,12 +185,6 @@ function useCamera(initialPhoto = null) {
         streamRef.current = null;
         setCamState("idle");
     };
-    // Camera trước (facingMode: "user") được hiển thị LẬT GƯƠNG bằng CSS (xem cs.video)
-    // để người dùng canh mặt tự nhiên như soi gương. Tuy nhiên, ảnh XUẤT RA để gửi lên BE
-    // phải là ảnh ĐÚNG CHIỀU THẬT NGOÀI ĐỜI (không lật), khớp với ảnh mà hệ thống
-    // nhận diện khuôn mặt (FaceID) đang lưu/so khớp — nếu không sẽ bị lệch trái/phải và
-    // không nhận diện được. Vì vậy khi capture, ta lật ảnh lại một lần nữa để triệt tiêu
-    // hiệu ứng mirror của preview trước khi vẽ vào canvas.
     const capture = () => {
         const video = videoRef.current;
         const canvas = canvasRef.current;
@@ -187,7 +196,7 @@ function useCamera(initialPhoto = null) {
         const ctx = canvas.getContext("2d");
         ctx.save();
         ctx.translate(w, 0);
-        ctx.scale(-1, 1); // lật lại để bù trừ mirror của preview -> ảnh xuất ra không bị lật
+        ctx.scale(-1, 1);
         ctx.drawImage(video, 0, 0, w, h);
         ctx.restore();
         const dataUrl = canvas.toDataURL("image/jpeg", 0.88);
@@ -197,7 +206,6 @@ function useCamera(initialPhoto = null) {
         setCamState("captured");
     };
     const retake = () => { setPhoto(null); setCamState("on"); };
-    // Ảnh tải lên từ file KHÔNG qua camera trực tiếp nên giữ nguyên, không áp dụng mirror.
     const loadFromFile = (file) => {
         if (!file) return;
         streamRef.current?.getTracks().forEach((t) => t.stop());
@@ -217,6 +225,24 @@ function useCamera(initialPhoto = null) {
 // ============================================================
 // CAMERA PANEL
 // ============================================================
+function CamSVG() {
+    return (
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: 7, flexShrink: 0 }}>
+            <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
+            <circle cx="12" cy="13" r="4" />
+        </svg>
+    );
+}
+function UploadSVG() {
+    return (
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: 7, flexShrink: 0 }}>
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+            <polyline points="17 8 12 3 7 8" />
+            <line x1="12" y1="3" x2="12" y2="15" />
+        </svg>
+    );
+}
+
 function CameraPanel({ cam }) {
     const { videoRef, canvasRef, camState, photo, camError, start, stop, capture, retake, loadFromFile } = cam;
     const fileInputRef = useRef(null);
@@ -229,12 +255,7 @@ function CameraPanel({ cam }) {
     return (
         <div style={cs.wrap}>
             <div style={cs.header}>
-                <span style={cs.headerIcon}>
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={T.cyan} strokeWidth="2">
-                        <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
-                        <circle cx="12" cy="13" r="4" />
-                    </svg>
-                </span>
+                <span style={cs.headerIcon}><CamSVG /></span>
                 <span style={cs.headerText}>Chụp FaceID mới</span>
             </div>
             <div style={cs.frame}>
@@ -245,8 +266,6 @@ function CameraPanel({ cam }) {
                 />
                 <canvas ref={canvasRef} style={{ display: "none" }} />
                 {camState === "captured" && photo && (
-                    // Ảnh đã chụp hiển thị ĐÚNG CHIỀU THẬT (không mirror) — chính là ảnh
-                    // sẽ được gửi lên BE, để nhân viên kiểm tra đúng những gì hệ thống nhận.
                     <img src={photo} alt="Ảnh hội viên" style={cs.photo} />
                 )}
                 {camState === "idle" && (
@@ -271,35 +290,19 @@ function CameraPanel({ cam }) {
                                 />
                             </svg>
                         </div>
-                        {camState === "on" && (
-                            <div style={cs.caption}>Canh mặt vào khung bầu dục</div>
-                        )}
+                        {camState === "on" && <div style={cs.caption}>Canh mặt vào khung bầu dục</div>}
                     </div>
                 )}
-                {camState === "on" && (
-                    <div style={cs.liveBadge}><span style={cs.liveDot} />LIVE</div>
-                )}
-                {camState === "captured" && (
-                    <div style={cs.capturedBadge}>✓ Đã chụp</div>
-                )}
+                {camState === "on" && <div style={cs.liveBadge}><span style={cs.liveDot} />LIVE</div>}
+                {camState === "captured" && <div style={cs.capturedBadge}>✓ Đã chụp</div>}
             </div>
             {camError && <p style={cs.camErr}>{camError}</p>}
-            <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/*"
-                style={{ display: "none" }}
-                onChange={onFileChange}
-            />
+            <input ref={fileInputRef} type="file" accept="image/*" style={{ display: "none" }} onChange={onFileChange} />
             <div style={cs.btnRow}>
                 {camState === "idle" && (
                     <>
-                        <button style={cs.btnStart} onClick={start}>
-                            <CamSVG /> Chụp ảnh
-                        </button>
-                        <button style={cs.btnUpload} onClick={openFilePicker}>
-                            <UploadSVG /> Tải ảnh lên
-                        </button>
+                        <button style={cs.btnStart} onClick={start}><CamSVG /> Chụp ảnh</button>
+                        <button style={cs.btnUpload} onClick={openFilePicker}><UploadSVG /> Tải ảnh lên</button>
                     </>
                 )}
                 {camState === "on" && (
@@ -311,37 +314,14 @@ function CameraPanel({ cam }) {
                 {camState === "captured" && (
                     <>
                         <button style={cs.btnRetake} onClick={retake}>🔄 Chụp lại</button>
-                        <button style={cs.btnUploadGhost} onClick={openFilePicker}>
-                            <UploadSVG /> Tải ảnh khác
-                        </button>
+                        <button style={cs.btnUploadGhost} onClick={openFilePicker}><UploadSVG /> Tải ảnh khác</button>
                     </>
                 )}
             </div>
         </div>
     );
 }
-function CamSVG() {
-    return (
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: 7, flexShrink: 0 }}>
-            <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
-            <circle cx="12" cy="13" r="4" />
-        </svg>
-    );
-}
-function UploadSVG() {
-    return (
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: 7, flexShrink: 0 }}>
-            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-            <polyline points="17 8 12 3 7 8" />
-            <line x1="12" y1="3" x2="12" y2="15" />
-        </svg>
-    );
-}
 
-// ------------------------------------------------------------
-// Icon riêng cho từng loại khuyến mãi (dùng trong khối "Khuyến mãi áp dụng")
-// ------------------------------------------------------------
-// TangNgay / TangChuKy — tặng thêm ngày sử dụng -> icon lịch có dấu "+"
 function CalendarPlusIcon() {
     return (
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -354,7 +334,6 @@ function CalendarPlusIcon() {
         </svg>
     );
 }
-// GiamTienMat — giảm thẳng số tiền -> icon tờ tiền
 function BanknoteIcon() {
     return (
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -365,7 +344,6 @@ function BanknoteIcon() {
         </svg>
     );
 }
-// GiamPhanTram — giảm theo % -> icon thẻ giá / tag phần trăm
 function PercentTagIcon() {
     return (
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -374,7 +352,6 @@ function PercentTagIcon() {
         </svg>
     );
 }
-// Chọn icon phù hợp theo promoType — có fallback an toàn nếu BE trả loại lạ.
 function promoIconFor(type) {
     if (type === "TangNgay" || type === "TangChuKy") return <CalendarPlusIcon />;
     if (type === "GiamTienMat") return <BanknoteIcon />;
@@ -387,11 +364,9 @@ const cs = {
     header: { display: "flex", alignItems: "center", gap: 8, marginBottom: 2 },
     headerIcon: {
         width: 26, height: 26, borderRadius: 8, background: T.cyanSoft,
-        display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+        display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, color: T.cyan,
     },
     headerText: { fontSize: 12, fontWeight: 800, color: T.cyanLight, letterSpacing: "0.05em", textTransform: "uppercase" },
-    // Khung camera: nền tối sâu hơn khối card xung quanh + viền cyan rõ nét hơn
-    // để video/ảnh nổi bật, dễ nhìn thấy chi tiết khuôn mặt hơn so với nền trắng cũ.
     frame: {
         flex: 1,
         minHeight: 340,
@@ -405,9 +380,6 @@ const cs = {
         alignItems: "center",
         justifyContent: "center",
     },
-    // Lật gương preview để người dùng canh mặt tự nhiên (giống nhìn vào gương).
-    // Ảnh THẬT SỰ được lưu/gửi lên BE đã được lật lại đúng chiều trong hàm capture().
-    // filter tăng nhẹ tương phản/độ nét để hình ảnh rõ hơn trên nền tối.
     video: {
         width: "100%", height: "100%", objectFit: "cover", display: "block",
         transform: "scaleX(-1)", filter: "contrast(1.08) brightness(1.05) saturate(1.05)",
@@ -495,7 +467,7 @@ function Field({ label, error, children }) {
 }
 
 // ============================================================
-// BANNER — dải tiêu đề navy/cyan (đồng bộ trang đăng nhập)
+// BANNER
 // ============================================================
 function PageBanner({ title, subtitle }) {
     return (
@@ -517,41 +489,111 @@ function PageBanner({ title, subtitle }) {
 
 // ============================================================
 // STEP 1 — THÔNG TIN HỘI VIÊN
+// Auto-check SĐT (debounce 500ms) + auto-check FaceID (ngay khi có ảnh mới).
+// SĐT trùng -> ẩn nút "Tiếp theo", thay bằng khối chặn ở footer.
 // ============================================================
 function StepMemberInfo({ formData, setFormData, savedPhoto, onNext }) {
     const cam = useCamera(savedPhoto);
     const [errors, setErrors] = useState({});
-    const [checkingPhone, setCheckingPhone] = useState(false);
+
+    const [phoneCheck, setPhoneCheck] = useState({ status: "idle", message: "" });
+    const [faceCheck, setFaceCheck] = useState({ status: "idle", message: "" });
+
+    const debouncedPhone = useDebouncedValue(formData.phone.trim(), 500);
+
     const set = (k) => (ev) => {
         setFormData((f) => ({ ...f, [k]: ev.target.value }));
         setErrors((e) => ({ ...e, [k]: undefined }));
     };
+
+    // ---- AUTO-CHECK SĐT: chạy khi giá trị debounce thay đổi và đúng định dạng ----
+    useEffect(() => {
+        if (!/^(0|\+84)\d{9}$/.test(debouncedPhone)) {
+            setPhoneCheck({ status: "idle", message: "" });
+            return;
+        }
+        let cancelled = false;
+        setPhoneCheck({ status: "checking", message: "Đang kiểm tra số điện thoại…" });
+        (async () => {
+            try {
+                const res = await cashierApi.checkPhoneExists(debouncedPhone);
+                const exists = res?.exists ?? res?.data?.exists ?? false;
+                if (cancelled) return;
+                setPhoneCheck(
+                    exists
+                        ? { status: "duplicate", message: "Số điện thoại này đã được sử dụng bởi một hội viên khác." }
+                        : { status: "ok", message: "Số điện thoại hợp lệ, chưa có ai sử dụng" }
+                );
+            } catch {
+                if (!cancelled) setPhoneCheck({ status: "error", message: "Không kiểm tra được số điện thoại, vui lòng thử lại" });
+            }
+        })();
+        return () => { cancelled = true; };
+    }, [debouncedPhone]);
+
+    // ---- AUTO-CHECK FACEID: chạy ngay khi có ảnh mới (chụp/tải lên) ----
+    useEffect(() => {
+        if (!cam.photo) {
+            setFaceCheck({ status: "idle", message: "" });
+            return;
+        }
+        let cancelled = false;
+        setFaceCheck({ status: "checking", message: "Đang kiểm tra khuôn mặt…" });
+        (async () => {
+            try {
+                const file = dataUrlToFile(cam.photo, `face-check-${Date.now()}.jpg`);
+                const fd = new FormData();
+                fd.append("ProfileImage", file);
+                // Đăng ký hội viên MỚI -> không loại trừ ai (không gửi ExcludeMemberId)
+                const res = await cashierApi.checkMemberFace(fd);
+                const data = res?.data ?? res;
+                if (cancelled) return;
+                setFaceCheck(
+                    data.isValid
+                        ? { status: "valid", message: data.message || "Ảnh hợp lệ, có thể đăng ký." }
+                        : { status: "invalid", message: data.message || "Ảnh không hợp lệ." }
+                );
+            } catch {
+                if (!cancelled) setFaceCheck({ status: "error", message: "Không kiểm tra được khuôn mặt, vui lòng thử lại." });
+            }
+        })();
+        return () => { cancelled = true; };
+    }, [cam.photo]);
+
     const validate = () => {
         const e = {};
         if (!formData.fullName.trim()) e.fullName = "Vui lòng nhập họ tên";
-        if (!/^(0|\+84)\d{9}$/.test(formData.phone.trim())) e.phone = "Số điện thoại không hợp lệ";
+
+        if (!/^(0|\+84)\d{9}$/.test(formData.phone.trim())) {
+            e.phone = "Số điện thoại không hợp lệ";
+        } else if (phoneCheck.status === "duplicate" || phoneCheck.status === "error") {
+            e.phone = phoneCheck.message;
+        } else if (phoneCheck.status === "checking") {
+            e.phone = "Đang kiểm tra số điện thoại, vui lòng đợi…";
+        }
+
         if (!formData.gender) e.gender = "Vui lòng chọn giới tính";
-        if (!cam.photo) e.photo = "Vui lòng chụp ảnh hội viên";
+
+        if (!cam.photo) {
+            e.photo = "Vui lòng chụp ảnh hội viên";
+        } else if (faceCheck.status === "invalid" || faceCheck.status === "error") {
+            e.photo = faceCheck.message;
+        } else if (faceCheck.status === "checking") {
+            e.photo = "Đang kiểm tra khuôn mặt, vui lòng đợi…";
+        }
+
         return e;
     };
-    const handleNext = async () => {
+
+    const handleNext = () => {
         const e = validate();
         if (Object.keys(e).length) { setErrors(e); return; }
-        setCheckingPhone(true);
-        try {
-            const res = await cashierApi.checkPhoneExists(formData.phone.trim());
-            const exists = res?.exists ?? res?.data?.exists ?? false;
-            if (exists) {
-                setErrors((prev) => ({ ...prev, phone: "Số điện thoại đã được sử dụng" }));
-                return;
-            }
-            onNext({ photo: cam.photo });
-        } catch (err) {
-            setErrors((prev) => ({ ...prev, phone: "Không kiểm tra được số điện thoại, vui lòng thử lại" }));
-        } finally {
-            setCheckingPhone(false);
-        }
+        onNext({ photo: cam.photo });
     };
+
+    const isBusy = phoneCheck.status === "checking" || faceCheck.status === "checking";
+    const isPhoneDuplicate = phoneCheck.status === "duplicate";
+
     return (
         <div style={g.card}>
             <h2 style={g.cardTitle}>Đăng ký hội viên mới</h2>
@@ -559,6 +601,7 @@ function StepMemberInfo({ formData, setFormData, savedPhoto, onNext }) {
                 <div style={g.leftCol}>
                     <CameraPanel cam={cam} />
                     {errors.photo && <p style={{ color: T.danger, fontSize: 11, marginTop: 6 }}>{errors.photo}</p>}
+                    {!errors.photo && <StatusMessage status={faceCheck.status} message={faceCheck.message} />}
                 </div>
                 <div style={g.rightCol}>
                     <Field label="Họ và tên *" error={errors.fullName}>
@@ -571,12 +614,25 @@ function StepMemberInfo({ formData, setFormData, savedPhoto, onNext }) {
                     </Field>
                     <Field label="Số điện thoại *" error={errors.phone}>
                         <input
-                            style={{ ...g.input, ...(errors.phone ? g.inputErr : {}) }}
+                            style={{ ...g.input, ...(errors.phone || isPhoneDuplicate ? g.inputErr : {}) }}
                             placeholder="0901234567"
                             value={formData.phone}
                             onChange={set("phone")}
                             inputMode="tel"
                         />
+                        {!errors.phone && <StatusMessage status={phoneCheck.status} message={phoneCheck.message} />}
+                        {!errors.phone && isPhoneDuplicate && (
+                            <div style={g.duplicateBanner}>
+                                <span style={{ fontSize: 15, lineHeight: 1 }}>⚠️</span>
+                                <div>
+                                    <div style={g.duplicateTitle}>Số điện thoại đã tồn tại</div>
+                                    <div style={g.duplicateDesc}>
+                                        {phoneCheck.message} Vui lòng kiểm tra lại hoặc dùng một số điện thoại khác
+                                        để tiếp tục đăng ký.
+                                    </div>
+                                </div>
+                            </div>
+                        )}
                     </Field>
                     <Field label="Giới tính *" error={errors.gender}>
                         <div style={{ display: "flex", gap: 24, marginTop: 2 }}>
@@ -608,20 +664,27 @@ function StepMemberInfo({ formData, setFormData, savedPhoto, onNext }) {
                 </div>
             </div>
             <div style={g.footer}>
-                <button
-                    style={{ ...g.btnPrimary, opacity: checkingPhone ? 0.7 : 1 }}
-                    onClick={handleNext}
-                    disabled={checkingPhone}
-                >
-                    {checkingPhone ? "Đang kiểm tra số điện thoại…" : "Tiếp theo — Chọn gói tập →"}
-                </button>
+                {isPhoneDuplicate ? (
+                    <div style={g.errBox}>
+                        Không thể tiếp tục vì số điện thoại đã được sử dụng. Hãy sửa lại số điện thoại
+                        (hoặc dùng chức năng tra cứu hội viên) trước khi chọn gói tập.
+                    </div>
+                ) : (
+                    <button
+                        style={{ ...g.btnPrimary, opacity: isBusy ? 0.7 : 1 }}
+                        onClick={handleNext}
+                        disabled={isBusy}
+                    >
+                        {isBusy ? "Đang kiểm tra…" : "Tiếp theo — Chọn gói tập →"}
+                    </button>
+                )}
             </div>
         </div>
     );
 }
 
 // ============================================================
-// STEP 2 — GÓI TẬP + THANH TOÁN (bố cục theo mẫu "Kích hoạt hội viên")
+// STEP 2 — GÓI TẬP + THANH TOÁN
 // ============================================================
 function StepPackage({ memberForm, memberPhoto, pkgData, setPkgData, onBack, onDone }) {
     const [packages, setPackages] = useState([]);
@@ -642,7 +705,6 @@ function StepPackage({ memberForm, memberPhoto, pkgData, setPkgData, onBack, onD
             .getAllPackage()
             .then((res) => {
                 if (cancelled) return;
-                // API trả về mảng plan: { planId, planName, price, durationDays, description, status, isPopular, ... }
                 const list = Array.isArray(res) ? res : res?.data || [];
                 setPackages(list.filter((p) => p.status === "OnSale"));
             })
@@ -660,7 +722,6 @@ function StepPackage({ memberForm, memberPhoto, pkgData, setPkgData, onBack, onD
     const selectedPkg = pkgData.selectedPkg;
     const payment = pkgData.payment;
 
-    // ------ Lấy khuyến mãi áp dụng cho gói đã chọn: GET /api/plans/{planId}/applicable-promotions ------
     useEffect(() => {
         if (!selectedPkg?.planId) { setPromotions([]); return; }
         let cancelled = false;
@@ -673,7 +734,6 @@ function StepPackage({ memberForm, memberPhoto, pkgData, setPkgData, onBack, onD
                 const list = Array.isArray(res) ? res : res?.data || [];
                 const normalized = list.map((p) => normalizePromotion(p, selectedPkg.durationDays || 0));
                 setPromotions(normalized);
-                // Mặc định áp dụng khuyến mãi đầu tiên hệ thống trả về (nếu có)
                 setPkgData((d) => ({ ...d, promotionId: normalized[0]?.id ?? null }));
             })
             .catch(() => {
@@ -688,7 +748,6 @@ function StepPackage({ memberForm, memberPhoto, pkgData, setPkgData, onBack, onD
 
     const selectedPromotion = promotions.find((p) => p.id === pkgData.promotionId) || null;
 
-    // ------ Tính thời hạn + thành tiền dự kiến (chỉ để hiển thị preview — BE tính giá trị thật) ------
     const today = new Date();
     const planDays = selectedPkg?.durationDays || 0;
     const bonusDays = selectedPromotion?.bonusDays || 0;
@@ -701,7 +760,6 @@ function StepPackage({ memberForm, memberPhoto, pkgData, setPkgData, onBack, onD
     let discountFromPercent = selectedPromotion?.discountPercent
         ? (rawPrice * selectedPromotion.discountPercent) / 100
         : 0;
-    // Giới hạn mức giảm theo mucGiamToiDa (nếu BE có trả về giá trị này)
     if (selectedPromotion?.discountCap != null) {
         discountFromPercent = Math.min(discountFromPercent, selectedPromotion.discountCap);
     }
@@ -719,19 +777,15 @@ function StepPackage({ memberForm, memberPhoto, pkgData, setPkgData, onBack, onD
             fd.append("FullName", memberForm.fullName);
             fd.append("Phone", memberForm.phone);
             fd.append("Gender", memberForm.gender);
-            // BranchId KHÔNG gửi từ FE — BE tự lấy theo chi nhánh của nhân viên đăng nhập
             if (memberForm.internalNotes) fd.append("InternalNotes", memberForm.internalNotes);
             const profileFile = dataUrlToFile(memberPhoto, `member-${Date.now()}.jpg`);
             if (profileFile) fd.append("ProfileImage", profileFile);
             fd.append("PlanId", pkg.planId);
-            // Chỉ gửi PromotionId khi có khuyến mãi thật được chọn từ API applicable-promotions.
             if (selectedPromotion?.id) fd.append("PromotionId", selectedPromotion.id);
             fd.append("PaymentMethod", payment);
             fd.append("PaymentStatus", payment === "Cash" ? "Paid" : "Pending");
             fd.append("GiaGoc", pkg.price);
             fd.append("Amount", pkg.price);
-            // ĐÃ BỎ: SoNgayTangThucTe, StartDate, ExpiryDate — BE tự tính toàn bộ
-            // dựa vào PlanId (DurationDays) + PromotionId, không nhận các giá trị này từ FE.
             const result = await cashierApi.createMember(fd);
             onDone(result);
         } catch (err) {
@@ -741,8 +795,6 @@ function StepPackage({ memberForm, memberPhoto, pkgData, setPkgData, onBack, onD
         }
     };
 
-    const otherPackages = packages.filter((p) => p.planId !== selectedPkg?.planId);
-
     return (
         <div>
             <PageBanner
@@ -751,9 +803,7 @@ function StepPackage({ memberForm, memberPhoto, pkgData, setPkgData, onBack, onD
             />
 
             <div style={g.pkgPageLayout}>
-                {/* ============== CỘT TRÁI ============== */}
                 <div style={g.leftPkgCol}>
-                    {/* So sánh gói hiện tại / gói muốn mua */}
                     <div style={g.compareRow}>
                         <div style={g.compareCard}>
                             <div style={g.compareLabel}>GÓI HIỆN TẠI</div>
@@ -769,13 +819,10 @@ function StepPackage({ memberForm, memberPhoto, pkgData, setPkgData, onBack, onD
                             <div style={g.compareName}>
                                 {selectedPkg ? selectedPkg.planName : <span style={{ color: T.textMuted, fontWeight: 500 }}>Chưa chọn gói</span>}
                             </div>
-                            {selectedPkg && (
-                                <div style={g.compareSub}>Thời hạn {selectedPkg.durationDays} ngày</div>
-                            )}
+                            {selectedPkg && <div style={g.compareSub}>Thời hạn {selectedPkg.durationDays} ngày</div>}
                         </div>
                     </div>
 
-                    {/* Thanh thời hạn + bonus ngày khuyến mãi */}
                     {selectedPkg && (
                         <div style={g.timelineBox}>
                             {bonusDays > 0 && (
@@ -808,7 +855,6 @@ function StepPackage({ memberForm, memberPhoto, pkgData, setPkgData, onBack, onD
                         </div>
                     )}
 
-                    {/* Danh sách gói khác */}
                     <p style={g.secLabel}>CHỌN GÓI KHÁC</p>
                     {loadingPackages && <p style={{ color: T.textSecondary, fontSize: 13 }}>Đang tải danh sách gói tập…</p>}
                     {loadError && <p style={{ color: T.danger, fontSize: 13 }}>{loadError}</p>}
@@ -841,11 +887,6 @@ function StepPackage({ memberForm, memberPhoto, pkgData, setPkgData, onBack, onD
                         })}
                     </div>
 
-                    {/* Khuyến mãi áp dụng — từ getApplicablePromotions(planId).
-                        Mỗi dòng được tô màu + icon khác nhau tuỳ loại:
-                        - TangNgay / TangChuKy (tặng ngày): tông hổ phách, icon lịch.
-                        - GiamTienMat (giảm thẳng tiền): tông xanh ngọc, icon tờ tiền.
-                        - GiamPhanTram (giảm %): tông xanh ngọc, icon tag phần trăm. */}
                     {selectedPkg && (
                         <>
                             <p style={g.secLabel}>KHUYẾN MÃI ÁP DỤNG</p>
@@ -903,7 +944,6 @@ function StepPackage({ memberForm, memberPhoto, pkgData, setPkgData, onBack, onD
                         </>
                     )}
 
-                    {/* Phương thức thanh toán */}
                     <p style={{ ...g.secLabel, marginTop: 20 }}>PHƯƠNG THỨC THANH TOÁN</p>
                     <div style={g.pmRow}>
                         {PAYMENT_METHODS.map((pm) => {
@@ -929,7 +969,6 @@ function StepPackage({ memberForm, memberPhoto, pkgData, setPkgData, onBack, onD
                     </div>
                 </div>
 
-                {/* ============== CỘT PHẢI — TÓM TẮT HỘI VIÊN ============== */}
                 <div style={g.orderBox}>
                     <p style={g.secLabel}>HỘI VIÊN</p>
                     <div style={g.orderMember}>
@@ -973,7 +1012,6 @@ function StepPackage({ memberForm, memberPhoto, pkgData, setPkgData, onBack, onD
 // STEP 3 — THÀNH CÔNG
 // ============================================================
 function StepSuccess({ result, onNew }) {
-    // Điều chỉnh tuỳ theo shape thật của MemberResponse trả về từ BE
     const member = result?.member ?? result;
     return (
         <div style={{ ...g.card, textAlign: "center", padding: "64px 40px" }}>
@@ -1083,11 +1121,7 @@ export default function GymMemberRegistration() {
 // ============================================================
 const g = {
     root: { minHeight: "100vh", background: T.bgPage, fontFamily: "'Inter','Segoe UI',sans-serif" },
-    container: {
-        maxWidth: 1100,
-        margin: "0 auto",
-        padding: "28px 24px 64px",
-    },
+    container: { maxWidth: 1100, margin: "0 auto", padding: "28px 24px 64px" },
     progress: {
         display: "flex", alignItems: "center",
         background: T.bgCard, borderRadius: 14,
@@ -1112,13 +1146,7 @@ const g = {
         marginBottom: 28, paddingBottom: 18,
         borderBottom: `1px solid ${T.border}`,
     },
-    twoCol: {
-        display: "grid",
-        gridTemplateColumns: "1fr 1.2fr",
-        gap: 36,
-        marginBottom: 28,
-        alignItems: "start",
-    },
+    twoCol: { display: "grid", gridTemplateColumns: "1fr 1.2fr", gap: 36, marginBottom: 28, alignItems: "start" },
     leftCol: { paddingTop: 5 },
     rightCol: {},
     secLabel: {
@@ -1126,10 +1154,7 @@ const g = {
         letterSpacing: "0.08em", textTransform: "uppercase",
         marginBottom: 12, marginTop: 20,
     },
-    fieldLabel: {
-        display: "block", fontSize: 13, fontWeight: 600,
-        color: T.textSecondary, marginBottom: 6,
-    },
+    fieldLabel: { display: "block", fontSize: 13, fontWeight: 600, color: T.textSecondary, marginBottom: 6 },
     input: {
         width: "100%", padding: "10px 14px",
         border: `1.5px solid ${T.border}`, borderRadius: 10,
@@ -1147,55 +1172,48 @@ const g = {
     },
     footer: {},
 
-    // -------- Banner --------
+    hintChecking: { fontSize: 12, color: T.textSecondary, marginTop: 6, marginBottom: 0, display: "flex", alignItems: "center" },
+    hintOk: { fontSize: 12, color: T.success, marginTop: 6, marginBottom: 0, fontWeight: 600 },
+    hintDanger: { fontSize: 12, color: T.danger, marginTop: 6, marginBottom: 0, fontWeight: 600 },
+
+    duplicateBanner: {
+        display: "flex", alignItems: "flex-start", gap: 8,
+        background: T.dangerBg, border: `1.5px solid ${T.dangerBorder}`,
+        borderRadius: 10, padding: "10px 12px", marginTop: 8,
+    },
+    duplicateTitle: { fontSize: 12.5, fontWeight: 800, color: T.danger, marginBottom: 2 },
+    duplicateDesc: { fontSize: 11.5, color: T.textSecondary, lineHeight: 1.5 },
+
     banner: {
         position: "relative",
         display: "flex", alignItems: "center", gap: 14,
         background: `linear-gradient(135deg, ${T.bgDeep}, ${T.panelDarkSoft})`,
-        borderRadius: 16,
-        padding: "20px 24px",
-        marginBottom: 22,
-        overflow: "hidden",
-        boxShadow: "0 8px 24px rgba(0,0,0,.4)",
+        borderRadius: 16, padding: "20px 24px", marginBottom: 22,
+        overflow: "hidden", boxShadow: "0 8px 24px rgba(0,0,0,.4)",
     },
     bannerGlow: {
-        position: "absolute",
-        top: -60, right: -60,
-        width: 200, height: 200,
+        position: "absolute", top: -60, right: -60, width: 200, height: 200,
         borderRadius: "50%",
         background: `radial-gradient(circle, ${T.cyanGlow} 0%, rgba(6,182,212,0) 70%)`,
         pointerEvents: "none",
     },
     bannerIcon: {
         width: 44, height: 44, borderRadius: 12,
-        background: T.cyanSoft,
-        border: `1px solid ${T.cyanBorder}`,
+        background: T.cyanSoft, border: `1px solid ${T.cyanBorder}`,
         display: "flex", alignItems: "center", justifyContent: "center",
         flexShrink: 0, position: "relative", zIndex: 1,
     },
     bannerTitle: { fontSize: 17, fontWeight: 800, color: "#F1F5F9", position: "relative", zIndex: 1 },
     bannerSubtitle: { fontSize: 13, color: "#94A3B8", marginTop: 2, position: "relative", zIndex: 1 },
 
-    // -------- Package selection (Step 2) --------
-    pkgPageLayout: {
-        display: "grid",
-        gridTemplateColumns: "1fr 340px",
-        gap: 24,
-        alignItems: "start",
-    },
+    pkgPageLayout: { display: "grid", gridTemplateColumns: "1fr 340px", gap: 24, alignItems: "start" },
     leftPkgCol: {
-        background: T.bgCard,
-        border: `1px solid ${T.borderSoft}`,
-        borderRadius: 18,
-        padding: "24px 26px",
-        boxShadow: "0 1px 4px rgba(0,0,0,.2), 0 12px 32px rgba(0,0,0,.35)",
+        background: T.bgCard, border: `1px solid ${T.borderSoft}`, borderRadius: 18,
+        padding: "24px 26px", boxShadow: "0 1px 4px rgba(0,0,0,.2), 0 12px 32px rgba(0,0,0,.35)",
     },
 
     compareRow: { display: "flex", alignItems: "stretch", gap: 12, marginBottom: 20 },
-    compareCard: {
-        flex: 1, border: `1.5px solid ${T.border}`, borderRadius: 12,
-        padding: "12px 14px", background: T.panelDarkSoft,
-    },
+    compareCard: { flex: 1, border: `1.5px solid ${T.border}`, borderRadius: 12, padding: "12px 14px", background: T.panelDarkSoft },
     compareCardSel: { border: `1.5px solid ${T.cyanBorder}`, background: T.cyanSoft },
     compareLabel: { fontSize: 10, fontWeight: 800, letterSpacing: "0.06em", color: T.textMuted, marginBottom: 6 },
     compareName: { fontSize: 14, fontWeight: 700, color: T.textPrimary },
@@ -1207,18 +1225,13 @@ const g = {
         display: "flex", alignItems: "center", gap: 14,
         border: `1.5px solid ${T.border}`, borderRadius: 12,
         padding: "14px 16px", cursor: "pointer",
-        background: T.panelDarkSoft,
-        transition: "border .15s, background .15s, box-shadow .15s",
+        background: T.panelDarkSoft, transition: "border .15s, background .15s, box-shadow .15s",
     },
-    pkgRowSel: {
-        border: `1.5px solid ${T.cyan}`, background: T.cyanSoftStrong,
-        boxShadow: `0 0 0 3px ${T.cyanSoft}`,
-    },
+    pkgRowSel: { border: `1.5px solid ${T.cyan}`, background: T.cyanSoftStrong, boxShadow: `0 0 0 3px ${T.cyanSoft}` },
     pkgRadio: {
         width: 20, height: 20, borderRadius: "50%",
         border: `2px solid ${T.cyanBorder}`, flexShrink: 0,
-        display: "flex", alignItems: "center", justifyContent: "center",
-        background: T.panelDark,
+        display: "flex", alignItems: "center", justifyContent: "center", background: T.panelDark,
     },
     pkgRadioSel: { borderColor: T.cyan },
     pkgRadioDot: { width: 10, height: 10, borderRadius: "50%", background: T.cyan },
@@ -1230,55 +1243,35 @@ const g = {
         padding: "2px 7px", borderRadius: 6, letterSpacing: "0.03em",
     },
 
-    // -------- Thanh thời hạn gói tập --------
-    timelineBox: {
-        background: T.cyanSoft, border: `1px solid ${T.cyanBorder}`,
-        borderRadius: 14, padding: "16px 18px", marginBottom: 20,
-    },
-    bonusPill: {
-        display: "inline-flex", alignItems: "center", gap: 6,
-        fontSize: 12, fontWeight: 700, color: T.amberText, marginBottom: 10,
-    },
+    timelineBox: { background: T.cyanSoft, border: `1px solid ${T.cyanBorder}`, borderRadius: 14, padding: "16px 18px", marginBottom: 20 },
+    bonusPill: { display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 700, color: T.amberText, marginBottom: 10 },
     bonusDot: { width: 6, height: 6, borderRadius: "50%", background: T.amber, flexShrink: 0 },
     timelineLabels: { display: "flex", justifyContent: "space-between", marginTop: 10 },
     timelineLabelSmall: { fontSize: 11, color: T.textMuted },
     timelineLabelDate: { fontSize: 13, fontWeight: 700, color: T.textPrimary, marginTop: 2 },
-    timelineBar: {
-        display: "flex", width: "100%", height: 8,
-        background: "rgba(6, 182, 212, 0.18)", borderRadius: 6, overflow: "hidden",
-    },
+    timelineBar: { display: "flex", width: "100%", height: 8, background: "rgba(6, 182, 212, 0.18)", borderRadius: 6, overflow: "hidden" },
     timelineSegBase: { background: T.cyan, height: "100%" },
     timelineSegBonus: { background: T.amber, height: "100%" },
 
-    // -------- Khuyến mãi áp dụng — 2 biến thể màu theo loại KM --------
-    // TangNgay / TangChuKy (tặng ngày): tông hổ phách (amber)
     promoBoxDays: {
         display: "flex", alignItems: "flex-start", gap: 10,
         background: T.amberBg, border: `1.5px solid ${T.amberBorder}`,
         borderRadius: 12, padding: "12px 14px", cursor: "pointer",
     },
-    // GiamTienMat / GiamPhanTram (giảm giá tiền): tông xanh ngọc (mint)
     promoBoxDiscount: {
         display: "flex", alignItems: "flex-start", gap: 10,
         background: T.discountBg, border: `1.5px solid ${T.discountBorder}`,
         borderRadius: 12, padding: "12px 14px", cursor: "pointer",
     },
     promoBoxInactive: { background: T.panelDarkSoft, border: `1.5px solid ${T.border}`, opacity: 0.7 },
-    promoIconWrap: {
-        width: 30, height: 30, borderRadius: 9, flexShrink: 0,
-        display: "flex", alignItems: "center", justifyContent: "center",
-    },
+    promoIconWrap: { width: 30, height: 30, borderRadius: 9, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" },
     promoIconWrapDays: { background: "rgba(245,158,11,0.18)", color: T.amberText },
     promoIconWrapDiscount: { background: "rgba(52,211,153,0.18)", color: T.discountText },
     promoTitle: { fontSize: 13.5, fontWeight: 700 },
     promoDesc: { fontSize: 12, opacity: 0.85, marginTop: 2 },
     promoValue: { fontSize: 13, fontWeight: 800, flexShrink: 0, alignSelf: "center", whiteSpace: "nowrap" },
-    promoCheck: {
-        width: 20, height: 20, borderRadius: "50%",
-        display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
-    },
+    promoCheck: { width: 20, height: 20, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 },
 
-    // -------- Phương thức thanh toán --------
     pmRow: { display: "flex", gap: 10 },
     pmCard: {
         flex: 1, position: "relative",
@@ -1293,7 +1286,6 @@ const g = {
         background: T.cyan, display: "flex", alignItems: "center", justifyContent: "center",
     },
 
-    // -------- Order box (cột phải) --------
     orderMember: { display: "flex", alignItems: "center", gap: 12, marginBottom: 6 },
     orderBox: {
         background: T.bgCard, border: `1px solid ${T.borderSoft}`,
@@ -1302,30 +1294,22 @@ const g = {
         boxShadow: "0 1px 4px rgba(0,0,0,.2), 0 12px 32px rgba(0,0,0,.35)",
     },
     divider: { height: 1, background: T.border, margin: "14px 0" },
-    orderRow: {
-        display: "flex", justifyContent: "space-between",
-        alignItems: "flex-start", marginBottom: 10,
-    },
+    orderRow: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 },
 
     backBtn: {
         width: 36, height: 36, borderRadius: 10,
         background: T.panelDarkSoft, border: `1px solid ${T.cyanBorder}`,
         display: "flex", alignItems: "center", justifyContent: "center",
-        cursor: "pointer", flexShrink: 0,
-        color: T.cyanLight,
+        cursor: "pointer", flexShrink: 0, color: T.cyanLight,
     },
     btnPrimary: {
         display: "block", width: "100%", padding: "14px",
         background: `linear-gradient(135deg, ${T.cyan}, ${T.cyanLight})`, color: "#04222B",
         border: "none", borderRadius: 12,
         fontSize: 15, fontWeight: 700, cursor: "pointer",
-        letterSpacing: "0.01em",
-        boxShadow: `0 4px 16px ${T.cyanGlow}`,
+        letterSpacing: "0.01em", boxShadow: `0 4px 16px ${T.cyanGlow}`,
     },
-    btnGhost: {
-        background: "transparent", border: "none", color: T.textMuted,
-        fontSize: 13, fontWeight: 600, cursor: "pointer", padding: "6px 0",
-    },
+    btnGhost: { background: "transparent", border: "none", color: T.textMuted, fontSize: 13, fontWeight: 600, cursor: "pointer", padding: "6px 0" },
     errBox: {
         background: T.dangerBg, border: `1px solid ${T.dangerBorder}`,
         borderRadius: 8, padding: "10px 14px",

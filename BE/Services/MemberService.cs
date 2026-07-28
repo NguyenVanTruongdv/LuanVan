@@ -3,10 +3,12 @@ using BE.Dtos;
 using BE.Dtos.Member;
 using BE.Dtos.Member.BE.Dtos.Member;
 using BE.Dtos.Promotion;
+using BE.Dtos.Transaction;
 using BE.DTOs.Payment;
 using BE.Exceptions;
 using BE.Helpers;
 using BE.Models;
+using BE.Services.FaceRecognition;
 using Microsoft.EntityFrameworkCore;
 using System.Security.Cryptography;
 using System.Text;
@@ -132,7 +134,7 @@ namespace BE.Services
                 Gender = member.Gender,
                 BranchName = currentPackage?.Branch?.BranchName,
                 Status = member.Status,
-          
+
                 InternalNotes = member.InternalNotes,
                 CreatedAt = member.CreatedAt,
                 UpdatedAt = member.UpdatedAt,
@@ -468,6 +470,12 @@ namespace BE.Services
             var startDate = DateOnly.FromDateTime(now);
             var expiryDate = _packageService.CalculateExpiryDate(startDate, plan, soNgayTangThucTe);
 
+            // Kiểm tra trùng khuôn mặt TRƯỚC khi mở transaction DB, tránh mở transaction
+            // rồi rollback tốn công nếu ảnh đã trùng người khác. Đây là hội viên MỚI nên
+            // không loại trừ ai (chưa có FaceId nào để loại trừ). scope: Member -> chỉ so
+            // trùng với các Member khác, không bị chặn nhầm nếu khớp ra 1 Employee.
+            await _faceIdService.EnsureFaceNotDuplicateAsync(request.ProfileImage, FaceOwnerType.Member);
+
             var strategy = _context.Database.CreateExecutionStrategy();
             MemberResponse response = null!;
 
@@ -510,11 +518,19 @@ namespace BE.Services
                         ? (request.PaymentMethod == "Cash" ? "Paid" : PaymentStatus.Paid.ToString())
                         : request.PaymentStatus;
 
-                    var transaction = await _transactionService.CreateTransactionAsync(
-                        member.MemberId, request.PlanId, request.PromotionId,
-                        request.GiaGoc, request.Amount,
-                        request.PaymentMethod, paymentStatus,
-                        null, performedBy, branchId);
+                    var transaction = await _transactionService.CreateTransactionAsync(new CreateTransactionRequest
+                    {
+                        MemberId = member.MemberId,
+                        PlanId = request.PlanId,
+                        PromotionId = request.PromotionId,
+                        BranchId = branchId,
+                        PaymentMethod = request.PaymentMethod,
+                        PaymentStatus = paymentStatus,
+                        GiaGoc = request.GiaGoc,
+                        Amount = request.Amount,
+                        BankReferenceCode = null,
+                        PerformedBy = performedBy
+                    });
 
                     var memberPackage = await _packageService.CreateActivePackageAsync(
                         member.MemberId, request.PlanId, request.PromotionId,
@@ -647,6 +663,11 @@ namespace BE.Services
             var memberExists = await _context.Members.AnyAsync(m => m.MemberId == memberId);
             if (!memberExists)
                 throw new KeyNotFoundException("Không tìm thấy hội viên.");
+
+            // Kiểm tra trùng khuôn mặt với NGƯỜI KHÁC trước khi đổi ảnh — loại trừ chính
+            // memberId đang cập nhật vì Rekognition khớp lại chính họ là bình thường.
+            // scope: Member -> chỉ so trùng với các Member khác.
+            await _faceIdService.EnsureFaceNotDuplicateAsync(request.ProfileImage, FaceOwnerType.Member, excludeMemberId: memberId);
 
             await _faceIdService.UpdateFaceAsync(memberId, employeeId: null, request.ProfileImage, request.Reason, performedBy);
 
@@ -792,6 +813,10 @@ namespace BE.Services
                 ? (request.PaymentMethod == "Cash" ? "Paid" : PaymentStatus.Paid.ToString())
                 : request.PaymentStatus;
 
+            // Hội viên chưa có FaceID (đã check ở trên) -> không cần loại trừ ai khi kiểm
+            // tra trùng. scope: Member -> chỉ so trùng với các Member khác.
+            await _faceIdService.EnsureFaceNotDuplicateAsync(request.ProfileImage, FaceOwnerType.Member);
+
             var strategy = _context.Database.CreateExecutionStrategy();
             MemberResponse response = null!;
 
@@ -800,11 +825,19 @@ namespace BE.Services
                 await using var dbTransaction = await _context.Database.BeginTransactionAsync();
                 try
                 {
-                    var transaction = await _transactionService.CreateTransactionAsync(
-                        memberId, request.PlanId, request.PromotionId,
-                        request.GiaGoc, request.Amount,
-                        request.PaymentMethod, paymentStatus,
-                        null, performedBy, branchId);
+                    var transaction = await _transactionService.CreateTransactionAsync(new CreateTransactionRequest
+                    {
+                        MemberId = memberId,
+                        PlanId = request.PlanId,
+                        PromotionId = request.PromotionId,
+                        BranchId = branchId,
+                        PaymentMethod = request.PaymentMethod,
+                        PaymentStatus = paymentStatus,
+                        GiaGoc = request.GiaGoc,
+                        Amount = request.Amount,
+                        BankReferenceCode = null,
+                        PerformedBy = performedBy
+                    });
 
                     var memberPackage = await _packageService.CreateActivePackageAsync(
                         memberId, request.PlanId, request.PromotionId,
@@ -874,6 +907,11 @@ namespace BE.Services
             var now = DateTime.UtcNow;
             var today = DateOnly.FromDateTime(now);
             var employeeName = await GetEmployeeNameAsync(performedBy);
+
+            // Hội viên này CHƯA có FaceID (được assert lại trong strategy bên dưới),
+            // nên không cần loại trừ ai khi kiểm tra trùng. scope: Member -> chỉ so
+            // trùng với các Member khác.
+            await _faceIdService.EnsureFaceNotDuplicateAsync(request.ProfileImage, FaceOwnerType.Member);
 
             var strategy = _context.Database.CreateExecutionStrategy();
             MemberResponse response = null!;
@@ -1036,9 +1074,14 @@ namespace BE.Services
             var latestPackage = await _packageService.GetLatestPackageAsync(memberId);
             var (startDate, isExtending) = _packageService.DetermineStartDate(latestPackage, today);
 
-            var (giaGoc, discountAmt, amount, bonusDays, appliedPromo) =
-                await _transactionService.CalculatePromotionEffectAsync(request.PromotionId, plan.PlanId, plan.Price, plan.DurationDays);
+                var promoEffect = await _transactionService.CalculatePromotionEffectAsync(
+            request.PromotionId, plan.PlanId, plan.Price, plan.DurationDays);
 
+            var giaGoc = promoEffect.GiaGoc;
+            var discountAmt = promoEffect.DiscountAmount;
+            var amount = promoEffect.Amount;
+            var bonusDays = promoEffect.BonusDays;
+            var appliedPromo = promoEffect.Promo;
             var expiryDate = _packageService.CalculateExpiryDate(startDate, plan, bonusDays);
 
             var strategy = _context.Database.CreateExecutionStrategy();
@@ -1049,10 +1092,19 @@ namespace BE.Services
                 await using var dbTransaction = await _context.Database.BeginTransactionAsync();
                 try
                 {
-                    var transaction = await _transactionService.CreateTransactionAsync(
-                        memberId, plan.PlanId, appliedPromo?.PromotionId,
-                        giaGoc, amount, request.PaymentMethod, "Paid",
-                        request.BankReferenceCode, performedBy, branchId);
+                    var transaction = await _transactionService.CreateTransactionAsync(new CreateTransactionRequest
+                    {
+                        MemberId = memberId,
+                        PlanId = plan.PlanId,
+                        PromotionId = appliedPromo?.PromotionId,
+                        BranchId = branchId,
+                        PaymentMethod = request.PaymentMethod,
+                        PaymentStatus = "Paid",
+                        GiaGoc = giaGoc,
+                        Amount = amount,
+                        BankReferenceCode = request.BankReferenceCode,
+                        PerformedBy = performedBy
+                    });
 
                     var memberPackage = await _packageService.CreateActivePackageAsync(
                         memberId, plan.PlanId, appliedPromo?.PromotionId,

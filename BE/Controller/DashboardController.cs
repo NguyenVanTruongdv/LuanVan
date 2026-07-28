@@ -31,34 +31,42 @@ namespace BE.Controllers
             }
         }
 
-        // GET /api/dashboard  -> lấy tất cả 1 lần (stats + checkin + giao dịch + biểu đồ + gói sắp hết hạn)
+        // GET /api/dashboard  -> dashboard tổng quan cũ (stats + checkin + giao dịch + biểu đồ 7 ngày + gói sắp hết hạn)
         [HttpGet]
         public async Task<IActionResult> GetDashboard()
             => Ok(await _dashboardService.GetDashboardAsync(CurrentBranchId));
 
-        // GET /api/dashboard/stats  -> chỉ 4 ô thống kê trên đầu
         [HttpGet("stats")]
         public async Task<IActionResult> GetStats()
             => Ok(await _dashboardService.GetStatsAsync(CurrentBranchId));
 
-        // GET /api/dashboard/recent-checkins
         [HttpGet("recent-checkins")]
         public async Task<IActionResult> GetRecentCheckins([FromQuery] int take = 10)
             => Ok(await _dashboardService.GetRecentCheckinsAsync(CurrentBranchId, take));
 
-        // GET /api/dashboard/recent-transactions
         [HttpGet("recent-transactions")]
         public async Task<IActionResult> GetRecentTransactions([FromQuery] int take = 10)
             => Ok(await _dashboardService.GetRecentTransactionsAsync(CurrentBranchId, take));
 
-        // GET /api/dashboard/weekly-chart
         [HttpGet("weekly-chart")]
         public async Task<IActionResult> GetWeeklyChart()
             => Ok(await _dashboardService.GetWeeklyChartAsync(CurrentBranchId));
 
-        // GET /api/dashboard/expiring-packages
         [HttpGet("expiring-packages")]
         public async Task<IActionResult> GetExpiringPackages([FromQuery] int days = 7)
             => Ok(await _dashboardService.GetExpiringPackagesAsync(CurrentBranchId, days));
+
+        // ==============================================================
+        // GET /api/dashboard/cashier -> dùng riêng cho trang CashierDashboard.jsx
+        // Query params:
+        //   range   : "today" | "7d" | "30d" | "custom"   (mặc định "30d")
+        //   start   : datetime ISO, chỉ dùng khi range = "custom"
+        //   end     : datetime ISO, chỉ dùng khi range = "custom"
+        //   method  : "Tất cả" | "Tiền mặt" | "Chuyển khoản"
+        //   channel : "Tất cả" | "Tại quầy" | "Online"
+        // ==============================================================
+        [HttpGet("cashier")]
+        public async Task<IActionResult> GetCashierDashboard([FromQuery] CashierDashboardQueryDto query)
+            => Ok(await _dashboardService.GetCashierDashboardAsync(CurrentBranchId, query));
     }
 }

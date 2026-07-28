@@ -212,7 +212,7 @@ const initials = (name) =>
     .join("")
     .toUpperCase();
 
-const AVATAR_COLORS = ["#3b82f6", "#8b5cf6", "#ec4899", "#f59e0b", "#10b981", "#ef4444"];
+const AVATAR_COLORS = ["#2563EB", "#7C3AED", "#DB2777", "#D97706", "#16A34A", "#DC2626"];
 function avatarColor(id) {
   const idx = parseInt(String(id ?? "0").replace(/\D/g, "") || "0") % AVATAR_COLORS.length;
   return AVATAR_COLORS[idx];
@@ -445,10 +445,7 @@ function PackageStep({
               >
                 <div className="package-row-radio">{active && <Check size={12} />}</div>
                 <div className="package-row-info">
-                  <div className="package-row-name">
-                    {p.name}
-                    {p.tag && <span className="package-row-tag">{p.tag}</span>}
-                  </div>
+                  <div className="package-row-name">{p.name}</div>
                   <div className="package-row-duration">Thời hạn {p.duration}</div>
                 </div>
                 <div className="package-row-price">{currency(p.price)}</div>
@@ -540,10 +537,17 @@ function PackageStep({
 }
 
 /* ------------------------------------------------------------------ */
-/*  Bước — Chụp Face ID                                                */
+/*  Bước — Chụp Face ID (có kiểm tra trùng khuôn mặt qua API)          */
 /* ------------------------------------------------------------------ */
 
-function FaceIdStep({ member, capturedImage, onCapture, onRetake }) {
+function FaceIdStep({
+  member,
+  capturedImage,
+  onCapture,
+  onRetake,
+  faceCheckStatus,
+  faceCheckMessage,
+}) {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const streamRef = useRef(null);
@@ -640,10 +644,10 @@ function FaceIdStep({ member, capturedImage, onCapture, onRetake }) {
               {cameraState !== "ready" && (
                 <div className="faceid-silhouette">
                   <svg viewBox="0 0 200 240" width="150" height="180">
-                    <ellipse cx="100" cy="70" rx="46" ry="54" fill="rgba(255,255,255,0.14)" />
+                    <ellipse cx="100" cy="70" rx="46" ry="54" fill="rgba(255,255,255,0.5)" />
                     <path
                       d="M20 240 C20 165 52 140 100 140 C148 140 180 165 180 240 Z"
-                      fill="rgba(255,255,255,0.14)"
+                      fill="rgba(255,255,255,0.5)"
                     />
                   </svg>
                   {cameraState === "loading" && (
@@ -709,6 +713,25 @@ function FaceIdStep({ member, capturedImage, onCapture, onRetake }) {
               </button>
             )}
           </div>
+
+          {/* Kết quả kiểm tra trùng khuôn mặt — gọi API ngay sau khi chụp.
+              Không cho phép sang bước tiếp theo nếu chưa có kết quả "valid". */}
+          {capturedImage && faceCheckStatus === "checking" && (
+            <div className="facecheck-box facecheck-checking">
+              <RefreshCw size={14} className="spin" /> Đang kiểm tra trùng khuôn mặt…
+            </div>
+          )}
+          {capturedImage && faceCheckStatus === "invalid" && (
+            <div className="facecheck-box facecheck-invalid">
+              <AlertTriangle size={14} /> {faceCheckMessage}
+            </div>
+          )}
+          {capturedImage && capturedImage !== "placeholder" && faceCheckStatus === "valid" && (
+            <div className="facecheck-box facecheck-valid">
+              <CheckCircle2 size={14} /> Khuôn mặt hợp lệ, không trùng hội viên/nhân viên nào.
+            </div>
+          )}
+
           {errorMsg && cameraState === "error" && !capturedImage && (
             <div className="hint-error">{errorMsg}</div>
           )}
@@ -844,6 +867,14 @@ function MemberActivationFlow({
 
   const [paymentMethod, setPaymentMethod] = useState("Cash");
   const [capturedImage, setCapturedImage] = useState(null);
+
+  // Trạng thái kiểm tra trùng khuôn mặt — gọi POST /api/faceid/member/check
+  // ngay sau khi chụp ảnh. "idle": chưa chụp | "checking": đang gọi API |
+  // "valid": ảnh hợp lệ, không trùng ai | "invalid": lỗi/trùng -> KHÔNG cho
+  // qua bước tiếp theo.
+  const [faceCheckStatus, setFaceCheckStatus] = useState("idle");
+  const [faceCheckMessage, setFaceCheckMessage] = useState("");
+
   const [done, setDone] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState("");
@@ -883,9 +914,69 @@ function MemberActivationFlow({
     };
   }, [selectedPackage]);
 
+  // Mỗi khi có ảnh Face ID mới được chụp -> gọi API kiểm tra trùng khuôn mặt
+  // (POST /api/faceid/member/check). Ảnh "placeholder" (demo, không có camera
+  // thật) thì bỏ qua kiểm tra vì không có ảnh thật để gửi lên BE.
+  useEffect(() => {
+    if (!capturedImage) {
+      setFaceCheckStatus("idle");
+      setFaceCheckMessage("");
+      return;
+    }
+    if (capturedImage === "placeholder") {
+      setFaceCheckStatus("valid");
+      setFaceCheckMessage("");
+      return;
+    }
+
+    let cancelled = false;
+    setFaceCheckStatus("checking");
+    setFaceCheckMessage("");
+
+    (async () => {
+      try {
+        const blob = await dataUrlToBlob(capturedImage);
+        const formData = new FormData();
+        // BE yêu cầu field tên "ProfileImage" cho endpoint kiểm tra trùng
+        // khuôn mặt (khớp với ProfileImage dùng khi kích hoạt).
+        formData.append("ProfileImage", blob, "faceid.png");
+
+        const res = await cashierApi.checkMemberFace(formData);
+        const data = res?.data ?? res;
+        if (cancelled) return;
+
+        if (data?.isValid) {
+          setFaceCheckStatus("valid");
+          setFaceCheckMessage(data.message || "");
+        } else {
+          setFaceCheckStatus("invalid");
+          setFaceCheckMessage(
+            data?.message ||
+            (!data?.hasFace
+              ? "Không nhận diện được khuôn mặt trong ảnh. Vui lòng chụp lại."
+              : data?.isDuplicate
+                ? "Khuôn mặt này đã được đăng ký cho người khác."
+                : "Ảnh Face ID không hợp lệ. Vui lòng chụp lại.")
+          );
+        }
+      } catch (e) {
+        if (cancelled) return;
+        setFaceCheckStatus("invalid");
+        setFaceCheckMessage("Không kiểm tra được khuôn mặt. Vui lòng thử lại.");
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [capturedImage]);
+
   const canGoNext = () => {
     if (currentKey === "Chọn gói tập") return !!selectedPackage && !!paymentMethod;
-    if (currentKey === "Chụp Face ID") return !!capturedImage;
+    // FIX: chỉ cho qua bước tiếp theo khi đã có ảnh VÀ API kiểm tra trùng
+    // khuôn mặt trả về hợp lệ. Đang kiểm tra (checking) hoặc bị từ chối
+    // (invalid) đều không cho bấm "Tiếp theo".
+    if (currentKey === "Chụp Face ID") return !!capturedImage && faceCheckStatus === "valid";
     return !submitting;
   };
 
@@ -1028,6 +1119,8 @@ function MemberActivationFlow({
               capturedImage={capturedImage}
               onCapture={setCapturedImage}
               onRetake={() => setCapturedImage(null)}
+              faceCheckStatus={faceCheckStatus}
+              faceCheckMessage={faceCheckMessage}
             />
           )}
           {currentKey === "Xác nhận" && (
@@ -1213,39 +1306,44 @@ export default function MemberActive() {
 }
 
 /* ------------------------------------------------------------------ */
-/*  Styles — tông màu tối (dark navy), đồng bộ với layout Cashier      */
-/*  Portal trong ảnh mẫu. Nút bấm dùng tông teal trầm, dịu mắt hơn      */
-/*  thay vì cyan sáng chói.                                             */
+/*  Styles — tông màu sáng (trắng / xanh lá đậm), đồng bộ với giao      */
+/*  diện Hotel Booking Partner (nền trắng, thanh tiêu đề xanh lá đậm,   */
+/*  badge trạng thái xanh lá nhạt, nút viền mảnh).                      */
 /* ------------------------------------------------------------------ */
 
 const CSS = `
 :root{
-  --ink:#E7ECF3;
-  --muted:#8B96A8;
-  --primary:#2C8FA8;
-  --primary-dark:#3FB4CE;
-  --primary-light:rgba(44,143,168,0.16);
-  --navy:#0A0F1C;
-  --navy-light:#141F35;
-  --surface:#111827;
-  --bg:#0B1220;
-  --border:#232E44;
-  --danger:#F1685E;
-  --warn:#D9A441;
-  --warn-bg:rgba(217,164,65,0.12);
-  --bonus:#E0A030;
-  --bonus-bg:rgba(224,160,48,0.12);
-  --discount:#3FBE8E;
-  --discount-bg:rgba(63,190,142,0.12);
+  --ink:#1F2937;
+  --muted:#6B7280;
+  --primary:#1B6F53;
+  --primary-dark:#145940;
+  --primary-light:rgba(27,111,83,0.10);
+  --navy:#1B6F53;
+  --navy-light:#20876A;
+  --surface:#FFFFFF;
+  --bg:#F4F6F8;
+  --border:#E5E9EF;
+  --danger:#D14C43;
+  --danger-bg:rgba(209,76,67,0.10);
+  --warn:#B7791F;
+  --warn-bg:rgba(217,164,65,0.14);
+  --bonus:#B7791F;
+  --bonus-bg:rgba(217,164,65,0.14);
+  --discount:#178A56;
+  --discount-bg:rgba(23,138,86,0.10);
+  --shadow-sm:0 1px 2px rgba(16,24,40,0.05);
+  --shadow-md:0 4px 12px rgba(16,24,40,0.06), 0 1px 3px rgba(16,24,40,0.05);
+  --shadow-lg:0 12px 28px rgba(16,24,40,0.10), 0 2px 6px rgba(16,24,40,0.06);
+  --shadow-focus:0 0 0 3px rgba(27,111,83,0.16);
 }
 *{box-sizing:border-box;}
 .app-shell{
   min-height:100%;
-  background:transparent;
+  background:var(--bg);
   font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
   color:var(--ink);
 }
-.page{max-width:1080px;margin:0 auto;}
+.page{max-width:1080px;margin:0 auto;padding:4px;}
 .back-link{
   display:inline-flex;align-items:center;gap:6px;
   background:none;border:none;color:var(--muted);
@@ -1255,22 +1353,25 @@ const CSS = `
 
 .page-head{
   display:flex;gap:14px;align-items:flex-start;margin-bottom:24px;
-  background:linear-gradient(135deg,var(--navy),var(--navy-light));
+  background:var(--surface);
   border:1px solid var(--border);
   border-radius:16px;padding:20px 24px;
+  box-shadow:var(--shadow-md);
 }
 .page-head-icon{
-  width:42px;height:42px;border-radius:12px;background:rgba(63,180,206,0.14);
-  color:#3FB4CE;display:flex;align-items:center;justify-content:center;flex:none;
+  width:42px;height:42px;border-radius:12px;background:var(--primary-light);
+  color:var(--primary);display:flex;align-items:center;justify-content:center;flex:none;
 }
-.page-head h1{font-size:21px;font-weight:700;margin:0 0 4px;letter-spacing:-0.01em;color:#fff;}
-.page-head p{font-size:13.5px;color:rgba(231,236,243,0.6);margin:0;}
+.page-head h1{font-size:21px;font-weight:700;margin:0 0 4px;letter-spacing:-0.01em;color:var(--ink);}
+.page-head p{font-size:13.5px;color:var(--muted);margin:0;}
 
 .search-bar{
   display:flex;align-items:center;gap:10px;
   background:var(--surface);border:1px solid var(--border);
   border-radius:12px;padding:12px 16px;margin-bottom:18px;
+  box-shadow:var(--shadow-sm);transition:box-shadow .15s, border-color .15s;
 }
+.search-bar:focus-within{border-color:var(--primary);box-shadow:var(--shadow-focus);}
 .search-bar input{
   flex:1;border:none;outline:none;font-size:14px;background:transparent;color:var(--ink);
 }
@@ -1282,12 +1383,14 @@ const CSS = `
 .member-row{
   display:flex;align-items:center;gap:14px;
   background:var(--surface);border:1px solid var(--border);
-  border-radius:14px;padding:14px 16px;transition:border-color .15s;
+  border-radius:14px;padding:14px 16px;box-shadow:var(--shadow-sm);
+  transition:border-color .15s, box-shadow .15s, transform .15s;
 }
-.member-row:hover{border-color:var(--primary);}
+.member-row:hover{border-color:var(--primary);box-shadow:var(--shadow-md);transform:translateY(-1px);}
 .avatar{
   width:42px;height:42px;border-radius:50%;color:#fff;font-weight:700;font-size:14px;
   display:flex;align-items:center;justify-content:center;flex:none;
+  box-shadow:0 0 0 2px var(--surface), 0 0 0 3px var(--border);
 }
 .avatar-sm{width:34px;height:34px;font-size:12.5px;}
 .member-info{flex:1;min-width:0;}
@@ -1303,9 +1406,10 @@ const CSS = `
 .btn-activate{
   flex:none;display:inline-flex;align-items:center;gap:4px;
   background:var(--primary);color:#fff;border:none;border-radius:10px;
-  padding:10px 16px;font-size:13.5px;font-weight:600;cursor:pointer;transition:background .15s;
+  padding:10px 16px;font-size:13.5px;font-weight:600;cursor:pointer;
+  box-shadow:var(--shadow-sm);transition:background .15s, box-shadow .15s, transform .15s;
 }
-.btn-activate:hover{background:#256F84;}
+.btn-activate:hover{background:var(--primary-dark);box-shadow:var(--shadow-md);transform:translateY(-1px);}
 .empty{padding:40px;text-align:center;color:var(--muted);font-size:14px;}
 
 /* Stepper */
@@ -1315,9 +1419,9 @@ const CSS = `
 .step-circle{
   width:26px;height:26px;border-radius:50%;background:var(--surface);
   border:2px solid var(--border);display:flex;align-items:center;justify-content:center;
-  font-size:12px;font-weight:700;color:var(--muted);flex:none;
+  font-size:12px;font-weight:700;color:var(--muted);flex:none;transition:all .2s;
 }
-.step-active .step-circle{border-color:var(--primary);color:var(--primary-dark);background:var(--primary-light);}
+.step-active .step-circle{border-color:var(--primary);color:var(--primary);background:var(--primary-light);box-shadow:var(--shadow-focus);}
 .step-active span{color:var(--ink);font-weight:700;}
 .step-done .step-circle{background:var(--primary);border-color:var(--primary);color:#fff;}
 .step-done span{color:var(--ink);}
@@ -1327,14 +1431,14 @@ const CSS = `
 .layout{display:grid;grid-template-columns:1fr 300px;gap:20px;align-items:start;}
 @media (max-width:820px){.layout{grid-template-columns:1fr;}}
 .layout-main{min-width:0;}
-.card{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:22px;}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:22px;box-shadow:var(--shadow-md);}
 .card-head-title{font-size:16px;font-weight:700;margin-bottom:4px;color:var(--ink);}
 .card-head-sub{font-size:13px;color:var(--muted);margin-bottom:20px;}
 
 /* Package — chuyển đổi gói + timeline */
 .pkg-switch{display:flex;align-items:stretch;gap:12px;margin-bottom:20px;}
 .pkg-switch-box{flex:1;background:var(--bg);border:1px solid var(--border);border-radius:12px;padding:14px 16px;min-width:0;}
-.pkg-switch-new.filled{border-color:var(--primary);background:var(--primary-light);}
+.pkg-switch-new.filled{border-color:var(--primary);background:var(--primary-light);box-shadow:var(--shadow-sm);}
 .pkg-switch-label{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px;}
 .pkg-switch-value{font-weight:700;font-size:14.5px;overflow-wrap:anywhere;color:var(--ink);}
 .pkg-switch-duration{font-size:12px;color:var(--primary-dark);margin-top:3px;}
@@ -1357,23 +1461,21 @@ const CSS = `
 
 .pkg-list-title{font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:10px;}
 .pkg-list-title-icon{display:flex;align-items:center;gap:6px;margin-top:22px;}
-.pkg-list-title-optional{font-weight:500;text-transform:none;letter-spacing:0;color:var(--muted);font-size:11.5px;}
 .package-list{display:flex;flex-direction:column;gap:8px;}
 .package-row{
   display:flex;align-items:center;gap:12px;text-align:left;width:100%;
   background:var(--bg);border:1.5px solid var(--border);border-radius:12px;
   padding:12px 14px;cursor:pointer;transition:all .15s;
 }
-.package-row:hover{border-color:var(--primary);}
-.package-row.active{border-color:var(--primary);background:var(--primary-light);}
+.package-row:hover{border-color:var(--primary);box-shadow:var(--shadow-sm);}
+.package-row.active{border-color:var(--primary);background:var(--primary-light);box-shadow:var(--shadow-focus);}
 .package-row-radio{
   width:18px;height:18px;border-radius:50%;border:2px solid var(--border);
   display:flex;align-items:center;justify-content:center;flex:none;color:#fff;
 }
 .package-row.active .package-row-radio{background:var(--primary);border-color:var(--primary);}
 .package-row-info{flex:1;min-width:0;}
-.package-row-name{font-weight:700;font-size:13.5px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;color:var(--ink);}
-.package-row-tag{font-size:10px;font-weight:700;color:var(--primary-dark);background:var(--primary-light);padding:2px 8px;border-radius:999px;}
+.package-row-name{font-weight:700;font-size:13.5px;color:var(--ink);}
 .package-row-duration{font-size:12px;color:var(--muted);margin-top:2px;}
 .package-row-price{font-weight:700;font-size:14px;color:var(--primary-dark);flex:none;}
 
@@ -1381,11 +1483,12 @@ const CSS = `
 .voucher-row{
   display:flex;align-items:center;gap:12px;text-align:left;width:100%;
   background:var(--bg);border:1.5px solid var(--border);border-left-width:4px;
-  border-radius:12px;padding:12px 14px;transition:all .15s;
+  border-radius:12px;padding:12px 14px;transition:all .15s;box-shadow:var(--shadow-sm);
 }
 .voucher-row-static{cursor:default;}
 .voucher-row-icon{
   width:32px;height:32px;border-radius:9px;display:flex;align-items:center;justify-content:center;flex:none;
+  box-shadow:var(--shadow-sm);
 }
 .voucher-row.voucher-days{border-left-color:var(--bonus);background:var(--bonus-bg);}
 .voucher-row.voucher-days .voucher-row-icon{background:var(--surface);color:var(--bonus);}
@@ -1393,10 +1496,6 @@ const CSS = `
 .voucher-row.voucher-discount .voucher-row-icon{background:var(--surface);color:var(--discount);}
 .voucher-row-info{flex:1;min-width:0;}
 .voucher-row-name{font-weight:700;font-size:13.5px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;color:var(--ink);}
-.voucher-row-code{
-  font-size:10px;font-weight:700;color:var(--muted);background:var(--surface);
-  border:1px solid var(--border);padding:2px 7px;border-radius:999px;letter-spacing:.03em;
-}
 .voucher-row-desc{font-size:12px;color:var(--muted);margin-top:2px;}
 .voucher-row-check{
   width:18px;height:18px;border-radius:50%;
@@ -1421,8 +1520,8 @@ const CSS = `
   padding:12px 14px;cursor:pointer;font-size:13.5px;font-weight:600;color:var(--ink);
   transition:all .15s;position:relative;
 }
-.payment-method-btn:hover{border-color:var(--primary);}
-.payment-method-btn.active{border-color:var(--primary);background:var(--primary-light);color:var(--primary-dark);}
+.payment-method-btn:hover{border-color:var(--primary);box-shadow:var(--shadow-sm);}
+.payment-method-btn.active{border-color:var(--primary);background:var(--primary-light);color:var(--primary-dark);box-shadow:var(--shadow-focus);}
 .payment-method-check{margin-left:auto;color:var(--primary-dark);}
 
 /* Face ID */
@@ -1431,7 +1530,7 @@ const CSS = `
 .faceid-frame{
   position:relative;width:320px;height:320px;border-radius:20px;overflow:hidden;
   background:linear-gradient(160deg,var(--navy-light),var(--navy));flex:none;
-  border:1px solid var(--border);
+  border:1px solid var(--border);box-shadow:var(--shadow-lg);
 }
 .faceid-media{width:100%;height:100%;object-fit:cover;}
 .faceid-video{transform:scaleX(-1);}
@@ -1441,24 +1540,24 @@ const CSS = `
 }
 .faceid-placeholder{
   width:100%;height:100%;display:flex;align-items:center;justify-content:center;
-  background:linear-gradient(160deg,var(--navy-light),var(--navy));color:rgba(231,236,243,0.55);
+  background:linear-gradient(160deg,var(--navy-light),var(--navy));color:rgba(255,255,255,0.75);
 }
 .faceid-placeholder.small{width:100%;height:100%;border-radius:12px;}
-.faceid-loading{font-size:12.5px;color:rgba(231,236,243,0.7);}
+.faceid-loading{font-size:12.5px;color:rgba(255,255,255,0.85);}
 .faceid-error{
   display:flex;flex-direction:column;align-items:center;gap:6px;
-  font-size:12px;color:#ffb4ae;text-align:center;padding:0 20px;
+  font-size:12px;color:#FFD7D3;text-align:center;padding:0 20px;
 }
 .scan-corners{position:absolute;inset:22px;pointer-events:none;}
-.corner{position:absolute;width:22px;height:22px;border:2.5px solid rgba(63,180,206,0.85);}
+.corner{position:absolute;width:22px;height:22px;border:2.5px solid rgba(255,255,255,0.9);}
 .corner.tl{top:0;left:0;border-right:none;border-bottom:none;border-top-left-radius:6px;}
 .corner.tr{top:0;right:0;border-left:none;border-bottom:none;border-top-right-radius:6px;}
 .corner.bl{bottom:0;left:0;border-right:none;border-top:none;border-bottom-left-radius:6px;}
 .corner.br{bottom:0;right:0;border-left:none;border-top:none;border-bottom-right-radius:6px;}
 .scan-line{
   position:absolute;left:22px;right:22px;height:2px;
-  background:linear-gradient(90deg,transparent,#3FB4CE,transparent);
-  box-shadow:0 0 8px 1px rgba(63,180,206,0.6);
+  background:linear-gradient(90deg,transparent,#ffffff,transparent);
+  box-shadow:0 0 8px 1px rgba(255,255,255,0.7);
   animation:scanmove 2.2s ease-in-out infinite;
 }
 @keyframes scanmove{
@@ -1466,36 +1565,48 @@ const CSS = `
 }
 
 .faceid-side{flex:1;display:flex;flex-direction:column;gap:16px;min-width:0;}
-.faceid-tips{background:var(--bg);border:1px solid var(--border);border-radius:12px;padding:14px 16px;}
+.faceid-tips{background:var(--bg);border:1px solid var(--border);border-radius:12px;padding:14px 16px;box-shadow:var(--shadow-sm);}
 .faceid-tips-title{display:flex;align-items:center;gap:6px;font-weight:700;font-size:13px;margin-bottom:8px;color:var(--primary-dark);}
 .faceid-tips ul{margin:0;padding-left:18px;font-size:12.5px;color:var(--muted);line-height:1.7;}
 .faceid-member{display:flex;align-items:center;gap:10px;}
 .faceid-actions{margin-top:auto;display:flex;gap:10px;}
 .hint-error{font-size:12px;color:var(--danger);}
 
+.facecheck-box{
+  display:flex;align-items:center;gap:7px;font-size:12.5px;font-weight:600;
+  border-radius:10px;padding:9px 12px;box-shadow:var(--shadow-sm);
+}
+.facecheck-checking{background:var(--warn-bg);color:var(--warn);}
+.facecheck-invalid{background:var(--danger-bg);color:var(--danger);}
+.facecheck-valid{background:var(--discount-bg);color:var(--discount);}
+.facecheck-box .spin{animation:facecheckspin 1s linear infinite;}
+@keyframes facecheckspin{from{transform:rotate(0deg);}to{transform:rotate(360deg);}}
+
 .btn-primary{
   background:var(--primary);color:#fff;border:none;border-radius:10px;
   padding:11px 18px;font-size:13.5px;font-weight:700;cursor:pointer;
-  display:inline-flex;align-items:center;justify-content:center;gap:7px;transition:background .15s;
+  display:inline-flex;align-items:center;justify-content:center;gap:7px;
+  box-shadow:var(--shadow-sm);transition:background .15s, box-shadow .15s, transform .15s;
 }
-.btn-primary:hover{background:#256F84;}
-.btn-primary:disabled{background:#3B4658;color:#8B96A8;cursor:not-allowed;}
+.btn-primary:hover{background:var(--primary-dark);box-shadow:var(--shadow-md);transform:translateY(-1px);}
+.btn-primary:disabled{background:#D3D8DE;color:#9AA3AF;cursor:not-allowed;box-shadow:none;transform:none;}
 .btn-block{width:100%;}
 .btn-secondary{
   background:var(--surface);color:var(--ink);border:1.5px solid var(--border);border-radius:10px;
   padding:11px 18px;font-size:13.5px;font-weight:600;cursor:pointer;
-  display:inline-flex;align-items:center;gap:7px;
+  display:inline-flex;align-items:center;gap:7px;box-shadow:var(--shadow-sm);
+  transition:border-color .15s, box-shadow .15s, color .15s;
 }
-.btn-secondary:hover{border-color:var(--primary);color:var(--primary-dark);}
+.btn-secondary:hover{border-color:var(--primary);color:var(--primary-dark);box-shadow:var(--shadow-md);}
 
 /* Confirm */
 .confirm-grid{display:flex;gap:22px;align-items:flex-start;}
 @media (max-width:560px){.confirm-grid{flex-direction:column;}}
-.confirm-face{position:relative;width:140px;height:140px;border-radius:16px;overflow:hidden;flex:none;background:var(--navy);}
+.confirm-face{position:relative;width:140px;height:140px;border-radius:16px;overflow:hidden;flex:none;background:var(--navy);box-shadow:var(--shadow-lg);}
 .confirm-face img{width:100%;height:100%;object-fit:cover;}
 .confirm-face-check{
   position:absolute;bottom:6px;right:6px;background:var(--primary);color:#fff;
-  border-radius:50%;padding:3px;display:flex;
+  border-radius:50%;padding:3px;display:flex;box-shadow:var(--shadow-sm);
 }
 .confirm-info{flex:1;display:flex;flex-direction:column;gap:11px;min-width:0;}
 .confirm-row{display:flex;justify-content:space-between;gap:10px;font-size:13.5px;border-bottom:1px dashed var(--border);padding-bottom:8px;color:var(--ink);}
@@ -1505,7 +1616,7 @@ const CSS = `
 
 /* Summary side */
 .layout-side{position:sticky;top:24px;}
-.summary-card{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:20px;}
+.summary-card{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:20px;box-shadow:var(--shadow-lg);}
 .summary-title{font-size:11.5px;font-weight:700;letter-spacing:.06em;color:var(--muted);margin-bottom:14px;}
 .summary-member{display:flex;align-items:center;gap:10px;margin-bottom:14px;}
 .summary-divider{height:1px;background:var(--border);margin:6px 0 14px;}
@@ -1522,6 +1633,7 @@ const CSS = `
 .success-icon{
   width:84px;height:84px;border-radius:50%;background:var(--primary-light);
   color:var(--primary-dark);display:flex;align-items:center;justify-content:center;
+  box-shadow:var(--shadow-md);
 }
 .success-wrap h2{font-size:21px;margin:6px 0 0;color:var(--ink);}
 .success-wrap p{color:var(--muted);font-size:14px;margin:0 0 10px;max-width:360px;}

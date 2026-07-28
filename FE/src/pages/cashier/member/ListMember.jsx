@@ -1,8 +1,10 @@
 import {
     Activity,
+    AlertTriangle,
     ArrowLeft, ArrowRight, Award,
     Camera, Check, Clock,
-    Eye, FileText, MapPin, Pencil, Phone, RotateCcw, Search,
+    Eye, FileText, Loader2, MapPin, Pencil, Phone, RotateCcw, Search,
+    ShieldCheck,
     TrendingUp,
     User, Users,
     Video,
@@ -13,42 +15,41 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 // Đường dẫn từ src/pages/cashier/member/ListMember.jsx tới src/api/cashierApi.js
 import cashierApi from "../../../api/cashierApi";
 
-/* ── DESIGN TOKENS – nền tối (dark navy), tông teal trầm/xanh lá dịu mắt,
-      đồng bộ với layout Cashier Portal trong ảnh mẫu. Màu nút được hạ độ
-      bão hoà so với bản cyan sáng trước đây để đỡ chói. ── */
+/* ── DESIGN TOKENS – nền trắng, tông xanh lá nhạt / xanh ngọc (jade-mint),
+      bo góc lớn hơn + shadow rõ hơn để các component nổi bật trên nền trắng. ── */
 const C = {
-    bg: "#0B1220",
-    surface: "#111827",
-    card: "#111827",
-    cardAlt: "#0F1830",
-    border: "#223049",
-    borderDark: "#32405C",
-    ink: "#E7ECF3",
-    inkSoft: "#C7D0DE",
-    inkMuted: "#8B96A8",
-    accent: "#2C8FA8",
-    accentDark: "#5EC8E0",
-    accentRGB: "44,143,168",
-    accentSoft: "rgba(44,143,168,0.16)",
-    accentGradient: "linear-gradient(135deg, #1F6E82 0%, #2C8FA8 55%, #4FA9C4 100%)",
-    accentRing: "rgba(63,180,206,0.30)",
-    // ── Xanh lá trầm, dùng riêng cho các hành động liên quan FaceID ──
-    faceGreen: "#3FBE8E",
-    faceGreenRGB: "63,190,142",
-    faceGreenGradient: "linear-gradient(135deg, #1F7A5B 0%, #2F9E76 55%, #4FBE95 100%)",
-    faceGreenSoft: "rgba(63,190,142,0.14)",
-    faceGreenRing: "rgba(63,190,142,0.28)",
-    green: "#3FBE8E",
-    greenBg: "rgba(63,190,142,0.12)",
-    greenBorder: "rgba(63,190,142,0.35)",
-    amber: "#D9A441",
-    amberBg: "rgba(217,164,65,0.12)",
-    amberBorder: "rgba(217,164,65,0.35)",
-    red: "#F1685E",
-    redBg: "rgba(241,104,94,0.12)",
-    redBorder: "rgba(241,104,94,0.35)",
-    shadow: "0 1px 3px rgba(0,0,0,0.35), 0 4px 14px rgba(0,0,0,0.28)",
-    shadowMd: "0 2px 8px rgba(0,0,0,0.40), 0 10px 30px rgba(0,0,0,0.35)",
+    bg: "#F5FBF8",
+    surface: "#FFFFFF",
+    card: "#FFFFFF",
+    cardAlt: "#EFFBF5",
+    border: "#DCEFE6",
+    borderDark: "#BFE2D3",
+    ink: "#0E2A21",
+    inkSoft: "#3E5A50",
+    inkMuted: "#84998F",
+    accent: "#0EA875",
+    accentDark: "#0C8F63",
+    accentRGB: "14,168,117",
+    accentSoft: "rgba(14,168,117,0.10)",
+    accentGradient: "linear-gradient(135deg, #0C8F63 0%, #14B88A 55%, #4FD9AE 100%)",
+    accentRing: "rgba(14,168,117,0.25)",
+    // ── Xanh lá đậm hơn một chút, dùng riêng cho các hành động liên quan FaceID ──
+    faceGreen: "#16A34A",
+    faceGreenRGB: "22,163,74",
+    faceGreenGradient: "linear-gradient(135deg, #15803D 0%, #22B15C 55%, #4ADE80 100%)",
+    faceGreenSoft: "rgba(22,163,74,0.10)",
+    faceGreenRing: "rgba(22,163,74,0.22)",
+    green: "#16A34A",
+    greenBg: "rgba(22,163,74,0.10)",
+    greenBorder: "rgba(22,163,74,0.30)",
+    amber: "#C2872A",
+    amberBg: "rgba(194,135,42,0.10)",
+    amberBorder: "rgba(194,135,42,0.30)",
+    red: "#DC4C41",
+    redBg: "rgba(220,76,65,0.09)",
+    redBorder: "rgba(220,76,65,0.28)",
+    shadow: "0 1px 2px rgba(15,42,33,0.05), 0 6px 18px rgba(15,42,33,0.07)",
+    shadowMd: "0 2px 6px rgba(15,42,33,0.06), 0 18px 42px rgba(15,42,33,0.10)",
 };
 
 // Danh sách chi nhánh mặc định — chỉ dùng khi chưa tải được dữ liệu hội viên nào.
@@ -56,6 +57,9 @@ const C = {
 const CHI_NHANH_FALLBACK = ["Quận 1", "Quận 3", "Bình Thạnh", "Thủ Đức"];
 
 const FACEID_REASONS = ["Nhận diện kém", "Khác"];
+
+// Số hội viên hiển thị trên mỗi trang của bảng danh sách.
+const PAGE_SIZE = 8;
 
 /* ══════════════════════════════════════════════════════════
    MAP DỮ LIỆU API (tiếng Anh) <-> UI (tiếng Việt)
@@ -158,10 +162,10 @@ function avatarPalette(id) {
 }
 
 const GOI_STYLE = {
-    "Basic": { bg: "rgba(148,163,184,0.14)", fg: "#CBD5E1", border: "rgba(148,163,184,0.35)" },
-    "Silver": { bg: "rgba(148,163,184,0.14)", fg: "#E2E8F0", border: "rgba(148,163,184,0.4)" },
-    "Gold": { bg: "rgba(245,158,11,0.14)", fg: "#FCD34D", border: "rgba(245,158,11,0.4)" },
-    "Platinum": { bg: "rgba(34,211,238,0.14)", fg: "#67E8F9", border: "rgba(34,211,238,0.4)" },
+    "Basic": { bg: "rgba(148,163,184,0.14)", fg: "#5C6B7A", border: "rgba(148,163,184,0.35)" },
+    "Silver": { bg: "rgba(148,163,184,0.14)", fg: "#48586A", border: "rgba(148,163,184,0.4)" },
+    "Gold": { bg: "rgba(217,158,11,0.12)", fg: "#B4790C", border: "rgba(217,158,11,0.35)" },
+    "Platinum": { bg: "rgba(14,168,117,0.12)", fg: "#0C8F63", border: "rgba(14,168,117,0.35)" },
 };
 const DEFAULT_GOI_STYLE = { bg: C.accentSoft, fg: C.accentDark, border: C.accentRing };
 
@@ -174,7 +178,7 @@ const STATUS_STYLE = {
 
 // ── Badge phân biệt loại phiên trong lịch sử cập nhật: INFO (thông tin) vs FACEID (khuôn mặt) ──
 const SESSION_TYPE_STYLE = {
-    INFO: { label: "Cập nhật thông tin", bg: C.accentSoft, fg: C.accentDark, border: "rgba(63,180,206,0.3)", icon: Pencil },
+    INFO: { label: "Cập nhật thông tin", bg: C.accentSoft, fg: C.accentDark, border: "rgba(14,168,117,0.25)", icon: Pencil },
     FACEID: { label: "Cập nhật FaceID", bg: C.faceGreenSoft, fg: C.faceGreen, border: C.faceGreenRing, icon: Camera },
 };
 
@@ -220,16 +224,16 @@ function Avatar({ name, src, id, size = 40 }) {
 const inp = {
     fontSize: 14.5, padding: "10px 13px", borderRadius: 10,
     border: `1.5px solid ${C.border}`, outline: "none", color: C.ink,
-    background: C.bg, fontFamily: "inherit", width: "100%", boxSizing: "border-box",
-    transition: "border-color .15s",
+    background: "#FFFFFF", fontFamily: "inherit", width: "100%", boxSizing: "border-box",
+    transition: "border-color .15s, box-shadow .15s",
 };
 const btnAccent = { display: "inline-flex", alignItems: "center", gap: 7, fontSize: 13.5, fontWeight: 700, padding: "10px 18px", borderRadius: 10, cursor: "pointer", fontFamily: "inherit", border: "none", background: C.accentGradient, color: "#fff", boxShadow: `0 3px 12px rgba(${C.accentRGB},0.28)` };
-// ── Nút xanh lá trầm, dùng cho các hành động liên quan FaceID ──
+// ── Nút xanh lá, dùng cho các hành động liên quan FaceID ──
 const btnGreen = { display: "inline-flex", alignItems: "center", gap: 7, fontSize: 13.5, fontWeight: 700, padding: "10px 18px", borderRadius: 10, cursor: "pointer", fontFamily: "inherit", border: "none", background: C.faceGreenGradient, color: "#fff", boxShadow: `0 3px 12px rgba(${C.faceGreenRGB},0.28)` };
 const btnOutline = { display: "inline-flex", alignItems: "center", gap: 7, fontSize: 13.5, fontWeight: 700, padding: "10px 16px", borderRadius: 10, cursor: "pointer", fontFamily: "inherit", background: C.surface, color: C.inkSoft, border: `1.5px solid ${C.border}` };
 const btnDanger = { display: "inline-flex", alignItems: "center", gap: 7, fontSize: 13.5, fontWeight: 700, padding: "10px 16px", borderRadius: 10, cursor: "pointer", fontFamily: "inherit", background: C.redBg, color: C.red, border: `1.5px solid ${C.redBorder}` };
 // ── Nút "Hủy" tông trung tính nhạt, dùng khi đứng cạnh nút Lưu để không lấn át hành động chính ──
-const btnCancelSoft = { display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 700, padding: "10px 14px", borderRadius: 10, cursor: "pointer", fontFamily: "inherit", background: C.surface, color: C.inkMuted, border: `1.5px solid ${C.border}` };
+const btnCancelSoft = { display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 700, padding: "10px 14px", borderRadius: 10, cursor: "pointer", fontFamily: "inherit", background: C.cardAlt, color: C.inkMuted, border: `1.5px solid ${C.border}` };
 
 function GlobalStyles() {
     return (
@@ -249,15 +253,17 @@ function GlobalStyles() {
                 position: sticky;
                 top: 0;
                 z-index: 2;
-                background: #16213A;
+                background: #FFFFFF;
             }
+            .gw-page-btn:hover:not(:disabled) { border-color: ${C.accent} !important; color: ${C.accentDark} !important; }
+            .gw-page-btn:disabled { opacity: 0.4; cursor: not-allowed; }
             .gw-modal-backdrop {
-                position: fixed; inset: 0; background: rgba(0,0,0,0.6);
+                position: fixed; inset: 0; background: rgba(14,42,33,0.35);
                 display: flex; align-items: center; justify-content: center;
                 z-index: 50; padding: 20px;
             }
             .gw-modal {
-                background: ${C.surface}; border-radius: 16px; border: 1px solid ${C.border};
+                background: ${C.surface}; border-radius: 18px; border: 1px solid ${C.border};
                 box-shadow: ${C.shadowMd}; width: 100%; max-width: 420px; padding: 22px;
             }
             @media (max-width: 760px) {
@@ -287,8 +293,11 @@ function Eyebrow({ icon: Icon, children, color = C.accent, bg = C.accentSoft }) 
     );
 }
 
-/* ── FaceIdCapture ── */
-function FaceIdCapture({ onSave, onCancel, aspect = "4/5", saving = false }) {
+/* ── FaceIdCapture ──
+   Sau khi chụp/tải ảnh, ảnh được gửi qua cashierApi.checkMemberFace() để BE kiểm tra
+   (có khuôn mặt rõ ràng hay không, có trùng với hội viên/nhân viên khác không) TRƯỚC
+   khi cho phép chọn lý do & lưu. Chỉ khi isValid && hasFace && !isDuplicate mới cho lưu. */
+function FaceIdCapture({ onSave, onCancel, aspect = "4/5", saving = false, memberId }) {
     const videoRef = useRef(null);
     const streamRef = useRef(null);
     const fileRef = useRef(null);
@@ -297,6 +306,11 @@ function FaceIdCapture({ onSave, onCancel, aspect = "4/5", saving = false }) {
     const [captured, setCaptured] = useState(null);
     const [reason, setReason] = useState("");
     const [reasonOther, setReasonOther] = useState("");
+
+    // ── Trạng thái kiểm tra khuôn mặt qua API checkMemberFace ──
+    const [checking, setChecking] = useState(false);
+    const [checkResult, setCheckResult] = useState(null); // { isValid, hasFace, isDuplicate, message, ... }
+    const [checkError, setCheckError] = useState("");
 
     const stop = useCallback(() => {
         streamRef.current?.getTracks().forEach(t => t.stop());
@@ -320,6 +334,27 @@ function FaceIdCapture({ onSave, onCancel, aspect = "4/5", saving = false }) {
         return () => stop();
     }, []);
 
+    // Gọi API kiểm tra khuôn mặt ngay sau khi có ảnh (chụp hoặc tải lên).
+    const runFaceCheck = async (dataUrl) => {
+        setChecking(true);
+        setCheckError("");
+        setCheckResult(null);
+        try {
+            const blob = await dataUrlToBlob(dataUrl);
+            const formData = new FormData();
+            // NOTE: tên field "Image" là giả định theo convention IFormFile của BE — nếu
+            // backend yêu cầu tên khác (vd. "File", "ProfileImage") thì đổi lại cho khớp.
+            formData.append("Image", blob, "faceid-check.jpg");
+            if (memberId) formData.append("MemberId", memberId);
+            const res = await cashierApi.checkMemberFace(formData);
+            setCheckResult(res?.data ?? res);
+        } catch (e) {
+            setCheckError("Không kiểm tra được ảnh khuôn mặt. Vui lòng thử lại.");
+        } finally {
+            setChecking(false);
+        }
+    };
+
     const shoot = () => {
         const v = videoRef.current; if (!v) return;
         const sz = Math.min(v.videoWidth, v.videoHeight);
@@ -328,16 +363,26 @@ function FaceIdCapture({ onSave, onCancel, aspect = "4/5", saving = false }) {
         ctx.translate(600, 0); ctx.scale(-1, 1);
         ctx.drawImage(v, (v.videoWidth - sz) / 2, (v.videoHeight - sz) / 2, sz, sz, 0, 0, 600, 600);
         stop();
-        setCaptured(cvs.toDataURL("image/jpeg", 0.92));
+        const dataUrl = cvs.toDataURL("image/jpeg", 0.92);
+        setCaptured(dataUrl);
+        runFaceCheck(dataUrl);
     };
 
-    const retake = () => { setCaptured(null); setReason(""); setReasonOther(""); startCam(); };
+    const retake = () => {
+        setCaptured(null); setReason(""); setReasonOther("");
+        setCheckResult(null); setCheckError(""); setChecking(false);
+        startCam();
+    };
 
     const pickFile = e => {
         const f = e.target.files[0]; if (!f) return;
         stop();
         const r = new FileReader();
-        r.onload = ev => setCaptured(ev.target.result);
+        r.onload = ev => {
+            const dataUrl = ev.target.result;
+            setCaptured(dataUrl);
+            runFaceCheck(dataUrl);
+        };
         r.readAsDataURL(f);
         e.target.value = "";
     };
@@ -345,7 +390,8 @@ function FaceIdCapture({ onSave, onCancel, aspect = "4/5", saving = false }) {
     const cancel = () => { stop(); onCancel(); };
 
     const finalReason = reason === "Khác" ? reasonOther.trim() : reason;
-    const canSave = !!captured && !!finalReason;
+    const faceOk = !!checkResult && checkResult.isValid && checkResult.hasFace && !checkResult.isDuplicate;
+    const canSave = !!captured && !!finalReason && faceOk;
 
     const save = () => { if (canSave) onSave(captured, finalReason); };
 
@@ -381,10 +427,17 @@ function FaceIdCapture({ onSave, onCancel, aspect = "4/5", saving = false }) {
                         )}
                     </>
                 )}
-                {captured && (
+                {captured && !checking && faceOk && (
                     <div style={{ position: "absolute", top: 12, left: 12, display: "flex", alignItems: "center", gap: 6, background: "rgba(0,0,0,0.5)", borderRadius: 999, padding: "5px 11px" }}>
                         <Check size={12} color="#6EE7B7" />
-                        <span style={{ color: "#D1FAE5", fontSize: 11.5, fontWeight: 700 }}>Ảnh đã chụp</span>
+                        <span style={{ color: "#D1FAE5", fontSize: 11.5, fontWeight: 700 }}>Ảnh hợp lệ</span>
+                    </div>
+                )}
+                {checking && (
+                    <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.45)" }}>
+                        <span style={{ color: "#fff", fontSize: 13, display: "flex", alignItems: "center", gap: 8, fontWeight: 700 }}>
+                            <Loader2 size={16} style={{ animation: "gw-spin 0.9s linear infinite" }} /> Đang kiểm tra khuôn mặt…
+                        </span>
                     </div>
                 )}
                 {err && (
@@ -392,11 +445,39 @@ function FaceIdCapture({ onSave, onCancel, aspect = "4/5", saving = false }) {
                         <span style={{ color: "#FCA5A5", fontSize: 12.5, textAlign: "center", lineHeight: 1.6 }}>{err}</span>
                     </div>
                 )}
+                <style>{`@keyframes gw-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
             </div>
 
             <input ref={fileRef} type="file" accept="image/*" style={{ display: "none" }} onChange={pickFile} />
 
-            {captured && (
+            {/* ── Kết quả kiểm tra khuôn mặt ── */}
+            {captured && !checking && checkError && (
+                <div style={{ display: "flex", alignItems: "flex-start", gap: 9, padding: "12px 14px", borderRadius: 12, background: C.redBg, border: `1.5px solid ${C.redBorder}` }}>
+                    <AlertTriangle size={16} color={C.red} style={{ flexShrink: 0, marginTop: 1 }} />
+                    <span style={{ fontSize: 13, color: C.red, fontWeight: 700, lineHeight: 1.5 }}>{checkError}</span>
+                </div>
+            )}
+            {captured && !checking && checkResult && !faceOk && (
+                <div style={{ display: "flex", alignItems: "flex-start", gap: 9, padding: "12px 14px", borderRadius: 12, background: checkResult.isDuplicate ? C.amberBg : C.redBg, border: `1.5px solid ${checkResult.isDuplicate ? C.amberBorder : C.redBorder}` }}>
+                    <AlertTriangle size={16} color={checkResult.isDuplicate ? C.amber : C.red} style={{ flexShrink: 0, marginTop: 1 }} />
+                    <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                        <span style={{ fontSize: 13, color: checkResult.isDuplicate ? C.amber : C.red, fontWeight: 800 }}>
+                            {checkResult.isDuplicate ? "Khuôn mặt trùng với hồ sơ khác" : "Ảnh không hợp lệ"}
+                        </span>
+                        <span style={{ fontSize: 12.5, color: checkResult.isDuplicate ? C.amber : C.red, fontWeight: 600, lineHeight: 1.5 }}>
+                            {checkResult.message || "Vui lòng chụp lại ảnh khác."}
+                        </span>
+                    </div>
+                </div>
+            )}
+            {captured && !checking && faceOk && (
+                <div style={{ display: "flex", alignItems: "center", gap: 9, padding: "12px 14px", borderRadius: 12, background: C.faceGreenSoft, border: `1.5px solid ${C.faceGreenRing}` }}>
+                    <ShieldCheck size={16} color={C.faceGreen} style={{ flexShrink: 0 }} />
+                    <span style={{ fontSize: 13, color: C.faceGreen, fontWeight: 800 }}>Nhận diện khuôn mặt hợp lệ, có thể lưu.</span>
+                </div>
+            )}
+
+            {captured && faceOk && (
                 <div style={{ display: "flex", flexDirection: "column", gap: 10, padding: "13px 14px", borderRadius: 12, border: `1.5px solid ${C.border}`, background: C.cardAlt }}>
                     <span style={{ fontSize: 12.5, fontWeight: 800, color: C.inkSoft }}>Lý do cập nhật FaceID <span style={{ color: C.red }}>*</span></span>
                     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -438,11 +519,11 @@ function FaceIdCapture({ onSave, onCancel, aspect = "4/5", saving = false }) {
                 </div>
             ) : (
                 <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                    <button onClick={retake} disabled={saving} style={{ ...btnOutline, width: "100%", justifyContent: "center" }}>
+                    <button onClick={retake} disabled={saving || checking} style={{ ...btnOutline, width: "100%", justifyContent: "center" }}>
                         <RotateCcw size={13} /> Chụp lại
                     </button>
                     <div style={{ display: "flex", gap: 8 }}>
-                        <button onClick={save} disabled={saving || !canSave} style={{ ...btnGreen, flex: 1, justifyContent: "center", opacity: (saving || !canSave) ? 0.5 : 1 }}>
+                        <button onClick={save} disabled={saving || checking || !canSave} style={{ ...btnGreen, flex: 1, justifyContent: "center", opacity: (saving || checking || !canSave) ? 0.5 : 1 }}>
                             <Check size={15} /> {saving ? "Đang lưu…" : "Lưu"}
                         </button>
                         <button onClick={cancel} disabled={saving} style={{ ...btnCancelSoft, flex: "0 0 96px", justifyContent: "center" }}>
@@ -488,7 +569,7 @@ function ReadField({ label, value, icon: Icon, full }) {
 function StatCard({ icon: Icon, label, value, color, bgColor }) {
     return (
         <div style={{
-            background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: "16px 20px",
+            background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: "16px 20px",
             display: "flex", alignItems: "center", gap: 14, flex: "1 1 160px", boxShadow: C.shadow
         }}>
             <div style={{ width: 44, height: 44, borderRadius: 13, background: bgColor, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
@@ -595,11 +676,85 @@ function HistoryModal({ sessions, loading, onClose }) {
     );
 }
 
+// ── Thanh phân trang cho bảng danh sách hội viên ──
+function Pagination({ page, totalPages, onChange, totalItems, pageSize }) {
+    if (totalItems === 0) return null;
+
+    const from = (page - 1) * pageSize + 1;
+    const to = Math.min(page * pageSize, totalItems);
+
+    // Tính danh sách số trang hiển thị (tối đa 5 số quanh trang hiện tại)
+    const pages = [];
+    const windowSize = 5;
+    let start = Math.max(1, page - Math.floor(windowSize / 2));
+    let end = Math.min(totalPages, start + windowSize - 1);
+    start = Math.max(1, end - windowSize + 1);
+    for (let p = start; p <= end; p++) pages.push(p);
+
+    return (
+        <div style={{
+            display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12,
+            padding: "14px 18px", borderTop: `1px solid ${C.border}`, background: C.card
+        }}>
+            <span style={{ fontSize: 12.5, color: C.inkMuted, fontWeight: 700 }}>
+                Hiển thị {from}–{to} trên {totalItems} hội viên
+            </span>
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <button
+                    className="gw-page-btn"
+                    onClick={() => onChange(page - 1)}
+                    disabled={page <= 1}
+                    style={{ ...btnOutline, padding: "7px 10px", fontSize: 12.5 }}
+                >
+                    <ArrowLeft size={13} />
+                </button>
+                {start > 1 && (
+                    <>
+                        <PageNumberBtn n={1} active={page === 1} onClick={onChange} />
+                        {start > 2 && <span style={{ color: C.inkMuted, fontSize: 12.5, padding: "0 2px" }}>…</span>}
+                    </>
+                )}
+                {pages.map(p => <PageNumberBtn key={p} n={p} active={p === page} onClick={onChange} />)}
+                {end < totalPages && (
+                    <>
+                        {end < totalPages - 1 && <span style={{ color: C.inkMuted, fontSize: 12.5, padding: "0 2px" }}>…</span>}
+                        <PageNumberBtn n={totalPages} active={page === totalPages} onClick={onChange} />
+                    </>
+                )}
+                <button
+                    className="gw-page-btn"
+                    onClick={() => onChange(page + 1)}
+                    disabled={page >= totalPages}
+                    style={{ ...btnOutline, padding: "7px 10px", fontSize: 12.5 }}
+                >
+                    <ArrowRight size={13} />
+                </button>
+            </div>
+        </div>
+    );
+}
+function PageNumberBtn({ n, active, onClick }) {
+    return (
+        <button
+            className="gw-page-btn"
+            onClick={() => onClick(n)}
+            style={{
+                minWidth: 32, height: 32, borderRadius: 9, fontSize: 12.5, fontWeight: 800, cursor: "pointer",
+                fontFamily: "inherit", border: `1.5px solid ${active ? C.accent : C.border}`,
+                background: active ? C.accentSoft : "#FFFFFF", color: active ? C.accentDark : C.inkSoft,
+            }}
+        >
+            {n}
+        </button>
+    );
+}
+
 /* ── LIST PAGE ── */
 function ListPage({ members, onView, onEdit, loading = false }) {
     const [fName, setFName] = useState("");
     const [fPhone, setFPhone] = useState("");
     const [fBranch, setFBranch] = useState("Tất cả");
+    const [page, setPage] = useState(1);
 
     // Chi nhánh lấy trực tiếp từ dữ liệu BE trả về (BranchName), tránh lệch với danh sách chi nhánh thật.
     const branchOptions = useMemo(() => {
@@ -612,6 +767,16 @@ function ListPage({ members, onView, onEdit, loading = false }) {
         && m.sdt.includes(fPhone.trim())
         && (fBranch === "Tất cả" || m.chiNhanh === fBranch)
     ), [members, fName, fPhone, fBranch]);
+
+    // Về lại trang 1 mỗi khi bộ lọc thay đổi để tránh trang trống.
+    useEffect(() => { setPage(1); }, [fName, fPhone, fBranch]);
+
+    const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+    const safePage = Math.min(page, totalPages);
+    const paginated = useMemo(
+        () => filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE),
+        [filtered, safePage]
+    );
 
     const active = members.filter(m => m.trangThai === "Đang hoạt động").length;
     const pending = members.filter(m => m.trangThai === "Chờ hoạt động").length;
@@ -633,7 +798,7 @@ function ListPage({ members, onView, onEdit, loading = false }) {
                 <StatCard icon={TrendingUp} label="Hết hạn" value={expired} color={C.red} bgColor={C.redBg} />
             </div>
 
-            <div className="gw-filter-bar" style={{ display: "flex", flexWrap: "wrap", gap: 10, background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: "14px 16px", marginBottom: 18, boxShadow: C.shadow }}>
+            <div className="gw-filter-bar" style={{ display: "flex", flexWrap: "wrap", gap: 10, background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: "14px 16px", marginBottom: 18, boxShadow: C.shadow }}>
                 <div style={{ position: "relative", flex: "1 1 200px" }}>
                     <Search size={14} style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: C.inkMuted }} />
                     <input className="gw-input" placeholder="Tìm theo tên…" value={fName} onChange={e => setFName(e.target.value)} style={{ ...inp, paddingLeft: 35, fontSize: 14 }} />
@@ -654,7 +819,7 @@ function ListPage({ members, onView, onEdit, loading = false }) {
                 </button>
             </div>
 
-            <div style={{ border: `1px solid ${C.border}`, borderRadius: 16, overflow: "hidden", background: C.card, boxShadow: C.shadow }}>
+            <div style={{ border: `1px solid ${C.border}`, borderRadius: 18, overflow: "hidden", background: C.card, boxShadow: C.shadowMd }}>
                 <div className="gw-table-scroll">
                     <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
                         <thead>
@@ -668,9 +833,9 @@ function ListPage({ members, onView, onEdit, loading = false }) {
                             </tr>
                         </thead>
                         <tbody>
-                            {filtered.map(m => (
+                            {paginated.map(m => (
                                 <tr key={m.id} style={{ borderBottom: `1px solid ${C.border}`, transition: "background .1s" }}
-                                    onMouseEnter={e => e.currentTarget.style.background = "rgba(44,143,168,0.07)"}
+                                    onMouseEnter={e => e.currentTarget.style.background = C.accentSoft}
                                     onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
                                     <td style={{ padding: "13px 16px" }}>
                                         <div style={{ display: "flex", alignItems: "center", gap: 11 }}>
@@ -693,7 +858,7 @@ function ListPage({ members, onView, onEdit, loading = false }) {
                                     </td>
                                 </tr>
                             ))}
-                            {filtered.length === 0 && (
+                            {paginated.length === 0 && (
                                 <tr><td colSpan={6} style={{ padding: "52px 16px", textAlign: "center", color: C.inkMuted }}>
                                     <div style={{ fontSize: 28, marginBottom: 10 }}>🔍</div>
                                     Không tìm thấy hội viên phù hợp.
@@ -702,6 +867,7 @@ function ListPage({ members, onView, onEdit, loading = false }) {
                         </tbody>
                     </table>
                 </div>
+                <Pagination page={safePage} totalPages={totalPages} onChange={setPage} totalItems={filtered.length} pageSize={PAGE_SIZE} />
             </div>
         </div>
     );
@@ -749,6 +915,8 @@ function DetailPage({ memberId, listSnapshot, onBack, onSave, initialEditingInfo
     const showFlash = msg => { setFlash(msg); setTimeout(() => setFlash(""), 2200); };
 
     // dataUrl: ảnh chụp/upload (base64) | reason: lý do cập nhật FaceID (bắt buộc)
+    // Ảnh đã được kiểm tra hợp lệ qua cashierApi.checkMemberFace() bên trong FaceIdCapture
+    // trước khi hàm này được gọi, nên ở đây chỉ cần lưu.
     const handleCapture = async (dataUrl, reason) => {
         setError(""); setSavingPhoto(true);
         try {
@@ -838,7 +1006,7 @@ function DetailPage({ memberId, listSnapshot, onBack, onSave, initialEditingInfo
                 </div>
             )}
 
-            <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 20, overflow: "hidden", boxShadow: C.shadowMd }}>
+            <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 22, overflow: "hidden", boxShadow: C.shadowMd }}>
                 <div style={{ display: "flex", flexWrap: "wrap" }}>
 
                     {/* ── PHOTO COLUMN ── */}
@@ -855,6 +1023,7 @@ function DetailPage({ memberId, listSnapshot, onBack, onSave, initialEditingInfo
                                         onSave={handleCapture}
                                         onCancel={() => setEditingPhoto(false)}
                                         saving={savingPhoto}
+                                        memberId={memberId}
                                     />
                                 </>
                             ) : (
@@ -1005,9 +1174,9 @@ export default function ListMember() {
     };
 
     return (
-        <div style={{ minHeight: "100%", background: "transparent", fontFamily: "'Inter',-apple-system,BlinkMacSystemFont,sans-serif", color: C.ink }}>
+        <div style={{ minHeight: "100%", background: C.bg, fontFamily: "'Inter',-apple-system,BlinkMacSystemFont,sans-serif", color: C.ink, padding: "24px 0" }}>
             <GlobalStyles />
-            <div style={{ maxWidth: 1180, margin: "0 auto" }}>
+            <div style={{ maxWidth: 1180, margin: "0 auto", padding: "0 20px" }}>
                 {route.page === "list" && (
                     <>
                         {listError && (

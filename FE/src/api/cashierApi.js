@@ -1,6 +1,19 @@
 import authApi from "./authApi";
 
 const cashierApi = {
+     getCashierDashboard({ range = "30d", start, end, method, channel } = {}) {
+        const params = { range };
+ 
+        if (range === "custom") {
+            if (start) params.start = start instanceof Date ? start.toISOString() : start;
+            if (end) params.end = end instanceof Date ? end.toISOString() : end;
+        }
+        if (method && method !== "Tất cả") params.method = method;
+        if (channel && channel !== "Tất cả") params.channel = channel;
+ 
+        return authApi.get(`/api/dashboard/cashier`, { params });
+    },
+
     // =========================================================================
     // NHÂN VIÊN — thông tin cá nhân đang đăng nhập
     // =========================================================================
@@ -11,36 +24,8 @@ const cashierApi = {
         return authApi.get(`/api/employee/profile`);
     },
 
-    // =========================================================================
-    // DASHBOARD — dùng chung cho Cashier / Manager / Admin
-    // BE tự lọc theo chi nhánh dựa trên role trong token, FE không cần truyền branchId
-    // =========================================================================
-    // GET /api/dashboard
-    // -> response: { stats, recentCheckins, recentTransactions, weeklyChart, expiringPackages }
-    getDashboard() {
-        return authApi.get(`/api/dashboard`);
-    },
-    // GET /api/dashboard/stats
-    // -> response: { revenueToday, revenueChangePercent, newMembersToday, checkinsToday, checkinsChange }
-    getDashboardStats() {
-        return authApi.get(`/api/dashboard/stats`);
-    },
-    // GET /api/dashboard/recent-checkins?take=10
-    getRecentCheckins(take = 10) {
-        return authApi.get(`/api/dashboard/recent-checkins?take=${take}`);
-    },
-    // GET /api/dashboard/recent-transactions?take=10
-    getRecentTransactions(take = 10) {
-        return authApi.get(`/api/dashboard/recent-transactions?take=${take}`);
-    },
-    // GET /api/dashboard/weekly-chart
-    getWeeklyChart() {
-        return authApi.get(`/api/dashboard/weekly-chart`);
-    },
-    // GET /api/dashboard/expiring-packages?days=7
-    getExpiringPackages(days = 7) {
-        return authApi.get(`/api/dashboard/expiring-packages?days=${days}`);
-    },
+
+
 
     // =========================================================================
     // HỘI VIÊN — danh sách, chi tiết, tạo/sửa
@@ -86,6 +71,14 @@ const cashierApi = {
         return authApi.get(`/api/members/${id}/update-history`);
     },
 
+    // POST /api/faceid/member/check  (multipart/form-data: ProfileImage, ExcludeMemberId?)
+    // -> response: { isValid, hasFace, isDuplicate, duplicateOwnerType, duplicateMemberId,
+    //                duplicateEmployeeId, similarity, message }
+    checkMemberFace(formData) {
+        return authApi.post(`/api/faceid/member/check`, formData, {
+            headers: { "Content-Type": "multipart/form-data" },
+        });
+    },
     // =========================================================================
     // HỘI VIÊN — kích hoạt, khoá/mở khoá tài khoản
     // =========================================================================

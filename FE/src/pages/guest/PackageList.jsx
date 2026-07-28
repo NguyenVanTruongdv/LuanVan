@@ -4,6 +4,21 @@ import memberApi from "../../api/memberApi"; // chỉnh lại đường dẫn ch
 import Footer from "../../component/Footer"; // chỉnh lại đường dẫn cho đúng project của bạn
 import Header from "../../component/Header"; // chỉnh lại đường dẫn cho đúng project của bạn
 
+// Phải TRÙNG với PAYMENT_SESSION_KEY bên Payment.jsx: đây là session client-side (sessionStorage)
+// mà Payment.jsx tự lưu để giữ nguyên màn QR khi khách F5. Bất cứ khi nào trang này điều hướng
+// sang /payment để bắt đầu MỘT GIAO DỊCH MỚI (không phải "tiếp tục thanh toán" đơn cũ), phải xóa
+// session này trước, nếu không Payment.jsx sẽ tưởng nhầm đang F5 giữa chừng và tự khôi phục lại
+// QR của đơn cũ (đơn vừa bị hủy ở đây, hoặc một đơn không còn liên quan).
+const PAYMENT_SESSION_KEY = "gym_payment_checkout_session";
+
+function clearLocalPaymentSession() {
+    try {
+        sessionStorage.removeItem(PAYMENT_SESSION_KEY);
+    } catch (e) {
+        // ignore
+    }
+}
+
 function formatVnd(n) {
     return Number(n || 0).toLocaleString("vi-VN");
 }
@@ -175,6 +190,10 @@ export default function MembershipPlansPage() {
             if (pending?.hasPending) {
                 setPendingInfo({ plan, pending });
             } else {
+                // Không có giao dịch Pending nào -> chắc chắn là mua mới, không phải resume.
+                // Dọn session QR cũ (nếu có sót lại từ trước) để Payment.jsx không hiểu nhầm
+                // là đang F5 giữa chừng một đơn cũ.
+                clearLocalPaymentSession();
                 navigate("/payment", { state: { plan } });
             }
         } catch (err) {
@@ -182,6 +201,7 @@ export default function MembershipPlansPage() {
             // Lỗi khi kiểm tra thì vẫn cho khách qua trang thanh toán bình thường,
             // trang đó sẽ tự xử lý nếu có vấn đề khi tạo đơn (BE vẫn chặn lại lần nữa
             // nếu thực sự đang bị giới hạn 1 gói Pending).
+            clearLocalPaymentSession();
             navigate("/payment", { state: { plan } });
         } finally {
             setCheckingPlanId(null);
@@ -210,6 +230,15 @@ export default function MembershipPlansPage() {
 
             const newPlan = pendingInfo.plan;
             setPendingInfo(null);
+
+            // Đơn cũ vừa bị hủy ở trên -> QUAN TRỌNG: xóa luôn session QR mà Payment.jsx đã lưu
+            // cho đơn đó. Nếu không, khi Payment.jsx mount lại với state chỉ có { plan } (không
+            // phải resumePending), nó sẽ không thấy resumePending nên rơi xuống nhánh kiểm tra
+            // sessionStorage, thấy session cũ còn sót lại và tưởng nhầm là đang F5 giữa chừng ->
+            // tự động khôi phục lại QR của đơn đã hủy thay vì cho tạo đơn mới. Đây chính là bug
+            // "bấm hủy giao dịch nhưng qua payment vẫn nhảy vào QR" cần fix.
+            clearLocalPaymentSession();
+
             navigate("/payment", { state: { plan: newPlan } });
         } catch (err) {
             console.error("Lỗi khi hủy giao dịch cũ:", err);

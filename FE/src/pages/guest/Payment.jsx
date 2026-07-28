@@ -300,6 +300,42 @@ function extractBranchList(raw) {
     return [];
 }
 
+// ---- Giữ nguyên trang QR khi F5, HOÀN TOÀN Ở PHÍA CLIENT, không gọi thêm API nào ----
+// Vấn đề: location.state (nơi lưu { resumePending, pending } khi trang Gói tập điều hướng qua
+// sau khi đã hỏi khách đàng hoàng) chỉ tồn tại trong session điều hướng của SPA, bị mất khi F5.
+// Cách xử lý ở đây KHÔNG động tới BE/API: chỉ cần lưu tạm { step, plan, order } vào
+// sessionStorage của trình duyệt ngay khi đơn được tạo (hoặc khi resume từ trang Gói tập),
+// rồi khi component mount lại (kể cả do F5) thì đọc lại từ sessionStorage để khôi phục đúng
+// màn QR đang xem dở, thay vì reset về màn chọn gói. Giao dịch Pending ở BE không hề bị đụng tới,
+// luồng hỏi khách ở trang Gói tập (resumePending) vẫn y nguyên như cũ.
+const PAYMENT_SESSION_KEY = "gym_payment_checkout_session";
+
+function savePaymentSession(data) {
+    try {
+        sessionStorage.setItem(PAYMENT_SESSION_KEY, JSON.stringify(data));
+    } catch (e) {
+        // sessionStorage có thể bị chặn (chế độ ẩn danh, quota đầy...) -> bỏ qua,
+        // chỉ mất tính năng giữ trang khi F5, không ảnh hưởng gì tới luồng thanh toán chính.
+    }
+}
+
+function loadPaymentSession() {
+    try {
+        const raw = sessionStorage.getItem(PAYMENT_SESSION_KEY);
+        return raw ? JSON.parse(raw) : null;
+    } catch (e) {
+        return null;
+    }
+}
+
+function clearPaymentSession() {
+    try {
+        sessionStorage.removeItem(PAYMENT_SESSION_KEY);
+    } catch (e) {
+        // ignore
+    }
+}
+
 export default function Payment() {
     const location = useLocation();
     const navigate = useNavigate();
@@ -309,6 +345,12 @@ export default function Payment() {
     // 2) { resumePending: true, pending } -> khách chọn "Tiếp tục thanh toán" một giao dịch Pending
     //    có sẵn (trang Gói tập đã kiểm tra và hỏi khách trước khi điều hướng qua đây),
     //    vào thẳng màn QR (step 2), không tạo transaction mới.
+    //
+    // LƯU Ý: location.state chỉ tồn tại trong session điều hướng của SPA. Khi khách F5 ở màn QR,
+    // state này mất, effect bên dưới rơi vào nhánh "mua mới" -> step bị reset về 1 dù transaction
+    // Pending ở BE vẫn còn nguyên (chưa hề bị hủy). Để tránh việc này, effect bên dưới LUÔN tự hỏi
+    // lại BE xem có giao dịch Pending nào của khách hay không (song song với state.resumePending,
+    // không thay thế), rồi mới quyết định step/order dựa trên dữ liệu BE trả về.
     const [selectedPlan, setSelectedPlan] = useState(location.state?.plan ?? null);
 
     const [step, setStep] = useState(1);
@@ -336,7 +378,8 @@ export default function Payment() {
     const [promotionError, setPromotionError] = useState(null);
 
     // Đơn thanh toán tạo ra sau khi bấm "Xác nhận & Thanh toán", hoặc được khôi phục lại
-    // từ transaction Pending có sẵn khi trang Gói tập điều hướng qua với resumePending.
+    // từ transaction Pending có sẵn khi trang Gói tập điều hướng qua với resumePending,
+    // hoặc khi phát hiện Pending từ BE lúc mount lại trang (F5).
     const [order, setOrder] = useState(null); // { orderId, amount, qrImageUrl, checkoutUrl, bankName, accountName, accountNumber, transferContent, expiresInSeconds, promotion }
     const [creatingOrder, setCreatingOrder] = useState(false);
     const [orderError, setOrderError] = useState(null);
@@ -360,8 +403,13 @@ export default function Payment() {
     }, [step]);
 
     // Lấy thông tin cá nhân + gói hiện tại, danh sách gói đang mở bán, danh sách chi nhánh.
-    // Không tự kiểm tra transaction Pending ở đây nữa -- việc đó do trang Gói tập làm
-    // trước khi điều hướng qua trang này (đã hỏi khách và truyền sẵn state phù hợp).
+    // 3 lời gọi API giống hệt bản gốc, không thêm/bớt endpoint nào.
+    //
+    // Việc quyết định vào thẳng màn QR (step 2) hay màn chọn gói (step 1) vẫn dựa trên
+    // location.state như cũ (trang Gói tập đã hỏi khách đàng hoàng trước khi điều hướng qua).
+    // Điểm khác duy nhất: nếu không có state (ví dụ do F5 làm mất state) nhưng trình duyệt còn
+    // lưu tạm phiên thanh toán trong sessionStorage (do chính trang này lưu lại lúc tạo đơn),
+    // thì khôi phục lại từ đó — thuần phía client, không gọi thêm bất kỳ API nào.
     useEffect(() => {
         let mounted = true;
         (async () => {
@@ -408,30 +456,51 @@ export default function Payment() {
                 const state = location.state;
 
                 if (state?.resumePending && state?.pending) {
-                    // Khách chọn tiếp tục giao dịch Pending có sẵn -> khôi phục state và vào thẳng
-                    // màn QR, không gọi createPayment (nên không cần chọn chi nhánh ở đây).
+                    // Y NGUYÊN logic cũ: khách chọn "Tiếp tục thanh toán" ở trang Gói tập (đã hỏi
+                    // khách đàng hoàng), điều hướng qua đây với sẵn thông tin giao dịch Pending.
                     const pending = state.pending;
-                    setSelectedPlan({
+                    const plan = {
                         planId: pending.planId,
                         planName: pending.planName,
                         durationDays: pending.durationDays,
                         price: pending.planPrice,
-                    });
+                    };
 
                     const parsed = parseQrInfo(pending.qrImage, pending.orderCode);
-                    setOrder({
+                    const restoredOrder = {
                         orderId: pending.orderCode,
                         amount: pending.amount,
                         qrImageUrl: pending.qrImage ?? null,
                         checkoutUrl: null,
                         ...parsed,
                         expiresInSeconds: 299,
-                    });
+                    };
+
+                    setSelectedPlan(plan);
+                    setOrder(restoredOrder);
                     setStep(2);
+
+                    // Lưu lại phiên vào sessionStorage ngay lúc này, để nếu khách F5 tiếp ở màn QR
+                    // thì lần mount sau đọc thẳng từ đây (nhánh else if bên dưới), không cần quay
+                    // lại trang Gói tập / không cần state nữa.
+                    savePaymentSession({ step: 2, plan, order: restoredOrder });
                 } else {
-                    // Mua gói mới bình thường. Nếu vào thẳng /payment mà chưa có gói được chọn
-                    // từ trang trước, tự chọn gói đầu tiên trong danh sách để không bị kẹt màn hình lỗi.
-                    setSelectedPlan((prev) => prev ?? state?.plan ?? plans[0] ?? null);
+                    // Không có state.resumePending -> có thể là mua mới, HOẶC là F5 ở giữa luồng
+                    // đang thanh toán (mất state). Kiểm tra sessionStorage trước khi mặc định coi
+                    // là "mua mới": nếu còn phiên QR dở dang do chính trang này lưu lại trước đó
+                    // (lúc tạo đơn thành công) thì khôi phục nguyên trang QR, không reset về step 1.
+                    const savedSession = loadPaymentSession();
+
+                    if (savedSession?.step === 2 && savedSession?.order && savedSession?.plan) {
+                        setSelectedPlan(savedSession.plan);
+                        setOrder(savedSession.order);
+                        setStep(2);
+                    } else {
+                        // Mua gói mới bình thường. Nếu vào thẳng /payment mà chưa có gói được chọn
+                        // từ trang trước, tự chọn gói đầu tiên trong danh sách để không bị kẹt màn hình lỗi.
+                        setSelectedPlan((prev) => prev ?? state?.plan ?? plans[0] ?? null);
+                        setStep(1);
+                    }
                 }
             } catch (err) {
                 console.warn("Không lấy được thông tin thanh toán:", err);
@@ -450,7 +519,7 @@ export default function Payment() {
     // xác nhận đơn hàng - step 1; khi resume đơn Pending thì đơn đã chốt khuyến mãi từ trước
     // nên không cần gọi lại). Khuyến mãi có giá trị quy đổi cao nhất sẽ được tự động chọn.
     useEffect(() => {
-        if (!selectedPlan?.planId || location.state?.resumePending) {
+        if (!selectedPlan?.planId || step === 2) {
             setPromotions([]);
             setSelectedPromotionId(null);
             return;
@@ -531,7 +600,7 @@ export default function Payment() {
             // amount trả về đã là số tiền cuối cùng sau khi BE áp dụng khuyến mãi (nếu có).
             const parsed = parseQrInfo(raw.qrImage, raw.orderCode);
 
-            setOrder({
+            const newOrder = {
                 orderId: raw.orderCode,
                 amount: raw.amount ?? finalPrice,
                 qrImageUrl: raw.qrImage ?? null, // null -> UI sẽ hiển thị ô trống "Chưa có mã QR" để dễ nhận biết khi test
@@ -539,9 +608,14 @@ export default function Payment() {
                 ...parsed,
                 expiresInSeconds: raw.expiresInSeconds ?? 299,
                 promotion: selectedPromotion,
-            });
+            };
 
+            setOrder(newOrder);
             setStep(2);
+
+            // Lưu tạm phiên thanh toán vào sessionStorage (chỉ phía client, không gọi API nào)
+            // để nếu khách F5 ngay tại màn QR thì lần mount sau vẫn khôi phục lại đúng màn này.
+            savePaymentSession({ step: 2, plan: selectedPlan, order: newOrder });
         } catch (err) {
             console.error("Lỗi khi tạo thanh toán:", err);
             setOrderError("Không thể tạo thanh toán. Vui lòng thử lại.");
@@ -561,6 +635,9 @@ export default function Payment() {
             setShowCancelConfirm(false);
             setOrder(null);
             setOrderError(null);
+            // Đơn đã bị hủy -> xóa luôn phiên đã lưu trong sessionStorage, nếu không lần F5 sau
+            // (hoặc quay lại trang này) sẽ vô tình khôi phục nhầm một đơn đã hủy.
+            clearPaymentSession();
             // Hủy xong -> quay thẳng về trang gói tập để chọn lại từ đầu,
             // không ở lại trang payment nữa.
             navigate("/packages", { replace: true });
@@ -591,6 +668,9 @@ export default function Payment() {
 
                 if (!cancelled && status === "paid") {
                     clearInterval(pollRef.current);
+                    // Thanh toán xong -> xóa phiên đã lưu để F5 sau này không bị khôi phục
+                    // nhầm về màn QR của một đơn đã thanh toán xong.
+                    clearPaymentSession();
                     setStep(3);
                 }
             } catch (err) {

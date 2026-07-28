@@ -26,8 +26,6 @@ import ThongKe from "../pages/guest/Thongke";
 import { getCurrentUser, isLoggedIn } from "../api/authApi";
 import CashierLayout from "../layouts/CashierLayout";
 import Dashboard from "../pages/cashier/CashierDashboard";
-import CreatePackPage from "../pages/cashier/Employee/CreatePack";
-import ListEmployee from "../pages/cashier/Employee/ListEmployee";
 import IncidentReportForm from "../pages/cashier/Incident/IncidenReport";
 import IncidentList from "../pages/cashier/Incident/IncidentList";
 import CameraRecognition from "../pages/cashier/indentify/Camerarecognition";
@@ -71,11 +69,12 @@ import AddEquipmentPageOfAdmin from "../pages/admin/Equipment/Addequipmentpage";
 import EquipmentListPageOfAdmin from "../pages/admin/Equipment/Equipmentlistpage";
 import EquipmentCategoryCreatePage from "../pages/admin/EquipmentCategories/Equipmentcategorycreatepage";
 import EquipmentCategoryListPage from "../pages/admin/EquipmentCategories/Equipmentcategorylistpage";
+import HomeImageManagement from "../pages/admin/HomeImg/HomeImage";
 import ListMemberOfAdmin from "../pages/admin/Member/ListMember";
 import MembershipPlanCreate from "../pages/admin/Package/createMembershipplan";
 import LichSuDangKyGoiTapOfAdmin from "../pages/admin/Package/HistoryRegis";
 import MembershipPlansAdmin from "../pages/admin/Package/Membershipplansadmin";
-import GymMemberRegistrationStaff from "../pages/cashier/Employee/CreateEmployee";
+import ForgotPassword from "../pages/auth/Forgotpassword";
 
 function AppRoutes() {
     return (
@@ -101,7 +100,7 @@ function AppRoutes() {
             <Route path="/member/login" element={<MemberLogin />} />
             <Route path="/member/register" element={<Register />} />
             <Route path="/staff/login" element={<StaffLogin />} />
-
+            <Route path="/member/forgot-password" element={<ForgotPassword />} />
             {/* ================= MEMBER ================= */}
 
             <Route element={<ProtectedRoute allowedRoles={["Member"]} loginPath="/member/login" />}>
@@ -136,9 +135,7 @@ function AppRoutes() {
                     <Route path="packages/renew" element={<RenewPage />} />
                     <Route path="packages/history" element={<LichSuDangKyGoiTap />} />
                     <Route path="packages/invoice" element={<InvoiceOfCashier />} />
-                    <Route path="staffs" element={<ListEmployee />} />
-                    <Route path="staff-create" element={<GymMemberRegistrationStaff />} />
-                    <Route path="staff/create-pack" element={<CreatePackPage />} />
+
                 </Route>
             </Route>
 
@@ -176,6 +173,7 @@ function AppRoutes() {
                 <Route path="branch-create" element={<AddBranch />} />
                 <Route path="branches-img" element={<BranchImages />} />
                 <Route path="branches/:id" element={<BranchDetailOfAdmin />} />
+                <Route path="homepage/images" element={<HomeImageManagement />} />
                 <Route path="staffs" element={<EmployeeListAdmin />} />
                 <Route path="staff-create" element={<CreateEmployeePageOfAdmin />} />
                 <Route path="members" element={<ListMemberOfAdmin />} />
@@ -194,7 +192,7 @@ function AppRoutes() {
                 <Route path="news" element={<NewsList />} />
                 <Route path="news-create" element={<NewsCreate />} />
 
-                
+
             </Route>
         </Routes>
     );

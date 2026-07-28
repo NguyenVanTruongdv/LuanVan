@@ -294,30 +294,30 @@ namespace BE.Dtos.Member
         public string Description { get; set; }
     }
     namespace BE.Dtos.Member
-{
-    /// <summary>
-    /// Request để hội viên TỰ cập nhật thông tin của chính mình (đổi tên, SĐT, giới tính, mật khẩu).
-    /// Tất cả các field đều optional — field nào null/rỗng thì giữ nguyên giá trị cũ, KHÔNG cập nhật.
-    /// Riêng đổi mật khẩu: phải gửi kèm CurrentPassword để xác thực, và NewPassword là mật khẩu mới.
-    /// </summary>
-    public class UpdateMyProfileRequest
     {
-        public string? FullName { get; set; }
-
-        public string? Phone { get; set; }
-
-        public string? Gender { get; set; }
-
         /// <summary>
-        /// Mật khẩu hiện tại — bắt buộc phải đúng nếu muốn đổi mật khẩu (NewPassword có giá trị).
+        /// Request để hội viên TỰ cập nhật thông tin của chính mình (đổi tên, SĐT, giới tính, mật khẩu).
+        /// Tất cả các field đều optional — field nào null/rỗng thì giữ nguyên giá trị cũ, KHÔNG cập nhật.
+        /// Riêng đổi mật khẩu: phải gửi kèm CurrentPassword để xác thực, và NewPassword là mật khẩu mới.
         /// </summary>
-        public string? CurrentPassword { get; set; }
+        public class UpdateMyProfileRequest
+        {
+            public string? FullName { get; set; }
 
-        /// <summary>
-        /// Mật khẩu mới muốn đổi sang. Để trống nếu không đổi mật khẩu.
-        /// </summary>
-        public string? NewPassword { get; set; }
+            public string? Phone { get; set; }
+
+            public string? Gender { get; set; }
+
+            /// <summary>
+            /// Mật khẩu hiện tại — bắt buộc phải đúng nếu muốn đổi mật khẩu (NewPassword có giá trị).
+            /// </summary>
+            public string? CurrentPassword { get; set; }
+
+            /// <summary>
+            /// Mật khẩu mới muốn đổi sang. Để trống nếu không đổi mật khẩu.
+            /// </summary>
+            public string? NewPassword { get; set; }
+        }
     }
-}
 
 }

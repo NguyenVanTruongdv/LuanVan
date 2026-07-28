@@ -96,7 +96,7 @@ builder.Services.AddScoped<EmployeeService>();
 builder.Services.AddScoped<IncidentService>();
 builder.Services.AddScoped<S3StorageService>(); // chỗ lưu file và ảnh trên s3
 builder.Services.AddScoped<InvoiceService>(); // tạo hóa pdf
-builder.Services.AddScoped<ReportService>();
+// builder.Services.AddScoped<ReportService>();
 builder.Services.AddScoped<ThongKeService>();
 builder.Services.AddScoped<DashboardService>();
 builder.Services.AddScoped<AccountService>();

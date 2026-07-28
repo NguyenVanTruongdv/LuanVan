@@ -137,16 +137,7 @@ const NAV_ITEMS = [
             { id: "incidents-list", icon: Icons.list, label: "Danh sách sự cố", path: "/cashier/incidents-list" },
         ],
     },
-    {
-        id: "report",
-        icon: Icons.Staff,
-        label: "Báo cáo",
-        matchPrefix: "/cashier/reports",
-        children: [
-            { id: "reports", icon: Icons.report, label: "Báo cáo", path: "/cashier/reports" },
-
-        ],
-    },
+    
 ];
 
 // ── Bảng màu tối — đồng bộ với màn hình đăng nhập (navy sâu + cyan accent) ──
