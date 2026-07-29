@@ -106,7 +106,7 @@ public class ForumPostService
             Status = "Active",
             LikeCount = 0,
             CommentCount = 0,
-            RepostCount = 0,
+         
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
         };
@@ -132,39 +132,7 @@ public class ForumPostService
         return (true, null, created);
     }
 
-    // ===== REPOST (đăng lại bài của người khác) =====
-    public async Task<(bool Success, string? Error, ForumPostDto? Data)> RepostAsync(long memberId, ForumRepostCreateDto dto)
-    {
-        var original = await _context.ForumPosts
-            .FirstOrDefaultAsync(p => p.PostId == dto.OriginalPostId && p.Status == "Active");
 
-        if (original is null)
-            return (false, "Bài viết gốc không tồn tại hoặc đã bị ẩn/xóa", null);
-
-        if (original.PostType == "Repost")
-            return (false, "Không thể repost một bài đã là repost", null);
-
-        var repost = new ForumPost
-        {
-            MemberId = memberId,
-            Title = original.Title,
-            CategoryId = original.CategoryId,
-            Content = dto.Content,
-            PostType = "Repost",
-            OriginalPostId = original.PostId,
-            Status = "Active",
-            CreatedAt = DateTime.UtcNow,
-            UpdatedAt = DateTime.UtcNow
-        };
-
-        _context.ForumPosts.Add(repost);
-        original.RepostCount += 1;
-
-        await _context.SaveChangesAsync();
-
-        var created = await GetByIdAsync(repost.PostId, memberId);
-        return (true, null, created);
-    }
 
     // ===== SỬA BÀI VIẾT =====
     public async Task<(bool Success, string? Error)> UpdateAsync(long postId, long memberId, ForumPostUpdateDto dto)
@@ -245,14 +213,7 @@ public class ForumPostService
         if (post.Status == "Deleted")
             return (false, "Bài viết đã được xóa trước đó");
 
-        // Nếu là bài gốc bị repost, giảm repost_count của bài gốc khi bài repost bị xóa
-        if (post.PostType == "Repost" && post.OriginalPostId.HasValue)
-        {
-            var original = await _context.ForumPosts.FindAsync(post.OriginalPostId.Value);
-            if (original is not null && original.RepostCount > 0)
-                original.RepostCount -= 1;
-        }
-
+       
         post.Status = "Deleted";
         post.UpdatedAt = DateTime.UtcNow;
 
@@ -288,10 +249,10 @@ public class ForumPostService
             CategoryName = p.Category?.CategoryName ?? "",
             Content = p.Content,
             PostType = p.PostType,
-            OriginalPostId = p.OriginalPostId,
+   
             LikeCount = p.LikeCount,
             CommentCount = p.CommentCount,
-            RepostCount = p.RepostCount,
+
             Status = p.Status,
             IsLikedByCurrentUser = likedPostIds.Contains(p.PostId),
             ImageUrls = p.ForumPostImages

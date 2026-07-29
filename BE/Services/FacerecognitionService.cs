@@ -20,6 +20,21 @@ namespace BE.Services.FaceRecognition
     //   rồi cấu hình CollectionId trong appsettings.json (Aws:RekognitionCollectionId).
     // - Cần cài package: dotnet add package AWSSDK.Rekognition
     //
+    // FIX QUAN TRỌNG (bug "nhận diện khống" — người không có trong DB vẫn được
+    // nhận diện thành công):
+    // - ExternalImageId chỉ cho biết "đây là employee-{id}" hay "member-{id}",
+    //   KHÔNG đảm bảo record đó còn hợp lệ trong DB. Nếu 1 face bị xoá/đổi ảnh
+    //   nhưng vô tình còn sót face rác trong AWS Collection (quên gọi
+    //   DeleteFacesAsync), hoặc Employee/Member đã bị xoá khỏi DB nhưng face
+    //   trên AWS chưa dọn, AWS vẫn trả về match hợp lệ (Similarity >= threshold)
+    //   với externalImageId trỏ tới 1 Id không còn đúng chủ sở hữu thật.
+    // - Vì vậy MỌI kết quả match giờ đây trả kèm MatchedFaceId (chính là
+    //   Face.FaceId do AWS cấp, KHÁC với ExternalImageId). Caller (IdentifyService)
+    //   BẮT BUỘC phải đối chiếu MatchedFaceId với FaceIdAws đang lưu trong DB
+    //   (bảng FaceData) của đúng Employee/Member đó — nếu không khớp (hoặc
+    //   người đó chưa từng có FaceData) thì phải coi là "not_recognized", KHÔNG
+    //   được tin tưởng tuyệt đối vào ExternalImageId.
+    //
     // GHI CHÚ ƯU TIÊN NHÂN VIÊN (quan trọng, CHỈ áp dụng cho SearchFaceByImageAsync
     // — luồng check-in tự động qua camera):
     // - Một người có thể vừa là NHÂN VIÊN vừa là HỘI VIÊN, nên cùng 1 khuôn mặt
@@ -56,6 +71,14 @@ namespace BE.Services.FaceRecognition
         public long? MemberId { get; set; }
         public long? EmployeeId { get; set; }
         public float Similarity { get; set; }
+
+        // FaceId THẬT do AWS cấp cho face vừa match được (Face.FaceId), KHÁC với
+        // ExternalImageId. Caller PHẢI đối chiếu giá trị này với FaceData.FaceIdAws
+        // đang lưu trong DB của đúng Member/Employee trước khi tin kết quả nhận
+        // diện — tránh trường hợp face rác/cũ trong AWS Collection (chưa được dọn
+        // bằng DeleteFacesAsync) khiến hệ thống "nhận diện" ra 1 người không còn
+        // hợp lệ hoặc không tồn tại trong DB.
+        public string? MatchedFaceId { get; set; }
     }
 
     public class RekognitionFaceService
@@ -163,6 +186,13 @@ namespace BE.Services.FaceRecognition
         /// Employee. Match có similarity thấp hơn hẳn (khác biệt lớn) sẽ KHÔNG
         /// được ưu tiên dù là Employee, để tránh nhận nhầm sang người khác.
         ///
+        /// LƯU Ý: hàm này chỉ trả kết quả THEO GÓC ĐỘ AWS (dựa vào ExternalImageId).
+        /// Nó KHÔNG biết Employee/Member đó còn hợp lệ trong DB hay không, và
+        /// KHÔNG biết FaceId match được có phải là FaceId "chính thức" hiện tại
+        /// đang lưu trong FaceData hay là 1 face cũ/rác còn sót trong Collection.
+        /// Caller (IdentifyService) BẮT BUỘC phải tự đối chiếu MatchedFaceId trả
+        /// về với FaceData.FaceIdAws trong DB trước khi coi là nhận diện thành công.
+        ///
         /// CHỈ dùng cho check-in. KHÔNG dùng hàm này cho luồng check trùng khi
         /// đăng ký (dùng SearchAllFaceMatchesAsync bên dưới thay thế).
         /// </summary>
@@ -244,10 +274,12 @@ namespace BE.Services.FaceRecognition
             if (response.FaceMatches == null || response.FaceMatches.Count == 0)
                 return new List<FaceSearchResult> { new FaceSearchResult { Status = FaceSearchStatus.NotRecognized } };
 
-            // Parse toàn bộ các match hợp lệ (đúng prefix), sắp theo similarity giảm dần
+            // Parse toàn bộ các match hợp lệ (đúng prefix), sắp theo similarity giảm dần.
+            // Truyền kèm m.Face.FaceId (FaceId THẬT do AWS cấp) để caller có thể đối
+            // chiếu ngược với FaceData.FaceIdAws trong DB.
             List<FaceSearchResult> parsedMatches = response.FaceMatches
                 .OrderByDescending(m => m.Similarity)
-                .Select(m => ParseExternalImageId(m.Face.ExternalImageId, m.Similarity ?? 0))
+                .Select(m => ParseExternalImageId(m.Face.ExternalImageId, m.Similarity ?? 0, m.Face.FaceId))
                 .Where(r => r.Status == FaceSearchStatus.Found)
                 .ToList();
 
@@ -256,7 +288,7 @@ namespace BE.Services.FaceRecognition
                 : parsedMatches;
         }
 
-        private static FaceSearchResult ParseExternalImageId(string? externalImageId, float similarity)
+        private static FaceSearchResult ParseExternalImageId(string? externalImageId, float similarity, string? faceId)
         {
             if (string.IsNullOrEmpty(externalImageId))
                 return new FaceSearchResult { Status = FaceSearchStatus.NotRecognized };
@@ -269,7 +301,8 @@ namespace BE.Services.FaceRecognition
                     Status = FaceSearchStatus.Found,
                     OwnerType = FaceOwnerType.Member,
                     MemberId = memberId,
-                    Similarity = similarity
+                    Similarity = similarity,
+                    MatchedFaceId = faceId
                 };
             }
 
@@ -281,7 +314,8 @@ namespace BE.Services.FaceRecognition
                     Status = FaceSearchStatus.Found,
                     OwnerType = FaceOwnerType.Employee,
                     EmployeeId = employeeId,
-                    Similarity = similarity
+                    Similarity = similarity,
+                    MatchedFaceId = faceId
                 };
             }
 

@@ -10,8 +10,6 @@ public class BranchService
     private readonly GymManagementContext _context;
     private readonly BranchImageService _branchImageService;
 
-    private const string ManagerRole = "Manager";
-
     public BranchService(GymManagementContext context, BranchImageService branchImageService)
     {
         _context = context;
@@ -22,7 +20,7 @@ public class BranchService
     {
         var query = _context.Branches
             .Include(b => b.BranchImages)
-            .Include(b => b.EmployeeBranches).ThenInclude(eb => eb.Employee).ThenInclude(e => e.Account)
+            .Include(b => b.Employees).ThenInclude(e => e.Account)
             .Where(b => b.Status != BranchSatusEnum.Inactive.ToString())
             .AsQueryable();
 
@@ -61,7 +59,7 @@ public class BranchService
     {
         var branch = await _context.Branches
             .Include(b => b.BranchImages)
-            .Include(b => b.EmployeeBranches).ThenInclude(eb => eb.Employee).ThenInclude(e => e.Account)
+            .Include(b => b.Employees).ThenInclude(e => e.Account)
             .FirstOrDefaultAsync(b => b.BranchId == branchId && b.Status != BranchSatusEnum.Inactive.ToString());
 
         return branch is null ? null : MapToDto(branch);
@@ -79,11 +77,11 @@ public class BranchService
         };
 
         _context.Branches.Add(branch);
-        await _context.SaveChangesAsync(); // cần BranchId trước khi upload ảnh / gán manager
+        await _context.SaveChangesAsync(); // cần BranchId trước khi upload ảnh / gán quản lý
 
         if (dto.ManagerIds is { Count: > 0 })
         {
-            await AssignManagersAsync(branch.BranchId, dto.ManagerIds);
+            await AssignManagersAsync(branch, dto.ManagerIds);
         }
 
         if (dto.Images is { Count: > 0 })
@@ -99,15 +97,13 @@ public class BranchService
         await _context.SaveChangesAsync();
 
         await _context.Entry(branch).Collection(b => b.BranchImages).LoadAsync();
-        await _context.Entry(branch).Collection(b => b.EmployeeBranches).LoadAsync();
-        foreach (var eb in branch.EmployeeBranches)
-        {
-            await _context.Entry(eb).Reference(x => x.Employee).LoadAsync();
+        await _context.Entry(branch).Collection(b => b.Employees).LoadAsync();
 
-            // Cần load thêm Account để MapToDto lấy được Phone (không có include này thì
-            // Employee.Account luôn null nếu lazy loading không bật -> NullReferenceException).
-            if (eb.Employee != null)
-                await _context.Entry(eb.Employee).Reference(e => e.Account).LoadAsync();
+        // Cần load thêm Account để MapToDto lấy được Phone (không có bước này thì
+        // Employee.Account luôn null nếu lazy loading không bật -> NullReferenceException).
+        foreach (var employee in branch.Employees)
+        {
+            await _context.Entry(employee).Reference(e => e.Account).LoadAsync();
         }
 
         return MapToDto(branch);
@@ -117,7 +113,7 @@ public class BranchService
     {
         var branch = await _context.Branches
             .Include(b => b.BranchImages)
-            .Include(b => b.EmployeeBranches).ThenInclude(eb => eb.Employee).ThenInclude(e => e.Account)
+            .Include(b => b.Employees).ThenInclude(e => e.Account)
             .FirstOrDefaultAsync(b => b.BranchId == branchId && b.Status != BranchSatusEnum.Inactive.ToString());
 
         if (branch is null) return null;
@@ -127,7 +123,7 @@ public class BranchService
         branch.Phone = dto.Phone;
         branch.Status = dto.Status;
 
-        // Nếu FE có gửi ManagerIds thì đồng bộ lại danh sách quản lý của chi nhánh này
+        // Nếu FE có gửi ManagerIds thì đồng bộ lại danh sách nhân viên quản lý của chi nhánh này
         if (dto.ManagerIds != null)
         {
             await SyncManagersAsync(branch, dto.ManagerIds);
@@ -155,7 +151,7 @@ public class BranchService
     {
         var branch = await _context.Branches
             .Include(b => b.BranchImages)
-            .Include(b => b.EmployeeBranches).ThenInclude(eb => eb.Employee).ThenInclude(e => e.Account)
+            .Include(b => b.Employees).ThenInclude(e => e.Account)
             .FirstOrDefaultAsync(b => b.BranchId == branchId && b.Status == BranchSatusEnum.Inactive.ToString());
 
         if (branch is null) return null;
@@ -166,68 +162,58 @@ public class BranchService
         return MapToDto(branch);
     }
 
-    // ===================== QUẢN LÝ CHI NHÁNH (EmployeeBranch.BranchRole = Manager) =====================
+    // ===================== QUẢN LÝ CHI NHÁNH =====================
+    // Branch.Employees <-> Employee.Branches là skip navigation many-to-many
+    // (qua bảng nối EmployeeBranch), nên chỉ cần Add/Remove trực tiếp đối tượng Employee,
+    // EF Core tự lo việc ghi/xóa record ở bảng nối.
 
-    /// <summary>Gán thêm các nhân viên làm quản lý cho 1 chi nhánh (dùng khi tạo mới, chưa có record nào)</summary>
-    private async Task AssignManagersAsync(int branchId, List<long> employeeIds)
+    /// <summary>Gán thêm các nhân viên làm quản lý cho 1 chi nhánh (dùng khi tạo mới, chưa có ai)</summary>
+    private async Task AssignManagersAsync(Branch branch, List<long> employeeIds)
     {
-        foreach (long employeeId in employeeIds.Distinct())
-        {
-            bool exists = await _context.EmployeeBranches
-                .AnyAsync(eb => eb.BranchId == branchId && eb.EmployeeId == employeeId);
+        var employees = await _context.Employees
+            .Where(e => employeeIds.Contains(e.EmployeeId))
+            .ToListAsync();
 
-            if (!exists)
+        foreach (var employee in employees)
+        {
+            if (!branch.Employees.Any(e => e.EmployeeId == employee.EmployeeId))
             {
-                _context.EmployeeBranches.Add(new EmployeeBranch
-                {
-                    BranchId = branchId,
-                    EmployeeId = employeeId,
-                    BranchRole = ManagerRole
-                });
+                branch.Employees.Add(employee);
             }
         }
     }
 
     /// <summary>
     /// Đồng bộ danh sách quản lý của 1 chi nhánh theo đúng danh sách employeeIds truyền vào:
-    /// - Ai không còn trong danh sách -> xóa record (hoặc hạ role, tùy nghiệp vụ)
-    /// - Ai mới có trong danh sách -> thêm record mới với BranchRole = Manager
-    /// - Nhân viên với BranchRole khác (VD "Staff") tại chi nhánh này không bị ảnh hưởng
+    /// - Ai không còn trong danh sách -> gỡ khỏi chi nhánh
+    /// - Ai mới có trong danh sách -> thêm vào chi nhánh
     /// </summary>
     private async Task SyncManagersAsync(Branch branch, List<long> employeeIds)
     {
-        List<EmployeeBranch> currentManagers = branch.EmployeeBranches
-            .Where(eb => eb.BranchRole == ManagerRole)
-            .ToList();
+        var currentManagers = branch.Employees.ToList();
 
-        // Xóa quản lý không còn trong danh sách mới
-        foreach (var eb in currentManagers)
+        // Gỡ quản lý không còn trong danh sách mới
+        foreach (var employee in currentManagers)
         {
-            if (!employeeIds.Contains(eb.EmployeeId))
+            if (!employeeIds.Contains(employee.EmployeeId))
             {
-                _context.EmployeeBranches.Remove(eb);
+                branch.Employees.Remove(employee);
             }
         }
 
-        // Thêm quản lý mới chưa có record tại chi nhánh này
-        var existingEmployeeIds = branch.EmployeeBranches.Select(eb => eb.EmployeeId).ToHashSet();
+        // Thêm quản lý mới chưa có trong chi nhánh này
+        var existingEmployeeIds = branch.Employees.Select(e => e.EmployeeId).ToHashSet();
+        var missingIds = employeeIds.Distinct().Where(id => !existingEmployeeIds.Contains(id)).ToList();
 
-        foreach (long employeeId in employeeIds.Distinct())
+        if (missingIds.Count > 0)
         {
-            if (!existingEmployeeIds.Contains(employeeId))
+            var newEmployees = await _context.Employees
+                .Where(e => missingIds.Contains(e.EmployeeId))
+                .ToListAsync();
+
+            foreach (var employee in newEmployees)
             {
-                _context.EmployeeBranches.Add(new EmployeeBranch
-                {
-                    BranchId = branch.BranchId,
-                    EmployeeId = employeeId,
-                    BranchRole = ManagerRole
-                });
-            }
-            else
-            {
-                // Đã có record (có thể trước đó là Staff) -> nâng lên Manager
-                var eb = branch.EmployeeBranches.First(x => x.EmployeeId == employeeId);
-                eb.BranchRole = ManagerRole;
+                branch.Employees.Add(employee);
             }
         }
     }
@@ -240,16 +226,14 @@ public class BranchService
         Phone = b.Phone,
         Status = b.Status,
         CreatedAt = b.CreatedAt,
-        Managers = b.EmployeeBranches
-            .Where(eb => eb.BranchRole == ManagerRole)
-            .Select(eb => new BranchManagerDto
+        Managers = b.Employees
+            .Select(e => new BranchManagerDto
             {
-                EmployeeId = eb.EmployeeId,
-                FullName = eb.Employee?.FullName ?? "",
-                // [SỬA] eb.Employee?.Account.Phone -> eb.Employee?.Account?.Phone:
-                // Account có thể null nếu chưa Include/Load, hoặc do dữ liệu thiếu; ?. chỉ chặn
-                // null cho Employee, không chặn cho Account phía sau -> gây NullReferenceException.
-                Phone = eb.Employee?.Account?.Phone,
+                EmployeeId = e.EmployeeId,
+                FullName = e.FullName,
+                // e.Account?.Phone: Account có thể null nếu chưa Include/Load,
+                // ?. để tránh NullReferenceException.
+                Phone = e.Account?.Phone,
             })
             .ToList(),
         Images = b.BranchImages
@@ -268,7 +252,7 @@ public class BranchService
             {
                 EmployeeId = e.EmployeeId,
                 FullName = e.FullName,
-                TotalBranches = e.EmployeeBranches.Count(eb => eb.BranchRole == "Manager")
+                TotalBranches = e.Branches.Count
             })
             .Where(x => x.TotalBranches < 3)
             .OrderBy(x => x.TotalBranches)

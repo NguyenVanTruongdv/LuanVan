@@ -10,35 +10,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace BE.Services
 {
-    // Lo phần "tiền": tạo Transaction, tính KM, sinh hóa đơn PDF, truy vấn lịch sử giao dịch.
-    // KHÔNG biết gì về MemberPackage — MemberService là nơi ghép Transaction + MemberPackage.
-    //
-    // Transaction.BranchId là cột bắt buộc:
-    //   - Tại quầy (MemberService): branchId lấy từ Employee.Branches của thu ngân.
-    //   - Online (PaymentService): branchId do FE gửi, validate qua
-    //     MemberPackageService.EnsureBranchExistsAsync, gán trực tiếp lúc tạo Transaction
-    //     (không qua CreateTransactionAsync vì luồng online luôn Pending chờ webhook).
-    //
-    // Promotion giờ 1-1 với 1 MembershipPlan qua Promotion.PlanId (đã bỏ bảng PromotionPlans).
-    //
-    // Điều chỉnh giao dịch tại quầy khi bán nhầm gói (AdjustTransactionPlanAsync):
-    //   - RoleId 3 (Admin): sửa mọi chi nhánh.
-    //   - RoleId 2 (Manager): chỉ sửa giao dịch thuộc chi nhánh mình quản lý.
-    //   - Role khác: không được sửa.
-    //   Mọi lần sửa được log vào TransactionAdjustmentLogs. KM cho gói mới do BE tự tra tại
-    //   đúng thời điểm giao dịch gốc được tạo (transaction.CreatedAt) — FE không tự chọn KM nữa.
-    //   PreviewAdjustTransactionPlanAsync cho xem trước kết quả (không lưu DB).
-    //   Không cho "điều chỉnh" nếu newPlanId trùng plan hiện tại.
-    //   Sau khi Adjust thành công sẽ tự lập lại hóa đơn PDF (branch = branch gốc của giao dịch,
-    //   đánh dấu IsAdjustmentReissue = true), ghi đè ReceiptImage cũ.
-    //
-    // CÔNG THỨC "1 CHU KỲ": 30 NGÀY CỐ ĐỊNH (không phải tháng lịch, không AddMonths) — phải khớp
-    // với MemberPackageService.CalculateBonusDays. ExpiryDate = StartDate + DurationDays + bonusDays,
-    // cộng toàn bộ bằng AddDays. bonusDays: TangNgay = SoNgayTang; TangChuKy = SoChuKyTang * 30.
-    //
-    // GenerateOrderCode() là nguồn sinh mã đơn hàng DUY NHẤT cho cả 2 luồng (tại quầy + online,
-    // PaymentService gọi thẳng hàm static này). Định dạng "HD" + yyyyMMddHHmmss(UTC) + 4 số random.
-    // Nếu đổi định dạng phải sửa đồng thời regex bóc OrderCode trong PaymentService.HandleWebhookAsync.
+
     public class TransactionService
     {
         // Phải khớp MemberPackageService.CYCLE_DAYS (2 service không tham chiếu nhau nên có 2 hằng số
@@ -75,11 +47,10 @@ namespace BE.Services
             string? keyword, string? status, string? channel, int? branchId, long employeeId)
         {
             var employee = await _context.Employees
-                .Include(e => e.Role)
-                .Include(e => e.EmployeeBranches)
-                .FirstOrDefaultAsync(e => e.EmployeeId == employeeId)
-                ?? throw new KeyNotFoundException("Không tìm thấy nhân viên.");
-
+        .Include(e => e.Role)
+        .Include(e => e.Branches)
+        .FirstOrDefaultAsync(e => e.EmployeeId == employeeId)
+        ?? throw new KeyNotFoundException("Không tìm thấy nhân viên.");
             var isAdmin = employee.Role.RoleId == 3;
 
             var query = _context.Transactions
@@ -97,7 +68,7 @@ namespace BE.Services
             }
             else
             {
-                var myBranchIds = employee.EmployeeBranches.Select(b => b.BranchId).ToList();
+                var myBranchIds = employee.Branches.Select(b => b.BranchId).ToList();
                 if (myBranchIds.Count == 0)
                     throw new InvalidOperationException("Nhân viên chưa được gán chi nhánh.");
 
@@ -116,9 +87,15 @@ namespace BE.Services
             if (!string.IsNullOrWhiteSpace(keyword))
             {
                 keyword = keyword.Trim();
+                // Cho phép tìm theo tên/SĐT hội viên, mã hóa đơn (OrderCode)
+                // hoặc mã giao dịch (TransactionId — chỉ so khi keyword là số nguyên).
+                var isNumericKeyword = long.TryParse(keyword, out var keywordAsId);
+
                 query = query.Where(t =>
                     t.Member.FullName.Contains(keyword) ||
-                    t.Member.Account.Phone.Contains(keyword));
+                    t.Member.Account.Phone.Contains(keyword) ||
+                    t.OrderCode.Contains(keyword) ||
+                    (isNumericKeyword && t.TransactionId == keywordAsId));
             }
 
             if (!string.IsNullOrWhiteSpace(channel) && channel != "all")
@@ -175,7 +152,8 @@ namespace BE.Services
                     ExpiryDate = memberPackage?.ExpiryDate ?? DateOnly.FromDateTime(t.CreatedAt),
                     OriginalAmount = t.GiaGoc,
                     Amount = t.Amount,
-                    Status = t.PaymentStatus
+                    Status = t.PaymentStatus,
+                    BankReferenceCode = t.BankReferenceCode   // <-- mới thêm
                 };
             };
         }
@@ -303,18 +281,17 @@ namespace BE.Services
         private async Task<Employee> EnsureAdjustPermissionAsync(long employeeId, Transaction transaction)
         {
             var employee = await _context.Employees
-                .Include(e => e.Role)
-                .Include(e => e.EmployeeBranches)
-                .FirstOrDefaultAsync(e => e.EmployeeId == employeeId)
-                ?? throw new KeyNotFoundException("Không tìm thấy nhân viên.");
-
+                 .Include(e => e.Role)
+                 .Include(e => e.Branches)
+                 .FirstOrDefaultAsync(e => e.EmployeeId == employeeId)
+                 ?? throw new KeyNotFoundException("Không tìm thấy nhân viên.");
             var roleId = employee.Role.RoleId;
             if (roleId != 2 && roleId != 3)
                 throw new UnauthorizedAccessException("Bạn không có quyền điều chỉnh giao dịch.");
 
             if (roleId != 3)
             {
-                var myBranchIds = employee.EmployeeBranches.Select(b => b.BranchId).ToList();
+                var myBranchIds = employee.Branches.Select(b => b.BranchId).ToList();
                 if (!myBranchIds.Contains(transaction.BranchId))
                     throw new UnauthorizedAccessException("Bạn không có quyền điều chỉnh giao dịch của chi nhánh này.");
             }

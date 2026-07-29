@@ -21,17 +21,20 @@ namespace BE.Services
         private readonly FaceIdService _faceIdService;
         private readonly TransactionService _transactionService;
         private readonly MemberPackageService _packageService;
+        private readonly AccountService _accountService;
 
         public MemberService(
             GymManagementContext context,
             FaceIdService faceIdService,
             TransactionService transactionService,
-            MemberPackageService packageService)
+            MemberPackageService packageService,
+            AccountService accountService)
         {
             _context = context;
             _faceIdService = faceIdService;
             _transactionService = transactionService;
             _packageService = packageService;
+            _accountService = accountService;
         }
 
         // =========================================================================
@@ -41,12 +44,12 @@ namespace BE.Services
         private async Task<int> GetEmployeeBranchIdAsync(long employeeId)
         {
             var emp = await _context.Employees
-                .Include(e => e.EmployeeBranches)
+                .Include(e => e.Branches)
                 .FirstOrDefaultAsync(e => e.EmployeeId == employeeId);
             if (emp == null)
                 throw new Exception("Không tìm thấy nhân viên.");
 
-            var branchId = emp.EmployeeBranches.FirstOrDefault()?.BranchId;
+            var branchId = emp.Branches.FirstOrDefault()?.BranchId;
             if (branchId == null)
                 throw new Exception("Nhân viên chưa được gán chi nhánh.");
 
@@ -106,6 +109,7 @@ namespace BE.Services
         }
 
         // Gói chỉ còn 1 loại duy nhất (không còn Internal/Customer) -> lấy thẳng gói Active mới nhất theo ExpiryDate.
+        // Nếu tài khoản đang bị khóa (Suspended) thì trả kèm lý do khóa (SuspendReason) để FE hiển thị.
         private async Task<MemberResponse> BuildMemberResponse(long memberId)
         {
             var member = await _context.Members
@@ -144,7 +148,10 @@ namespace BE.Services
 
                 CurrentMemberPackageId = currentPackage?.Plan?.PlanName,
                 PackageExpiryDate = currentPackage?.ExpiryDate,
-                PackageStatus = currentPackage?.PackageStatus
+                PackageStatus = currentPackage?.PackageStatus,
+
+                // Chỉ có giá trị khi tài khoản đang bị khóa; SuspendReason là nguồn sự thật (sống trên Account).
+                LockReason = account?.Status == "Suspended" ? account.SuspendReason : null
             };
         }
 
@@ -563,7 +570,7 @@ namespace BE.Services
                     {
                         UpdateSessionId = Guid.NewGuid(),
                         MemberId = member.MemberId,
-                        FieldName = "CREATE_MEMBER",
+                        FieldName = "Tạo hội viên",
                         OldValue = null,
                         NewValue = $"Tạo hội viên '{member.FullName}' - SĐT {request.Phone} - Hóa đơn {transaction.OrderCode}",
                         UpdatedByEmployeeId = performedBy,
@@ -617,7 +624,7 @@ namespace BE.Services
 
             if (request.FullName != null && request.FullName != member.FullName)
             {
-                TrackChange("full_name", member.FullName, request.FullName);
+                TrackChange("Họ và tên", member.FullName, request.FullName);
                 member.FullName = request.FullName;
             }
 
@@ -630,7 +637,7 @@ namespace BE.Services
                     if (phoneExisted)
                         throw new InvalidOperationException($"Số điện thoại '{request.Phone}' đã được sử dụng.");
 
-                    TrackChange("phone", account.Phone, request.Phone);
+                    TrackChange("Số điện thoại", account.Phone, request.Phone);
                     account.Phone = request.Phone;
                     account.UpdatedAt = now;
                 }
@@ -638,13 +645,13 @@ namespace BE.Services
 
             if (request.Gender != null && request.Gender != member.Gender)
             {
-                TrackChange("gender", member.Gender, request.Gender);
+                TrackChange("Giới tính", member.Gender, request.Gender);
                 member.Gender = request.Gender;
             }
 
             if (request.InternalNotes != null && request.InternalNotes != member.InternalNotes)
             {
-                TrackChange("internal_notes", member.InternalNotes, request.InternalNotes);
+                TrackChange("Ghi chú nội bộ", member.InternalNotes, request.InternalNotes);
                 member.InternalNotes = request.InternalNotes;
             }
 
@@ -656,6 +663,41 @@ namespace BE.Services
             await _context.SaveChangesAsync();
 
             return await BuildMemberResponse(memberId);
+        }
+
+        // Admin/nhân viên đặt lại mật khẩu cho hội viên — không cần mật khẩu cũ.
+        // Ủy quyền qua AccountService.ResetPasswordAsync (tự hash mật khẩu + thu hồi hết
+        // refresh token). Ghi log riêng ở đây (giống LOCK_MEMBER/UNLOCK_MEMBER) — không ghi
+        // giá trị mật khẩu thật, chỉ ghi dạng ẩn "cũ -> mới" để biết có thao tác đổi mật khẩu.
+        public async Task ChangeMemberPasswordAsync(long memberId, string newPassword, long performedBy)
+        {
+            if (string.IsNullOrWhiteSpace(newPassword) || newPassword.Length < 6)
+                throw new InvalidOperationException("Mật khẩu mới phải có ít nhất 6 ký tự.");
+
+            var member = await _context.Members.FirstOrDefaultAsync(m => m.MemberId == memberId)
+                ?? throw new KeyNotFoundException("Không tìm thấy hội viên.");
+
+            var account = await _accountService.GetByMemberIdAsync(memberId)
+                ?? throw new KeyNotFoundException("Không tìm thấy tài khoản của hội viên.");
+
+            var now = DateTime.UtcNow;
+
+            await _accountService.ResetPasswordAsync(account.AccountId, newPassword);
+
+            member.UpdatedAt = now;
+
+            _context.MemberUpdateLogs.Add(new MemberUpdateLog
+            {
+                UpdateSessionId = Guid.NewGuid(),
+                MemberId = memberId,
+                FieldName = "Đặt lại mật khẩu",
+                OldValue = "(mật khẩu cũ - đã ẩn)",
+                NewValue = "(mật khẩu mới - đã ẩn)",
+                UpdatedByEmployeeId = performedBy,
+                UpdatedAt = now
+            });
+
+            await _context.SaveChangesAsync();
         }
 
         public async Task<MemberResponse> UpdateFaceIdAsync(long memberId, UpdateFaceIdRequest request, long performedBy)
@@ -711,7 +753,7 @@ namespace BE.Services
 
             if (!string.IsNullOrWhiteSpace(request.FullName) && request.FullName != member.FullName)
             {
-                TrackChange("full_name", member.FullName, request.FullName);
+                TrackChange("Họ và tên", member.FullName, request.FullName);
                 member.FullName = request.FullName;
             }
 
@@ -721,14 +763,14 @@ namespace BE.Services
                 if (phoneExisted)
                     throw new InvalidOperationException($"Số điện thoại '{request.Phone}' đã được sử dụng.");
 
-                TrackChange("phone", account.Phone, request.Phone);
+                TrackChange("Số điện thoại", account.Phone, request.Phone);
                 account.Phone = request.Phone;
                 accountChanged = true;
             }
 
             if (!string.IsNullOrWhiteSpace(request.Gender) && request.Gender != member.Gender)
             {
-                TrackChange("gender", member.Gender, request.Gender);
+                TrackChange("Giới tính", member.Gender, request.Gender);
                 member.Gender = request.Gender;
             }
 
@@ -737,23 +779,16 @@ namespace BE.Services
                 if (string.IsNullOrWhiteSpace(request.CurrentPassword))
                     throw new InvalidOperationException("Vui lòng nhập mật khẩu hiện tại để đổi mật khẩu.");
 
-                if (!PasswordHelper.VerifyPassword(request.CurrentPassword, account.PasswordHash))
-                    throw new InvalidOperationException("Mật khẩu hiện tại không đúng.");
-
-                if (request.NewPassword.Length < 6)
-                    throw new InvalidOperationException("Mật khẩu mới phải có ít nhất 6 ký tự.");
-
-                if (request.NewPassword == request.CurrentPassword)
-                    throw new InvalidOperationException("Mật khẩu mới phải khác mật khẩu hiện tại.");
-
-                account.PasswordHash = PasswordHelper.HashPassword(request.NewPassword);
+                // Dùng lại AccountService.ChangePasswordAsync (có verify mật khẩu cũ) để
+                // đồng nhất với các luồng đổi mật khẩu khác, thay vì tự verify/hash tại đây.
+                await _accountService.ChangePasswordAsync(account.AccountId, request.CurrentPassword, request.NewPassword);
                 accountChanged = true;
 
                 logs.Add(new MemberUpdateLog
                 {
                     UpdateSessionId = sessionId,
                     MemberId = memberId,
-                    FieldName = "password",
+                    FieldName = "Mật khẩu",
                     OldValue = "(đã ẩn)",
                     NewValue = "Hội viên tự đổi mật khẩu",
                     UpdatedByEmployeeId = null,
@@ -875,7 +910,7 @@ namespace BE.Services
                     {
                         UpdateSessionId = Guid.NewGuid(),
                         MemberId = memberId,
-                        FieldName = "ACTIVATE_MEMBER",
+                        FieldName = "Kích hoạt hội viên",
                         OldValue = oldStatus,
                         NewValue = $"Kích hoạt hội viên - Tạo gói tập + FaceID - Hóa đơn {transaction.OrderCode} - NV kích hoạt: {employeeName ?? "N/A"}",
                         UpdatedByEmployeeId = performedBy,
@@ -955,7 +990,7 @@ namespace BE.Services
                     {
                         UpdateSessionId = Guid.NewGuid(),
                         MemberId = memberId,
-                        FieldName = "ACTIVATE_MEMBER",
+                        FieldName = "Kích hoạt hội viên",
                         OldValue = oldStatus,
                         NewValue = (pendingPackage != null
                             ? "Kích hoạt hội viên - Kích hoạt gói tập đã mua online + FaceID"
@@ -982,29 +1017,78 @@ namespace BE.Services
         }
 
         // =========================================================================
-        // NHÓM 6: KHÓA / MỞ KHÓA TÀI KHOẢN
+        // NHÓM 6: KHÓA / MỞ KHÓA HỘI VIÊN (ủy quyền toàn bộ qua AccountService)
+        //
+        // Member.Status chỉ là "bản sao hiển thị" đồng bộ theo Account.Status thật sự.
+        // AccountService lo: validate reason bắt buộc khi khóa, lưu SuspendReason,
+        // thu hồi refresh token — KHÔNG tự ghi log nữa. MemberService chịu trách nhiệm
+        // ghi log MemberUpdateLog: khóa thì ghi kèm lý do (LOCK_MEMBER), mở khóa thì
+        // ghi tiếp (UNLOCK_MEMBER, kèm ghi chú nếu có) để lịch sử luôn có đủ 2 mốc.
         // =========================================================================
 
-        public async Task LockMemberAsync(long memberId, LockMemberRequest request, long performedBy)
-            => await SetLockStatusAsync(memberId, "Suspended", "Lock", request.Reason, performedBy);
-
-        public async Task UnlockMemberAsync(long memberId, UnlockMemberRequest request, long performedBy)
-            => await SetLockStatusAsync(memberId, "Active", "Unlock", request.Reason, performedBy);
-
-        private async Task SetLockStatusAsync(long memberId, string newStatus, string action, string? reason, long performedBy)
+        public async Task LockMemberAsync(long memberId, string reason, long performedBy)
         {
-            var member = await _context.Members.FirstOrDefaultAsync(m => m.MemberId == memberId);
-            if (member == null)
-                throw new KeyNotFoundException("Không tìm thấy hội viên.");
+            if (string.IsNullOrWhiteSpace(reason))
+                throw new ArgumentException("Phải cung cấp lý do khi khóa tài khoản.", nameof(reason));
 
-            if (action == "Lock" && member.Status == "Suspended")
-                throw new InvalidOperationException("Tài khoản hội viên đã bị khóa trước đó.");
-            if (action == "Unlock" && member.Status != "Suspended")
-                throw new InvalidOperationException("Tài khoản hội viên không ở trạng thái bị khóa.");
+            var member = await _context.Members.FirstOrDefaultAsync(m => m.MemberId == memberId)
+                ?? throw new KeyNotFoundException("Không tìm thấy hội viên.");
 
+            var account = await _accountService.GetByMemberIdAsync(memberId)
+                ?? throw new KeyNotFoundException("Không tìm thấy tài khoản của hội viên.");
+
+            var oldStatus = member.Status;
             var now = DateTime.UtcNow;
-            member.Status = newStatus;
+
+            // AccountService: validate reason, đổi Account.Status + SuspendReason, thu hồi refresh token.
+            await _accountService.LockAccountAsync(account.AccountId, reason, performedBy);
+
+            member.Status = "Suspended";
             member.UpdatedAt = now;
+
+            _context.MemberUpdateLogs.Add(new MemberUpdateLog
+            {
+                UpdateSessionId = Guid.NewGuid(),
+                MemberId = memberId,
+                FieldName = "Khóa hội viên",
+                OldValue = oldStatus,
+                NewValue = $"Khóa tài khoản - Lý do: {reason}",
+                UpdatedByEmployeeId = performedBy,
+                UpdatedAt = now
+            });
+
+            await _context.SaveChangesAsync();
+        }
+
+        public async Task UnlockMemberAsync(long memberId, long performedBy, string? note = null)
+        {
+            var member = await _context.Members.FirstOrDefaultAsync(m => m.MemberId == memberId)
+                ?? throw new KeyNotFoundException("Không tìm thấy hội viên.");
+
+            var account = await _accountService.GetByMemberIdAsync(memberId)
+                ?? throw new KeyNotFoundException("Không tìm thấy tài khoản của hội viên.");
+
+            var oldStatus = member.Status;
+            var now = DateTime.UtcNow;
+
+            // AccountService: đổi Account.Status về Active, xóa SuspendReason.
+            await _accountService.UnlockAccountAsync(account.AccountId, performedBy);
+
+            member.Status = "Active";
+            member.UpdatedAt = now;
+
+            _context.MemberUpdateLogs.Add(new MemberUpdateLog
+            {
+                UpdateSessionId = Guid.NewGuid(),
+                MemberId = memberId,
+                FieldName = "Mở khóa hội viên",
+                OldValue = oldStatus,
+                NewValue = string.IsNullOrWhiteSpace(note)
+                    ? "Mở khóa tài khoản"
+                    : $"Mở khóa tài khoản - Ghi chú: {note}",
+                UpdatedByEmployeeId = performedBy,
+                UpdatedAt = now
+            });
 
             await _context.SaveChangesAsync();
         }
@@ -1122,7 +1206,7 @@ namespace BE.Services
                     {
                         UpdateSessionId = Guid.NewGuid(),
                         MemberId = memberId,
-                        FieldName = "RENEW_PACKAGE",
+                        FieldName = "Gia hạn gói tập",
                         OldValue = latestPackage != null ? $"{latestPackage.Plan?.PlanName} - hết hạn {latestPackage.ExpiryDate}" : null,
                         NewValue = $"Gia hạn '{plan.PlanName}' - Hóa đơn {transaction.OrderCode} - {(isExtending ? "Nối tiếp" : "Bắt đầu mới")}",
                         UpdatedByEmployeeId = performedBy,

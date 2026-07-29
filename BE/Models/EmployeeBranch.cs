@@ -9,7 +9,6 @@ public partial class EmployeeBranch
 
     public int BranchId { get; set; }
 
-    public string BranchRole { get; set; } = null!;
 
     public virtual Branch Branch { get; set; } = null!;
 

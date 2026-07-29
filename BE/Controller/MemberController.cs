@@ -244,11 +244,6 @@ namespace BE.Controllers
         }
 
         // ===================== KÍCH HOẠT: TẠO GÓI TẬP + FACE ID =====================
-        // Dùng khi hội viên CHƯA có gói nào (kể cả Pending) — chọn gói tập + chụp FaceID cùng lúc.
-        // request (multipart/form-data) khớp ActivateMemberWithPackageRequest: PlanId (bắt buộc),
-        // PromotionId (tùy chọn), GiaGoc, Amount, PaymentMethod, PaymentStatus (tùy chọn),
-        // ProfileImage (file ảnh FaceID). BE tự tính StartDate/ExpiryDate/SoNgayTangThucTe.
-        // Kích hoạt được thực hiện ở BẤT KỲ chi nhánh nào nhân viên đang đứng.
         [HttpPost("{id:long}/activate-with-package")]
         public async Task<IActionResult> ActivateWithPackage(long id, [FromForm] ActivateMemberWithPackageRequest request)
         {
@@ -261,10 +256,7 @@ namespace BE.Controllers
         }
 
         // ===================== KÍCH HOẠT: CHỈ TẠO FACE ID =====================
-        // Dùng khi hội viên ĐÃ có gói — gói Pending (mua online) sẽ được BE tự chuyển sang Active
-        // với StartDate = hôm nay; nếu không có gói Pending thì BE dùng gói gần nhất còn hạn.
-        // Nếu gói gần nhất đã hết hạn, BE sẽ trả lỗi yêu cầu gia hạn/mua gói mới trước.
-        // request (multipart/form-data) khớp ActivateMemberFaceIdOnlyRequest: chỉ cần ProfileImage.
+
         [HttpPost("{id:long}/activate-face-id")]
         public async Task<IActionResult> ActivateFaceIdOnly(long id, [FromForm] ActivateMemberFaceIdOnlyRequest request)
         {
@@ -287,19 +279,31 @@ namespace BE.Controllers
                 return Forbid();
 
             var performedBy = GetCurrentUserId();
-            await _memberService.LockMemberAsync(id, request, performedBy);
+            await _memberService.LockMemberAsync(id, request.Reason, performedBy);
             return Ok(new { message = "Đã khóa tài khoản hội viên." });
         }
 
         [HttpPut("{id:long}/unlock")]
-        public async Task<IActionResult> UnlockMember(long id, [FromBody] UnlockMemberRequest request)
+        public async Task<IActionResult> UnlockMember(long id)
         {
             if (!IsEmployee())
                 return Forbid();
 
             var performedBy = GetCurrentUserId();
-            await _memberService.UnlockMemberAsync(id, request, performedBy);
+            await _memberService.UnlockMemberAsync(id, performedBy);
             return Ok(new { message = "Đã mở khóa tài khoản hội viên." });
         }
+        // ===================== [NHÂN VIÊN] ĐẶT LẠI MẬT KHẨU HỘI VIÊN (không cần mật khẩu cũ) =====================
+            [HttpPut("{id:long}/password/reset")]
+            public async Task<IActionResult> ResetMemberPassword(long id, [FromBody] ResetMemberPasswordRequest request)
+            {
+                if (!IsEmployee())
+                    return Forbid();
+
+                var performedBy = GetCurrentUserId();   // THÊM dòng này
+                await _memberService.ChangeMemberPasswordAsync(id, request.NewPassword, performedBy);   // truyền thêm performedBy
+                return Ok(new { message = "Đã đặt lại mật khẩu hội viên." });
+            }
     }
+
 }

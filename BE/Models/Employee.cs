@@ -45,8 +45,6 @@ public partial class Employee
 
     public virtual Employee? CreatedByNavigation { get; set; }
 
-    public virtual ICollection<EmployeeBranch> EmployeeBranches { get; set; } = new List<EmployeeBranch>();
-
     public virtual ICollection<EmployeeUpdateLog> EmployeeUpdateLogEmployees { get; set; } = new List<EmployeeUpdateLog>();
 
     public virtual ICollection<EmployeeUpdateLog> EmployeeUpdateLogUpdatedByEmployees { get; set; } = new List<EmployeeUpdateLog>();
@@ -80,4 +78,6 @@ public partial class Employee
     public virtual ICollection<TransactionAdjustmentLog> TransactionAdjustmentLogs { get; set; } = new List<TransactionAdjustmentLog>();
 
     public virtual ICollection<Transaction> Transactions { get; set; } = new List<Transaction>();
+
+    public virtual ICollection<Branch> Branches { get; set; } = new List<Branch>();
 }

@@ -38,6 +38,16 @@ public class IdentifyService
     //     Employee.Status, ghi CheckIn với EmployeeId thay vì MemberId).
     //   - OwnerType = Member   -> luồng cũ cho HỘI VIÊN, trạng thái khoá tài
     //     khoản lấy từ Account.Status (Member luôn đi kèm Account).
+    //
+    // FIX QUAN TRỌNG (bug "nhận diện khống" — trả về tên người không tồn tại/
+    // không hợp lệ trong DB, ví dụ Employee đã bị xoá nhưng AWS Collection còn
+    // sót face cũ):
+    // ExternalImageId (do RekognitionFaceService parse ra Employee/MemberId)
+    // CHỈ phản ánh những gì đang có trên AWS, KHÔNG đảm bảo đồng bộ với DB.
+    // Vì vậy bắt buộc phải đối chiếu searchResult.MatchedFaceId (FaceId THẬT do
+    // AWS cấp) với FaceData.FaceIdAws đang lưu chính thức trong DB của đúng
+    // Employee/Member đó. Nếu không khớp (hoặc người đó chưa có FaceData nào)
+    // thì coi như "not_recognized" — KHÔNG trả về danh tính.
     // =====================================================================
     public async Task<IdentifyAttendanceResponseDto> IdentifyAttendanceAsync(IdentifyAttendanceRequestDto request, int branchId)
     {
@@ -61,8 +71,8 @@ public class IdentifyService
 
         return searchResult.OwnerType switch
         {
-            FaceOwnerType.Employee => await IdentifyEmployeeAsync(searchResult.EmployeeId!.Value, branchId, request.Action),
-            FaceOwnerType.Member => await IdentifyMemberAsync(searchResult.MemberId!.Value, branchId, request.Action),
+            FaceOwnerType.Employee => await IdentifyEmployeeAsync(searchResult.EmployeeId!.Value, searchResult.MatchedFaceId, branchId, request.Action, imageBytes),
+            FaceOwnerType.Member => await IdentifyMemberAsync(searchResult.MemberId!.Value, searchResult.MatchedFaceId, branchId, request.Action),
             _ => new IdentifyAttendanceResponseDto { Status = "not_recognized" }
         };
     }
@@ -71,14 +81,33 @@ public class IdentifyService
     // LUỒNG NHÂN VIÊN — chỉ kiểm tra Employee.Status, không đụng tới gói tập
     // của hội viên. Ghi nhận CheckIn với EmployeeId (MemberId/MemberPackageId
     // để null), đồng thời cộng/trừ mật độ phòng gym.
+    //
+    // FIX (2026): trước đây nếu Employee.Status != Active thì chặn thẳng
+    // ("ineligible"), kể cả khi người này ĐỒNG THỜI là hội viên còn hạn gói
+    // tập (case thực tế: nhân viên đã nghỉ việc nhưng vẫn đăng ký tập ở đây
+    // với tư cách hội viên). Nay khi employee không Active, hệ thống sẽ thử
+    // fallback sang kiểm tra xem khuôn mặt này có khớp một Member hợp lệ nào
+    // không (dùng SearchAllFaceMatchesAsync — không ưu tiên Employee), nếu có
+    // thì xử lý tiếp theo luồng hội viên bình thường thay vì chặn cứng.
     // =====================================================================
-    private async Task<IdentifyAttendanceResponseDto> IdentifyEmployeeAsync(long employeeId, int branchId, string? action)
+    private async Task<IdentifyAttendanceResponseDto> IdentifyEmployeeAsync(
+        long employeeId, string? matchedFaceId, int branchId, string? action, byte[] imageBytes)
     {
         Employee? employee = await _context.Employees
             .AsNoTracking()
+            .Include(e => e.FaceDatumEmployee)
             .FirstOrDefaultAsync(e => e.EmployeeId == employeeId);
 
-        if (employee == null)
+        // Đối chiếu bắt buộc: FaceId AWS vừa match được phải TRÙNG với
+        // FaceData.FaceIdAws đang lưu chính thức cho employee này. Nếu employee
+        // không tồn tại (đã bị xoá), chưa từng đăng ký khuôn mặt, hoặc FaceId
+        // lệch (face rác/cũ còn sót trong AWS Collection, hoặc đã đổi ảnh mới
+        // nhưng face cũ chưa kịp xoá) -> KHÔNG được tin, coi như không nhận
+        // diện được, tuyệt đối không trả về danh tính của employeeId đó.
+        if (employee == null ||
+            employee.FaceDatumEmployee == null ||
+            string.IsNullOrEmpty(matchedFaceId) ||
+            !string.Equals(employee.FaceDatumEmployee.FaceIdAws, matchedFaceId, StringComparison.Ordinal))
         {
             return new IdentifyAttendanceResponseDto { Status = "not_recognized" };
         }
@@ -92,6 +121,17 @@ public class IdentifyService
 
         if (employee.Status != EmployeeStatusActive)
         {
+            // Nhân viên không còn Active (vd đã nghỉ việc) -> trước khi chặn
+            // hẳn, thử xem người này có ĐỒNG THỜI là HỘI VIÊN không (khuôn mặt
+            // có thể được index cả 2 dạng: employee-{id} và member-{id}).
+            IdentifyAttendanceResponseDto? memberFallback =
+                await TryFallbackToMemberAsync(imageBytes, branchId, action);
+
+            if (memberFallback != null)
+            {
+                return memberFallback;
+            }
+
             return new IdentifyAttendanceResponseDto
             {
                 Status = "ineligible",
@@ -109,6 +149,42 @@ public class IdentifyService
         {
             return await DoEmployeeAutoCheckinAsync(employee.EmployeeId, branchId, employeeDto);
         }
+    }
+
+    // =====================================================================
+    // FALLBACK (employee inactive -> thử tư cách hội viên):
+    // Lấy TOÀN BỘ match hợp lệ từ AWS (SearchAllFaceMatchesAsync — KHÔNG ưu
+    // tiên Employee như SearchFaceByImageAsync), tìm Member có similarity cao
+    // nhất trong số đó, rồi xử lý qua đúng luồng IdentifyMemberAsync hiện có
+    // (luồng này tự đối chiếu FaceIdAws trong DB, tự kiểm tra Account bị khoá,
+    // gói tập còn hạn hay không...).
+    //
+    // Trả về null nếu:
+    //   - Không có Member nào khớp trong danh sách match, hoặc
+    //   - Có Member khớp theo ExternalImageId nhưng FaceIdAws không trùng với
+    //     DB (not_recognized) -> để caller giữ nguyên thông báo "ineligible"
+    //     theo lý do của Employee, tránh nhầm lẫn hiển thị "not_recognized"
+    //     trong khi thực ra là do employee bị khoá.
+    // =====================================================================
+    private async Task<IdentifyAttendanceResponseDto?> TryFallbackToMemberAsync(
+        byte[] imageBytes, int branchId, string? action)
+    {
+        List<FaceSearchResult> allMatches = await _faceService.SearchAllFaceMatchesAsync(imageBytes);
+
+        FaceSearchResult? memberMatch = allMatches
+            .Where(r => r.Status == FaceSearchStatus.Found && r.OwnerType == FaceOwnerType.Member)
+            .OrderByDescending(r => r.Similarity)
+            .FirstOrDefault();
+
+        if (memberMatch == null)
+        {
+            return null;
+        }
+
+        IdentifyAttendanceResponseDto result = await IdentifyMemberAsync(
+            memberMatch.MemberId!.Value, memberMatch.MatchedFaceId, branchId, action);
+
+        return result.Status == "not_recognized" ? null : result;
     }
 
     // ------------------------ CHECK-IN TỰ ĐỘNG (camera) — NHÂN VIÊN ------------------------
@@ -174,10 +250,16 @@ public class IdentifyService
     // =====================================================================
     // LUỒNG HỘI VIÊN
     // =====================================================================
-    private async Task<IdentifyAttendanceResponseDto> IdentifyMemberAsync(long memberId, int branchId, string? action)
+    private async Task<IdentifyAttendanceResponseDto> IdentifyMemberAsync(long memberId, string? matchedFaceId, int branchId, string? action)
     {
         Member? member = await LoadMemberWithDetailsAsync(memberId);
-        if (member == null)
+
+        // Đối chiếu bắt buộc tương tự luồng Employee: FaceId AWS match được
+        // phải trùng với FaceData.FaceIdAws đang lưu chính thức cho member này.
+        if (member == null ||
+            member.FaceDatum == null ||
+            string.IsNullOrEmpty(matchedFaceId) ||
+            !string.Equals(member.FaceDatum.FaceIdAws, matchedFaceId, StringComparison.Ordinal))
         {
             return new IdentifyAttendanceResponseDto { Status = "not_recognized" };
         }
@@ -480,7 +562,7 @@ public class IdentifyService
         Employee? employee = await _context.Employees
             .AsNoTracking()
             .Include(e => e.Role)
-            .Include(e => e.EmployeeBranches)
+            .Include(e => e.Branches)
             .FirstOrDefaultAsync(e => e.EmployeeId == staffId);
 
         if (employee == null)
@@ -490,10 +572,9 @@ public class IdentifyService
 
         bool isAdmin = employee.Role.RoleName == RoleAdmin;
         bool isManager = employee.Role.RoleName == RoleManager;
-        // còn lại mặc định là Staff
 
-        List<int> assignedBranchIds = employee.EmployeeBranches
-            .Select(eb => eb.BranchId)
+        List<int> assignedBranchIds = employee.Branches
+            .Select(b => b.BranchId)
             .ToList();
 
         IQueryable<Models.CheckIn> baseQuery = _context.CheckIns
@@ -560,9 +641,12 @@ public class IdentifyService
         if (!string.IsNullOrWhiteSpace(query.Keyword))
         {
             string kw = query.Keyword.Trim();
+
             baseQuery = baseQuery.Where(c =>
                 c.Member!.FullName.Contains(kw) ||
-                (c.Member!.Account != null && c.Member.Account.Phone != null && c.Member.Account.Phone.Contains(kw)));
+                (c.Member!.Account != null &&
+                 c.Member.Account.Phone != null &&
+                 c.Member.Account.Phone.Contains(kw)));
         }
 
         int totalCount = await baseQuery.CountAsync();
@@ -581,7 +665,7 @@ public class IdentifyService
             CheckInId = c.CheckInId,
             MemberId = c.MemberId!.Value,
             MemberName = c.Member!.FullName,
-            MemberPhone = c.Member.Account != null ? c.Member.Account.Phone : null,
+            MemberPhone = c.Member.Account?.Phone,
             MemberAvatar = c.Member.FaceDatum?.ProfileImage,
             BranchId = c.BranchId,
             BranchName = c.Branch?.BranchName,

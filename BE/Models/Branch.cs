@@ -24,8 +24,6 @@ public partial class Branch
 
     public virtual ICollection<CheckIn> CheckIns { get; set; } = new List<CheckIn>();
 
-    public virtual ICollection<EmployeeBranch> EmployeeBranches { get; set; } = new List<EmployeeBranch>();
-
     public virtual ICollection<Equipment> Equipment { get; set; } = new List<Equipment>();
 
     public virtual ICollection<GymDensity> GymDensities { get; set; } = new List<GymDensity>();
@@ -37,4 +35,6 @@ public partial class Branch
     public virtual ICollection<News> News { get; set; } = new List<News>();
 
     public virtual ICollection<Transaction> Transactions { get; set; } = new List<Transaction>();
+
+    public virtual ICollection<Employee> Employees { get; set; } = new List<Employee>();
 }

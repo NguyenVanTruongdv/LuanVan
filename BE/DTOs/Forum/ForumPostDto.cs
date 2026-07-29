@@ -15,12 +15,9 @@ public class ForumPostDto
 
     public string? Content { get; set; }
     public string PostType { get; set; } = null!;
-    public long? OriginalPostId { get; set; }
-    public ForumPostDto? OriginalPost { get; set; } // nested khi là Repost
 
     public int LikeCount { get; set; }
     public int CommentCount { get; set; }
-    public int RepostCount { get; set; }
     public string Status { get; set; } = null!;
 
     public bool IsLikedByCurrentUser { get; set; }

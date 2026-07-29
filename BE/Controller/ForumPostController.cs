@@ -110,21 +110,7 @@ public class ForumPostController : ControllerBase
         return CreatedAtAction(nameof(GetById), new { id = data!.PostId }, data);
     }
 
-    // POST: api/ForumPost/repost
-    [HttpPost("repost")]
-    [Authorize]
-    public async Task<IActionResult> Repost([FromBody] ForumRepostCreateDto dto)
-    {
-        var memberId = GetCurrentMemberId();
-        if (memberId is null)
-            return Unauthorized();
-
-        var (success, error, data) = await _service.RepostAsync(memberId.Value, dto);
-        if (!success)
-            return BadRequest(new { message = error });
-
-        return CreatedAtAction(nameof(GetById), new { id = data!.PostId }, data);
-    }
+   
 
     // PUT: api/ForumPost/5  (multipart/form-data: title, categoryId, content,
     //      existingImageUrls[] = ảnh cũ muốn giữ lại, newImages[] = ảnh mới thêm vào)

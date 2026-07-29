@@ -276,13 +276,14 @@ public class MemberPackageService
     //   - Staff: EmployeeBranches có đúng 1 dòng -> chỉ xem chi nhánh đó.
     //   - Manager: có thể có nhiều dòng (VD 3 chi nhánh) -> xem được cả 3.
     //   - Admin: KHÔNG gọi hàm này (xem GetPackageHistoryAsync bên dưới) -> xem toàn bộ.
-    public async Task<List<int>> GetManagedBranchIdsAsync(long employeeId)
-    {
-        return await _db.EmployeeBranches
-            .Where(eb => eb.EmployeeId == employeeId)
-            .Select(eb => eb.BranchId)
-            .ToListAsync();
-    }
+   public async Task<List<int>> GetManagedBranchIdsAsync(long employeeId)
+{
+    return await _db.Employees
+        .Where(e => e.EmployeeId == employeeId)
+        .SelectMany(e => e.Branches)
+        .Select(b => b.BranchId)
+        .ToListAsync();
+}
 
     // ===================== LỊCH SỬ ĐĂNG KÝ GÓI TẬP (CÓ LỌC) =====================
     // allowedBranchIds:

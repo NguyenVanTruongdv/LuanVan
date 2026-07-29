@@ -20,13 +20,9 @@ public partial class ForumPost
 
     public string PostType { get; set; } = null!;
 
-    public long? OriginalPostId { get; set; }
-
     public int LikeCount { get; set; }
 
     public int CommentCount { get; set; }
-
-    public int RepostCount { get; set; }
 
     public string Status { get; set; } = null!;
 
@@ -44,9 +40,5 @@ public partial class ForumPost
 
     public virtual ICollection<ForumPostImage> ForumPostImages { get; set; } = new List<ForumPostImage>();
 
-    public virtual ICollection<ForumPost> InverseOriginalPost { get; set; } = new List<ForumPost>();
-
     public virtual Member Member { get; set; } = null!;
-
-    public virtual ForumPost? OriginalPost { get; set; }
 }

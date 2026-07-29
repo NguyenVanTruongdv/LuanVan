@@ -325,11 +325,12 @@ namespace BE.Services
 
             if (role == RoleManager)
             {
-                managedBranchIds = await _context.EmployeeBranches
-                    .AsNoTracking()
-                    .Where(eb => eb.EmployeeId == currentEmployeeId.Value && eb.BranchRole == RoleManager)
-                    .Select(eb => eb.BranchId)
-                    .ToListAsync();
+                managedBranchIds = await _context.Employees
+                .AsNoTracking()
+                .Where(e => e.EmployeeId == currentEmployeeId.Value)
+                .SelectMany(e => e.Branches)
+                .Select(b => b.BranchId)
+                .ToListAsync();
             }
 
             return (role, managedBranchIds);

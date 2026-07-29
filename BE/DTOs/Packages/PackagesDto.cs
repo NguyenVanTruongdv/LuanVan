@@ -15,6 +15,7 @@ namespace BE.DTOs.Payment
         public decimal OriginalAmount { get; set; } // gia_goc, để hiển thị gạch ngang khi có KM
         public decimal Amount { get; set; }          // số tiền thực thu
         public string Status { get; set; } = null!;
+        public string? BankReferenceCode { get; set; }
     }
     public class InternalMembershipPlanDto
     {

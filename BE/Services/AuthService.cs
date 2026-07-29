@@ -31,16 +31,17 @@ public class AuthService
     {
         var email = req.Email.Trim().ToLower();
 
-        var account = await _db.Accounts
-            .Include(a => a.Employee).ThenInclude(e => e!.Role)
-            .Include(a => a.Employee).ThenInclude(e => e!.EmployeeBranches)
-            .FirstOrDefaultAsync(a =>
-                a.Email != null &&
-                a.Email.ToLower() == email &&
-                a.EmployeeId != null &&
-                a.Employee!.Status == "Active")
-            ?? throw new UnauthorizedException("Sai tài khoản hoặc mật khẩu");
-
+                    var account = await _db.Accounts
+                    .Include(a => a.Employee)
+                        .ThenInclude(e => e!.Role)
+                    .Include(a => a.Employee)
+                        .ThenInclude(e => e!.Branches)
+                    .FirstOrDefaultAsync(a =>
+                        a.Email != null &&
+                        a.Email.ToLower() == email &&
+                        a.EmployeeId != null &&
+                        a.Employee!.Status == "Active")
+                    ?? throw new UnauthorizedException("Sai tài khoản hoặc mật khẩu");
         if (account.Status == "Suspended")
             throw new UnauthorizedException("Tài khoản đã bị tạm khóa");
 
@@ -48,8 +49,7 @@ public class AuthService
             throw new UnauthorizedException("Sai tài khoản hoặc mật khẩu");
 
         var emp = account.Employee!;
-        var branchIds = emp.EmployeeBranches.Select(eb => eb.BranchId).ToList();
-
+         var branchIds = emp.Branches.Select(b => b.BranchId).ToList();
         return await IssueTokens(
             account.AccountId,
             emp.EmployeeId,
@@ -309,7 +309,8 @@ public class AuthService
 
         var account = await _db.Accounts
             .Include(a => a.Employee).ThenInclude(e => e!.Role)
-            .Include(a => a.Employee).ThenInclude(e => e!.EmployeeBranches) // MỚI
+            .Include(a => a.Employee)
+            .ThenInclude(e => e!.Branches)
             .Include(a => a.Member)
             .FirstOrDefaultAsync(a => a.AccountId == stored.AccountId)
             ?? throw new UnauthorizedAccessException("Tài khoản không còn tồn tại");
@@ -335,7 +336,8 @@ public class AuthService
             role = emp.Role.RoleName;
             entityType = "Employee";
             status = emp.Status;
-            branchIds = emp.EmployeeBranches.Select(eb => eb.BranchId).ToList(); // MỚI
+           branchIds = emp.Branches
+            .Select(b => b.BranchId).ToList();
         }
         else
         {

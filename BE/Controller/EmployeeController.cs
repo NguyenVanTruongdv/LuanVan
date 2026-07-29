@@ -368,5 +368,20 @@ namespace BE.Controllers
             var claim = User.FindFirst(ClaimTypes.NameIdentifier);
             return claim != null && long.TryParse(claim.Value, out var id) ? id : null;
         }
+                [HttpGet("{employeeId:long}/history")]
+        public async Task<IActionResult> GetUpdateHistory(long employeeId)
+        {
+            var currentEmployeeId = long.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+
+            try
+            {
+                var history = await _employeeService.GetUpdateHistoryAsync(employeeId, currentEmployeeId);
+                return Ok(history);
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return StatusCode(403, new { message = ex.Message });
+            }
+        }
     }
 }

@@ -76,6 +76,7 @@ namespace BE.Dtos.Member
         public string? PackageStatus { get; set; }
 
         public string? GeneratedPassword { get; set; }
+        public string ? LockReason {get; set; }
     }
 
     // ===================== DANH SÁCH HỘI VIÊN (kèm ảnh + gói tập đang dùng hôm nay) =====================
@@ -131,11 +132,14 @@ namespace BE.Dtos.Member
         public string Reason { get; set; } = null!;
     }
 
-    public class UnlockMemberRequest
-    {
-        public string? Reason { get; set; }
-    }
-
+    // public class UnlockMemberRequest
+    // {
+    //     public string? Reason { get; set; }
+    // }
+    public class ResetMemberPasswordRequest
+        {
+            public string NewPassword { get; set; } = string.Empty;
+        }
     // ===================== LỊCH SỬ CẬP NHẬT =====================
     public class MemberUpdateLogItem
     {

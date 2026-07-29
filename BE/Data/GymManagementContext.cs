@@ -27,8 +27,6 @@ public partial class GymManagementContext : DbContext
 
     public virtual DbSet<Employee> Employees { get; set; }
 
-    public virtual DbSet<EmployeeBranch> EmployeeBranches { get; set; }
-
     public virtual DbSet<EmployeeUpdateLog> EmployeeUpdateLogs { get; set; }
 
     public virtual DbSet<Equipment> Equipment { get; set; }
@@ -349,33 +347,28 @@ public partial class GymManagementContext : DbContext
                 .HasForeignKey(d => d.RoleId)
                 .OnDelete(DeleteBehavior.ClientSetNull)
                 .HasConstraintName("fk_employee_role");
-        });
 
-        modelBuilder.Entity<EmployeeBranch>(entity =>
-        {
-            entity.HasKey(e => new { e.EmployeeId, e.BranchId })
-                .HasName("PRIMARY")
-                .HasAnnotation("MySql:IndexPrefixLength", new[] { 0, 0 });
-
-            entity
-                .ToTable("employee_branches")
-                .UseCollation("utf8mb4_unicode_ci");
-
-            entity.HasIndex(e => e.BranchId, "fk_employee_branches_branch");
-
-            entity.Property(e => e.EmployeeId).HasColumnName("employee_id");
-            entity.Property(e => e.BranchId).HasColumnName("branch_id");
-            entity.Property(e => e.BranchRole)
-                .HasColumnType("enum('Manager','Staff')")
-                .HasColumnName("branch_role");
-
-            entity.HasOne(d => d.Branch).WithMany(p => p.EmployeeBranches)
-                .HasForeignKey(d => d.BranchId)
-                .HasConstraintName("fk_employee_branches_branch");
-
-            entity.HasOne(d => d.Employee).WithMany(p => p.EmployeeBranches)
-                .HasForeignKey(d => d.EmployeeId)
-                .HasConstraintName("fk_employee_branches_employee");
+            entity.HasMany(d => d.Branches).WithMany(p => p.Employees)
+                .UsingEntity<Dictionary<string, object>>(
+                    "EmployeeBranch",
+                    r => r.HasOne<Branch>().WithMany()
+                        .HasForeignKey("BranchId")
+                        .HasConstraintName("fk_employee_branches_branch"),
+                    l => l.HasOne<Employee>().WithMany()
+                        .HasForeignKey("EmployeeId")
+                        .HasConstraintName("fk_employee_branches_employee"),
+                    j =>
+                    {
+                        j.HasKey("EmployeeId", "BranchId")
+                            .HasName("PRIMARY")
+                            .HasAnnotation("MySql:IndexPrefixLength", new[] { 0, 0 });
+                        j
+                            .ToTable("employee_branches")
+                            .UseCollation("utf8mb4_unicode_ci");
+                        j.HasIndex(new[] { "BranchId" }, "fk_employee_branches_branch");
+                        j.IndexerProperty<long>("EmployeeId").HasColumnName("employee_id");
+                        j.IndexerProperty<int>("BranchId").HasColumnName("branch_id");
+                    });
         });
 
         modelBuilder.Entity<EmployeeUpdateLog>(entity =>
@@ -812,8 +805,6 @@ public partial class GymManagementContext : DbContext
 
             entity.HasIndex(e => new { e.MemberId, e.Status, e.CreatedAt }, "idx_post_member");
 
-            entity.HasIndex(e => e.OriginalPostId, "idx_post_original");
-
             entity.Property(e => e.PostId).HasColumnName("post_id");
             entity.Property(e => e.CategoryId).HasColumnName("category_id");
             entity.Property(e => e.CommentCount).HasColumnName("comment_count");
@@ -826,12 +817,10 @@ public partial class GymManagementContext : DbContext
                 .HasColumnName("created_at");
             entity.Property(e => e.LikeCount).HasColumnName("like_count");
             entity.Property(e => e.MemberId).HasColumnName("member_id");
-            entity.Property(e => e.OriginalPostId).HasColumnName("original_post_id");
             entity.Property(e => e.PostType)
                 .HasDefaultValueSql("'Original'")
                 .HasColumnType("enum('Original','Repost')")
                 .HasColumnName("post_type");
-            entity.Property(e => e.RepostCount).HasColumnName("repost_count");
             entity.Property(e => e.Status)
                 .HasDefaultValueSql("'Active'")
                 .HasColumnType("enum('Active','Hidden','Deleted')")
@@ -854,10 +843,6 @@ public partial class GymManagementContext : DbContext
                 .HasForeignKey(d => d.MemberId)
                 .OnDelete(DeleteBehavior.ClientSetNull)
                 .HasConstraintName("fk_post_member");
-
-            entity.HasOne(d => d.OriginalPost).WithMany(p => p.InverseOriginalPost)
-                .HasForeignKey(d => d.OriginalPostId)
-                .HasConstraintName("fk_forum_posts_original");
         });
 
         modelBuilder.Entity<ForumPostImage>(entity =>
@@ -1075,7 +1060,7 @@ public partial class GymManagementContext : DbContext
             entity.Property(e => e.Status)
                 .HasDefaultValueSql("'PendingActivation'")
                 .HasComment("PendingActivation=chờ kích hoạt, Active=đang hoạt động. Việc khóa đăng nhập nay do accounts.status quản lý, không còn Expired/Suspended ở đây.")
-                .HasColumnType("enum('PendingActivation','Active')")
+                .HasColumnType("enum('PendingActivation','Active','Suspended')")
                 .HasColumnName("status");
             entity.Property(e => e.UpdatedAt)
                 .ValueGeneratedOnAddOrUpdate()
@@ -1366,8 +1351,8 @@ public partial class GymManagementContext : DbContext
                 .HasMaxLength(200)
                 .HasColumnName("ten_khuyen_mai");
             entity.Property(e => e.TrangThai)
-                .HasDefaultValueSql("'NhapLieu'")
-                .HasColumnType("enum('NhapLieu','HoatDong','TamDung','HetHan')")
+                .HasDefaultValueSql("'HoatDong'")
+                .HasColumnType("enum('HoatDong','TamDung','HetHan')")
                 .HasColumnName("trang_thai");
             entity.Property(e => e.UpdatedAt)
                 .ValueGeneratedOnAddOrUpdate()

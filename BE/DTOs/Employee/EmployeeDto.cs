@@ -155,4 +155,20 @@ namespace BE.DTOs.Employee
     {
         [Required] public string Reason { get; set; } = null!;
     }
+    public class EmployeeUpdateHistoryItemDto
+    {
+        public Guid UpdateSessionId { get; set; }
+        public DateTime UpdatedAt { get; set; }
+        public long? UpdatedByEmployeeId { get; set; }
+        public string? UpdatedByName { get; set; }
+        public List<EmployeeUpdateFieldChangeDto> Changes { get; set; } = new();
+    }
+
+    /// <summary>1 dòng thay đổi field trong 1 sự kiện cập nhật.</summary>
+    public class EmployeeUpdateFieldChangeDto
+    {
+        public string FieldName { get; set; } = null!;
+        public string? OldValue { get; set; }
+        public string? NewValue { get; set; }
+    }
 }

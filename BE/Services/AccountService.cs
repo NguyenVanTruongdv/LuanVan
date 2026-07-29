@@ -172,11 +172,17 @@ namespace BE.Services
 
         // ------------------------------------------------------------------
         // Khóa / mở khóa tài khoản
+        //
+        // AccountService KHÔNG tự ghi log ở đây nữa. MemberService và EmployeeService
+        // (chủ sở hữu account) đều đã tự ghi log riêng của mình (kèm reason cho lock,
+        // kèm ghi chú cho unlock) ngay sau khi gọi các hàm này. Việc này tránh ghi log
+        // trùng lặp (trước đây AccountService ghi thêm 1 bản generic "AccountStatus",
+        // trong khi MemberService/EmployeeService cũng ghi 1 bản chi tiết cho cùng hành động).
         // ------------------------------------------------------------------
 
         /// <summary>
         /// Khóa tài khoản — bắt buộc có lý do. Thu hồi refresh token để đăng xuất ngay lập tức.
-        /// performedBy: employeeId của nhân viên thực hiện thao tác (dùng để ghi log).
+        /// performedBy: employeeId của nhân viên thực hiện thao tác.
         /// </summary>
         public async Task<Account> LockAccountAsync(long accountId, string reason, long performedBy)
         {
@@ -188,13 +194,9 @@ namespace BE.Services
             if (account.Status == AccountStatus.Suspended)
                 throw new InvalidOperationException("Tài khoản đã bị khóa từ trước.");
 
-            var oldStatus = account.Status;
-
             account.Status = AccountStatus.Suspended;
             account.SuspendReason = reason;
             account.UpdatedAt = DateTime.UtcNow;
-
-            AddOwnerStatusLog(account, oldStatus, AccountStatus.Suspended, performedBy);
 
             await RevokeAllRefreshTokensAsync(accountId);
             await _context.SaveChangesAsync();
@@ -204,7 +206,7 @@ namespace BE.Services
 
         /// <summary>
         /// Mở khóa tài khoản.
-        /// performedBy: employeeId của nhân viên thực hiện thao tác (dùng để ghi log).
+        /// performedBy: employeeId của nhân viên thực hiện thao tác.
         /// </summary>
         public async Task<Account> UnlockAccountAsync(long accountId, long performedBy)
         {
@@ -213,13 +215,9 @@ namespace BE.Services
             if (account.Status == AccountStatus.Active)
                 throw new InvalidOperationException("Tài khoản đang hoạt động, không cần mở khóa.");
 
-            var oldStatus = account.Status;
-
             account.Status = AccountStatus.Active;
             account.SuspendReason = null;
             account.UpdatedAt = DateTime.UtcNow;
-
-            AddOwnerStatusLog(account, oldStatus, AccountStatus.Active, performedBy);
 
             await _context.SaveChangesAsync();
 
@@ -320,41 +318,6 @@ namespace BE.Services
 
             foreach (var token in tokens)
                 token.RevokedAt = now;
-        }
-
-        /// <summary>
-        /// Ghi log thay đổi Status vào EmployeeUpdateLog hoặc MemberUpdateLog, tùy tài khoản thuộc ai.
-        /// </summary>
-        private void AddOwnerStatusLog(Account account, string oldStatus, string newStatus, long performedBy)
-        {
-            var now = DateTime.UtcNow;
-
-            if (account.EmployeeId.HasValue)
-            {
-                _context.EmployeeUpdateLogs.Add(new EmployeeUpdateLog
-                {
-                    UpdateSessionId = Guid.NewGuid(),
-                    EmployeeId = account.EmployeeId.Value,
-                    FieldName = "AccountStatus",
-                    OldValue = oldStatus,
-                    NewValue = newStatus,
-                    UpdatedByEmployeeId = performedBy,
-                    UpdatedAt = now
-                });
-            }
-            else if (account.MemberId.HasValue)
-            {
-                _context.MemberUpdateLogs.Add(new MemberUpdateLog
-                {
-                    UpdateSessionId = Guid.NewGuid(),
-                    MemberId = account.MemberId.Value,
-                    FieldName = "AccountStatus",
-                    OldValue = oldStatus,
-                    NewValue = newStatus,
-                    UpdatedByEmployeeId = performedBy,
-                    UpdatedAt = now
-                });
-            }
         }
     }
 }

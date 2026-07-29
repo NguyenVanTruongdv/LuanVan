@@ -57,11 +57,11 @@ public class IncidentService
 
             employeeId = employee.EmployeeId;
 
-            branchId = await _db.EmployeeBranches
-                .Where(e => e.EmployeeId == employee.EmployeeId)
-                .Select(e => (int?)e.Branch.BranchId)
-                .FirstOrDefaultAsync();
-
+           branchId = await _db.Employees
+            .Where(e => e.EmployeeId == employee.EmployeeId)
+            .SelectMany(e => e.Branches)
+            .Select(b => (int?)b.BranchId)
+            .FirstOrDefaultAsync();
             if (!branchId.HasValue)
                 throw new Exception("Nhân viên chưa được gán chi nhánh.");
         }
@@ -186,11 +186,11 @@ public class IncidentService
             else if (isManager)
             {
                 // Manager: chỉ được xem trong phạm vi chi nhánh mình quản lý
-                var managedBranchIds = await _db.EmployeeBranches
-                    .Where(e => e.EmployeeId == user.Id)
-                    .Select(e => e.BranchId)
-                    .ToListAsync();
-
+               var managedBranchIds = await _db.Employees
+            .Where(e => e.EmployeeId == user.Id)
+            .SelectMany(e => e.Branches)
+            .Select(b => b.BranchId)
+            .ToListAsync();
                 if (filter.BranchId.HasValue)
                 {
                     if (!managedBranchIds.Contains(filter.BranchId.Value))
