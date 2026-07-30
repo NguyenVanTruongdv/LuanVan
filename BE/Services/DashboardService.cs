@@ -7,141 +7,8 @@ using Microsoft.EntityFrameworkCore;
 
 namespace BE.Services
 {
-    // ====================== QUERY (bộ lọc từ FE gửi lên) ======================
+   
 
-    public class CashierDashboardQueryDto
-    {
-        // "today" | "7d" | "30d" | "custom"
-        public string Range { get; set; } = "30d";
-
-        // Chỉ dùng khi Range == "custom"
-        public DateTime? Start { get; set; }
-        public DateTime? End { get; set; }
-
-        // "Tất cả" hoặc null => không lọc. Ngược lại: "Tiền mặt" | "Chuyển khoản"
-        public string? Method { get; set; }
-
-        // "Tất cả" hoặc null => không lọc. Ngược lại: "Tại quầy" | "Online"
-        public string? Channel { get; set; }
-    }
-
-    // ====================== DTO trả về cho FE ======================
-
-    public class CashierDashboardStatsDto
-    {
-        public decimal TotalRevenue { get; set; }
-        public int TotalOrders { get; set; }
-        public decimal AvgOrder { get; set; }
-
-        // So sánh nửa đầu kỳ vs nửa sau kỳ (đúng logic FE đang tự tính bằng mock data)
-        public bool RevenueTrendUp { get; set; }
-        public int RevenueDeltaPercent { get; set; }
-
-        public decimal CounterRevenue { get; set; } // Tại quầy
-        public decimal OnlineRevenue { get; set; }
-        public decimal CashRevenue { get; set; }     // Tiền mặt
-        public decimal TransferRevenue { get; set; } // Chuyển khoản
-    }
-
-    public class RevenueByDayDto
-    {
-        public DateTime Date { get; set; }
-        public decimal Revenue { get; set; }
-        public int Orders { get; set; }
-    }
-
-    public class MethodBreakdownDto
-    {
-        public string Method { get; set; } = "";
-        public decimal Amount { get; set; }
-    }
-
-    public class ChannelByDayDto
-    {
-        public DateTime Date { get; set; }
-        public decimal CounterRevenue { get; set; }
-        public decimal OnlineRevenue { get; set; }
-    }
-
-    public class RecentOrderDto
-    {
-        public long TransactionId { get; set; }
-        public DateTime DateTime { get; set; }
-        public decimal Amount { get; set; }
-        public string PaymentMethod { get; set; } = "";
-        public string Channel { get; set; } = "";
-    }
-
-    public class RecentCheckinDto2
-    {
-        public string MemberName { get; set; } = "";
-        public DateTime DateTime { get; set; }
-        public string MembershipType { get; set; } = "";
-    }
-
-    public class CashierDashboardDto
-    {
-        public CashierDashboardStatsDto Stats { get; set; } = new();
-        public List<RevenueByDayDto> RevenueByDay { get; set; } = new();
-        public List<MethodBreakdownDto> MethodBreakdown { get; set; } = new();
-        public List<ChannelByDayDto> ChannelByDay { get; set; } = new();
-        public List<RecentOrderDto> RecentOrders { get; set; } = new();
-        public List<RecentCheckinDto2> RecentCheckins { get; set; } = new();
-    }
-
-    // ====================== DTO của dashboard tổng quan cũ (Admin/Manager) ======================
-
-    public class DashboardStatsDto
-    {
-        public decimal RevenueToday { get; set; }
-        public double RevenueChangePercent { get; set; } // % thay đổi so với hôm qua
-        public int NewMembersToday { get; set; }
-        public int CheckinsToday { get; set; }
-        public int CheckinsChange { get; set; } // chênh lệch số lượng so với hôm qua
-    }
-
-    public class RecentCheckinDto
-    {
-        public string MemberName { get; set; }
-        public string PackageName { get; set; }
-        public DateTime CheckInTime { get; set; }
-        public bool IsCheckedOut { get; set; }
-    }
-
-    public class RecentTransactionDto
-    {
-        public long TransactionId { get; set; }
-        public string MemberName { get; set; }
-        public string PackageName { get; set; }
-        public decimal Amount { get; set; }
-        public string PaymentMethod { get; set; }
-        public DateTime Time { get; set; }
-        public string Status { get; set; }
-    }
-
-    public class WeeklyChartDto
-    {
-        public DateTime Date { get; set; }
-        public decimal Revenue { get; set; }
-        public int CheckinCount { get; set; }
-    }
-
-    public class ExpiringPackageDto
-    {
-        public string MemberName { get; set; }
-        public string PackageName { get; set; }
-        public int DaysLeft { get; set; }
-    }
-
-    // Gộp tất cả lại thành 1 object trả về cho FE hiển thị luôn 1 lần
-    public class DashboardDto
-    {
-        public DashboardStatsDto Stats { get; set; }
-        public List<RecentCheckinDto> RecentCheckins { get; set; }
-        public List<RecentTransactionDto> RecentTransactions { get; set; }
-        public List<WeeklyChartDto> WeeklyChart { get; set; }
-        public List<ExpiringPackageDto> ExpiringPackages { get; set; }
-    }
 
     // ====================== SERVICE ======================
 
@@ -336,7 +203,7 @@ namespace BE.Services
             }).ToList();
         }
 
-        // ====================== DASHBOARD THU NGÂN (MỚI) ======================
+        // ====================== DASHBOARD THU NGÂN (CASHIER) ======================
 
         /// <summary>
         /// branchId = null  => Admin, xem toàn hệ thống
@@ -346,7 +213,6 @@ namespace BE.Services
         {
             var (from, to) = ResolveRange(query);
 
-            // ---- Giao dịch trong khoảng thời gian + filter phương thức/kênh ----
             var txQuery = _context.Transactions
                 .Where(t => t.PaymentStatus == "Paid" && t.CreatedAt >= from && t.CreatedAt <= to);
 
@@ -358,7 +224,7 @@ namespace BE.Services
 
             // Không có cột Channel trong Transactions => suy ra kênh bán hàng từ EmployeeId:
             // có nhân viên xử lý (EmployeeId != null) = "Tại quầy", không có = "Online" (khách tự thanh toán).
-            // TODO: đổi "t.EmployeeId" thành đúng tên property nếu entity của bạn đặt tên khác (VD: CashierId, StaffId).
+            // TODO: đổi "t.EmployeeId" thành đúng tên property nếu entity của bạn đặt tên khác.
             if (!string.IsNullOrWhiteSpace(query.Channel) && query.Channel != "Tất cả")
             {
                 if (query.Channel == "Tại quầy")
@@ -379,7 +245,6 @@ namespace BE.Services
                 })
                 .ToListAsync();
 
-            // ---- Check-in trong khoảng thời gian (không áp filter phương thức/kênh) ----
             var checkinQuery = _context.CheckIns
                 .Include(c => c.Member)
                 .Include(c => c.MemberPackage)
@@ -396,8 +261,6 @@ namespace BE.Services
                 {
                     MemberName = c.Member.FullName,
                     DateTime = c.CheckInTime,
-                    // TODO: đổi sang field loại hạng hội viên thật (VD: c.Member.MembershipType)
-                    // nếu có, thay vì lấy tên gói tập như dưới đây.
                     MembershipType = c.MemberPackage != null && c.MemberPackage.Plan != null
                         ? c.MemberPackage.Plan.PlanName
                         : ""
@@ -438,7 +301,6 @@ namespace BE.Services
         {
             var dto = new CashierDashboardDto();
 
-            // ---------------- STATS ----------------
             decimal totalRevenue = transactions.Sum(t => t.Amount);
             int totalOrders = transactions.Count;
             decimal avgOrder = totalOrders > 0 ? Math.Round(totalRevenue / totalOrders) : 0;
@@ -464,7 +326,6 @@ namespace BE.Services
                 TransferRevenue = transactions.Where(t => t.PaymentMethod == "Chuyển khoản").Sum(t => t.Amount),
             };
 
-            // ---------------- REVENUE BY DAY ----------------
             dto.RevenueByDay = transactions
                 .GroupBy(t => t.CreatedAt.Date)
                 .OrderBy(g => g.Key)
@@ -476,13 +337,11 @@ namespace BE.Services
                 })
                 .ToList();
 
-            // ---------------- METHOD BREAKDOWN ----------------
             dto.MethodBreakdown = transactions
                 .GroupBy(t => t.PaymentMethod)
                 .Select(g => new MethodBreakdownDto { Method = g.Key, Amount = g.Sum(t => t.Amount) })
                 .ToList();
 
-            // ---------------- CHANNEL BY DAY ----------------
             dto.ChannelByDay = transactions
                 .GroupBy(t => t.CreatedAt.Date)
                 .OrderBy(g => g.Key)
@@ -494,7 +353,6 @@ namespace BE.Services
                 })
                 .ToList();
 
-            // ---------------- RECENT ORDERS (15 gần nhất) ----------------
             dto.RecentOrders = transactions
                 .OrderByDescending(t => t.CreatedAt)
                 .Take(15)
@@ -508,9 +366,413 @@ namespace BE.Services
                 })
                 .ToList();
 
-            // RecentCheckins được gán trực tiếp ở GetCashierDashboardAsync (query riêng, không phụ thuộc filter phương thức/kênh)
-
             return dto;
+        }
+
+        // ====================== DASHBOARD QUẢN LÝ (MANAGER MỚI) ======================
+
+        /// <summary>
+        /// Hàm chính cho trang Manager Dashboard (ManagerDashboard.jsx).
+        /// branchId = null => xem toàn hệ thống (Admin)
+        /// branchId = X    => chỉ xem chi nhánh X (Manager)
+        /// </summary>
+       public async Task<ManagerDashboardDto> GetManagerDashboardAsync(int? branchId, ManagerDashboardQueryDto query)
+        {
+            var (from, to) = ResolveManagerRange(query);
+
+            string branchName = "Toàn hệ thống";
+            if (branchId.HasValue)
+            {
+                var branch = await _context.Branches
+                    .Where(b => b.BranchId == branchId)
+                    .Select(b => b.BranchName)
+                    .FirstOrDefaultAsync();
+                branchName = branch ?? "Chi nhánh";
+            }
+
+            var revenueTrend = await GetRevenueTrendAsync(branchId, from, to);
+            var recentMembers = await GetRecentMembersWithStatusAsync(branchId, take: 10);
+            var unresolvedIssues = await GetUnresolvedIssuesAsync(branchId, take: 10);
+            var equipmentStatus = await GetEquipmentStatusAsync(branchId);
+            var kpi = BuildManagerKpi(revenueTrend, recentMembers, unresolvedIssues, equipmentStatus);
+
+            return new ManagerDashboardDto
+            {
+                BranchName = branchName,
+                Kpi = kpi,
+                RevenueTrend = revenueTrend,
+                RecentMembers = recentMembers,
+                UnresolvedIssues = unresolvedIssues,
+                EquipmentStatus = equipmentStatus
+            };
+        }
+
+        private (DateTime from, DateTime to) ResolveManagerRange(ManagerDashboardQueryDto query)
+        {
+            var today = DateTime.Today;
+            switch ((query.Range ?? "7d").ToLowerInvariant())
+            {
+                case "today":
+                    return (today, today.AddDays(1).AddTicks(-1));
+                case "30d":
+                    return (today.AddDays(-29), today.AddDays(1).AddTicks(-1));
+                case "custom":
+                    var start = query.Start ?? today.AddDays(-6);
+                    var end = query.End ?? DateTime.Now;
+                    return (start, end);
+                case "7d":
+                default:
+                    return (today.AddDays(-6), today.AddDays(1).AddTicks(-1));
+            }
+        }
+
+        // ---- Doanh thu theo ngày (cho RevenueChart) ----
+        public async Task<List<RevenueTrendPointDto>> GetRevenueTrendAsync(int? branchId, DateTime from, DateTime to)
+        {
+            var txQuery = _context.Transactions
+                .Where(t => t.PaymentStatus == "Paid" && t.CreatedAt >= from && t.CreatedAt <= to);
+
+            if (branchId.HasValue)
+                txQuery = txQuery.Where(t => t.BranchId == branchId);
+
+            var transactions = await txQuery
+                .Select(t => new { t.CreatedAt, t.Amount })
+                .ToListAsync();
+
+            var days = (int)Math.Ceiling((to.Date - from.Date).TotalDays) + 1;
+            var result = new List<RevenueTrendPointDto>();
+            for (int i = 0; i < days; i++)
+            {
+                var day = from.Date.AddDays(i);
+                result.Add(new RevenueTrendPointDto
+                {
+                    Date = day,
+                    Revenue = transactions.Where(t => t.CreatedAt.Date == day).Sum(t => t.Amount)
+                });
+            }
+            return result;
+        }
+
+        // ---- Hội viên check-in gần đây, kèm trạng thái gói (active/expiring/expired) ----
+        public async Task<List<MemberCheckinRowDto>> GetRecentMembersWithStatusAsync(int? branchId, int take = 10)
+        {
+            var query = _context.CheckIns
+                .Include(c => c.Member)
+                .Include(c => c.MemberPackage)
+                    .ThenInclude(mp => mp.Plan)
+                .AsQueryable();
+
+            if (branchId.HasValue)
+                query = query.Where(c => c.BranchId == branchId);
+
+            var checkins = await query
+                .OrderByDescending(c => c.CheckInTime)
+                .Take(take)
+                .Select(c => new
+                {
+                    MemberName = c.Member.FullName,
+                    PlanName = c.MemberPackage != null && c.MemberPackage.Plan != null ? c.MemberPackage.Plan.PlanName : "",
+                    c.CheckInTime,
+                    ExpiryDate = c.MemberPackage != null ? c.MemberPackage.ExpiryDate : null,
+                    PackageStatus = c.MemberPackage != null ? c.MemberPackage.PackageStatus : null
+                })
+                .ToListAsync();
+
+            var today = DateOnly.FromDateTime(DateTime.Today);
+
+            return checkins.Select(c => new MemberCheckinRowDto
+            {
+                MemberName = c.MemberName,
+                PlanName = c.PlanName,
+                CheckInTime = c.CheckInTime,
+                Status = ClassifyMemberStatus(c.PackageStatus, c.ExpiryDate, today)
+            }).ToList();
+        }
+
+        private string ClassifyMemberStatus(string? packageStatus, DateOnly? expiryDate, DateOnly today)
+        {
+            if (packageStatus != "Active" || expiryDate == null) return "expired";
+            if (expiryDate.Value < today) return "expired";
+            if (expiryDate.Value.DayNumber - today.DayNumber <= 7) return "expiring";
+            return "active";
+        }
+
+        // ---- Sự cố chưa xử lý (dựa trên bảng Incident) ----
+        // TODO: xác nhận đúng chuỗi trạng thái "chưa xử lý" trong DB (đang giả định "Pending").
+        public async Task<List<IssueRowDto>> GetUnresolvedIssuesAsync(int? branchId, int take = 10)
+        {
+            var query = _context.Incidents
+                .Include(i => i.Equipment)
+                .Include(i => i.ReportedByEmployee)
+                .Include(i => i.ReportedByMember)
+                .Where(i => i.Status == "Pending"); // TODO: đổi cho khớp giá trị thật trong DB
+
+            if (branchId.HasValue)
+                query = query.Where(i => i.BranchId == branchId);
+
+            var incidents = await query
+                .OrderByDescending(i => i.CreatedAt)
+                .Take(take)
+                .ToListAsync();
+
+            return incidents.Select(i => new IssueRowDto
+            {
+                IssueId = i.IncidentId,
+                Title = i.Title,
+                Description = i.Description,
+                Area = i.Equipment?.EquipmentName ?? "Chung",
+                Severity = InferSeverity(i.Equipment?.Status),
+                Reporter = i.ReportedByEmployee != null
+                    ? $"Nhân viên: {i.ReportedByEmployee.FullName}"
+                    : i.ReportedByMember != null
+                        ? $"Hội viên: {i.ReportedByMember.FullName}"
+                        : "Hệ thống",
+                Status = i.Status,
+                CreatedAt = i.CreatedAt
+            }).ToList();
+        }
+
+        // Suy luận mức độ ưu tiên từ trạng thái thiết bị liên quan (Incident chưa có cột Severity riêng)
+        private string InferSeverity(string? equipmentStatus)
+        {
+            if (string.IsNullOrWhiteSpace(equipmentStatus)) return "medium";
+
+            var s = equipmentStatus.Trim().ToLowerInvariant();
+            if (s.Contains("ngừng") || s.Contains("hỏng")) return "high";
+            if (s.Contains("bảo trì") || s.Contains("cần")) return "medium";
+            return "low";
+        }
+
+        // ---- Tình trạng thiết bị (dựa trên bảng Equipment) ----
+        public async Task<List<EquipmentRowDto>> GetEquipmentStatusAsync(int? branchId)
+        {
+            var query = _context.Equipment
+                .Include(e => e.Category)
+                .Include(e => e.Branch)
+                .AsQueryable();
+
+            if (branchId.HasValue)
+                query = query.Where(e => e.BranchId == branchId);
+
+            var equipmentList = await query
+                .OrderBy(e => e.Category.CategoryName)
+                .ThenBy(e => e.EquipmentName)
+                .ToListAsync();
+
+            return equipmentList.Select(e => new EquipmentRowDto
+            {
+                EquipmentId = e.EquipmentId,
+                Name = e.EquipmentName,
+                Category = e.Category?.CategoryName ?? "",
+                Area = e.Branch?.BranchName ?? "",
+                RawStatus = e.Status,
+                Status = MapEquipmentTone(e.Status),
+                Note = e.Description ?? "",
+                ImageUrl = e.ImageUrl
+            }).ToList();
+        }
+
+        // TODO: xác nhận đúng danh sách giá trị Status thật trong DB rồi chỉnh map này.
+        private string MapEquipmentTone(string status)
+        {
+            if (string.IsNullOrWhiteSpace(status)) return "ok";
+            var s = status.Trim().ToLowerInvariant();
+
+            if (s.Contains("ngừng") || s.Contains("hỏng") || s.Contains("dừng")) return "danger";
+            if (s.Contains("bảo trì") || s.Contains("cần")) return "warn";
+            return "ok"; // "Hoạt động tốt", "Đang sử dụng", v.v.
+        }
+
+        // ---- Gộp số liệu cho 3 vòng tròn (RingCluster) và 3 thẻ KPI ----
+        private ManagerDashboardKpiDto BuildManagerKpi(
+    List<RevenueTrendPointDto> revenueTrend,
+    List<MemberCheckinRowDto> recentMembers,
+    List<IssueRowDto> unresolvedIssues,
+    List<EquipmentRowDto> equipmentStatus)
+{
+    decimal totalRevenue = revenueTrend.Sum(r => r.Revenue);
+
+    int half = revenueTrend.Count / 2;
+    decimal firstHalf = revenueTrend.Take(half).Sum(r => r.Revenue);
+    decimal secondHalf = revenueTrend.Skip(half).Sum(r => r.Revenue);
+
+    int changePercent = firstHalf > 0
+        ? (int)Math.Round((double)(secondHalf - firstHalf) / (double)firstHalf * 100)
+        : 0;
+
+    // ===========================
+    // Tổng hội viên đang hoạt động
+    // ===========================
+    int activeMembers = _context.MemberPackages
+        .Where(mp => mp.PackageStatus == "Active")
+        .Select(mp => mp.MemberId)
+        .Distinct()
+        .Count();
+
+    // Tỷ lệ dùng cho RingCluster
+    int totalMembers = _context.MemberPackages
+        .Select(mp => mp.MemberId)
+        .Distinct()
+        .Count();
+
+    double activeRatio = totalMembers > 0
+        ? (double)activeMembers / totalMembers
+        : 0;
+
+    // ===========================
+    // KPI doanh thu
+    // ===========================
+    const decimal assumedDailyGoal = 1_000_000m;
+
+    int dayCount = Math.Max(revenueTrend.Count, 1);
+
+    decimal periodGoal = assumedDailyGoal * dayCount;
+
+    double revenueGoalProgress = periodGoal > 0
+        ? Math.Min(1.0, (double)(totalRevenue / periodGoal))
+        : 0;
+
+    return new ManagerDashboardKpiDto
+    {
+        TotalRevenue = totalRevenue,
+        RevenueChangePercent = changePercent,
+        ActiveMembersCount = activeMembers,
+        UnresolvedIssuesCount = unresolvedIssues.Count,
+        RevenueGoalProgress = revenueGoalProgress,
+        ActiveMemberRatio = activeRatio,
+        IssueResolvedRatio = 0
+    };
+}
+        // ====================== DASHBOARD TỔNG QUAN ADMIN (DashboardOverview.jsx) ======================
+
+        /// <summary>
+        /// Chỉ dùng cho Admin, luôn xem toàn hệ thống (không lọc branchId).
+        /// </summary>
+        public async Task<AdminOverviewDto> GetAdminOverviewAsync(AdminOverviewQueryDto query)
+        {
+            int months = Math.Clamp(query.Months <= 0 ? 6 : query.Months, 1, 24);
+
+            return new AdminOverviewDto
+            {
+                Stats = await GetAdminStatsAsync(),
+                RevenueByMonth = await GetRevenueByMonthAsync(months),
+                MemberByBranch = await GetMemberByBranchAsync()
+            };
+        }
+
+        // ---- 1. 4 thẻ thống kê trên đầu trang ----
+        private async Task<AdminOverviewStatsDto> GetAdminStatsAsync()
+        {
+            var now = DateTime.Today;
+            var firstDayThisMonth = new DateTime(now.Year, now.Month, 1);
+            var firstDayLastMonth = firstDayThisMonth.AddMonths(-1);
+
+            // --- Tổng hội viên + tăng trưởng so với tháng trước ---
+            // TODO: xác nhận Members có cột CreatedAt để tính "hội viên mới" theo tháng.
+            int totalMembers = await _context.Members.CountAsync();
+
+            int membersUpToLastMonth = await _context.Members
+                .CountAsync(m => m.CreatedAt < firstDayThisMonth);
+            int membersUpToPrevMonth = await _context.Members
+                .CountAsync(m => m.CreatedAt < firstDayLastMonth);
+
+            double memberGrowthPct = CalcPercentChange(membersUpToPrevMonth, membersUpToLastMonth);
+
+            // --- Doanh thu tháng hiện tại + tháng trước ---
+            decimal revenueThisMonth = await _context.Transactions
+                .Where(t => t.PaymentStatus == "Paid" && t.CreatedAt >= firstDayThisMonth)
+                .SumAsync(t => (decimal?)t.Amount) ?? 0;
+
+            decimal revenueLastMonth = await _context.Transactions
+                .Where(t => t.PaymentStatus == "Paid"
+                         && t.CreatedAt >= firstDayLastMonth
+                         && t.CreatedAt < firstDayThisMonth)
+                .SumAsync(t => (decimal?)t.Amount) ?? 0;
+
+            double revenueGrowthPct = CalcPercentChange(revenueLastMonth, revenueThisMonth);
+
+            // --- Số chi nhánh ---
+            int branchCount = await _context.Branches.CountAsync();
+
+            // --- Số nhân viên + tăng trưởng ---
+            // TODO: xác nhận Employees có cột CreatedAt / HireDate để tính tăng trưởng theo tháng.
+            int employeeCount = await _context.Employees.CountAsync();
+            int employeesUpToLastMonth = await _context.Employees
+                .CountAsync(e => e.CreatedAt < firstDayThisMonth);
+            int employeesUpToPrevMonth = await _context.Employees
+                .CountAsync(e => e.CreatedAt < firstDayLastMonth);
+            double employeeGrowthPct = CalcPercentChange(employeesUpToPrevMonth, employeesUpToLastMonth);
+
+            return new AdminOverviewStatsDto
+            {
+                TotalMembers = totalMembers,
+                TotalMembersChangePercent = memberGrowthPct,
+                MonthlyRevenue = revenueThisMonth,
+                MonthlyRevenueChangePercent = revenueGrowthPct,
+                BranchCount = branchCount,
+                EmployeeCount = employeeCount,
+                EmployeeChangePercent = employeeGrowthPct
+            };
+        }
+
+        // ---- 2. Doanh thu N tháng gần nhất (cho RevenueChart) ----
+        private async Task<List<RevenueByMonthDto>> GetRevenueByMonthAsync(int months)
+        {
+            var now = DateTime.Today;
+            var fromMonth = new DateTime(now.Year, now.Month, 1).AddMonths(-(months - 1));
+
+            var transactions = await _context.Transactions
+                .Where(t => t.PaymentStatus == "Paid" && t.CreatedAt >= fromMonth)
+                .Select(t => new { t.CreatedAt, t.Amount })
+                .ToListAsync();
+
+            var result = new List<RevenueByMonthDto>();
+            for (int i = 0; i < months; i++)
+            {
+                var monthDate = fromMonth.AddMonths(i);
+                decimal revenue = transactions
+                    .Where(t => t.CreatedAt.Year == monthDate.Year && t.CreatedAt.Month == monthDate.Month)
+                    .Sum(t => t.Amount);
+
+                result.Add(new RevenueByMonthDto
+                {
+                    MonthLabel = $"Tháng {monthDate.Month}",
+                    Year = monthDate.Year,
+                    Month = monthDate.Month,
+                    Revenue = revenue
+                });
+            }
+            return result;
+        }
+
+        // ---- 3. Số hội viên theo chi nhánh (cho BranchDonut) ----
+        // TODO: xác nhận Member có cột BranchId trực tiếp. Nếu không, đổi sang đếm
+        // theo MemberPackages (distinct MemberId theo BranchId) như dưới đây (bản dự phòng).
+        private async Task<List<MemberByBranchDto>> GetMemberByBranchAsync()
+        {
+            var branches = await _context.Branches.ToListAsync();
+
+            var counts = await _context.MemberPackages
+                .Select(mp => new { mp.BranchId, mp.MemberId })
+                .Distinct()
+                .GroupBy(mp => mp.BranchId)
+                .Select(g => new { BranchId = g.Key, Count = g.Select(x => x.MemberId).Distinct().Count() })
+                .ToListAsync();
+
+            int total = counts.Sum(c => c.Count);
+
+            return branches.Select(b =>
+            {
+                var count = counts.FirstOrDefault(c => c.BranchId == b.BranchId)?.Count ?? 0;
+                return new MemberByBranchDto
+                {
+                    BranchName = b.BranchName,
+                    MemberCount = count,
+                    Percent = total > 0 ? Math.Round((double)count / total * 100, 1) : 0
+                };
+            })
+            .OrderByDescending(b => b.MemberCount)
+            .ToList();
         }
     }
 }

@@ -28,7 +28,7 @@ public class ForumCategoryService
             {
                 CategoryId = c.CategoryId,
                 CategoryName = c.CategoryName,
-                Slug = c.Slug,
+            
                 Icon = c.Icon,
                 DisplayOrder = c.DisplayOrder,
                 Status = c.Status,
@@ -47,7 +47,7 @@ public class ForumCategoryService
             {
                 CategoryId = c.CategoryId,
                 CategoryName = c.CategoryName,
-                Slug = c.Slug,
+              
                 Icon = c.Icon,
                 DisplayOrder = c.DisplayOrder,
                 Status = c.Status,
@@ -66,14 +66,10 @@ public class ForumCategoryService
         if (nameExists)
             return (false, "Tên danh mục đã tồn tại", null);
 
-        var slug = string.IsNullOrWhiteSpace(dto.Slug)
-            ? GenerateSlug(dto.CategoryName)
-            : dto.Slug;
-
+        
         var entity = new ForumCategory
         {
             CategoryName = dto.CategoryName,
-            Slug = slug,
             Icon = dto.Icon,
             DisplayOrder = dto.DisplayOrder,
             Status = "Active",
@@ -87,7 +83,7 @@ public class ForumCategoryService
         {
             CategoryId = entity.CategoryId,
             CategoryName = entity.CategoryName,
-            Slug = entity.Slug,
+           
             Icon = entity.Icon,
             DisplayOrder = entity.DisplayOrder,
             Status = entity.Status,
@@ -113,7 +109,6 @@ public class ForumCategoryService
             return (false, "Status không hợp lệ (chỉ Active hoặc Inactive)");
 
         entity.CategoryName = dto.CategoryName;
-        entity.Slug = string.IsNullOrWhiteSpace(dto.Slug) ? GenerateSlug(dto.CategoryName) : dto.Slug;
         entity.Icon = dto.Icon;
         entity.DisplayOrder = dto.DisplayOrder;
         entity.Status = dto.Status;

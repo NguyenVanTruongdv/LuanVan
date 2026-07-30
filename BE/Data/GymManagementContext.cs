@@ -610,9 +610,6 @@ public partial class GymManagementContext : DbContext
             entity.Property(e => e.Icon)
                 .HasMaxLength(255)
                 .HasColumnName("icon");
-            entity.Property(e => e.Slug)
-                .HasMaxLength(100)
-                .HasColumnName("slug");
             entity.Property(e => e.Status)
                 .HasDefaultValueSql("'Active'")
                 .HasColumnType("enum('Active','Inactive')")

@@ -7,7 +7,7 @@ namespace BE.Controllers
 {
     [ApiController]
     [Route("api/dashboard")]
-    [Authorize]
+    [Authorize(Roles = "Admin,Manager,Cashier")]
     public class DashboardController : ControllerBase
     {
         private readonly DashboardService _dashboardService;
@@ -17,56 +17,130 @@ namespace BE.Controllers
             _dashboardService = dashboardService;
         }
 
-        // Admin không có branchId trong token (hoặc claim "role" = Admin) => xem toàn hệ thống
-        // Cashier / Manager => lấy branchId từ token để chỉ xem chi nhánh của họ
+        /// <summary>
+        /// Admin => xem toàn hệ thống.
+        /// Manager/Cashier => chỉ xem dữ liệu chi nhánh trong token.
+        /// </summary>
         private int? CurrentBranchId
         {
             get
             {
-                var role = User.FindFirst(ClaimTypes.Role)?.Value ?? User.FindFirst("role")?.Value;
-                if (role == "Admin") return null;
+                var role = User.FindFirst(ClaimTypes.Role)?.Value
+                           ?? User.FindFirst("role")?.Value;
+
+                if (role == "Admin")
+                    return null;
 
                 var branchIdClaim = User.FindFirst("branchId")?.Value;
-                return int.TryParse(branchIdClaim, out var branchId) ? branchId : null;
+
+                return int.TryParse(branchIdClaim, out var branchId)
+                    ? branchId
+                    : null;
             }
         }
 
-        // GET /api/dashboard  -> dashboard tổng quan cũ (stats + checkin + giao dịch + biểu đồ 7 ngày + gói sắp hết hạn)
+        // ==========================================================
+        // DASHBOARD TỔNG QUAN
+        // ==========================================================
+// ==========================================================
+        // DASHBOARD TỔNG QUAN (ADMIN) — DashboardOverview.jsx
+        // ==========================================================
+
+        [HttpGet("admin-overview")]
+        [Authorize(Roles = "Admin")]
+        public async Task<IActionResult> GetAdminOverview([FromQuery] AdminOverviewQueryDto query)
+        {
+            query.Months = Math.Clamp(query.Months <= 0 ? 6 : query.Months, 1, 24);
+
+            return Ok(await _dashboardService.GetAdminOverviewAsync(query));
+        }
         [HttpGet]
         public async Task<IActionResult> GetDashboard()
-            => Ok(await _dashboardService.GetDashboardAsync(CurrentBranchId));
+        {
+            return Ok(await _dashboardService.GetDashboardAsync(CurrentBranchId));
+        }
 
         [HttpGet("stats")]
         public async Task<IActionResult> GetStats()
-            => Ok(await _dashboardService.GetStatsAsync(CurrentBranchId));
+        {
+            return Ok(await _dashboardService.GetStatsAsync(CurrentBranchId));
+        }
 
         [HttpGet("recent-checkins")]
         public async Task<IActionResult> GetRecentCheckins([FromQuery] int take = 10)
-            => Ok(await _dashboardService.GetRecentCheckinsAsync(CurrentBranchId, take));
+        {
+            take = Math.Clamp(take, 1, 100);
+
+            return Ok(await _dashboardService.GetRecentCheckinsAsync(CurrentBranchId, take));
+        }
 
         [HttpGet("recent-transactions")]
         public async Task<IActionResult> GetRecentTransactions([FromQuery] int take = 10)
-            => Ok(await _dashboardService.GetRecentTransactionsAsync(CurrentBranchId, take));
+        {
+            take = Math.Clamp(take, 1, 100);
+
+            return Ok(await _dashboardService.GetRecentTransactionsAsync(CurrentBranchId, take));
+        }
 
         [HttpGet("weekly-chart")]
         public async Task<IActionResult> GetWeeklyChart()
-            => Ok(await _dashboardService.GetWeeklyChartAsync(CurrentBranchId));
+        {
+            return Ok(await _dashboardService.GetWeeklyChartAsync(CurrentBranchId));
+        }
 
         [HttpGet("expiring-packages")]
         public async Task<IActionResult> GetExpiringPackages([FromQuery] int days = 7)
-            => Ok(await _dashboardService.GetExpiringPackagesAsync(CurrentBranchId, days));
+        {
+            days = Math.Clamp(days, 1, 365);
 
-        // ==============================================================
-        // GET /api/dashboard/cashier -> dùng riêng cho trang CashierDashboard.jsx
-        // Query params:
-        //   range   : "today" | "7d" | "30d" | "custom"   (mặc định "30d")
-        //   start   : datetime ISO, chỉ dùng khi range = "custom"
-        //   end     : datetime ISO, chỉ dùng khi range = "custom"
-        //   method  : "Tất cả" | "Tiền mặt" | "Chuyển khoản"
-        //   channel : "Tất cả" | "Tại quầy" | "Online"
-        // ==============================================================
+            return Ok(await _dashboardService.GetExpiringPackagesAsync(CurrentBranchId, days));
+        }
+
+        // ==========================================================
+        // DASHBOARD THU NGÂN
+        // ==========================================================
+
         [HttpGet("cashier")]
-        public async Task<IActionResult> GetCashierDashboard([FromQuery] CashierDashboardQueryDto query)
-            => Ok(await _dashboardService.GetCashierDashboardAsync(CurrentBranchId, query));
+        public async Task<IActionResult> GetCashierDashboard(
+            [FromQuery] CashierDashboardQueryDto query)
+        {
+            query.Range = NormalizeRange(query.Range);
+
+            return Ok(await _dashboardService.GetCashierDashboardAsync(CurrentBranchId, query));
+        }
+
+        // ==========================================================
+        // DASHBOARD QUẢN LÝ
+        // ==========================================================
+
+       [HttpGet("manager")]
+        [Authorize(Roles = "Admin,Manager")]
+        public async Task<IActionResult> GetManagerDashboard(
+            [FromQuery] ManagerDashboardQueryDto query)
+        {
+            query.Range = NormalizeRange(query.Range);
+            return Ok(await _dashboardService.GetManagerDashboardAsync(CurrentBranchId, query));
+        }
+
+        // ==========================================================
+        // Validate Range
+        // ==========================================================
+
+        private static string NormalizeRange(string? range)
+        {
+            if (string.IsNullOrWhiteSpace(range))
+                return "30d";
+
+            range = range.Trim().ToLower();
+
+            return range switch
+            {
+                "today" => "today",
+                "7d" => "7d",
+                "30d" => "30d",
+                "custom" => "custom",
+                _ => "30d"
+            };
+        }
     }
 }
