@@ -10,63 +10,102 @@ public class BranchService
     private readonly GymManagementContext _context;
     private readonly BranchImageService _branchImageService;
 
+    private const int ManagerRoleId = 2;
+
     public BranchService(GymManagementContext context, BranchImageService branchImageService)
     {
         _context = context;
         _branchImageService = branchImageService;
     }
 
+    // ===================== LẤY DANH SÁCH CHI NHÁNH (CÓ PHÂN TRANG) =====================
     public async Task<BranchListResultDto> GetListAsync(BranchFilterDto filter)
     {
+        // Bắt đầu từ tất cả chi nhánh, kèm theo ảnh và nhân viên (để sau này map ra DTO)
         var query = _context.Branches
             .Include(b => b.BranchImages)
             .Include(b => b.Employees).ThenInclude(e => e.Account)
-            .Where(b => b.Status != BranchSatusEnum.Inactive.ToString())
+            .Include(b => b.Employees).ThenInclude(e => e.Role)
             .AsQueryable();
 
+        // Chỉ lấy chi nhánh chưa bị xóa mềm 
+        query = query.Where(b => b.Status != BranchSatusEnum.Inactive.ToString());
+
+        // Nếu người dùng có nhập tên để tìm kiếm thì lọc theo tên 
         if (!string.IsNullOrWhiteSpace(filter.Name))
         {
-            var keyword = filter.Name.Trim().ToLower();
+            string keyword = filter.Name.Trim().ToLower();
             query = query.Where(b => b.BranchName.ToLower().Contains(keyword));
         }
 
+        // Nếu có lọc theo trạng thái thì áp dụng thêm
         if (!string.IsNullOrWhiteSpace(filter.Status))
         {
             query = query.Where(b => b.Status == filter.Status);
         }
 
-        var totalCount = await query.CountAsync();
+        // Đếm tổng số bản ghi trước khi phân trang (để FE hiển thị số trang)
+        int totalCount = await query.CountAsync();
 
-        var page = filter.Page < 1 ? 1 : filter.Page;
-        var pageSize = filter.PageSize < 1 ? 20 : filter.PageSize;
+        // Xử lý số trang và số lượng mỗi trang, tránh giá trị nhỏ hơn 1
+        int page = filter.Page;
+        if (page < 1)
+        {
+            page = 1;
+        }
 
+        int pageSize = filter.PageSize;
+        if (pageSize < 1)
+        {
+            pageSize = 20;
+        }
+
+        // Sắp xếp mới nhất lên đầu, rồi cắt lấy đúng trang cần lấy
         var branches = await query
             .OrderByDescending(b => b.CreatedAt)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
             .ToListAsync();
 
+        // Chuyển từng Branch (model) thành BranchDto để trả về cho FE
+        var items = new List<BranchDto>();
+        foreach (var branch in branches)
+        {
+            items.Add(MapToDto(branch));
+        }
+
         return new BranchListResultDto
         {
-            Items = branches.Select(MapToDto).ToList(),
+            Items = items,
             TotalCount = totalCount,
             Page = page,
             PageSize = pageSize
         };
     }
 
+    // ===================== LẤY 1 CHI NHÁNH THEO ID =====================
     public async Task<BranchDto?> GetByIdAsync(int branchId)
     {
         var branch = await _context.Branches
             .Include(b => b.BranchImages)
             .Include(b => b.Employees).ThenInclude(e => e.Account)
-            .FirstOrDefaultAsync(b => b.BranchId == branchId && b.Status != BranchSatusEnum.Inactive.ToString());
+            .Include(b => b.Employees).ThenInclude(e => e.Role)
+            .FirstOrDefaultAsync(b => b.BranchId == branchId
+                                   && b.Status != BranchSatusEnum.Inactive.ToString());
 
-        return branch is null ? null : MapToDto(branch);
+        // Không tìm thấy thì trả về null, tìm thấy thì map ra DTO
+        if (branch == null)
+        {
+            return null;
+        }
+
+        return MapToDto(branch);
     }
 
+    // ===================== TẠO MỚI CHI NHÁNH =====================
     public async Task<BranchDto> CreateAsync(CreateBranchDto dto)
     {
+        // Tạo đối tượng Branch mới từ dữ liệu FE gửi lên
         var branch = new Branch
         {
             BranchName = dto.BranchName,
@@ -77,53 +116,67 @@ public class BranchService
         };
 
         _context.Branches.Add(branch);
-        await _context.SaveChangesAsync(); // cần BranchId trước khi upload ảnh / gán quản lý
 
-        if (dto.ManagerIds is { Count: > 0 })
+        // Lưu trước để có BranchId (cần BranchId để gán quản lý và upload ảnh)
+        await _context.SaveChangesAsync();
+
+        // Nếu FE có gửi danh sách quản lý thì gán quản lý cho chi nhánh
+        if (dto.ManagerIds != null && dto.ManagerIds.Count > 0)
         {
             await AssignManagersAsync(branch, dto.ManagerIds);
         }
 
-        if (dto.Images is { Count: > 0 })
+        // Nếu FE có gửi ảnh thì thêm ảnh cho chi nhánh
+        if (dto.Images != null && dto.Images.Count > 0)
         {
-            var add = new AddBranchImagesDto
+            var addImagesDto = new AddBranchImagesDto
             {
                 Images = dto.Images,
                 ImageTypes = dto.ImageTypes
             };
-            await _branchImageService.AddImagesAsync(branch.BranchId, add);
+            await _branchImageService.AddImagesAsync(branch.BranchId, addImagesDto);
         }
 
         await _context.SaveChangesAsync();
 
+        // Load lại ảnh và nhân viên vì vừa thêm mới ở trên
         await _context.Entry(branch).Collection(b => b.BranchImages).LoadAsync();
         await _context.Entry(branch).Collection(b => b.Employees).LoadAsync();
 
-        // Cần load thêm Account để MapToDto lấy được Phone (không có bước này thì
-        // Employee.Account luôn null nếu lazy loading không bật -> NullReferenceException).
+        // Cần load thêm Account + Role của từng nhân viên,
+        // nếu không load thì Employee.Account/Role sẽ bị null,
+        // dẫn tới lỗi hoặc lọc sai khi MapToDto lấy số điện thoại và lọc Quản lý.
         foreach (var employee in branch.Employees)
         {
             await _context.Entry(employee).Reference(e => e.Account).LoadAsync();
+            await _context.Entry(employee).Reference(e => e.Role).LoadAsync();
         }
 
         return MapToDto(branch);
     }
 
+    // ===================== CẬP NHẬT CHI NHÁNH =====================
     public async Task<BranchDto?> UpdateAsync(int branchId, UpdateBranchDto dto)
     {
         var branch = await _context.Branches
             .Include(b => b.BranchImages)
             .Include(b => b.Employees).ThenInclude(e => e.Account)
-            .FirstOrDefaultAsync(b => b.BranchId == branchId && b.Status != BranchSatusEnum.Inactive.ToString());
+            .Include(b => b.Employees).ThenInclude(e => e.Role)
+            .FirstOrDefaultAsync(b => b.BranchId == branchId
+                                   && b.Status != BranchSatusEnum.Inactive.ToString());
 
-        if (branch is null) return null;
+        if (branch == null)
+        {
+            return null;
+        }
+
 
         branch.BranchName = dto.BranchName;
         branch.Address = dto.Address;
         branch.Phone = dto.Phone;
         branch.Status = dto.Status;
 
-        // Nếu FE có gửi ManagerIds thì đồng bộ lại danh sách nhân viên quản lý của chi nhánh này
+        // Nếu FE có gửi ManagerIds thì đồng bộ lại danh sách quản lý của chi nhánh này
         if (dto.ManagerIds != null)
         {
             await SyncManagersAsync(branch, dto.ManagerIds);
@@ -134,27 +187,39 @@ public class BranchService
         return MapToDto(branch);
     }
 
+    // ===================== XÓA MỀM CHI NHÁNH =====================
     public async Task<bool> SoftDeleteAsync(int branchId)
     {
         var branch = await _context.Branches
-            .FirstOrDefaultAsync(b => b.BranchId == branchId && b.Status != BranchSatusEnum.Inactive.ToString());
+            .FirstOrDefaultAsync(b => b.BranchId == branchId
+                                   && b.Status != BranchSatusEnum.Inactive.ToString());
 
-        if (branch is null) return false;
+        if (branch == null)
+        {
+            return false;
+        }
 
+        // Không xóa thật khỏi database, chỉ đổi trạng thái thành Inactive
         branch.Status = BranchSatusEnum.Inactive.ToString();
         await _context.SaveChangesAsync();
 
         return true;
     }
 
+    // ===================== KHÔI PHỤC CHI NHÁNH ĐÃ XÓA MỀM =====================
     public async Task<BranchDto?> RestoreAsync(int branchId)
     {
         var branch = await _context.Branches
             .Include(b => b.BranchImages)
             .Include(b => b.Employees).ThenInclude(e => e.Account)
-            .FirstOrDefaultAsync(b => b.BranchId == branchId && b.Status == BranchSatusEnum.Inactive.ToString());
+            .Include(b => b.Employees).ThenInclude(e => e.Role)
+            .FirstOrDefaultAsync(b => b.BranchId == branchId
+                                   && b.Status == BranchSatusEnum.Inactive.ToString());
 
-        if (branch is null) return null;
+        if (branch == null)
+        {
+            return null;
+        }
 
         branch.Status = "Active";
         await _context.SaveChangesAsync();
@@ -162,12 +227,6 @@ public class BranchService
         return MapToDto(branch);
     }
 
-    // ===================== QUẢN LÝ CHI NHÁNH =====================
-    // Branch.Employees <-> Employee.Branches là skip navigation many-to-many
-    // (qua bảng nối EmployeeBranch), nên chỉ cần Add/Remove trực tiếp đối tượng Employee,
-    // EF Core tự lo việc ghi/xóa record ở bảng nối.
-
-    /// <summary>Gán thêm các nhân viên làm quản lý cho 1 chi nhánh (dùng khi tạo mới, chưa có ai)</summary>
     private async Task AssignManagersAsync(Branch branch, List<long> employeeIds)
     {
         var employees = await _context.Employees
@@ -176,23 +235,29 @@ public class BranchService
 
         foreach (var employee in employees)
         {
-            if (!branch.Employees.Any(e => e.EmployeeId == employee.EmployeeId))
+            // Chỉ thêm nếu chưa có trong danh sách, tránh thêm trùng
+            bool daCoTrongDanhSach = false;
+            foreach (var existing in branch.Employees)
+            {
+                if (existing.EmployeeId == employee.EmployeeId)
+                {
+                    daCoTrongDanhSach = true;
+                    break;
+                }
+            }
+
+            if (!daCoTrongDanhSach)
             {
                 branch.Employees.Add(employee);
             }
         }
     }
 
-    /// <summary>
-    /// Đồng bộ danh sách quản lý của 1 chi nhánh theo đúng danh sách employeeIds truyền vào:
-    /// - Ai không còn trong danh sách -> gỡ khỏi chi nhánh
-    /// - Ai mới có trong danh sách -> thêm vào chi nhánh
-    /// </summary>
+ 
     private async Task SyncManagersAsync(Branch branch, List<long> employeeIds)
     {
-        var currentManagers = branch.Employees.ToList();
-
-        // Gỡ quản lý không còn trong danh sách mới
+     
+        var currentManagers = branch.Employees.ToList(); // copy ra list riêng để xóa an toàn khi đang duyệt
         foreach (var employee in currentManagers)
         {
             if (!employeeIds.Contains(employee.EmployeeId))
@@ -201,14 +266,26 @@ public class BranchService
             }
         }
 
-        // Thêm quản lý mới chưa có trong chi nhánh này
-        var existingEmployeeIds = branch.Employees.Select(e => e.EmployeeId).ToHashSet();
-        var missingIds = employeeIds.Distinct().Where(id => !existingEmployeeIds.Contains(id)).ToList();
+        
+        var idsHienTai = new HashSet<long>();
+        foreach (var employee in branch.Employees)
+        {
+            idsHienTai.Add(employee.EmployeeId);
+        }
 
-        if (missingIds.Count > 0)
+        var idsCanThemMoi = new List<long>();
+        foreach (var id in employeeIds.Distinct())
+        {
+            if (!idsHienTai.Contains(id))
+            {
+                idsCanThemMoi.Add(id);
+            }
+        }
+
+        if (idsCanThemMoi.Count > 0)
         {
             var newEmployees = await _context.Employees
-                .Where(e => missingIds.Contains(e.EmployeeId))
+                .Where(e => idsCanThemMoi.Contains(e.EmployeeId))
                 .ToListAsync();
 
             foreach (var employee in newEmployees)
@@ -218,45 +295,66 @@ public class BranchService
         }
     }
 
-    internal static BranchDto MapToDto(Branch b) => new()
+    // ===================== CHUYỂN Branch (MODEL) SANG BranchDto =====================
+    internal static BranchDto MapToDto(Branch b)
     {
-        BranchId = b.BranchId,
-        BranchName = b.BranchName,
-        Address = b.Address,
-        Phone = b.Phone,
-        Status = b.Status,
-        CreatedAt = b.CreatedAt,
-        Managers = b.Employees
-            .Select(e => new BranchManagerDto
+        // Lọc ra những nhân viên có RoleId == Manager (2) để đưa vào danh sách "Quản lý".
+        // b.Employees là TẤT CẢ nhân viên gắn với chi nhánh (bao gồm cả Staff),
+        // nên phải lọc theo Role, nếu không Staff sẽ bị hiện nhầm vào cột Quản lý.
+        var managers = new List<BranchManagerDto>();
+        foreach (var employee in b.Employees)
+        {
+            bool laQuanLy = employee.Role != null && employee.Role.RoleId == ManagerRoleId;
+            if (laQuanLy)
             {
-                EmployeeId = e.EmployeeId,
-                FullName = e.FullName,
-                // e.Account?.Phone: Account có thể null nếu chưa Include/Load,
-                // ?. để tránh NullReferenceException.
-                Phone = e.Account?.Phone,
-            })
-            .ToList(),
-        Images = b.BranchImages
+                managers.Add(new BranchManagerDto
+                {
+                    EmployeeId = employee.EmployeeId,
+                    FullName = employee.FullName,
+                    Phone = employee.Account?.Phone,
+                });
+            }
+        }
+
+        var images = b.BranchImages
             .OrderBy(i => i.ImageType)
             .ThenBy(i => i.SortOrder)
             .Select(BranchImageService.MapImageToDto)
-            .ToList()
-    };
+            .ToList();
 
+        return new BranchDto
+        {
+            BranchId = b.BranchId,
+            BranchName = b.BranchName,
+            Address = b.Address,
+            Phone = b.Phone,
+            Status = b.Status,
+            CreatedAt = b.CreatedAt,
+            Managers = managers,
+            Images = images
+        };
+    }
+
+    // ===================== LẤY DANH SÁCH NHÂN VIÊN CÓ THỂ LÀM QUẢN LÝ =====================
+    // Điều kiện: Role là Manager, đang Active, và đang quản lý ít hơn 3 chi nhánh
     public async Task<List<ManagerLookupDto>> GetAvailableManagersAsync()
     {
-        return await _context.Employees.Include(e => e.Role)
-            .Where(e => e.Role.RoleId == 2
-                        && e.Status == "Active")
+        var query = _context.Employees
+            .Include(e => e.Role)
+            .Where(e => e.Role.RoleId == ManagerRoleId && e.Status == "Active")
             .Select(e => new ManagerLookupDto
             {
                 EmployeeId = e.EmployeeId,
                 FullName = e.FullName,
                 TotalBranches = e.Branches.Count
-            })
+            });
+
+        var result = await query
             .Where(x => x.TotalBranches < 3)
             .OrderBy(x => x.TotalBranches)
             .ThenBy(x => x.FullName)
             .ToListAsync();
+
+        return result;
     }
 }

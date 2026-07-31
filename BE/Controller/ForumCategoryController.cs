@@ -72,4 +72,19 @@ public class ForumCategoryController : ControllerBase
 
         return NoContent();
     }
+    [HttpPatch("{id}/deactivate")]
+    public async Task<IActionResult> Deactivate(int id)
+    {
+        var (success, error) = await _service.DeactivateAsync(id);
+        if (!success) return BadRequest(new { message = error });
+        return Ok(new { message = "Đã ẩn danh mục" });
+    }
+
+    [HttpPatch("{id}/activate")]
+    public async Task<IActionResult> Activate(int id)
+    {
+        var (success, error) = await _service.ActivateAsync(id);
+        if (!success) return BadRequest(new { message = error });
+        return Ok(new { message = "Đã hiện lại danh mục" });
+    }
 }

@@ -16,6 +16,7 @@ namespace BE.DTOs.Payment
         public decimal Amount { get; set; }          // số tiền thực thu
         public string Status { get; set; } = null!;
         public string? BankReferenceCode { get; set; }
+        public bool IsAdjusted { get; set; }
     }
     public class InternalMembershipPlanDto
     {
@@ -37,8 +38,8 @@ namespace BE.DTOs.Payment
 
         public bool IsPopular { get; set; }
     }
-    
 
- 
- 
+
+
+
 }

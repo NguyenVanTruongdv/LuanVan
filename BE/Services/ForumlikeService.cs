@@ -16,65 +16,73 @@ public class ForumLikeService
         _notificationService = notificationService;
     }
 
-    // ===== TYM / BỎ TYM BÀI VIẾT (toggle) =====
+    // ===== TYM / BỎ TYM BÀI VIẾT 
     public async Task<(bool Success, string? Error, ForumLikeToggleResultDto? Data)> ToggleLikeAsync(long memberId, long postId)
     {
-        var post = await _context.ForumPosts.FirstOrDefaultAsync(p => p.PostId == postId);
+        var baiViet = await _context.ForumPosts.FirstOrDefaultAsync(p => p.PostId == postId);
 
-        if (post is null || post.Status != "Active")
+        if (baiViet == null || baiViet.Status != "Active")
+        {
             return (false, "Bài viết không tồn tại hoặc đã bị ẩn/xóa", null);
+        }
 
-        var existingLike = await _context.ForumLikes
+        var likeCu = await _context.ForumLikes
             .FirstOrDefaultAsync(l => l.PostId == postId && l.MemberId == memberId);
 
-        bool isLiked;
-        ForumLike? newLike = null;
+        bool dangLike;
+        ForumLike? likeMoi = null;
 
-        if (existingLike is not null)
+        if (likeCu != null)
         {
-            // Đã tym trước đó -> bỏ tym
-            _context.ForumLikes.Remove(existingLike);
-            if (post.LikeCount > 0) post.LikeCount -= 1;
-            isLiked = false;
+            // Đã tym trước đó -> bấm nữa là bỏ tym
+            _context.ForumLikes.Remove(likeCu);
+            if (baiViet.LikeCount > 0)
+            {
+                baiViet.LikeCount = baiViet.LikeCount - 1;
+            }
+            dangLike = false;
         }
         else
         {
             // Chưa tym -> thêm tym mới
-            newLike = new ForumLike
+            likeMoi = new ForumLike
             {
                 PostId = postId,
                 MemberId = memberId,
                 CreatedAt = DateTime.UtcNow
             };
-            _context.ForumLikes.Add(newLike);
-            post.LikeCount += 1;
-            isLiked = true;
+            _context.ForumLikes.Add(likeMoi);
+            baiViet.LikeCount = baiViet.LikeCount + 1;
+            dangLike = true;
         }
 
-        // Lưu trước để có LikeId thật (cần cho notification.like_id) rồi mới tạo thông báo
+        // Lưu trước để có LikeId thật  rồi mới tạo thông báo
         await _context.SaveChangesAsync();
 
-        if (isLiked && newLike is not null)
+        if (dangLike == true && likeMoi != null)
         {
             // Tạo thông báo cho chủ bài viết (CreateAsync tự bỏ qua nếu tự tym bài của chính mình)
             await _notificationService.CreateAsync(
-                recipientMemberId: post.MemberId,
+                recipientMemberId: baiViet.MemberId,
                 actorMemberId: memberId,
                 notifyType: ForumNotifyType.Like,
                 postId: postId,
-                likeId: newLike.LikeId);
+                likeId: likeMoi.LikeId);
         }
 
-        return (true, null, new ForumLikeToggleResultDto
+        var ketQua = new ForumLikeToggleResultDto
         {
-            IsLiked = isLiked,
-            LikeCount = post.LikeCount
-        });
+            IsLiked = dangLike,
+            LikeCount = baiViet.LikeCount
+        };
+
+        return (true, null, ketQua);
     }
 
     // ===== KIỂM TRA 1 HỘI VIÊN ĐÃ TYM BÀI CHƯA =====
     public async Task<bool> HasLikedAsync(long postId, long memberId)
     {
-        return await _context.ForumLikes.AnyAsync(l => l.PostId == postId && l.MemberId == memberId);
+        bool daTym = await _context.ForumLikes.AnyAsync(l => l.PostId == postId && l.MemberId == memberId);
+        return daTym;
     }
 }

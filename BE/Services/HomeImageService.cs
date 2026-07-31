@@ -91,7 +91,7 @@ namespace BE.Services
             {
                 ImageUrl = imageUrl,
                 Title = request.Title,
-                LinkUrl = request.LinkUrl,
+            
                 SortOrder = request.SortOrder,
                 Status = "Active",
                 UploadedBy = uploadedBy,
@@ -129,8 +129,7 @@ namespace BE.Services
             if (request.Title != null)
                 entity.Title = request.Title;
 
-            if (request.LinkUrl != null)
-                entity.LinkUrl = request.LinkUrl;
+          
 
             if (request.SortOrder.HasValue)
                 entity.SortOrder = request.SortOrder.Value;
@@ -223,7 +222,7 @@ namespace BE.Services
                 ImageId = x.ImageId,
                 ImageUrl = x.ImageUrl,
                 Title = x.Title,
-                LinkUrl = x.LinkUrl,
+           
                 SortOrder = x.SortOrder,
                 Status = x.Status,
                 UploadedBy = x.UploadedBy,

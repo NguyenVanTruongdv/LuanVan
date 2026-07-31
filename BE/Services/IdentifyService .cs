@@ -480,7 +480,7 @@ public class IdentifyService
             return "Tài khoản chưa được kích hoạt. Không thể check-in.";
         }
 
-        if (package == null || package.PackageStatus != "Active")
+        if (package == null || package.PackageStatus != "Active" )
         {
             return "Gói tập đã hết hạn. Vui lòng gia hạn trước khi check-in.";
         }

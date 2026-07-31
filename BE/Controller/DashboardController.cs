@@ -7,7 +7,7 @@ namespace BE.Controllers
 {
     [ApiController]
     [Route("api/dashboard")]
-    [Authorize(Roles = "Admin,Manager,Cashier")]
+    [Authorize(Roles = "Admin,Manager,Staff")]
     public class DashboardController : ControllerBase
     {
         private readonly DashboardService _dashboardService;

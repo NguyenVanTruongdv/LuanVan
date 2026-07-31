@@ -5,7 +5,6 @@ using Microsoft.EntityFrameworkCore;
 
 namespace BE.Services.GymDensity;
 
-
 public class GymDensityService
 {
     private readonly GymManagementContext _context;
@@ -17,72 +16,97 @@ public class GymDensityService
 
     public async Task<int> AdjustAsync(int branchId, int delta)
     {
-        var current = await GetCurrentHeadcountAsync(branchId);
-        var next = current + delta;
-        if (next < 0) next = 0; // an toàn, tránh âm do lệch dữ liệu (vd. thiếu 1 lượt check-in)
+        int soLuongHienTai = await GetCurrentHeadcountAsync(branchId);
+        int soLuongMoi = soLuongHienTai + delta;
 
-        _context.GymDensities.Add(new Models.GymDensity
+        if (soLuongMoi < 0)
+        {
+            soLuongMoi = 0; // an toàn, tránh âm do lệch dữ liệu (vd. thiếu 1 lượt check-in)
+        }
+
+        var banGhiMoi = new Models.GymDensity
         {
             BranchId = branchId,
-            Headcount = (short)next,
+            Headcount = (short)soLuongMoi,
             RecordedAt = DateTime.Now
-        });
+        };
+
+        _context.GymDensities.Add(banGhiMoi);
         await _context.SaveChangesAsync();
 
-        return next;
+        return soLuongMoi;
     }
 
     public async Task<int> GetCurrentHeadcountAsync(int branchId)
     {
-        var last = await _context.GymDensities
+        var banGhiCuoiCung = await _context.GymDensities
             .Where(d => d.BranchId == branchId)
             .OrderByDescending(d => d.RecordedAt)
             .ThenByDescending(d => d.DensityId)
             .FirstOrDefaultAsync();
 
-        return last?.Headcount ?? 0;
-    }
-       public async Task<List<GymDensityHourDto>> GetDensityByBranchAsync(
-            int branchId,
-            int hoursCount = 5,
-            CancellationToken ct = default)
+        if (banGhiCuoiCung == null)
         {
-            // Giờ hiện tại (local), cắt bỏ phút/giây để làm mốc (khung giờ cuối cùng trong dãy trả về)
-            var now = DateTime.Now;
-            var currentHourSlot = new DateTime(
-                now.Year, now.Month, now.Day, now.Hour, 0, 0);
-
-            // Khung giờ sớm nhất cần trả về
-            var earliestSlot = currentHourSlot.AddHours(-(hoursCount - 1));
-
-            // Chỉ kéo dữ liệu trong khoảng thời gian đủ dùng, tránh load toàn bộ lịch sử
-            var fromTime = earliestSlot;
-
-            var rawData = await _context.GymDensities
-                .Where(x => x.BranchId == branchId && x.RecordedAt >= fromTime)
-                .OrderByDescending(x => x.RecordedAt)
-                .ToListAsync(ct);
-
-            // Gom nhóm theo khung giờ, lấy bản ghi mới nhất trong mỗi giờ -> dùng để tra cứu (lookup)
-            var groupedByHour = rawData
-                .GroupBy(x => new DateTime(
-                    x.RecordedAt.Year, x.RecordedAt.Month, x.RecordedAt.Day,
-                    x.RecordedAt.Hour, 0, 0))
-                .ToDictionary(
-                    g => g.Key,
-                    g => g.OrderByDescending(x => x.RecordedAt).First().Headcount);
-
-            // Sinh đủ hoursCount khung giờ liên tục, thiếu thì mặc định Headcount = 0
-            var result = Enumerable.Range(0, hoursCount)
-                .Select(i => earliestSlot.AddHours(i))
-                .Select(slot => new GymDensityHourDto
-                {
-                    HourSlot = slot,
-                    Headcount = (short)(groupedByHour.TryGetValue(slot, out var headcount) ? headcount : 0)
-                })
-                .OrderBy(x => x.HourSlot) // tăng dần để vẽ trái → phải
-                .ToList();
-
-            return result;
+            return 0;
         }
+
+        return banGhiCuoiCung.Headcount;
+    }
+
+    public async Task<List<GymDensityHourDto>> GetDensityByBranchAsync(
+        int branchId,
+        int hoursCount = 5,
+        CancellationToken ct = default)
+    {
+
+        DateTime now = DateTime.Now;
+        DateTime khungGioHienTai = new DateTime(now.Year, now.Month, now.Day, now.Hour, 0, 0);
+
+
+        DateTime khungGioSomNhat = khungGioHienTai.AddHours(-(hoursCount - 1));
+
+
+        DateTime fromTime = khungGioSomNhat;
+
+        var rawData = await _context.GymDensities
+            .Where(x => x.BranchId == branchId && x.RecordedAt >= fromTime)
+            .OrderByDescending(x => x.RecordedAt)
+            .ToListAsync(ct);
+
+
+        Dictionary<DateTime, short> soLuongTheoGio = new Dictionary<DateTime, short>();
+        foreach (var record in rawData)
+        {
+            DateTime khungGio = new DateTime(
+                record.RecordedAt.Year, record.RecordedAt.Month, record.RecordedAt.Day,
+                record.RecordedAt.Hour, 0, 0);
+
+
+            if (soLuongTheoGio.ContainsKey(khungGio) == false)
+            {
+                soLuongTheoGio[khungGio] = record.Headcount;
+            }
+        }
+
+        List<GymDensityHourDto> ketQua = new List<GymDensityHourDto>();
+        for (int i = 0; i < hoursCount; i++)
+        {
+            DateTime slot = khungGioSomNhat.AddHours(i);
+
+            short soLuong = 0;
+            if (soLuongTheoGio.ContainsKey(slot))
+            {
+                soLuong = soLuongTheoGio[slot];
+            }
+
+            ketQua.Add(new GymDensityHourDto
+            {
+                HourSlot = slot,
+                Headcount = soLuong
+            });
+        }
+
+
+        return ketQua;
+    }
 }

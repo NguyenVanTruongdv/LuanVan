@@ -905,9 +905,7 @@ public partial class GymManagementContext : DbContext
             entity.Property(e => e.ImageUrl)
                 .HasMaxLength(500)
                 .HasColumnName("image_url");
-            entity.Property(e => e.LinkUrl)
-                .HasMaxLength(500)
-                .HasColumnName("link_url");
+          
             entity.Property(e => e.SortOrder).HasColumnName("sort_order");
             entity.Property(e => e.Status)
                 .HasDefaultValueSql("'Active'")

@@ -27,23 +27,25 @@ public class MembershipPlanService
             query = query.Where(p => p.PlanName.Contains(packageName));
         }
 
-        return await query
+        var dsGoiTap = await query
             .OrderByDescending(p => p.IsPopular)
             .ThenBy(p => p.Price)
             .ToListAsync();
+
+        return dsGoiTap;
     }
 
     // Lấy chi tiết gói tập
     public async Task<MembershipPlan?> GetByIdAsync(int id)
     {
-        return await _db.MembershipPlans
-            .FirstOrDefaultAsync(p => p.PlanId == id);
+        var goiTap = await _db.MembershipPlans.FirstOrDefaultAsync(p => p.PlanId == id);
+        return goiTap;
     }
 
     // Tạo gói tập — Status luôn do service set, không nhận từ client
     public async Task<MembershipPlan> CreateAsync(MembershipPlanRequest request)
     {
-        var plan = new MembershipPlan
+        var goiTapMoi = new MembershipPlan
         {
             PlanName = request.PlanName,
             Price = request.Price,
@@ -54,26 +56,28 @@ public class MembershipPlanService
             CreatedAt = DateTime.UtcNow,
         };
 
-        _db.MembershipPlans.Add(plan);
+        _db.MembershipPlans.Add(goiTapMoi);
         await _db.SaveChangesAsync();
 
-        return plan;
+        return goiTapMoi;
     }
 
     // Cập nhật thông tin gói tập — KHÔNG đụng tới Status ở đây.
     // Đổi trạng thái (ngừng bán / mở bán lại) đi qua UpdateStatusAsync / DeleteAsync riêng.
     public async Task<bool> UpdateAsync(int id, MembershipPlanRequest request)
     {
-        var existing = await _db.MembershipPlans.FindAsync(id);
+        var goiTapCu = await _db.MembershipPlans.FindAsync(id);
 
-        if (existing == null)
+        if (goiTapCu == null)
+        {
             return false;
+        }
 
-        existing.PlanName = request.PlanName;
-        existing.Price = request.Price;
-        existing.DurationDays = request.DurationDays;
-        existing.Description = request.Description;
-        existing.IsPopular = request.IsPopular;
+        goiTapCu.PlanName = request.PlanName;
+        goiTapCu.Price = request.Price;
+        goiTapCu.DurationDays = request.DurationDays;
+        goiTapCu.Description = request.Description;
+        goiTapCu.IsPopular = request.IsPopular;
 
         await _db.SaveChangesAsync();
 
@@ -84,12 +88,14 @@ public class MembershipPlanService
     // status truyền vào phải khớp tên value của MembershipPlanEnum (vd: "OnSale", "Discontinued").
     public async Task<bool> UpdateStatusAsync(int id, MembershipPlanEnum status)
     {
-        var existing = await _db.MembershipPlans.FindAsync(id);
+        var goiTapCu = await _db.MembershipPlans.FindAsync(id);
 
-        if (existing == null)
+        if (goiTapCu == null)
+        {
             return false;
+        }
 
-        existing.Status = status.ToString();
+        goiTapCu.Status = status.ToString();
         await _db.SaveChangesAsync();
 
         return true;
@@ -98,25 +104,27 @@ public class MembershipPlanService
     // Ngừng kinh doanh gói tập (Soft Delete)
     public async Task<bool> DeleteAsync(int id)
     {
-        return await UpdateStatusAsync(id, MembershipPlanEnum.Discontinued);
+        bool ketQua = await UpdateStatusAsync(id, MembershipPlanEnum.Discontinued);
+        return ketQua;
     }
-            public class MembershipPlanRequest
-        {
-            public string PlanName { get; set; } = null!;
-        
-            public decimal Price { get; set; }
-        
-            public short DurationDays { get; set; }
-        
-            public string? Description { get; set; }
-        
-            public bool IsPopular { get; set; }
-        }
-        
-        // Dùng riêng cho endpoint PATCH /api/packages/{id}/status.
-        // Status là MembershipPlanEnum nên body chỉ cần { "status": "OnSale" } hoặc { "status": "Discontinued" }.
-        public class UpdateMembershipPlanStatusRequest
-        {
-            public MembershipPlanEnum Status { get; set; }
-}
+
+    public class MembershipPlanRequest
+    {
+        public string PlanName { get; set; } = null!;
+
+        public decimal Price { get; set; }
+
+        public short DurationDays { get; set; }
+
+        public string? Description { get; set; }
+
+        public bool IsPopular { get; set; }
+    }
+
+    // Dùng riêng cho endpoint PATCH /api/packages/{id}/status.
+    // Status là MembershipPlanEnum nên body chỉ cần { "status": "OnSale" } hoặc { "status": "Discontinued" }.
+    public class UpdateMembershipPlanStatusRequest
+    {
+        public MembershipPlanEnum Status { get; set; }
+    }
 }

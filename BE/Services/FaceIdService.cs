@@ -80,17 +80,17 @@ namespace BE.Services
             long? excludeMemberId,
             long? excludeEmployeeId)
         {
-            byte[] imageBytes;
-            using (var uploadStream = profileImage.OpenReadStream())
-            using (var memoryStream = new MemoryStream())
+            byte[] mangByteAnh;
+            using (var luongDocFileUpload = profileImage.OpenReadStream())
+            using (var luongBoNho = new MemoryStream())
             {
-                await uploadStream.CopyToAsync(memoryStream);
-                imageBytes = memoryStream.ToArray();
+                await luongDocFileUpload.CopyToAsync(luongBoNho);
+                mangByteAnh = luongBoNho.ToArray();
             }
 
-            var allMatches = await _faceService.SearchAllFaceMatchesAsync(imageBytes);
+            var dsTatCaKetQuaKhop = await _faceService.SearchAllFaceMatchesAsync(mangByteAnh);
 
-            if (allMatches.Count == 1 && allMatches[0].Status == FaceSearchStatus.NoFace)
+            if (dsTatCaKetQuaKhop.Count == 1 && dsTatCaKetQuaKhop[0].Status == FaceSearchStatus.NoFace)
             {
                 return new FaceCheckResultDto
                 {
@@ -103,12 +103,12 @@ namespace BE.Services
 
             // Tìm match ĐÚNG scope đang xét, similarity cao nhất, trong TOÀN BỘ
             // danh sách match trả về — không bị logic ưu tiên Employee che mất.
-            var scopeMatch = allMatches
+            var ketQuaKhopDungScope = dsTatCaKetQuaKhop
                 .Where(r => r.Status == FaceSearchStatus.Found && r.OwnerType == scope)
                 .OrderByDescending(r => r.Similarity)
                 .FirstOrDefault();
 
-            if (scopeMatch == null)
+            if (ketQuaKhopDungScope == null)
             {
                 // Không có ai thuộc đúng scope đang xét khớp -> hợp lệ để đăng ký
                 // (nếu có khớp ở scope khác, đó là việc của luồng check-in, 2 pool
@@ -122,11 +122,11 @@ namespace BE.Services
                 };
             }
 
-            var isSelf = scope == FaceOwnerType.Member
-                ? (excludeMemberId.HasValue && scopeMatch.MemberId == excludeMemberId.Value)
-                : (excludeEmployeeId.HasValue && scopeMatch.EmployeeId == excludeEmployeeId.Value);
+            var laKhopChinhMinh = scope == FaceOwnerType.Member
+                ? (excludeMemberId.HasValue && ketQuaKhopDungScope.MemberId == excludeMemberId.Value)
+                : (excludeEmployeeId.HasValue && ketQuaKhopDungScope.EmployeeId == excludeEmployeeId.Value);
 
-            if (isSelf)
+            if (laKhopChinhMinh)
             {
                 return new FaceCheckResultDto
                 {
@@ -137,21 +137,21 @@ namespace BE.Services
                 };
             }
 
-            var ownerTypeLabel = scope == FaceOwnerType.Member ? "Member" : "Employee";
-            var target = scope == FaceOwnerType.Member
-                ? $"hội viên #{scopeMatch.MemberId}"
-                : $"nhân viên #{scopeMatch.EmployeeId}";
+            var nhanLoaiChuSoHuu = scope == FaceOwnerType.Member ? "Member" : "Employee";
+            var moTaDoiTuongTrung = scope == FaceOwnerType.Member
+                ? $"hội viên #{ketQuaKhopDungScope.MemberId}"
+                : $"nhân viên #{ketQuaKhopDungScope.EmployeeId}";
 
             return new FaceCheckResultDto
             {
                 IsValid = false,
                 HasFace = true,
                 IsDuplicate = true,
-                DuplicateOwnerType = ownerTypeLabel,
-                DuplicateMemberId = scopeMatch.MemberId,
-                DuplicateEmployeeId = scopeMatch.EmployeeId,
-                Similarity = scopeMatch.Similarity,
-                Message = $"Khuôn mặt này đã được đăng ký cho {target} (độ khớp {scopeMatch.Similarity:0.0}%)."
+                DuplicateOwnerType = nhanLoaiChuSoHuu,
+                DuplicateMemberId = ketQuaKhopDungScope.MemberId,
+                DuplicateEmployeeId = ketQuaKhopDungScope.EmployeeId,
+                Similarity = ketQuaKhopDungScope.Similarity,
+                Message = $"Khuôn mặt này đã được đăng ký cho {moTaDoiTuongTrung} (độ khớp {ketQuaKhopDungScope.Similarity:0.0}%)."
             };
         }
 
@@ -177,13 +177,13 @@ namespace BE.Services
             long? excludeMemberId = null,
             long? excludeEmployeeId = null)
         {
-            var result = await CheckFaceInternalAsync(profileImage, scope, excludeMemberId, excludeEmployeeId);
+            var ketQuaKiemTra = await CheckFaceInternalAsync(profileImage, scope, excludeMemberId, excludeEmployeeId);
 
             // Không chặn HasFace=false ở đây — để bước IndexFaces (RegisterFirstFaceAsync/
             // UpdateFaceAsync) tự ném lỗi tương ứng, tránh trùng lặp thông điệp lỗi (giữ
             // đúng hành vi gốc: "cho qua" khi Status != Found trong phạm vi đang xét).
-            if (result.IsDuplicate)
-                throw new InvalidOperationException(result.Message);
+            if (ketQuaKiemTra.IsDuplicate)
+                throw new InvalidOperationException(ketQuaKiemTra.Message);
         }
 
         /// <summary>
@@ -208,10 +208,10 @@ namespace BE.Services
             // hàm này, thường là trước khi mở transaction DB, để tránh mở transaction
             // rồi phải rollback nếu ảnh đã trùng người khác.
 
-            var now = DateTime.UtcNow;
-            var sessionId = Guid.NewGuid();
+            var thoiDiemHienTai = DateTime.UtcNow;
+            var maPhienCapNhat = Guid.NewGuid();
 
-            var profileImageUrl = await _storageService.UploadFileAsync(profileImage, FaceImageFolder);
+            var urlAnhDaiDien = await _storageService.UploadFileAsync(profileImage, FaceImageFolder);
 
             // Đăng ký khuôn mặt lên AWS Rekognition — tách rõ nhánh Member/Employee
             // để ExternalImageId luôn đúng quy ước prefix (member-/employee-).
@@ -219,16 +219,16 @@ namespace BE.Services
                 ? await _faceService.RegisterMemberFaceAsync(profileImage, memberId.Value)
                 : await _faceService.RegisterEmployeeFaceAsync(profileImage, employeeId!.Value);
 
-            var faceData = new FaceDatum
+            var duLieuKhuonMat = new FaceDatum
             {
                 MemberId = memberId,
                 EmployeeId = employeeId,
                 FaceIdAws = faceIdAws,
-                ProfileImage = profileImageUrl,
+                ProfileImage = urlAnhDaiDien,
                 CreatedBy = performedBy,
-                CreatedAt = now
+                CreatedAt = thoiDiemHienTai
             };
-            _context.FaceData.Add(faceData);
+            _context.FaceData.Add(duLieuKhuonMat);
 
             _context.FaceUpdateHistories.Add(new FaceUpdateHistory
             {
@@ -236,26 +236,26 @@ namespace BE.Services
                 EmployeeId = employeeId,
                 OldFaceIdAws = null,
                 NewFaceIdAws = faceIdAws,
-                NewProfileImage = profileImageUrl,
+                NewProfileImage = urlAnhDaiDien,
                 Reason = reason,
                 PerformedBy = performedBy,
-                PerformedAt = now
+                PerformedAt = thoiDiemHienTai
             });
 
             if (employeeId.HasValue)
             {
                 AddEmployeeUpdateLogs(
-                    sessionId,
+                    maPhienCapNhat,
                     employeeId.Value,
                     performedBy,
-                    now,
+                    thoiDiemHienTai,
                     oldFaceIdAws: null,
                     newFaceIdAws: faceIdAws,
                     oldProfileImage: null,
-                    newProfileImage: profileImageUrl);
+                    newProfileImage: urlAnhDaiDien);
             }
 
-            return faceData;
+            return duLieuKhuonMat;
         }
 
         /// <summary>
@@ -276,89 +276,89 @@ namespace BE.Services
             // MemberService.UpdateFaceIdAsync) phải tự gọi check trùng TRƯỚC khi gọi
             // hàm này.
 
-            var faceData = await _context.FaceData
+            var duLieuKhuonMat = await _context.FaceData
                 .FirstOrDefaultAsync(f => f.MemberId == memberId && f.EmployeeId == employeeId);
 
-            var now = DateTime.UtcNow;
-            var sessionId = Guid.NewGuid();
-            var oldFaceId = faceData?.FaceIdAws;
-            var oldProfileImageUrl = faceData?.ProfileImage;
+            var thoiDiemHienTai = DateTime.UtcNow;
+            var maPhienCapNhat = Guid.NewGuid();
+            var faceIdCu = duLieuKhuonMat?.FaceIdAws;
+            var urlAnhCu = duLieuKhuonMat?.ProfileImage;
 
-            var newProfileImageUrl = await _storageService.UploadFileAsync(profileImage, FaceImageFolder);
+            var urlAnhMoi = await _storageService.UploadFileAsync(profileImage, FaceImageFolder);
 
-            var newFaceId = memberId.HasValue
+            var faceIdMoi = memberId.HasValue
                 ? await _faceService.RegisterMemberFaceAsync(profileImage, memberId.Value)
                 : await _faceService.RegisterEmployeeFaceAsync(profileImage, employeeId!.Value);
 
-            if (faceData == null)
+            if (duLieuKhuonMat == null)
             {
-                faceData = new FaceDatum
+                duLieuKhuonMat = new FaceDatum
                 {
                     MemberId = memberId,
                     EmployeeId = employeeId,
-                    FaceIdAws = newFaceId,
-                    ProfileImage = newProfileImageUrl,
+                    FaceIdAws = faceIdMoi,
+                    ProfileImage = urlAnhMoi,
                     CreatedBy = performedBy,
-                    CreatedAt = now
+                    CreatedAt = thoiDiemHienTai
                 };
-                _context.FaceData.Add(faceData);
+                _context.FaceData.Add(duLieuKhuonMat);
             }
             else
             {
-                faceData.FaceIdAws = newFaceId;
-                faceData.ProfileImage = newProfileImageUrl;
+                duLieuKhuonMat.FaceIdAws = faceIdMoi;
+                duLieuKhuonMat.ProfileImage = urlAnhMoi;
             }
 
             _context.FaceUpdateHistories.Add(new FaceUpdateHistory
             {
                 MemberId = memberId,
                 EmployeeId = employeeId,
-                OldFaceIdAws = oldFaceId,
-                NewFaceIdAws = newFaceId,
-                OldProfileImage = oldProfileImageUrl,
-                NewProfileImage = newProfileImageUrl,
+                OldFaceIdAws = faceIdCu,
+                NewFaceIdAws = faceIdMoi,
+                OldProfileImage = urlAnhCu,
+                NewProfileImage = urlAnhMoi,
                 Reason = reason,
                 PerformedBy = performedBy,
-                PerformedAt = now
+                PerformedAt = thoiDiemHienTai
             });
 
             if (employeeId.HasValue)
             {
                 AddEmployeeUpdateLogs(
-                    sessionId,
+                    maPhienCapNhat,
                     employeeId.Value,
                     performedBy,
-                    now,
-                    oldFaceIdAws: oldFaceId,
-                    newFaceIdAws: newFaceId,
-                    oldProfileImage: oldProfileImageUrl,
-                    newProfileImage: newProfileImageUrl);
+                    thoiDiemHienTai,
+                    oldFaceIdAws: faceIdCu,
+                    newFaceIdAws: faceIdMoi,
+                    oldProfileImage: urlAnhCu,
+                    newProfileImage: urlAnhMoi);
             }
 
             await _context.SaveChangesAsync();
 
             // Chỉ xóa face cũ trên AWS sau khi DB đã lưu thành công, tránh mất dữ liệu nếu lỗi giữa chừng
-            if (!string.IsNullOrEmpty(oldFaceId))
-                await _faceService.DeleteFaceAsync(oldFaceId);
+            if (!string.IsNullOrEmpty(faceIdCu))
+                await _faceService.DeleteFaceAsync(faceIdCu);
 
-            return faceData;
+            return duLieuKhuonMat;
         }
 
-        /// <summary>
+
         /// Lấy lịch sử thay đổi FaceID của 1 member HOẶC 1 employee, đã map sẵn sang response chung.
         /// Truyền đúng MỘT trong hai: memberId hoặc employeeId.
-        /// </summary>
+
         public async Task<List<MemberUpdateSessionResponse>> GetFaceHistoryAsync(long? memberId, long? employeeId)
         {
             ValidateOwner(memberId, employeeId);
 
-            var faceLogs = await _context.FaceUpdateHistories
+            var dsLichSuThayDoi = await _context.FaceUpdateHistories
                 .Where(f => f.MemberId == memberId && f.EmployeeId == employeeId)
                 .Include(f => f.PerformedByNavigation)
                 .OrderByDescending(f => f.PerformedAt)
                 .ToListAsync();
 
-            return faceLogs.Select(f => new MemberUpdateSessionResponse
+            return dsLichSuThayDoi.Select(f => new MemberUpdateSessionResponse
             {
                 SessionId = $"faceid-{f.HistoryId}",
                 SessionType = "FACEID",
@@ -370,22 +370,18 @@ namespace BE.Services
             }).ToList();
         }
 
-        // ------------------------------------------------------------------
-        // Helpers
-        // ------------------------------------------------------------------
-
+      
         private static void ValidateOwner(long? memberId, long? employeeId)
         {
-            var hasMember = memberId.HasValue;
-            var hasEmployee = employeeId.HasValue;
+            var coMember = memberId.HasValue;
+            var coEmployee = employeeId.HasValue;
 
-            if (hasMember == hasEmployee)
+            if (coMember == coEmployee)
                 throw new ArgumentException("Phải cung cấp đúng một trong hai: memberId hoặc employeeId.");
         }
 
-        /// <summary>
         /// Ghi log thay đổi FaceID/ProfileImage của nhân viên vào EmployeeUpdateLog (mỗi field 1 dòng, chung 1 session).
-        /// </summary>
+  
         private void AddEmployeeUpdateLogs(
             Guid sessionId,
             long employeeId,

@@ -39,14 +39,7 @@ namespace BE.Services
             public List<int> BranchIds { get; set; } = new();
         }
 
-        // ------------------------------------------------------------------
-        // Đọc dữ liệu
-        // ------------------------------------------------------------------
-
-        /// <summary>
-        /// Xem hồ sơ 1 nhân viên. Chỉ Admin/Manager được xem (hoặc tự xem chính mình).
-        /// Manager chỉ xem được nhân viên cùng chi nhánh phụ trách và KHÔNG được xem Admin.
-        /// </summary>
+     
         public async Task<EmployeeProfileDto?> GetProfileAsync(long employeeId, long currentEmployeeId)
         {
             await EnsureCanViewTargetAsync(currentEmployeeId, employeeId);
@@ -55,6 +48,7 @@ namespace BE.Services
 
         private async Task<EmployeeProfileDto?> GetProfileInternalAsync(long employeeId)
         {
+            
             var employee = await _context.Employees
                 .AsNoTracking()
                 .Where(e => e.EmployeeId == employeeId)
@@ -76,7 +70,7 @@ namespace BE.Services
                         e.Account.Status,
                         e.Account.SuspendReason
                     },
-                    // Employee.Branches là danh sách Branch trực tiếp (không còn EmployeeBranches)
+                
                     Branches = e.Branches
                         .OrderBy(b => b.BranchId)
                         .Select(b => new EmployeeBranchDto { BranchId = b.BranchId, BranchName = b.BranchName })
@@ -85,7 +79,16 @@ namespace BE.Services
                 .FirstOrDefaultAsync();
 
             if (employee == null)
+            {
                 return null;
+            }
+
+            // Chi nhánh mặc định = chi nhánh đầu tiên trong danh sách (nếu có)
+            int? defaultBranchId = null;
+            if (employee.Branches.Count > 0)
+            {
+                defaultBranchId = employee.Branches[0].BranchId;
+            }
 
             return new EmployeeProfileDto
             {
@@ -103,42 +106,56 @@ namespace BE.Services
                 AccountStatus = employee.Account?.Status,
                 SuspendReason = employee.Account?.SuspendReason,
                 Branches = employee.Branches,
-                DefaultBranchId = employee.Branches.Count > 0 ? employee.Branches[0].BranchId : null
+                DefaultBranchId = defaultBranchId
             };
         }
 
-        /// <summary>
+   
         /// Lấy danh sách nhân viên. Chỉ Admin/Manager được xem.
         /// Manager chỉ thấy nhân viên cùng chi nhánh phụ trách và không thấy Admin.
-        /// </summary>
+ 
         public async Task<List<EmployeeListItemDto>> GetListAsync(EmployeeFilterDto filter, long currentEmployeeId)
         {
             var current = await GetCurrentAsync(currentEmployeeId);
 
-            if (current.RoleName != RoleAdmin && current.RoleName != RoleManager)
+            bool laAdmin = current.RoleName == RoleAdmin;
+            bool laManager = current.RoleName == RoleManager;
+
+            if (!laAdmin && !laManager)
+            {
                 throw new UnauthorizedAccessException("Bạn không có quyền xem danh sách nhân viên.");
+            }
 
             var query = _context.Employees.AsNoTracking().AsQueryable();
 
-            if (current.RoleName == RoleManager)
+            // Manager chỉ được xem nhân viên cùng chi nhánh phụ trách, và không được thấy Admin
+            if (laManager)
             {
                 if (current.BranchIds.Count == 0)
+                {
                     return new List<EmployeeListItemDto>();
+                }
 
                 query = query
                     .Where(e => e.Branches.Any(b => current.BranchIds.Contains(b.BranchId)))
                     .Where(e => e.Role.RoleName != RoleAdmin);
             }
 
+            // Áp dụng thêm các bộ lọc theo yêu cầu của FE (nếu có)
             if (filter.BranchId.HasValue)
+            {
                 query = query.Where(e => e.Branches.Any(b => b.BranchId == filter.BranchId.Value));
+            }
 
             if (!string.IsNullOrWhiteSpace(filter.Name))
-                query = query.Where(e => EF.Functions.Like(e.FullName, $"%{filter.Name.Trim()}%"));
+            {
+                string tenKeyword = filter.Name.Trim();
+                query = query.Where(e => EF.Functions.Like(e.FullName, $"%{tenKeyword}%"));
+            }
 
             if (!string.IsNullOrWhiteSpace(filter.Phone))
             {
-                var phoneKeyword = filter.Phone.Trim();
+                string phoneKeyword = filter.Phone.Trim();
                 query = query.Where(e =>
                     EF.Functions.Like(e.Phone, $"%{phoneKeyword}%") ||
                     (e.Account != null && e.Account.Phone != null && EF.Functions.Like(e.Account.Phone, $"%{phoneKeyword}%")));
@@ -146,14 +163,16 @@ namespace BE.Services
 
             if (!string.IsNullOrWhiteSpace(filter.Email))
             {
-                var emailKeyword = filter.Email.Trim();
+                string emailKeyword = filter.Email.Trim();
                 query = query.Where(e => e.Account != null && e.Account.Email != null && EF.Functions.Like(e.Account.Email, $"%{emailKeyword}%"));
             }
 
             if (!string.IsNullOrWhiteSpace(filter.Status))
+            {
                 query = query.Where(e => e.Status == filter.Status);
+            }
 
-            return await query
+            var result = await query
                 .OrderBy(e => e.FullName)
                 .Select(e => new EmployeeListItemDto
                 {
@@ -175,108 +194,131 @@ namespace BE.Services
                         .ToList()
                 })
                 .ToListAsync();
+
+            return result;
         }
 
-        // ------------------------------------------------------------------
-        // 1. Tạo tài khoản đăng nhập + thông tin nhân viên + FaceID (bắt buộc phải có FaceID)
-        // ------------------------------------------------------------------
-
+        //tạo thông tin nhân viên kèm vói tài khoản đang nhập. face id k bát buộc. đang ký nếu có hoạc k. 
         public async Task<EmployeeProfileDto> CreateWithAccountAsync(CreateEmployeeWithAccountDto dto, long createdBy)
         {
-            if (dto.ProfileImage == null)
-                throw new ArgumentException("Phải cung cấp ảnh để đăng ký FaceID khi tạo nhân viên kèm tài khoản.", nameof(dto.ProfileImage));
-
             var current = await GetCurrentAsync(createdBy);
 
             // Manager tạo nhân viên thì luôn là Staff, không cho tự chọn role. Admin thì tùy chọn.
             if (current.RoleName == RoleManager)
+            {
                 dto.RoleId = await GetStaffRoleIdAsync();
+            }
 
-            var targetRoleName = await GetRoleNameAsync(dto.RoleId);
+            string targetRoleName = await GetRoleNameAsync(dto.RoleId);
             EnsureCanAssignRole(current.RoleName, targetRoleName);
             EnsureBranchScope(current, dto.BranchIds);
             EnsureBranchCountForRole(targetRoleName, dto.BranchIds);
 
-            await using var transaction = await _context.Database.BeginTransactionAsync();
-            try
+       
+            var strategy = _context.Database.CreateExecutionStrategy();
+
+            return await strategy.ExecuteAsync(async () =>
             {
-                // Cùng 1 UpdateSessionId cho toàn bộ log phát sinh trong lần tạo này
-                var sessionId = Guid.NewGuid();
+                await using var transaction = await _context.Database.BeginTransactionAsync();
+                try
+                {
+                    // Cùng 1 UpdateSessionId cho toàn bộ log phát sinh trong lần tạo này
+                    var sessionId = Guid.NewGuid();
 
-                var employee = await CreateEmployeeInfoInternalAsync(dto, createdBy, sessionId, targetRoleName);
+                    var employee = await CreateEmployeeInfoInternalAsync(dto, createdBy, sessionId, targetRoleName);
 
-                await _accountService.CreateAccountAsync(
-                    memberId: null,
-                    employeeId: employee.EmployeeId,
-                    phone: null,
-                    email: dto.LoginEmail,
-                    password: dto.Password);
-                LogFieldChange(employee.EmployeeId, sessionId, "Email đăng nhập", null, dto.LoginEmail, createdBy);
+                    await _accountService.CreateAccountAsync(
+                        memberId: null,
+                        employeeId: employee.EmployeeId,
+                        phone: null,
+                        email: dto.LoginEmail,
+                        password: dto.Password);
+                    LogFieldChange(employee.EmployeeId, sessionId, "Email đăng nhập", null, dto.LoginEmail, createdBy);
 
-                await _faceIdService.RegisterFirstFaceAsync(
-                    memberId: null,
-                    employeeId: employee.EmployeeId,
-                    profileImage: dto.ProfileImage,
-                    reason: dto.FaceIdReason ?? "Đăng ký FaceID khi tạo tài khoản nhân viên",
-                    performedBy: createdBy);
-                LogFieldChange(employee.EmployeeId, sessionId, "FaceID", null, "Đã đăng ký", createdBy);
+                    // FaceID không bắt buộc — chỉ đăng ký nếu có ảnh được gửi lên.
+                    if (dto.ProfileImage != null)
+                    {
+                        string faceReason = dto.FaceIdReason ?? "Đăng ký FaceID khi tạo tài khoản nhân viên";
 
-                await _context.SaveChangesAsync();
-                await transaction.CommitAsync();
+                        await _faceIdService.RegisterFirstFaceAsync(
+                            memberId: null,
+                            employeeId: employee.EmployeeId,
+                            profileImage: dto.ProfileImage,
+                            reason: faceReason,
+                            performedBy: createdBy);
+                        LogFieldChange(employee.EmployeeId, sessionId, "FaceID", null, "Đã đăng ký", createdBy);
+                    }
 
-                return (await GetProfileInternalAsync(employee.EmployeeId))!;
-            }
-            catch
-            {
-                await transaction.RollbackAsync();
-                throw;
-            }
+                    await _context.SaveChangesAsync();
+                    await transaction.CommitAsync();
+
+                    var profile = await GetProfileInternalAsync(employee.EmployeeId);
+                    return profile!;
+                }
+                catch
+                {
+                    await transaction.RollbackAsync();
+                    throw;
+                }
+            });
         }
 
         // ------------------------------------------------------------------
-        // 2. Tạo thông tin nhân viên + FaceID (chưa có tài khoản đăng nhập)
+        // 2. Tạo thông tin nhân viên (+ FaceID nếu có ảnh — KHÔNG bắt buộc), chưa có tài khoản đăng nhập
         // ------------------------------------------------------------------
 
         public async Task<EmployeeProfileDto> CreateWithFaceIdAsync(CreateEmployeeWithFaceIdDto dto, long createdBy)
         {
-            if (dto.ProfileImage == null)
-                throw new ArgumentException("Phải cung cấp ảnh để đăng ký FaceID khi tạo nhân viên.", nameof(dto.ProfileImage));
-
             var current = await GetCurrentAsync(createdBy);
 
             if (current.RoleName == RoleManager)
+            {
                 dto.RoleId = await GetStaffRoleIdAsync();
+            }
 
-            var targetRoleName = await GetRoleNameAsync(dto.RoleId);
+            string targetRoleName = await GetRoleNameAsync(dto.RoleId);
             EnsureCanAssignRole(current.RoleName, targetRoleName);
             EnsureBranchScope(current, dto.BranchIds);
             EnsureBranchCountForRole(targetRoleName, dto.BranchIds);
 
-            await using var transaction = await _context.Database.BeginTransactionAsync();
-            try
+            // ⚠️ Bắt buộc chạy qua CreateExecutionStrategy() vì đã bật MySqlRetryingExecutionStrategy.
+            var strategy = _context.Database.CreateExecutionStrategy();
+
+            return await strategy.ExecuteAsync(async () =>
             {
-                var sessionId = Guid.NewGuid();
+                await using var transaction = await _context.Database.BeginTransactionAsync();
+                try
+                {
+                    var sessionId = Guid.NewGuid();
 
-                var employee = await CreateEmployeeInfoInternalAsync(dto, createdBy, sessionId, targetRoleName);
+                    var employee = await CreateEmployeeInfoInternalAsync(dto, createdBy, sessionId, targetRoleName);
 
-                await _faceIdService.RegisterFirstFaceAsync(
-                    memberId: null,
-                    employeeId: employee.EmployeeId,
-                    profileImage: dto.ProfileImage,
-                    reason: dto.FaceIdReason ?? "Đăng ký FaceID khi tạo hồ sơ nhân viên",
-                    performedBy: createdBy);
-                LogFieldChange(employee.EmployeeId, sessionId, "FaceID", null, "Đã đăng ký", createdBy);
+                    // FaceID không bắt buộc — chỉ đăng ký nếu có ảnh được gửi lên.
+                    if (dto.ProfileImage != null)
+                    {
+                        string faceReason = dto.FaceIdReason ?? "Đăng ký FaceID khi tạo hồ sơ nhân viên";
 
-                await _context.SaveChangesAsync();
-                await transaction.CommitAsync();
+                        await _faceIdService.RegisterFirstFaceAsync(
+                            memberId: null,
+                            employeeId: employee.EmployeeId,
+                            profileImage: dto.ProfileImage,
+                            reason: faceReason,
+                            performedBy: createdBy);
+                        LogFieldChange(employee.EmployeeId, sessionId, "FaceID", null, "Đã đăng ký", createdBy);
+                    }
 
-                return (await GetProfileInternalAsync(employee.EmployeeId))!;
-            }
-            catch
-            {
-                await transaction.RollbackAsync();
-                throw;
-            }
+                    await _context.SaveChangesAsync();
+                    await transaction.CommitAsync();
+
+                    var profile = await GetProfileInternalAsync(employee.EmployeeId);
+                    return profile!;
+                }
+                catch
+                {
+                    await transaction.RollbackAsync();
+                    throw;
+                }
+            });
         }
 
         // ------------------------------------------------------------------
@@ -292,27 +334,35 @@ namespace BE.Services
                 .FirstOrDefaultAsync(e => e.EmployeeId == employeeId);
 
             if (employee == null)
+            {
                 return false;
+            }
 
-            var roleChanged = dto.RoleId != employee.RoleId;
+            bool roleChanged = dto.RoleId != employee.RoleId;
 
             // Manager không có quyền điều chỉnh vai trò của nhân viên dưới mọi hình thức.
             if (roleChanged && current.RoleName == RoleManager)
+            {
                 throw new UnauthorizedAccessException("Quản lý không có quyền thay đổi vai trò của nhân viên.");
+            }
 
             // Luôn cần tên vai trò đích (dùng để kiểm tra quyền gán + luật số chi nhánh theo vai trò)
-            var newRoleName = await GetRoleNameAsync(dto.RoleId);
+            string newRoleName = await GetRoleNameAsync(dto.RoleId);
 
             if (roleChanged)
+            {
                 EnsureCanAssignRole(current.RoleName, newRoleName);
+            }
 
             EnsureBranchScope(current, dto.BranchIds);
             EnsureBranchCountForRole(newRoleName, dto.BranchIds);
 
-            var phoneTaken = await _context.Employees
+            bool phoneTaken = await _context.Employees
                 .AnyAsync(e => e.Phone == dto.Phone && e.EmployeeId != employeeId);
             if (phoneTaken)
+            {
                 throw new InvalidOperationException("Số điện thoại liên hệ đã được sử dụng bởi nhân viên khác.");
+            }
 
             var oldBranchIds = employee.Branches.Select(b => b.BranchId).ToList();
             var newBranchIds = dto.BranchIds.Distinct().ToList();
@@ -331,14 +381,14 @@ namespace BE.Services
 
             if (roleChanged)
             {
-                var oldRoleName = await GetRoleNameAsync(employee.RoleId);
+                string oldRoleName = await GetRoleNameAsync(employee.RoleId);
                 LogFieldChange(employeeId, sessionId, "Vai trò", oldRoleName, newRoleName, currentEmployeeId);
             }
 
             if (!SameBranchSet(oldBranchIds, newBranchIds))
             {
-                var oldBranchNames = FormatBranchNames(employee.Branches);
-                var newBranchNames = FormatBranchNames(newBranches);
+                string oldBranchNames = FormatBranchNames(employee.Branches);
+                string newBranchNames = FormatBranchNames(newBranches);
                 LogFieldChange(employeeId, sessionId, "Chi nhánh", oldBranchNames, newBranchNames, currentEmployeeId);
             }
 
@@ -350,7 +400,9 @@ namespace BE.Services
 
             employee.Branches.Clear();
             foreach (var branch in newBranches)
+            {
                 employee.Branches.Add(branch);
+            }
 
             await _context.SaveChangesAsync();
             return true;
@@ -367,31 +419,40 @@ namespace BE.Services
 
             var existingAccount = await _accountService.GetByEmployeeIdAsync(employeeId);
             if (existingAccount != null)
+            {
                 throw new InvalidOperationException("Nhân viên đã có tài khoản đăng nhập.");
-
-            await using var transaction = await _context.Database.BeginTransactionAsync();
-            try
-            {
-                var sessionId = Guid.NewGuid();
-
-                await _accountService.CreateAccountAsync(
-                    memberId: null,
-                    employeeId: employeeId,
-                    phone: null,
-                    email: dto.LoginEmail,
-                    password: dto.Password);
-                LogFieldChange(employeeId, sessionId, "Email đăng nhập", null, dto.LoginEmail, currentEmployeeId);
-
-                await _context.SaveChangesAsync();
-                await transaction.CommitAsync();
-
-                return (await GetProfileInternalAsync(employeeId))!;
             }
-            catch
+
+            // ⚠️ Bắt buộc chạy qua CreateExecutionStrategy() vì đã bật MySqlRetryingExecutionStrategy.
+            var strategy = _context.Database.CreateExecutionStrategy();
+
+            return await strategy.ExecuteAsync(async () =>
             {
-                await transaction.RollbackAsync();
-                throw;
-            }
+                await using var transaction = await _context.Database.BeginTransactionAsync();
+                try
+                {
+                    var sessionId = Guid.NewGuid();
+
+                    await _accountService.CreateAccountAsync(
+                        memberId: null,
+                        employeeId: employeeId,
+                        phone: null,
+                        email: dto.LoginEmail,
+                        password: dto.Password);
+                    LogFieldChange(employeeId, sessionId, "Email đăng nhập", null, dto.LoginEmail, currentEmployeeId);
+
+                    await _context.SaveChangesAsync();
+                    await transaction.CommitAsync();
+
+                    var profile = await GetProfileInternalAsync(employeeId);
+                    return profile!;
+                }
+                catch
+                {
+                    await transaction.RollbackAsync();
+                    throw;
+                }
+            });
         }
 
         /// <summary>
@@ -403,8 +464,11 @@ namespace BE.Services
         {
             await EnsureCanManageTargetAsync(currentEmployeeId, employeeId);
 
-            var account = await _accountService.GetByEmployeeIdAsync(employeeId)
-                ?? throw new InvalidOperationException("Nhân viên chưa có tài khoản đăng nhập.");
+            var account = await _accountService.GetByEmployeeIdAsync(employeeId);
+            if (account == null)
+            {
+                throw new InvalidOperationException("Nhân viên chưa có tài khoản đăng nhập.");
+            }
 
             var sessionId = Guid.NewGuid();
 
@@ -473,7 +537,9 @@ namespace BE.Services
                 .ToListAsync();
 
             if (logs.Count == 0)
+            {
                 return new List<EmployeeUpdateHistoryItemDto>();
+            }
 
             // Lấy tên người thực hiện theo lô (tránh N+1 query), không dùng subquery lồng trong Select
             // ở trên vì không phải lúc nào EF cũng dịch được sang SQL 1 cách an toàn.
@@ -489,35 +555,42 @@ namespace BE.Services
                 .Select(e => new { e.EmployeeId, e.FullName })
                 .ToDictionaryAsync(e => e.EmployeeId, e => e.FullName);
 
-            return logs
-                .GroupBy(l => l.UpdateSessionId)
-                .Select(g =>
-                {
-                    var first = g.First();
-                    string? performedByName = first.UpdatedByEmployeeId.HasValue
-                        && performerNames.TryGetValue(first.UpdatedByEmployeeId.Value, out var name)
-                            ? name
-                            : null;
+            // Gom các dòng log có cùng UpdateSessionId lại thành 1 "sự kiện" trong lịch sử
+            var groupedBySession = logs.GroupBy(l => l.UpdateSessionId);
 
-                    return new EmployeeUpdateHistoryItemDto
+            var history = new List<EmployeeUpdateHistoryItemDto>();
+
+            foreach (var group in groupedBySession)
+            {
+                var first = group.First();
+
+                string? performedByName = null;
+                if (first.UpdatedByEmployeeId.HasValue)
+                {
+                    performerNames.TryGetValue(first.UpdatedByEmployeeId.Value, out performedByName);
+                }
+
+                var changes = group
+                    .OrderBy(l => l.FieldName)
+                    .Select(l => new EmployeeUpdateFieldChangeDto
                     {
-                        UpdateSessionId = g.Key,
-                        UpdatedAt = g.Max(l => l.UpdatedAt),
-                        UpdatedByEmployeeId = first.UpdatedByEmployeeId,
-                        UpdatedByName = performedByName,
-                        Changes = g
-                            .OrderBy(l => l.FieldName)
-                            .Select(l => new EmployeeUpdateFieldChangeDto
-                            {
-                                FieldName = l.FieldName,
-                                OldValue = l.OldValue,
-                                NewValue = l.NewValue
-                            })
-                            .ToList()
-                    };
-                })
-                .OrderByDescending(h => h.UpdatedAt)
-                .ToList();
+                        FieldName = l.FieldName,
+                        OldValue = l.OldValue,
+                        NewValue = l.NewValue
+                    })
+                    .ToList();
+
+                history.Add(new EmployeeUpdateHistoryItemDto
+                {
+                    UpdateSessionId = group.Key,
+                    UpdatedAt = group.Max(l => l.UpdatedAt),
+                    UpdatedByEmployeeId = first.UpdatedByEmployeeId,
+                    UpdatedByName = performedByName,
+                    Changes = changes
+                });
+            }
+
+            return history.OrderByDescending(h => h.UpdatedAt).ToList();
         }
 
         // ------------------------------------------------------------------
@@ -531,7 +604,9 @@ namespace BE.Services
         public async Task LockEmployeeAsync(long employeeId, string reason, long currentEmployeeId)
         {
             if (string.IsNullOrWhiteSpace(reason))
+            {
                 throw new ArgumentException("Phải cung cấp lý do khi khóa nhân viên.", nameof(reason));
+            }
 
             await EnsureCanManageTargetAsync(currentEmployeeId, employeeId);
 
@@ -544,11 +619,17 @@ namespace BE.Services
                 try
                 {
                     var employee = await _context.Employees
-                        .FirstOrDefaultAsync(e => e.EmployeeId == employeeId)
-                        ?? throw new KeyNotFoundException($"Không tìm thấy nhân viên có Id = {employeeId}.");
+                        .FirstOrDefaultAsync(e => e.EmployeeId == employeeId);
+
+                    if (employee == null)
+                    {
+                        throw new KeyNotFoundException($"Không tìm thấy nhân viên có Id = {employeeId}.");
+                    }
 
                     if (employee.Status == EmployeeStatusInactive)
+                    {
                         throw new InvalidOperationException("Nhân viên đã bị khóa từ trước.");
+                    }
 
                     var sessionId = Guid.NewGuid();
 
@@ -598,11 +679,17 @@ namespace BE.Services
                 try
                 {
                     var employee = await _context.Employees
-                        .FirstOrDefaultAsync(e => e.EmployeeId == employeeId)
-                        ?? throw new KeyNotFoundException($"Không tìm thấy nhân viên có Id = {employeeId}.");
+                        .FirstOrDefaultAsync(e => e.EmployeeId == employeeId);
+
+                    if (employee == null)
+                    {
+                        throw new KeyNotFoundException($"Không tìm thấy nhân viên có Id = {employeeId}.");
+                    }
 
                     if (employee.Status == EmployeeStatusActive)
+                    {
                         throw new InvalidOperationException("Nhân viên đang hoạt động, không cần mở khóa.");
+                    }
 
                     var sessionId = Guid.NewGuid();
 
@@ -640,12 +727,17 @@ namespace BE.Services
         public async Task LockAccountOnlyAsync(long employeeId, string reason, long currentEmployeeId)
         {
             if (string.IsNullOrWhiteSpace(reason))
+            {
                 throw new ArgumentException("Phải cung cấp lý do khi khóa tài khoản.", nameof(reason));
+            }
 
             await EnsureCanManageTargetAsync(currentEmployeeId, employeeId);
 
-            var account = await _accountService.GetByEmployeeIdAsync(employeeId)
-                ?? throw new InvalidOperationException("Nhân viên chưa có tài khoản đăng nhập để khóa.");
+            var account = await _accountService.GetByEmployeeIdAsync(employeeId);
+            if (account == null)
+            {
+                throw new InvalidOperationException("Nhân viên chưa có tài khoản đăng nhập để khóa.");
+            }
 
             var sessionId = Guid.NewGuid();
 
@@ -661,8 +753,11 @@ namespace BE.Services
         {
             await EnsureCanManageTargetAsync(currentEmployeeId, employeeId);
 
-            var account = await _accountService.GetByEmployeeIdAsync(employeeId)
-                ?? throw new InvalidOperationException("Nhân viên chưa có tài khoản đăng nhập để mở khóa.");
+            var account = await _accountService.GetByEmployeeIdAsync(employeeId);
+            if (account == null)
+            {
+                throw new InvalidOperationException("Nhân viên chưa có tài khoản đăng nhập để mở khóa.");
+            }
 
             var sessionId = Guid.NewGuid();
 
@@ -678,9 +773,11 @@ namespace BE.Services
 
         private async Task<Employee> CreateEmployeeInfoInternalAsync(CreateEmployeeInfoDto dto, long createdBy, Guid sessionId, string roleName)
         {
-            var phoneExists = await _context.Employees.AnyAsync(e => e.Phone == dto.Phone);
+            bool phoneExists = await _context.Employees.AnyAsync(e => e.Phone == dto.Phone);
             if (phoneExists)
+            {
                 throw new InvalidOperationException("Số điện thoại liên hệ đã được sử dụng bởi nhân viên khác.");
+            }
 
             var branchIds = dto.BranchIds.Distinct().ToList();
             var branches = await _context.Branches
@@ -700,7 +797,9 @@ namespace BE.Services
             };
 
             foreach (var branch in branches)
+            {
                 employee.Branches.Add(branch);
+            }
 
             _context.Employees.Add(employee);
             await _context.SaveChangesAsync(); // cần EmployeeId sinh ra trước khi ghi log
@@ -718,7 +817,7 @@ namespace BE.Services
         /// <summary>Đổi Employee.Status + ghi log, không SaveChanges (caller tự gọi).</summary>
         private void SetEmployeeStatus(Employee employee, string newStatus, long performedBy, Guid sessionId)
         {
-            var oldStatus = employee.Status;
+            string oldStatus = employee.Status;
             employee.Status = newStatus;
             employee.UpdatedAt = DateTime.UtcNow;
 
@@ -741,8 +840,11 @@ namespace BE.Services
         /// </summary>
         private void LogFieldChange(long employeeId, Guid sessionId, string fieldName, string? oldValue, string? newValue, long? performedBy)
         {
+            // Giá trị cũ và mới giống nhau thì không cần ghi log
             if (oldValue == newValue)
+            {
                 return;
+            }
 
             _context.EmployeeUpdateLogs.Add(new EmployeeUpdateLog
             {
@@ -764,27 +866,67 @@ namespace BE.Services
                 .Select(b => b.BranchName)
                 .ToList();
 
-            return names.Count > 0 ? string.Join(", ", names) : "Không có chi nhánh";
+            if (names.Count == 0)
+            {
+                return "Không có chi nhánh";
+            }
+
+            return string.Join(", ", names);
         }
 
         /// <summary>Chuyển trạng thái tài khoản (Active/Suspended) sang chữ dễ hiểu cho log.</summary>
-        private static string DescribeAccountStatus(string? status) => status switch
+        private static string DescribeAccountStatus(string? status)
         {
-            AccountStatusActive => "Đang hoạt động",
-            AccountStatusSuspended => "Bị khóa",
-            _ => status ?? "Chưa có tài khoản"
-        };
+            if (status == AccountStatusActive)
+            {
+                return "Đang hoạt động";
+            }
+
+            if (status == AccountStatusSuspended)
+            {
+                return "Bị khóa";
+            }
+
+            return status ?? "Chưa có tài khoản";
+        }
 
         /// <summary>Chuyển trạng thái nhân viên (Active/Inactive) sang chữ dễ hiểu cho log.</summary>
-        private static string DescribeEmployeeStatus(string status) => status switch
+        private static string DescribeEmployeeStatus(string status)
         {
-            EmployeeStatusActive => "Đang làm việc",
-            EmployeeStatusInactive => "Bị khóa",
-            _ => status
-        };
+            if (status == EmployeeStatusActive)
+            {
+                return "Đang làm việc";
+            }
 
+            if (status == EmployeeStatusInactive)
+            {
+                return "Bị khóa";
+            }
+
+            return status;
+        }
+
+        /// <summary>So sánh 2 danh sách id chi nhánh có giống nhau không (không quan tâm thứ tự).</summary>
         private static bool SameBranchSet(List<int> a, List<int> b)
-            => a.Count == b.Count && a.OrderBy(x => x).SequenceEqual(b.OrderBy(x => x));
+        {
+            if (a.Count != b.Count)
+            {
+                return false;
+            }
+
+            var aSorted = a.OrderBy(x => x).ToList();
+            var bSorted = b.OrderBy(x => x).ToList();
+
+            for (int i = 0; i < aSorted.Count; i++)
+            {
+                if (aSorted[i] != bSorted[i])
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
 
         // ------------------------------------------------------------------
         // Helpers phân quyền
@@ -803,7 +945,9 @@ namespace BE.Services
                 .FirstOrDefaultAsync();
 
             if (current == null)
+            {
                 throw new UnauthorizedAccessException("Không tìm thấy tài khoản.");
+            }
 
             return current;
         }
@@ -817,7 +961,9 @@ namespace BE.Services
                 .FirstOrDefaultAsync();
 
             if (roleName == null)
+            {
                 throw new InvalidOperationException("Vai trò không hợp lệ.");
+            }
 
             return roleName;
         }
@@ -832,40 +978,61 @@ namespace BE.Services
                 .FirstOrDefaultAsync();
 
             if (role == null)
+            {
                 throw new InvalidOperationException("Không tìm thấy vai trò Staff trong hệ thống.");
+            }
 
             return role.RoleId;
         }
 
+        /// <summary>
+        /// Kiểm tra current có quyền gán vai trò targetRoleName cho người khác không:
+        /// - Admin: được gán bất kỳ vai trò nào.
+        /// - Manager: chỉ được gán vai trò Staff (không được gán Admin hoặc Manager).
+        /// - Vai trò khác (vd Staff): không có quyền gì cả.
+        /// </summary>
         private static void EnsureCanAssignRole(string currentRoleName, string targetRoleName)
         {
             if (currentRoleName == RoleAdmin)
+            {
                 return;
+            }
 
             if (currentRoleName == RoleManager)
             {
                 if (targetRoleName == RoleAdmin || targetRoleName == RoleManager)
+                {
                     throw new UnauthorizedAccessException("Quản lý chỉ được tạo hoặc cập nhật tài khoản nhân viên.");
+                }
                 return;
             }
 
             throw new UnauthorizedAccessException("Bạn không có quyền thực hiện thao tác này.");
         }
 
+        /// <summary>Manager chỉ được thao tác trên các chi nhánh mình phụ trách; Admin thì không giới hạn.</summary>
         private static void EnsureBranchScope(CurrentEmployeeInfo current, List<int> branchIds)
         {
             if (current.RoleName != RoleManager)
+            {
                 return;
+            }
 
-            if (branchIds.Count == 0 || branchIds.Except(current.BranchIds).Any())
+            bool coChiNhanhNgoaiPhamVi = branchIds.Except(current.BranchIds).Any();
+
+            if (branchIds.Count == 0 || coChiNhanhNgoaiPhamVi)
+            {
                 throw new UnauthorizedAccessException("Bạn chỉ được thao tác trên chi nhánh mình phụ trách.");
+            }
         }
 
         /// <summary>Nhân viên có vai trò Staff chỉ được gán đúng 1 chi nhánh.</summary>
         private static void EnsureBranchCountForRole(string roleName, List<int> branchIds)
         {
             if (roleName == RoleStaff && branchIds.Count != 1)
+            {
                 throw new InvalidOperationException("Nhân viên có vai trò Staff chỉ được thuộc đúng 1 chi nhánh.");
+            }
         }
 
         /// <summary>
@@ -878,10 +1045,14 @@ namespace BE.Services
             var current = await GetCurrentAsync(currentEmployeeId);
 
             if (current.RoleName == RoleAdmin)
+            {
                 return current;
+            }
 
             if (current.RoleName != RoleManager)
+            {
                 throw new UnauthorizedAccessException("Bạn không có quyền thực hiện thao tác này.");
+            }
 
             var target = await _context.Employees
                 .AsNoTracking()
@@ -890,14 +1061,20 @@ namespace BE.Services
                 .FirstOrDefaultAsync();
 
             if (target == null)
+            {
                 throw new UnauthorizedAccessException("Không tìm thấy nhân viên.");
+            }
 
             if (target.RoleName == RoleAdmin || target.RoleName == RoleManager)
+            {
                 throw new UnauthorizedAccessException("Quản lý không có quyền thao tác trên tài khoản Admin/Manager.");
+            }
 
-            var allowed = target.BranchIds.Any(id => current.BranchIds.Contains(id));
-            if (!allowed)
+            bool cungChiNhanh = target.BranchIds.Any(id => current.BranchIds.Contains(id));
+            if (!cungChiNhanh)
+            {
                 throw new UnauthorizedAccessException("Bạn không có quyền thao tác trên nhân viên thuộc chi nhánh khác.");
+            }
 
             return current;
         }
@@ -907,6 +1084,7 @@ namespace BE.Services
         /// - Chỉ Admin/Manager được xem, Staff không được xem.
         /// - Admin: xem tất cả.
         /// - Manager: chỉ xem nhân viên cùng chi nhánh, KHÔNG được xem Admin.
+        /// - Riêng: tự xem hồ sơ của chính mình thì luôn được phép, kể cả Staff.
         /// </summary>
         private async Task<CurrentEmployeeInfo> EnsureCanViewTargetAsync(long currentEmployeeId, long targetEmployeeId)
         {
@@ -914,14 +1092,24 @@ namespace BE.Services
 
             // Tự xem hồ sơ của chính mình thì luôn được phép.
             if (currentEmployeeId == targetEmployeeId)
+            {
                 return current;
+            }
 
-            if (current.RoleName != RoleAdmin && current.RoleName != RoleManager)
+            bool laAdmin = current.RoleName == RoleAdmin;
+            bool laManager = current.RoleName == RoleManager;
+
+            if (!laAdmin && !laManager)
+            {
                 throw new UnauthorizedAccessException("Bạn không có quyền xem thông tin nhân viên.");
+            }
 
-            if (current.RoleName == RoleAdmin)
+            if (laAdmin)
+            {
                 return current;
+            }
 
+            // Còn lại là Manager -> kiểm tra thêm điều kiện phạm vi chi nhánh và không được xem Admin
             var target = await _context.Employees
                 .AsNoTracking()
                 .Where(e => e.EmployeeId == targetEmployeeId)
@@ -929,14 +1117,20 @@ namespace BE.Services
                 .FirstOrDefaultAsync();
 
             if (target == null)
+            {
                 throw new UnauthorizedAccessException("Không tìm thấy nhân viên.");
+            }
 
             if (target.RoleName == RoleAdmin)
+            {
                 throw new UnauthorizedAccessException("Quản lý không có quyền xem thông tin tài khoản Admin.");
+            }
 
-            var allowed = target.BranchIds.Any(id => current.BranchIds.Contains(id));
-            if (!allowed)
+            bool cungChiNhanh = target.BranchIds.Any(id => current.BranchIds.Contains(id));
+            if (!cungChiNhanh)
+            {
                 throw new UnauthorizedAccessException("Bạn không có quyền xem thông tin nhân viên thuộc chi nhánh khác.");
+            }
 
             return current;
         }

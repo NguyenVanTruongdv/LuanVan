@@ -14,7 +14,7 @@ public partial class HomeImage
 
     public string? Title { get; set; }
 
-    public string? LinkUrl { get; set; }
+  
 
     public sbyte SortOrder { get; set; }
 

@@ -50,7 +50,7 @@ public class ForumCommentController : ControllerBase
 
     /// <summary>Hội viên tự xóa bình luận của chính mình</summary>
     [HttpDelete("{commentId}")]
-    [Authorize(Roles = "Member")]
+    [Authorize(Roles = "Member,Admin")]
     public async Task<IActionResult> DeleteOwn(long commentId)
     {
         var memberId = GetCurrentMemberId();

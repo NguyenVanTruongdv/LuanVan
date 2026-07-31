@@ -93,7 +93,7 @@ namespace BE.DTOs.Employee
         [Required, MinLength(6, ErrorMessage = "Mật khẩu tối thiểu 6 ký tự.")]
         public string Password { get; set; } = null!;
 
-        [Required] public IFormFile ProfileImage { get; set; } = null!;
+        public IFormFile? ProfileImage { get; set; } = null!;
         public string? FaceIdReason { get; set; }
     }
 

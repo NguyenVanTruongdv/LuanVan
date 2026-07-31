@@ -5,52 +5,7 @@ using Microsoft.Extensions.Configuration;
 
 namespace BE.Services.FaceRecognition
 {
-    // GHI CHÚ QUAN TRỌNG:
-    // - FaceIdAws KHÔNG BAO GIỜ nhận từ FE. Đây là giá trị do AWS Rekognition trả về
-    //   sau khi BE gửi ảnh khuôn mặt lên (IndexFaces). Client chỉ gửi ẢNH, không gửi FaceId.
-    // - ExternalImageId khi đăng ký (IndexFaces) luôn có 1 trong 2 dạng:
-    //     "member-{memberId}"    -> dùng cho HỘI VIÊN
-    //     "employee-{employeeId}" -> dùng cho NHÂN VIÊN
-    //   Các hàm search dựa vào đúng quy ước prefix này để phân biệt nhận diện ra
-    //   là hội viên hay nhân viên, và parse ngược ra Id tương ứng.
-    // - Dùng CHUNG 1 Collection cho cả member và employee (đơn giản hoá hạ tầng),
-    //   phân biệt loại hoàn toàn dựa vào prefix của ExternalImageId.
-    // - Cần tạo trước 1 "Collection" trên Rekognition (1 lần, ví dụ qua AWS CLI:
-    //   aws rekognition create-collection --collection-id gym-faces)
-    //   rồi cấu hình CollectionId trong appsettings.json (Aws:RekognitionCollectionId).
-    // - Cần cài package: dotnet add package AWSSDK.Rekognition
-    //
-    // FIX QUAN TRỌNG (bug "nhận diện khống" — người không có trong DB vẫn được
-    // nhận diện thành công):
-    // - ExternalImageId chỉ cho biết "đây là employee-{id}" hay "member-{id}",
-    //   KHÔNG đảm bảo record đó còn hợp lệ trong DB. Nếu 1 face bị xoá/đổi ảnh
-    //   nhưng vô tình còn sót face rác trong AWS Collection (quên gọi
-    //   DeleteFacesAsync), hoặc Employee/Member đã bị xoá khỏi DB nhưng face
-    //   trên AWS chưa dọn, AWS vẫn trả về match hợp lệ (Similarity >= threshold)
-    //   với externalImageId trỏ tới 1 Id không còn đúng chủ sở hữu thật.
-    // - Vì vậy MỌI kết quả match giờ đây trả kèm MatchedFaceId (chính là
-    //   Face.FaceId do AWS cấp, KHÁC với ExternalImageId). Caller (IdentifyService)
-    //   BẮT BUỘC phải đối chiếu MatchedFaceId với FaceIdAws đang lưu trong DB
-    //   (bảng FaceData) của đúng Employee/Member đó — nếu không khớp (hoặc
-    //   người đó chưa từng có FaceData) thì phải coi là "not_recognized", KHÔNG
-    //   được tin tưởng tuyệt đối vào ExternalImageId.
-    //
-    // GHI CHÚ ƯU TIÊN NHÂN VIÊN (quan trọng, CHỈ áp dụng cho SearchFaceByImageAsync
-    // — luồng check-in tự động qua camera):
-    // - Một người có thể vừa là NHÂN VIÊN vừa là HỘI VIÊN, nên cùng 1 khuôn mặt
-    //   có thể được index ở CẢ 2 dạng: "member-{id}" và "employee-{id}".
-    // - Khi nhận diện CHECK-IN, nếu khuôn mặt khớp với CẢ 2 bản ghi, LUÔN ưu tiên
-    //   coi người đó là NHÂN VIÊN (chỉ cần Employee đang Active là cho vào phòng,
-    //   không quan tâm trạng thái gói tập/hội viên).
-    //
-    // LƯU Ý (fix bug 2024): việc "ưu tiên Employee" ở trên KHÔNG được dùng cho
-    // luồng CHECK TRÙNG khi đăng ký (FaceIdService.CheckFaceInternalAsync). Nếu
-    // dùng chung, một khuôn mặt được index cả 2 dạng sẽ luôn bị trả về là Employee,
-    // khiến việc check trùng ở scope Member bị bỏ sót (coi "khác scope" là hợp lệ)
-    // dù thực ra có 1 Member khớp nằm ngay trong danh sách nhưng bị che mất. Vì vậy
-    // luồng check trùng đăng ký PHẢI dùng SearchAllFaceMatchesAsync (trả về TOÀN
-    // BỘ match, không tự ưu tiên ai) để tự lọc đúng theo scope cần kiểm tra.
-
+    
     public enum FaceOwnerType
     {
         Member,
@@ -59,9 +14,9 @@ namespace BE.Services.FaceRecognition
 
     public enum FaceSearchStatus
     {
-        NoFace,         // Ảnh không chứa khuôn mặt rõ ràng (InvalidParameterException từ AWS)
-        NotRecognized,  // Có khuôn mặt nhưng không khớp ai trong collection
-        Found           // Khớp được với 1 người (hội viên hoặc nhân viên)
+        NoFace,         // Ảnh không có khuôn mặt rõ (AWS ném InvalidParameterException)
+        NotRecognized,  // Có mặt nhưng không khớp ai trong collection
+        Found           // Khớp được 1 người (hội viên hoặc nhân viên)
     }
 
     public class FaceSearchResult
@@ -72,39 +27,30 @@ namespace BE.Services.FaceRecognition
         public long? EmployeeId { get; set; }
         public float Similarity { get; set; }
 
-        // FaceId THẬT do AWS cấp cho face vừa match được (Face.FaceId), KHÁC với
-        // ExternalImageId. Caller PHẢI đối chiếu giá trị này với FaceData.FaceIdAws
-        // đang lưu trong DB của đúng Member/Employee trước khi tin kết quả nhận
-        // diện — tránh trường hợp face rác/cũ trong AWS Collection (chưa được dọn
-        // bằng DeleteFacesAsync) khiến hệ thống "nhận diện" ra 1 người không còn
-        // hợp lệ hoặc không tồn tại trong DB.
+       
         public string? MatchedFaceId { get; set; }
     }
 
     public class RekognitionFaceService
     {
-        private const string MemberExternalImageIdPrefix = "member-";
-        private const string EmployeeExternalImageIdPrefix = "employee-";
+        private const string MemberPrefix = "member-";
+        private const string EmployeePrefix = "employee-";
 
         private readonly IAmazonRekognition _rekognitionClient;
         private readonly string _collectionId;
 
-        // Ngưỡng độ khớp tối thiểu để chấp nhận là "cùng 1 người". Có thể đưa ra
-        // appsettings.json (Aws:RekognitionFaceMatchThreshold) nếu muốn chỉnh động.
+        // Ngưỡng % giống nhau tối thiểu để chấp nhận là cùng 1 người.
         private const float FaceMatchThreshold = 90f;
 
-        // Số lượng kết quả khớp tối đa lấy về từ AWS mỗi lần search. Cần > 1 vì
-        // 1 người có thể khớp cả bản ghi Member lẫn Employee, ta cần thấy đủ để
-        // ưu tiên chọn Employee (ở luồng check-in) hoặc xét đúng scope (ở luồng
-        // check trùng đăng ký).
+        // Số kết quả tối đa lấy về mỗi lần search. Cần > 1 vì 1 người có thể
+        // khớp cả bản ghi Member lẫn Employee.
         private const int MaxFacesPerSearch = 10;
 
-        // Biên độ an toàn (%) khi xét ưu tiên Employee TRONG SearchFaceByImageAsync.
-        // CHỈ ưu tiên Employee nếu similarity của nó gần bằng similarity cao nhất
-        // trong danh sách match (nhiều khả năng là CÙNG 1 khuôn mặt được index 2
-        // lần: member + employee). Nếu để ưu tiên Employee một cách tuyệt đối (bất
-        // kỳ Employee nào >= threshold là chọn), sẽ có rủi ro nhận NHẦM sang 1 nhân
-        // viên khác có gương mặt tương đồng nhưng similarity thấp hơn hẳn top match.
+        // Biên độ an toàn (%) khi ưu tiên Employee trong SearchFaceByImageAsync.
+        // Chỉ ưu tiên Employee nếu similarity của nó gần bằng similarity cao
+        // nhất (nhiều khả năng là cùng 1 khuôn mặt được index 2 lần). Nếu ưu
+        // tiên Employee một cách tuyệt đối thì dễ nhận nhầm sang 1 nhân viên
+        // khác có gương mặt hao hao nhưng similarity thấp hơn hẳn.
         private const float EmployeePriorityMargin = 3f;
 
         public RekognitionFaceService(IAmazonRekognition rekognitionClient, IConfiguration configuration)
@@ -114,47 +60,42 @@ namespace BE.Services.FaceRecognition
                 ?? throw new InvalidOperationException("Thiếu cấu hình Aws:RekognitionCollectionId");
         }
 
-        // =====================================================================
-        // ĐĂNG KÝ FACEID — tách riêng cho Member và Employee để rõ ràng luồng,
-        // nhưng bên trong đều dùng chung IndexFaces (chỉ khác ExternalImageId).
-        // =====================================================================
+  
 
-        /// <summary>Đăng ký/cập nhật khuôn mặt cho HỘI VIÊN. Trả về FaceId do AWS cấp.</summary>
+        // Đăng ký/cập nhật khuôn mặt cho hội viên. Trả về FaceId do AWS cấp.
         public Task<string> RegisterMemberFaceAsync(IFormFile image, long memberId)
             => RegisterFaceInternalAsync(image, BuildMemberExternalImageId(memberId));
 
-        /// <summary>Đăng ký/cập nhật khuôn mặt cho NHÂN VIÊN. Trả về FaceId do AWS cấp.</summary>
+        // Đăng ký/cập nhật khuôn mặt cho nhân viên. Trả về FaceId do AWS cấp.
         public Task<string> RegisterEmployeeFaceAsync(IFormFile image, long employeeId)
             => RegisterFaceInternalAsync(image, BuildEmployeeExternalImageId(employeeId));
 
-        /// <summary>
-        /// Giữ lại overload tổng quát (dùng bởi FaceIdService khi build sẵn externalImageId)
-        /// để không phải sửa các nơi đang gọi theo kiểu cũ.
-        /// </summary>
+        // Giữ overload tổng quát này cho các nơi đang tự build sẵn externalImageId,
+        // để không phải sửa lại code cũ.
         public Task<string> RegisterFaceAsync(IFormFile image, string externalImageId)
             => RegisterFaceInternalAsync(image, externalImageId);
 
         private async Task<string> RegisterFaceInternalAsync(IFormFile image, string externalImageId)
         {
-            using var uploadStream = image.OpenReadStream();
-            using var memoryStream = new MemoryStream();
-            await uploadStream.CopyToAsync(memoryStream);
-            memoryStream.Position = 0;
+            using var luongDoc = image.OpenReadStream();
+            using var anhStream = new MemoryStream();
+            await luongDoc.CopyToAsync(anhStream);
+            anhStream.Position = 0;
 
-            var request = new IndexFacesRequest
+            var yeuCau = new IndexFacesRequest
             {
                 CollectionId = _collectionId,
-                Image = new Amazon.Rekognition.Model.Image { Bytes = memoryStream },
+                Image = new Amazon.Rekognition.Model.Image { Bytes = anhStream },
                 ExternalImageId = externalImageId,
                 MaxFaces = 1,
                 QualityFilter = QualityFilter.AUTO,
                 DetectionAttributes = new List<string> { "DEFAULT" }
             };
 
-            IndexFacesResponse response;
+            IndexFacesResponse ketQua;
             try
             {
-                response = await _rekognitionClient.IndexFacesAsync(request);
+                ketQua = await _rekognitionClient.IndexFacesAsync(yeuCau);
             }
             catch (InvalidParameterException)
             {
@@ -162,105 +103,73 @@ namespace BE.Services.FaceRecognition
                 throw new ArgumentException("Ảnh không nhận diện được khuôn mặt rõ ràng. Vui lòng chụp lại.");
             }
 
-            if (response.FaceRecords.Count == 0)
+            if (ketQua.FaceRecords.Count == 0)
                 throw new ArgumentException("Không tìm thấy khuôn mặt trong ảnh. Vui lòng chụp lại ảnh rõ nét hơn.");
 
-            return response.FaceRecords[0].Face.FaceId;
+            return ketQua.FaceRecords[0].Face.FaceId;
         }
 
-        // =====================================================================
-        // NHẬN DIỆN — CHECK-IN (ưu tiên Employee) — giữ nguyên hành vi cũ, chỉ
-        // dùng cho luồng check-in tự động qua camera.
-        // =====================================================================
-
-        /// <summary>
-        /// Dùng cho check-in/check-out tự động qua camera: gửi ảnh khung hình vừa
-        /// chụp lên Rekognition, tìm khuôn mặt khớp trong collection.
-        /// KHÔNG index ảnh này vào collection (chỉ SearchFacesByImage, không IndexFaces).
-        ///
-        /// ƯU TIÊN NHÂN VIÊN: một người có thể được index cả 2 dạng (member-{id}
-        /// và employee-{id}) nếu vừa là nhân viên vừa là hội viên. Vì vậy hàm này
-        /// lấy nhiều kết quả khớp (không chỉ 1). Trong số các match có similarity
-        /// GẦN BẰNG match cao nhất (chênh lệch <= EmployeePriorityMargin — tức
-        /// nhiều khả năng là cùng 1 khuôn mặt), nếu có Employee thì ưu tiên chọn
-        /// Employee. Match có similarity thấp hơn hẳn (khác biệt lớn) sẽ KHÔNG
-        /// được ưu tiên dù là Employee, để tránh nhận nhầm sang người khác.
-        ///
-        /// LƯU Ý: hàm này chỉ trả kết quả THEO GÓC ĐỘ AWS (dựa vào ExternalImageId).
-        /// Nó KHÔNG biết Employee/Member đó còn hợp lệ trong DB hay không, và
-        /// KHÔNG biết FaceId match được có phải là FaceId "chính thức" hiện tại
-        /// đang lưu trong FaceData hay là 1 face cũ/rác còn sót trong Collection.
-        /// Caller (IdentifyService) BẮT BUỘC phải tự đối chiếu MatchedFaceId trả
-        /// về với FaceData.FaceIdAws trong DB trước khi coi là nhận diện thành công.
-        ///
-        /// CHỈ dùng cho check-in. KHÔNG dùng hàm này cho luồng check trùng khi
-        /// đăng ký (dùng SearchAllFaceMatchesAsync bên dưới thay thế).
-        /// </summary>
+     
+        // NHẬN DIỆN - CHECK-IN (ưu tiên Employee), chỉ dùng cho luồng check-in
+        // tự động qua camera.
+   
         public async Task<FaceSearchResult> SearchFaceByImageAsync(byte[] imageBytes)
         {
-            var parsedMatches = await SearchAndParseMatchesAsync(imageBytes);
+            var dsKhop = await SearchAndParseMatchesAsync(imageBytes);
 
-            if (parsedMatches.Count == 1 &&
-                (parsedMatches[0].Status == FaceSearchStatus.NoFace || parsedMatches[0].Status == FaceSearchStatus.NotRecognized))
+            if (dsKhop.Count == 1 &&
+                (dsKhop[0].Status == FaceSearchStatus.NoFace || dsKhop[0].Status == FaceSearchStatus.NotRecognized))
             {
-                return parsedMatches[0];
+                return dsKhop[0];
             }
 
-            float topSimilarity = parsedMatches[0].Similarity;
+            float diemCaoNhat = dsKhop[0].Similarity;
 
             // Chỉ coi là "ứng viên cùng 1 khuôn mặt" nếu similarity gần bằng top
-            // match (trong khoảng EmployeePriorityMargin). Match có similarity
-            // thấp hơn hẳn nhiều khả năng là 1 người KHÁC tình cờ khớp qua
-            // threshold, không nên ưu tiên nhầm.
-            List<FaceSearchResult> closeMatches = parsedMatches
-                .Where(r => topSimilarity - r.Similarity <= EmployeePriorityMargin)
+            // match. Similarity thấp hơn hẳn nhiều khả năng là 1 người khác
+            // tình cờ khớp qua ngưỡng, không nên ưu tiên nhầm.
+            var khopGanNhat = dsKhop
+                .Where(kh => diemCaoNhat - kh.Similarity <= EmployeePriorityMargin)
                 .ToList();
 
-            // ƯU TIÊN NHÂN VIÊN: trong nhóm "gần top match" đó, nếu có Employee
-            // thì chọn Employee có similarity cao nhất trong nhóm.
-            FaceSearchResult? bestEmployeeMatch = closeMatches
-                .Where(r => r.OwnerType == FaceOwnerType.Employee)
-                .OrderByDescending(r => r.Similarity)
+            // Trong nhóm "gần top match" đó, nếu có Employee thì chọn Employee
+            // có similarity cao nhất trong nhóm.
+            var nvKhopTot = khopGanNhat
+                .Where(kh => kh.OwnerType == FaceOwnerType.Employee)
+                .OrderByDescending(kh => kh.Similarity)
                 .FirstOrDefault();
 
-            if (bestEmployeeMatch != null)
-            {
-                return bestEmployeeMatch;
-            }
+            if (nvKhopTot != null)
+                return nvKhopTot;
 
-            // Không có Employee nào đủ gần top match -> trả về match khớp cao
-            // nhất tuyệt đối (giữ hành vi cũ, an toàn cho trường hợp bình thường).
-            return parsedMatches.First();
+            // Không có Employee nào đủ gần top match -> trả về match cao nhất.
+            return dsKhop.First();
         }
 
-        // =====================================================================
-        // NHẬN DIỆN — CHECK TRÙNG KHI ĐĂNG KÝ (KHÔNG ưu tiên ai) — dùng bởi
+   
+        // NHẬN DIỆN - CHECK TRÙNG KHI ĐĂNG KÝ (không ưu tiên ai), dùng bởi
         // FaceIdService.CheckFaceInternalAsync để tự lọc đúng scope Member/Employee
-        // đang cần kiểm tra, tránh bug bị logic ưu tiên Employee che mất kết quả
-        // Member (hoặc ngược lại).
-        // =====================================================================
+  
 
-        /// <summary>
-        /// Trả về TOÀN BỘ match hợp lệ đã parse Member/Employee, sắp giảm dần theo
-        /// similarity, KHÔNG tự ưu tiên loại nào. Nếu ảnh không có mặt hoặc không
-        /// khớp ai, trả về list chỉ chứa 1 phần tử tương ứng (NoFace/NotRecognized).
-        /// Caller (FaceIdService) tự lọc theo đúng scope (Member/Employee) mình
-        /// đang cần kiểm tra trùng.
-        /// </summary>
+        // Trả về toàn bộ match hợp lệ đã parse Member/Employee, sắp giảm dần
+        // theo similarity, không ưu tiên loại nào.
+        //  Nếu ảnh không có mặt hoặc
+        // không khớp ai, trả về list chỉ chứa 1 phần tử NoFace
+        // Caller tự lọc theo scope (Member/Employee) mình đang cần kiểm tra.
         public async Task<List<FaceSearchResult>> SearchAllFaceMatchesAsync(byte[] imageBytes)
             => await SearchAndParseMatchesAsync(imageBytes);
 
         private async Task<List<FaceSearchResult>> SearchAndParseMatchesAsync(byte[] imageBytes)
         {
-            using var memoryStream = new MemoryStream(imageBytes);
+            using var anhStream = new MemoryStream(imageBytes);
 
-            SearchFacesByImageResponse response;
+            SearchFacesByImageResponse ketQua;
             try
             {
-                response = await _rekognitionClient.SearchFacesByImageAsync(new SearchFacesByImageRequest
+                ketQua = await _rekognitionClient.SearchFacesByImageAsync(new SearchFacesByImageRequest
                 {
                     CollectionId = _collectionId,
-                    Image = new Amazon.Rekognition.Model.Image { Bytes = memoryStream },
+                    Image = new Amazon.Rekognition.Model.Image { Bytes = anhStream },
                     MaxFaces = MaxFacesPerSearch,
                     FaceMatchThreshold = FaceMatchThreshold
                 });
@@ -271,21 +180,19 @@ namespace BE.Services.FaceRecognition
                 return new List<FaceSearchResult> { new FaceSearchResult { Status = FaceSearchStatus.NoFace } };
             }
 
-            if (response.FaceMatches == null || response.FaceMatches.Count == 0)
+            if (ketQua.FaceMatches == null || ketQua.FaceMatches.Count == 0)
                 return new List<FaceSearchResult> { new FaceSearchResult { Status = FaceSearchStatus.NotRecognized } };
 
-            // Parse toàn bộ các match hợp lệ (đúng prefix), sắp theo similarity giảm dần.
-            // Truyền kèm m.Face.FaceId (FaceId THẬT do AWS cấp) để caller có thể đối
-            // chiếu ngược với FaceData.FaceIdAws trong DB.
-            List<FaceSearchResult> parsedMatches = response.FaceMatches
-                .OrderByDescending(m => m.Similarity)
-                .Select(m => ParseExternalImageId(m.Face.ExternalImageId, m.Similarity ?? 0, m.Face.FaceId))
-                .Where(r => r.Status == FaceSearchStatus.Found)
+       
+            var dsMatch = ketQua.FaceMatches
+                .OrderByDescending(kh => kh.Similarity)
+                .Select(kh => ParseExternalImageId(kh.Face.ExternalImageId, kh.Similarity ?? 0, kh.Face.FaceId))
+                .Where(kq => kq.Status == FaceSearchStatus.Found)
                 .ToList();
 
-            return parsedMatches.Count == 0
+            return dsMatch.Count == 0
                 ? new List<FaceSearchResult> { new FaceSearchResult { Status = FaceSearchStatus.NotRecognized } }
-                : parsedMatches;
+                : dsMatch;
         }
 
         private static FaceSearchResult ParseExternalImageId(string? externalImageId, float similarity, string? faceId)
@@ -293,8 +200,8 @@ namespace BE.Services.FaceRecognition
             if (string.IsNullOrEmpty(externalImageId))
                 return new FaceSearchResult { Status = FaceSearchStatus.NotRecognized };
 
-            if (externalImageId.StartsWith(MemberExternalImageIdPrefix, StringComparison.Ordinal) &&
-                long.TryParse(externalImageId.AsSpan(MemberExternalImageIdPrefix.Length), out var memberId))
+            if (externalImageId.StartsWith(MemberPrefix, StringComparison.Ordinal) &&
+                long.TryParse(externalImageId.AsSpan(MemberPrefix.Length), out var memberId))
             {
                 return new FaceSearchResult
                 {
@@ -306,8 +213,8 @@ namespace BE.Services.FaceRecognition
                 };
             }
 
-            if (externalImageId.StartsWith(EmployeeExternalImageIdPrefix, StringComparison.Ordinal) &&
-                long.TryParse(externalImageId.AsSpan(EmployeeExternalImageIdPrefix.Length), out var employeeId))
+            if (externalImageId.StartsWith(EmployeePrefix, StringComparison.Ordinal) &&
+                long.TryParse(externalImageId.AsSpan(EmployeePrefix.Length), out var employeeId))
             {
                 return new FaceSearchResult
                 {
@@ -319,13 +226,11 @@ namespace BE.Services.FaceRecognition
                 };
             }
 
-            // Prefix lạ, không thuộc quy ước nào -> coi như không nhận diện được
+            // Tiền tố lạ, không thuộc quy ước nào -> coi như không nhận diện được
             return new FaceSearchResult { Status = FaceSearchStatus.NotRecognized };
         }
-
-        // =====================================================================
         // XOÁ FACEID (khi cập nhật ảnh mới, xoá face cũ khỏi collection)
-        // =====================================================================
+ 
         public async Task DeleteFaceAsync(string? faceId)
         {
             if (string.IsNullOrWhiteSpace(faceId))
@@ -342,17 +247,17 @@ namespace BE.Services.FaceRecognition
             catch (Exception ex)
             {
                 // TODO: thay Console bằng ILogger<RekognitionFaceService> khi có sẵn DI logger.
-                // Không throw ở đây vì DB đã lưu FaceId mới thành công — xoá face cũ thất bại
-                // không nên làm hỏng cả request, nhưng BẮT BUỘC phải biết để dọn rác thủ công.
+                // Không throw ở đây vì DB đã lưu FaceId mới thành công - xoá face cũ thất bại
+                // không nên làm hỏng cả request, nhưng phải log lại để dọn rác thủ công.
                 Console.WriteLine($"[RekognitionFaceService] Xoá face cũ thất bại. FaceId={faceId}. Lỗi: {ex.Message}");
             }
         }
 
         // =====================================================================
-        // Helpers build ExternalImageId — public để FaceIdService hoặc nơi khác
-        // có thể tái sử dụng nếu cần, tránh lệch quy ước.
+        // Helper build ExternalImageId - public để nơi khác tái sử dụng, tránh
+        // tự build sai quy ước.
         // =====================================================================
-        public static string BuildMemberExternalImageId(long memberId) => $"{MemberExternalImageIdPrefix}{memberId}";
-        public static string BuildEmployeeExternalImageId(long employeeId) => $"{EmployeeExternalImageIdPrefix}{employeeId}";
+        public static string BuildMemberExternalImageId(long memberId) => $"{MemberPrefix}{memberId}";
+        public static string BuildEmployeeExternalImageId(long employeeId) => $"{EmployeePrefix}{employeeId}";
     }
 }

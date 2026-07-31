@@ -1,607 +1,441 @@
-// using BE.Data;
-// using BE.DTOs;
-// using BE.Models;
-// using Microsoft.EntityFrameworkCore;
-
-// namespace BE.Services;
-
-// public class ReportService
-// {
-//     private readonly GymManagementContext _db;
-
-//     public ReportService(GymManagementContext db)
-//     {
-//         _db = db;
-//     }
-
-//     // Lấy danh sách chi nhánh mà nhân viên này được gán quản lý/làm việc.
-//     private async Task<List<Branch>> GetManagedBranchesAsync(long employeeId)
-//     {
-//         return await _db.EmployeeBranches
-//             .Where(eb => eb.EmployeeId == employeeId)
-//             .Select(eb => eb.Branch)
-//             .Distinct()
-//             .ToListAsync();
-//     }
-
-//     private static BranchReportContextDto BuildContext(List<Branch> branches, DateTime fromDate, DateTime toDate)
-//     {
-//         return new BranchReportContextDto
-//         {
-//             BranchIds = branches.Select(b => b.BranchId).ToList(),
-//             BranchNames = branches.Select(b => b.BranchName).ToList(),
-//             FromDate = fromDate.Date,
-//             ToDate = toDate.Date
-//         };
-//     }
-
-//     // ===================== DOANH THU (TỔNG QUAN) =====================
-//     public async Task<RevenueReportDto> GetRevenueReportAsync(long employeeId, DateTime fromDate, DateTime toDate)
-//     {
-//         var branches = await GetManagedBranchesAsync(employeeId);
-//         var branchIds = branches.Select(b => b.BranchId).ToList();
-//         var toDateExclusive = toDate.Date.AddDays(1);
-
-//         if (branchIds.Count == 0)
-//         {
-//             return new RevenueReportDto { Context = BuildContext(branches, fromDate, toDate) };
-//         }
-
-//         var paidTransactions = await _db.Transactions
-//             .Include(t => t.Plan)
-//             .Include(t => t.Branch)
-//             .Where(t => branchIds.Contains(t.BranchId)
-//                         && t.PaymentStatus == "Paid"
-//                         && t.CreatedAt >= fromDate.Date && t.CreatedAt < toDateExclusive)
-//             .ToListAsync();
-
-//         var totalRevenue = paidTransactions.Sum(t => t.Amount);
-//         var totalTransactions = paidTransactions.Count;
-
-//         var periodLength = toDateExclusive - fromDate.Date;
-//         var previousFrom = fromDate.Date - periodLength;
-//         var previousTo = fromDate.Date;
-
-//         var previousRevenue = await _db.Transactions
-//             .Where(t => branchIds.Contains(t.BranchId)
-//                         && t.PaymentStatus == "Paid"
-//                         && t.CreatedAt >= previousFrom && t.CreatedAt < previousTo)
-//             .SumAsync(t => (decimal?)t.Amount) ?? 0m;
-
-//         var growth = previousRevenue == 0
-//             ? (totalRevenue > 0 ? 100.0 : 0.0)
-//             : (double)((totalRevenue - previousRevenue) / previousRevenue) * 100.0;
-
-//         var revenueByPlan = paidTransactions
-//             .GroupBy(t => t.Plan.PlanName)
-//             .Select(g => new RevenueByPlanDto
-//             {
-//                 PlanName = g.Key,
-//                 Revenue = g.Sum(t => t.Amount),
-//                 TransactionCount = g.Count()
-//             })
-//             .OrderByDescending(x => x.Revenue)
-//             .ToList();
-
-//         var revenueByMethod = paidTransactions
-//             .GroupBy(t => t.PaymentMethod)
-//             .Select(g => new RevenueByMethodDto
-//             {
-//                 Method = g.Key,
-//                 Revenue = g.Sum(t => t.Amount),
-//                 TransactionCount = g.Count()
-//             })
-//             .OrderByDescending(x => x.Revenue)
-//             .ToList();
-
-//         var revenueByBranch = BuildRevenueByBranch(paidTransactions);
-
-//         var trend = paidTransactions
-//             .GroupBy(t => t.CreatedAt.Date)
-//             .Select(g => new RevenueTrendPointDto { Date = g.Key, Revenue = g.Sum(t => t.Amount) })
-//             .OrderBy(x => x.Date)
-//             .ToList();
-
-//         var revenueByDay = BuildRevenueByDay(paidTransactions);
-//         var revenueByMonth = BuildRevenueByMonth(paidTransactions);
-
-//         return new RevenueReportDto
-//         {
-//             Context = BuildContext(branches, fromDate, toDate),
-//             TotalRevenue = totalRevenue,
-//             TotalTransactions = totalTransactions,
-//             AverageTransactionValue = totalTransactions == 0 ? 0 : totalRevenue / totalTransactions,
-//             PreviousPeriodRevenue = previousRevenue,
-//             GrowthPercentage = Math.Round(growth, 2),
-//             RevenueByPlan = revenueByPlan,
-//             RevenueByPaymentMethod = revenueByMethod,
-//             RevenueByBranch = revenueByBranch,
-//             Trend = trend,
-//             RevenueByDay = revenueByDay,
-//             RevenueByMonth = revenueByMonth
-//         };
-//     }
-
-//     // ===================== DOANH THU THEO NGÀY (riêng) =====================
-//     public async Task<List<RevenueByDayDto>> GetRevenueByDayAsync(long employeeId, DateTime fromDate, DateTime toDate)
-//     {
-//         var branches = await GetManagedBranchesAsync(employeeId);
-//         var branchIds = branches.Select(b => b.BranchId).ToList();
-//         if (branchIds.Count == 0) return new List<RevenueByDayDto>();
-
-//         var toDateExclusive = toDate.Date.AddDays(1);
-
-//         var paidTransactions = await _db.Transactions
-//             .Where(t => branchIds.Contains(t.BranchId)
-//                         && t.PaymentStatus == "Paid"
-//                         && t.CreatedAt >= fromDate.Date && t.CreatedAt < toDateExclusive)
-//             .Select(t => new { t.CreatedAt, t.Amount })
-//             .ToListAsync();
-
-//         return paidTransactions
-//             .GroupBy(t => t.CreatedAt.Date)
-//             .Select(g => new RevenueByDayDto
-//             {
-//                 Date = g.Key,
-//                 Revenue = g.Sum(x => x.Amount),
-//                 TransactionCount = g.Count()
-//             })
-//             .OrderBy(x => x.Date)
-//             .ToList();
-//     }
-
-//     // ===================== DOANH THU THEO THÁNG (riêng) =====================
-//     public async Task<List<RevenueByMonthDto>> GetRevenueByMonthAsync(long employeeId, DateTime fromDate, DateTime toDate)
-//     {
-//         var branches = await GetManagedBranchesAsync(employeeId);
-//         var branchIds = branches.Select(b => b.BranchId).ToList();
-//         if (branchIds.Count == 0) return new List<RevenueByMonthDto>();
-
-//         var toDateExclusive = toDate.Date.AddDays(1);
-
-//         var paidTransactions = await _db.Transactions
-//             .Where(t => branchIds.Contains(t.BranchId)
-//                         && t.PaymentStatus == "Paid"
-//                         && t.CreatedAt >= fromDate.Date && t.CreatedAt < toDateExclusive)
-//             .Select(t => new { t.CreatedAt, t.Amount })
-//             .ToListAsync();
-
-//         return paidTransactions
-//             .GroupBy(t => new { t.CreatedAt.Year, t.CreatedAt.Month })
-//             .Select(g => new RevenueByMonthDto
-//             {
-//                 Year = g.Key.Year,
-//                 Month = g.Key.Month,
-//                 Revenue = g.Sum(x => x.Amount),
-//                 TransactionCount = g.Count()
-//             })
-//             .OrderBy(x => x.Year).ThenBy(x => x.Month)
-//             .ToList();
-//     }
-
-//     // ===================== DOANH THU THEO CHI NHÁNH (riêng) =====================
-//     public async Task<RevenueByBranchReportDto> GetRevenueByBranchAsync(long employeeId, DateTime fromDate, DateTime toDate)
-//     {
-//         var branches = await GetManagedBranchesAsync(employeeId);
-//         var branchIds = branches.Select(b => b.BranchId).ToList();
-
-//         if (branchIds.Count == 0)
-//         {
-//             return new RevenueByBranchReportDto { Context = BuildContext(branches, fromDate, toDate) };
-//         }
-
-//         var toDateExclusive = toDate.Date.AddDays(1);
-
-//         var paidTransactions = await _db.Transactions
-//             .Include(t => t.Branch)
-//             .Where(t => branchIds.Contains(t.BranchId)
-//                         && t.PaymentStatus == "Paid"
-//                         && t.CreatedAt >= fromDate.Date && t.CreatedAt < toDateExclusive)
-//             .ToListAsync();
-
-//         return new RevenueByBranchReportDto
-//         {
-//             Context = BuildContext(branches, fromDate, toDate),
-//             Branches = BuildRevenueByBranch(paidTransactions, branches)
-//         };
-//     }
-
-//     private static List<RevenueByBranchDto> BuildRevenueByBranch(List<Transaction> paidTransactions, List<Branch>? allBranches = null)
-//     {
-//         var grouped = paidTransactions
-//             .GroupBy(t => new { t.BranchId, t.Branch.BranchName })
-//             .Select(g => new RevenueByBranchDto
-//             {
-//                 BranchId = g.Key.BranchId,
-//                 BranchName = g.Key.BranchName,
-//                 Revenue = g.Sum(t => t.Amount),
-//                 TransactionCount = g.Count(),
-//                 AverageTransactionValue = g.Count() == 0 ? 0 : g.Sum(t => t.Amount) / g.Count()
-//             })
-//             .ToList();
-
-//         // Nếu cần liệt kê cả những chi nhánh không phát sinh doanh thu trong kỳ
-//         if (allBranches != null)
-//         {
-//             var existingIds = grouped.Select(x => x.BranchId).ToHashSet();
-//             foreach (var b in allBranches.Where(b => !existingIds.Contains(b.BranchId)))
-//             {
-//                 grouped.Add(new RevenueByBranchDto
-//                 {
-//                     BranchId = b.BranchId,
-//                     BranchName = b.BranchName,
-//                     Revenue = 0,
-//                     TransactionCount = 0,
-//                     AverageTransactionValue = 0
-//                 });
-//             }
-//         }
-
-//         return grouped.OrderByDescending(x => x.Revenue).ToList();
-//     }
-
-//     private static List<RevenueByDayDto> BuildRevenueByDay(List<Transaction> paidTransactions)
-//     {
-//         return paidTransactions
-//             .GroupBy(t => t.CreatedAt.Date)
-//             .Select(g => new RevenueByDayDto
-//             {
-//                 Date = g.Key,
-//                 Revenue = g.Sum(t => t.Amount),
-//                 TransactionCount = g.Count()
-//             })
-//             .OrderBy(x => x.Date)
-//             .ToList();
-//     }
-
-//     private static List<RevenueByMonthDto> BuildRevenueByMonth(List<Transaction> paidTransactions)
-//     {
-//         return paidTransactions
-//             .GroupBy(t => new { t.CreatedAt.Year, t.CreatedAt.Month })
-//             .Select(g => new RevenueByMonthDto
-//             {
-//                 Year = g.Key.Year,
-//                 Month = g.Key.Month,
-//                 Revenue = g.Sum(t => t.Amount),
-//                 TransactionCount = g.Count()
-//             })
-//             .OrderBy(x => x.Year).ThenBy(x => x.Month)
-//             .ToList();
-//     }
-
-//     // ===================== HỘI VIÊN (TỔNG QUAN) =====================
-//     public async Task<MemberReportDto> GetMemberReportAsync(long employeeId, DateTime fromDate, DateTime toDate)
-//     {
-//         var branches = await GetManagedBranchesAsync(employeeId);
-//         var branchIds = branches.Select(b => b.BranchId).ToList();
-//         var toDateExclusive = toDate.Date.AddDays(1);
-
-//         if (branchIds.Count == 0)
-//         {
-//             return new MemberReportDto { Context = BuildContext(branches, fromDate, toDate) };
-//         }
-
-//         // Hội viên "thuộc" chi nhánh = có ít nhất 1 member_package tại chi nhánh đó
-//         var packagesAtBranches = await _db.MemberPackages
-//             .Include(mp => mp.Member)
-//             .Include(mp => mp.Plan)
-//             .Where(mp => branchIds.Contains(mp.BranchId))
-//             .ToListAsync();
-
-//         var totalMembers = packagesAtBranches.Select(mp => mp.MemberId).Distinct().Count();
-
-//         var activeMemberIds = packagesAtBranches
-//             .Where(mp => mp.PackageStatus == "Active")
-//             .Select(mp => mp.MemberId)
-//             .Distinct()
-//             .ToHashSet();
-
-//         var expiredMemberIds = packagesAtBranches
-//             .Where(mp => mp.PackageStatus == "Expired")
-//             .Select(mp => mp.MemberId)
-//             .Distinct()
-//             .ToHashSet();
-
-//         // Hội viên mới: gói đầu tiên của họ (bất kỳ chi nhánh nào) được tạo tại 1 trong các chi nhánh này, trong kỳ
-//         var firstPackagePerMember = await _db.MemberPackages
-//             .GroupBy(mp => mp.MemberId)
-//             .Select(g => new { MemberId = g.Key, FirstPackage = g.OrderBy(x => x.CreatedAt).First() })
-//             .Where(x => branchIds.Contains(x.FirstPackage.BranchId)
-//                         && x.FirstPackage.CreatedAt >= fromDate.Date
-//                         && x.FirstPackage.CreatedAt < toDateExclusive)
-//             .ToListAsync();
-//         var newMembersInPeriod = firstPackagePerMember.Count;
-
-//         // ExpiryDate là DateOnly? — so sánh phải quy về DateOnly, không so trực tiếp với DateTime
-//         var todayDateOnly = DateOnly.FromDateTime(DateTime.UtcNow);
-//         var expiringSoonWindow = todayDateOnly.AddDays(7);
-
-//         var expiringSoon = packagesAtBranches
-//             .Where(mp => mp.PackageStatus == "Active"
-//                          && mp.ExpiryDate.HasValue
-//                          && mp.ExpiryDate.Value >= todayDateOnly
-//                          && mp.ExpiryDate.Value <= expiringSoonWindow)
-//             .OrderBy(mp => mp.ExpiryDate)
-//             .Select(mp => new ExpiringMemberDto
-//             {
-//                 MemberId = mp.MemberId,
-//                 FullName = mp.Member.FullName,
-//                 ExpiryDate = mp.ExpiryDate!.Value.ToDateTime(TimeOnly.MinValue),
-//                 PlanName = mp.Plan.PlanName,
-//                 BranchId = mp.BranchId
-//             })
-//             .ToList();
-
-//         // Tỷ lệ gia hạn: trong số gói hết hạn (ExpiryDate) rơi vào kỳ, bao nhiêu % hội viên vẫn có gói Active khác
-//         var fromDateOnly = DateOnly.FromDateTime(fromDate.Date);
-//         var toDateExclusiveOnly = DateOnly.FromDateTime(toDateExclusive);
-
-//         var packagesExpiredInPeriod = packagesAtBranches
-//             .Where(mp => mp.ExpiryDate.HasValue
-//                          && mp.ExpiryDate.Value >= fromDateOnly
-//                          && mp.ExpiryDate.Value < toDateExclusiveOnly)
-//             .ToList();
-
-//         var renewedCount = packagesExpiredInPeriod.Count(mp => activeMemberIds.Contains(mp.MemberId));
-//         var retentionRate = packagesExpiredInPeriod.Count == 0
-//             ? 0.0
-//             : (double)renewedCount / packagesExpiredInPeriod.Count * 100.0;
-
-//         var membersByPlan = packagesAtBranches
-//             .GroupBy(mp => mp.Plan.PlanName)
-//             .Select(g => new MemberByPlanDto
-//             {
-//                 PlanName = g.Key,
-//                 MemberCount = g.Select(x => x.MemberId).Distinct().Count()
-//             })
-//             .OrderByDescending(x => x.MemberCount)
-//             .ToList();
-
-//         return new MemberReportDto
-//         {
-//             Context = BuildContext(branches, fromDate, toDate),
-//             TotalMembers = totalMembers,
-//             ActiveMembers = activeMemberIds.Count,
-//             ExpiredMembers = expiredMemberIds.Count,
-//             NewMembersInPeriod = newMembersInPeriod,
-//             ExpiringSoonCount = expiringSoon.Count,
-//             RetentionRatePercentage = Math.Round(retentionRate, 2),
-//             MembersByPlan = membersByPlan,
-//             ExpiringSoon = expiringSoon
-//         };
-//     }
-
-//     // ===================== HỘI VIÊN: TỔNG SỐ + CHECK-IN THEO CHI NHÁNH =====================
-//     public async Task<MemberSummaryReportDto> GetMemberSummaryAsync(long employeeId, DateTime fromDate, DateTime toDate)
-//     {
-//         var branches = await GetManagedBranchesAsync(employeeId);
-//         var branchIds = branches.Select(b => b.BranchId).ToList();
-
-//         if (branchIds.Count == 0)
-//         {
-//             return new MemberSummaryReportDto { Context = BuildContext(branches, fromDate, toDate) };
-//         }
-
-//         var toDateExclusive = toDate.Date.AddDays(1);
-
-//         // Hội viên theo chi nhánh (dựa trên member_packages tại chi nhánh)
-//         var packagesAtBranches = await _db.MemberPackages
-//             .Include(mp => mp.Branch)
-//             .Where(mp => branchIds.Contains(mp.BranchId))
-//             .Select(mp => new { mp.BranchId, mp.Branch.BranchName, mp.MemberId, mp.PackageStatus })
-//             .ToListAsync();
-
-//         var membersByBranch = packagesAtBranches
-//             .GroupBy(mp => new { mp.BranchId, mp.BranchName })
-//             .Select(g => new MemberCountByBranchDto
-//             {
-//                 BranchId = g.Key.BranchId,
-//                 BranchName = g.Key.BranchName,
-//                 MemberCount = g.Select(x => x.MemberId).Distinct().Count(),
-//                 ActiveMemberCount = g.Where(x => x.PackageStatus == "Active")
-//                                       .Select(x => x.MemberId).Distinct().Count()
-//             })
-//             .OrderByDescending(x => x.MemberCount)
-//             .ToList();
-
-//         var totalMembers = packagesAtBranches.Select(x => x.MemberId).Distinct().Count();
-//         var totalActiveMembers = packagesAtBranches
-//             .Where(x => x.PackageStatus == "Active")
-//             .Select(x => x.MemberId).Distinct().Count();
-
-//         // Check-in theo chi nhánh trong kỳ
-//         var checkIns = await _db.CheckIns
-//             .Include(c => c.Branch)
-//             .Where(c => branchIds.Contains(c.BranchId)
-//                         && c.CheckInTime >= fromDate.Date && c.CheckInTime < toDateExclusive)
-//             .Select(c => new { c.BranchId, c.Branch.BranchName, c.MemberId })
-//             .ToListAsync();
-
-//         var checkInsByBranch = checkIns
-//             .GroupBy(c => new { c.BranchId, c.BranchName })
-//             .Select(g => new CheckInByBranchDto
-//             {
-//                 BranchId = g.Key.BranchId,
-//                 BranchName = g.Key.BranchName,
-//                 CheckInCount = g.Count(),
-//                 UniqueMemberCount = g.Select(x => x.MemberId).Distinct().Count()
-//             })
-//             .OrderByDescending(x => x.CheckInCount)
-//             .ToList();
-
-//         // Đảm bảo liệt kê đủ tất cả chi nhánh quản lý, kể cả khi không có check-in
-//         var existingBranchIds = checkInsByBranch.Select(x => x.BranchId).ToHashSet();
-//         foreach (var b in branches.Where(b => !existingBranchIds.Contains(b.BranchId)))
-//         {
-//             checkInsByBranch.Add(new CheckInByBranchDto
-//             {
-//                 BranchId = b.BranchId,
-//                 BranchName = b.BranchName,
-//                 CheckInCount = 0,
-//                 UniqueMemberCount = 0
-//             });
-//         }
-
-//         return new MemberSummaryReportDto
-//         {
-//             Context = BuildContext(branches, fromDate, toDate),
-//             TotalMembers = totalMembers,
-//             TotalActiveMembers = totalActiveMembers,
-//             TotalCheckIns = checkIns.Count,
-//             MembersByBranch = membersByBranch,
-//             CheckInsByBranch = checkInsByBranch.OrderByDescending(x => x.CheckInCount).ToList()
-//         };
-//     }
-
-//     // ===================== THIẾT BỊ (TỔNG QUAN) =====================
-//     public async Task<EquipmentReportDto> GetEquipmentReportAsync(long employeeId, DateTime fromDate, DateTime toDate)
-//     {
-//         var branches = await GetManagedBranchesAsync(employeeId);
-//         var branchIds = branches.Select(b => b.BranchId).ToList();
-//         var toDateExclusive = toDate.Date.AddDays(1);
-
-//         if (branchIds.Count == 0)
-//         {
-//             return new EquipmentReportDto { Context = BuildContext(branches, fromDate, toDate) };
-//         }
-
-//         var equipmentAtBranches = await _db.Equipment
-//             .Include(e => e.Category)
-//             .Include(e => e.Branch)
-//             .Include(e => e.Incidents)
-//             .Where(e => branchIds.Contains(e.BranchId))
-//             .ToListAsync();
-
-//         var totalEquipment = equipmentAtBranches.Count;
-//         var activeCount = equipmentAtBranches.Count(e => e.Status == "Active");
-//         var deletedCount = equipmentAtBranches.Count(e => e.Status == "Deleted");
-
-//         var incidentsInPeriod = equipmentAtBranches
-//             .SelectMany(e => e.Incidents)
-//             .Where(i => i.CreatedAt >= fromDate.Date && i.CreatedAt < toDateExclusive)
-//             .ToList();
-
-//         var incidentsByStatus = incidentsInPeriod
-//             .GroupBy(i => i.Status)
-//             .Select(g => new IncidentByStatusDto { Status = g.Key, Count = g.Count() })
-//             .OrderByDescending(x => x.Count)
-//             .ToList();
-
-//         var equipmentByCategory = equipmentAtBranches
-//             .GroupBy(e => e.Category.CategoryName)
-//             .Select(g => new EquipmentByCategoryDto { Category = g.Key, Count = g.Count() })
-//             .OrderByDescending(x => x.Count)
-//             .ToList();
-
-//         var mostIncidentProne = equipmentAtBranches
-//             .Select(e => new EquipmentIncidentFrequencyDto
-//             {
-//                 EquipmentId = e.EquipmentId,
-//                 EquipmentName = e.EquipmentName,
-//                 IncidentCount = e.Incidents.Count
-//             })
-//             .Where(x => x.IncidentCount > 0)
-//             .OrderByDescending(x => x.IncidentCount)
-//             .Take(10)
-//             .ToList();
-
-//         var pendingApproval = equipmentAtBranches
-//             .SelectMany(e => e.Incidents)
-//             .Where(i => i.Status == "PendingApproval")
-//             .OrderByDescending(i => i.CreatedAt)
-//             .Select(i => new PendingIncidentDto
-//             {
-//                 IncidentId = i.IncidentId,
-//                 Title = i.Title,
-//                 EquipmentName = i.Equipment != null ? i.Equipment.EquipmentName : null,
-//                 CreatedAt = i.CreatedAt,
-//                 BranchId = i.BranchId
-//             })
-//             .ToList();
-
-//         var equipmentByBranch = BuildEquipmentByBranch(equipmentAtBranches, fromDate, toDateExclusive);
-
-//         return new EquipmentReportDto
-//         {
-//             Context = BuildContext(branches, fromDate, toDate),
-//             TotalEquipment = totalEquipment,
-//             ActiveCount = activeCount,
-//             DeletedCount = deletedCount,
-//             IncidentCountInPeriod = incidentsInPeriod.Count,
-//             IncidentsByStatus = incidentsByStatus,
-//             EquipmentByCategory = equipmentByCategory,
-//             MostIncidentProneEquipment = mostIncidentProne,
-//             PendingApprovalIncidents = pendingApproval,
-//             EquipmentByBranch = equipmentByBranch
-//         };
-//     }
-
-//     // ===================== THIẾT BỊ THEO CHI NHÁNH (riêng) =====================
-//     public async Task<EquipmentByBranchReportDto> GetEquipmentByBranchAsync(long employeeId, DateTime fromDate, DateTime toDate)
-//     {
-//         var branches = await GetManagedBranchesAsync(employeeId);
-//         var branchIds = branches.Select(b => b.BranchId).ToList();
-
-//         if (branchIds.Count == 0)
-//         {
-//             return new EquipmentByBranchReportDto { Context = BuildContext(branches, fromDate, toDate) };
-//         }
-
-//         var toDateExclusive = toDate.Date.AddDays(1);
-
-//         var equipmentAtBranches = await _db.Equipment
-//             .Include(e => e.Branch)
-//             .Include(e => e.Incidents)
-//             .Where(e => branchIds.Contains(e.BranchId))
-//             .ToListAsync();
-
-//         return new EquipmentByBranchReportDto
-//         {
-//             Context = BuildContext(branches, fromDate, toDate),
-//             Branches = BuildEquipmentByBranch(equipmentAtBranches, fromDate, toDateExclusive, branches)
-//         };
-//     }
-
-//     private static List<EquipmentByBranchDto> BuildEquipmentByBranch(
-//         List<Equipment> equipmentAtBranches,
-//         DateTime fromDate,
-//         DateTime toDateExclusive,
-//         List<Branch>? allBranches = null)
-//     {
-//         var grouped = equipmentAtBranches
-//             .GroupBy(e => new { e.BranchId, e.Branch.BranchName })
-//             .Select(g => new EquipmentByBranchDto
-//             {
-//                 BranchId = g.Key.BranchId,
-//                 BranchName = g.Key.BranchName,
-//                 TotalEquipment = g.Count(),
-//                 ActiveCount = g.Count(e => e.Status == "Active"),
-//                 DeletedCount = g.Count(e => e.Status == "Deleted"),
-//                 IncidentCountInPeriod = g.SelectMany(e => e.Incidents)
-//                     .Count(i => i.CreatedAt >= fromDate.Date && i.CreatedAt < toDateExclusive),
-//                 PendingApprovalIncidentCount = g.SelectMany(e => e.Incidents)
-//                     .Count(i => i.Status == "PendingApproval")
-//             })
-//             .ToList();
-
-//         if (allBranches != null)
-//         {
-//             var existingIds = grouped.Select(x => x.BranchId).ToHashSet();
-//             foreach (var b in allBranches.Where(b => !existingIds.Contains(b.BranchId)))
-//             {
-//                 grouped.Add(new EquipmentByBranchDto
-//                 {
-//                     BranchId = b.BranchId,
-//                     BranchName = b.BranchName,
-//                     TotalEquipment = 0,
-//                     ActiveCount = 0,
-//                     DeletedCount = 0,
-//                     IncidentCountInPeriod = 0,
-//                     PendingApprovalIncidentCount = 0
-//                 });
-//             }
-//         }
-
-//         return grouped.OrderByDescending(x => x.TotalEquipment).ToList();
-//     }
-// }
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading.Tasks;
+using BE.Data;
+using Microsoft.EntityFrameworkCore;
+
+namespace BE.Services.Reports;
+
+/// <summary>
+/// Service tổng hợp báo cáo cho 3 vai trò:
+///  - Thu ngân (Cashier): hội viên, check-in, doanh thu
+///  - Quản lý (Manager) : hội viên, nhân viên, sự cố, thiết bị
+///  - Admin              : dùng chung toàn bộ hàm của Quản lý
+///
+/// Controller nên gọi thẳng các hàm theo role, hoặc dùng 2 hàm dashboard
+/// (GetCashierDashboardAsync / GetManagerDashboardAsync) để lấy 1 lần cho cả trang tổng quan.
+/// </summary>
+public class ReportService 
+{
+    private readonly GymManagementContext _context;
+
+    // Khoảng thời gian mặc định nếu người dùng không chọn lọc: 30 ngày gần nhất
+    private const int DefaultRangeDays = 30;
+
+    public ReportService(GymManagementContext context)
+    {
+        _context = context;
+    }
+
+    private (DateTime from, DateTime to) ResolveRange(ReportFilter filter)
+    {
+        var to = (filter.ToDate ?? DateTime.Now).Date.AddDays(1).AddTicks(-1); // hết ngày ToDate
+        var from = (filter.FromDate ?? to.AddDays(-DefaultRangeDays)).Date;
+        return (from, to);
+    }
+
+    /// <summary>
+    /// Tính danh sách chi nhánh THỰC SỰ được phép lọc, kết hợp giữa BranchId người dùng chọn
+    /// và AllowedBranchIds (giới hạn quyền, do controller gán cho Quản lý).
+    /// Trả về null nghĩa là không giới hạn (xem tất cả chi nhánh — chỉ áp dụng cho Admin).
+    /// </summary>
+    private static List<int>? GetEffectiveBranchIds(ReportFilter filter)
+    {
+        // Quản lý (hoặc bất kỳ role nào bị giới hạn) sẽ có AllowedBranchIds != null
+        if (filter.AllowedBranchIds != null)
+        {
+            if (filter.BranchId.HasValue)
+            {
+                // Chỉ giữ lại nếu chi nhánh được chọn nằm trong danh sách được phép
+                return filter.AllowedBranchIds.Contains(filter.BranchId.Value)
+                    ? new List<int> { filter.BranchId.Value }
+                    : new List<int>(); // chọn ngoài quyền -> trả về rỗng, không thấy dữ liệu nào
+            }
+            return filter.AllowedBranchIds;
+        }
+
+        // Không bị giới hạn quyền (Admin): lọc theo đúng chi nhánh được chọn nếu có
+        if (filter.BranchId.HasValue)
+            return new List<int> { filter.BranchId.Value };
+
+        return null; // Admin không chọn chi nhánh -> xem tất cả
+    }
+
+    // =====================================================================
+    // THU NGÂN
+    // =====================================================================
+
+    public async Task<MemberSummaryReportDto> GetMemberSummaryReportAsync(ReportFilter filter)
+    {
+        var (from, to) = ResolveRange(filter);
+
+        var membersQuery = _context.Members.AsNoTracking().AsQueryable();
+
+        var totalMembers = await membersQuery.CountAsync();
+        var activeMembers = await membersQuery.CountAsync(m => m.Status == "Active");
+        var pendingMembers = await membersQuery.CountAsync(m => m.Status == "PendingActivation");
+        var suspendedMembers = await membersQuery.CountAsync(m => m.Status == "Suspended");
+
+        var newMembersInRangeQuery = membersQuery.Where(m => m.CreatedAt >= from && m.CreatedAt <= to);
+        var newMembersInRange = await newMembersInRangeQuery.CountAsync();
+
+        var byDay = await newMembersInRangeQuery
+            .GroupBy(m => m.CreatedAt.Date)
+            .Select(g => new DailyCountDto { Date = g.Key, Count = g.Count() })
+            .OrderBy(x => x.Date)
+            .ToListAsync();
+
+        return new MemberSummaryReportDto
+        {
+            TotalMembers = totalMembers,
+            ActiveMembers = activeMembers,
+            PendingActivationMembers = pendingMembers,
+            SuspendedMembers = suspendedMembers,
+            NewMembersInRange = newMembersInRange,
+            NewMembersByDay = byDay
+        };
+    }
+
+    public async Task<CheckInReportDto> GetCheckInReportAsync(ReportFilter filter)
+    {
+        var (from, to) = ResolveRange(filter);
+
+        var query = _context.CheckIns.AsNoTracking()
+            .Where(c => c.CheckInTime >= from && c.CheckInTime <= to);
+
+        var effectiveBranchIds = GetEffectiveBranchIds(filter);
+        if (effectiveBranchIds != null)
+            query = query.Where(c => effectiveBranchIds.Contains(c.BranchId));
+
+        var total = await query.CountAsync();
+        var autoCount = await query.CountAsync(c => c.Method == "Auto");
+        var manualCount = await query.CountAsync(c => c.Method == "Manual");
+        var stillIn = await query.CountAsync(c => c.CheckOutTime == null);
+
+        var byDay = await query
+            .GroupBy(c => c.CheckInTime.Date)
+            .Select(g => new DailyCountDto { Date = g.Key, Count = g.Count() })
+            .OrderBy(x => x.Date)
+            .ToListAsync();
+
+        var byBranch = await query
+            .Include(c => c.Branch)
+            .GroupBy(c => new { c.BranchId, c.Branch!.BranchName })
+            .Select(g => new BranchCountDto
+            {
+                BranchId = g.Key.BranchId,
+                BranchName = g.Key.BranchName ?? "",
+                Count = g.Count()
+            })
+            .OrderByDescending(x => x.Count)
+            .ToListAsync();
+
+        return new CheckInReportDto
+        {
+            TotalCheckIns = total,
+            AutoCheckIns = autoCount,
+            ManualCheckIns = manualCount,
+            CurrentlyCheckedIn = stillIn,
+            CheckInsByDay = byDay,
+            CheckInsByBranch = byBranch
+        };
+    }
+
+    public async Task<RevenueReportDto> GetRevenueReportAsync(ReportFilter filter)
+    {
+        var (from, to) = ResolveRange(filter);
+
+        var baseQuery = _context.Transactions.AsNoTracking()
+            .Where(t => t.CreatedAt >= from && t.CreatedAt <= to);
+
+        var effectiveBranchIds = GetEffectiveBranchIds(filter);
+        if (effectiveBranchIds != null)
+            baseQuery = baseQuery.Where(t => t.BranchId != null && effectiveBranchIds.Contains(t.BranchId));
+
+        var paidQuery = baseQuery.Where(t => t.PaymentStatus == "Paid");
+
+        var totalRevenue = await paidQuery.SumAsync(t => (decimal?)t.Amount) ?? 0m;
+        var totalOriginal = await paidQuery.SumAsync(t => (decimal?)t.GiaGoc) ?? 0m;
+        var paidCount = await paidQuery.CountAsync();
+        var pendingCount = await baseQuery.CountAsync(t => t.PaymentStatus == "Pending");
+        var cancelledCount = await baseQuery.CountAsync(t => t.PaymentStatus == "Cancelled");
+
+        var byDay = await paidQuery
+            .GroupBy(t => t.CreatedAt.Date)
+            .Select(g => new DailyRevenueDto
+            {
+                Date = g.Key,
+                Amount = g.Sum(x => x.Amount),
+                TransactionCount = g.Count()
+            })
+            .OrderBy(x => x.Date)
+            .ToListAsync();
+
+        var byBranch = await paidQuery
+            .Include(t => t.Branch)
+            .GroupBy(t => new { t.BranchId, t.Branch!.BranchName })
+            .Select(g => new BranchRevenueDto
+            {
+                BranchId = g.Key.BranchId,
+                BranchName = g.Key.BranchName ?? "",
+                Amount = g.Sum(x => x.Amount)
+            })
+            .OrderByDescending(x => x.Amount)
+            .ToListAsync();
+
+        var byPlan = await paidQuery
+            .Include(t => t.Plan)
+            .GroupBy(t => new { t.PlanId, t.Plan!.PlanName })
+            .Select(g => new PlanRevenueDto
+            {
+                PlanId = g.Key.PlanId,
+                PlanName = g.Key.PlanName ?? "",
+                Amount = g.Sum(x => x.Amount),
+                TransactionCount = g.Count()
+            })
+            .OrderByDescending(x => x.Amount)
+            .ToListAsync();
+
+        var byPaymentMethod = await paidQuery
+            .GroupBy(t => t.PaymentMethod)
+            .Select(g => new PaymentMethodRevenueDto
+            {
+                PaymentMethod = g.Key ?? "",
+                Amount = g.Sum(x => x.Amount),
+                TransactionCount = g.Count()
+            })
+            .ToListAsync();
+
+        return new RevenueReportDto
+        {
+            TotalRevenue = totalRevenue,
+            TotalOriginalPrice = totalOriginal,
+            TotalDiscount = totalOriginal - totalRevenue,
+            TotalPaidTransactions = paidCount,
+            TotalPendingTransactions = pendingCount,
+            TotalCancelledTransactions = cancelledCount,
+            RevenueByDay = byDay,
+            RevenueByBranch = byBranch,
+            RevenueByPlan = byPlan,
+            RevenueByPaymentMethod = byPaymentMethod
+        };
+    }
+
+    public async Task<CashierDashboardDto> GetCashierDashboardAsync(ReportFilter filter)
+    {
+        return new CashierDashboardDto
+        {
+            MemberReport = await GetMemberSummaryReportAsync(filter),
+            CheckInReport = await GetCheckInReportAsync(filter),
+            RevenueReport = await GetRevenueReportAsync(filter)
+        };
+    }
+
+    // =====================================================================
+    // QUẢN LÝ / ADMIN (Admin gọi chung các hàm bên dưới)
+    // =====================================================================
+
+    public async Task<EmployeeReportDto> GetEmployeeReportAsync(ReportFilter filter)
+    {
+        var (from, to) = ResolveRange(filter);
+
+        var query = _context.Employees.AsNoTracking().AsQueryable();
+
+        var effectiveBranchIds = GetEffectiveBranchIds(filter);
+        if (effectiveBranchIds != null)
+            query = query.Where(e => e.Branches.Any(b => effectiveBranchIds.Contains(b.BranchId)));
+
+        var total = await query.CountAsync();
+        var active = await query.CountAsync(e => e.Status == "Active");
+        var inactive = await query.CountAsync(e => e.Status == "Inactive");
+        var newInRange = await query.CountAsync(e => e.CreatedAt >= from && e.CreatedAt <= to);
+
+        var byRole = await query
+            .Include(e => e.Role)
+            .GroupBy(e => new { e.RoleId, e.Role!.RoleName })
+            .Select(g => new RoleCountDto
+            {
+                RoleId = g.Key.RoleId,
+                RoleName = g.Key.RoleName ?? "",
+                Count = g.Count()
+            })
+            .OrderByDescending(x => x.Count)
+            .ToListAsync();
+
+        // Đếm theo chi nhánh (quan hệ nhiều-nhiều employees <-> branches)
+        var branchesQuery = _context.Branches.AsNoTracking().AsQueryable();
+        if (effectiveBranchIds != null)
+            branchesQuery = branchesQuery.Where(b => effectiveBranchIds.Contains(b.BranchId));
+
+        var byBranch = await branchesQuery
+            .Select(b => new BranchCountDto
+            {
+                BranchId = b.BranchId,
+                BranchName = b.BranchName ?? "",
+                Count = b.Employees.Count()
+            })
+            .OrderByDescending(x => x.Count)
+            .ToListAsync();
+
+        return new EmployeeReportDto
+        {
+            TotalEmployees = total,
+            ActiveEmployees = active,
+            InactiveEmployees = inactive,
+            NewEmployeesInRange = newInRange,
+            EmployeesByRole = byRole,
+            EmployeesByBranch = byBranch
+        };
+    }
+
+    public async Task<IncidentReportDto> GetIncidentReportAsync(ReportFilter filter)
+    {
+        var (from, to) = ResolveRange(filter);
+
+        var query = _context.Incidents.AsNoTracking()
+            .Where(i => i.CreatedAt >= from && i.CreatedAt <= to);
+
+        var effectiveBranchIds = GetEffectiveBranchIds(filter);
+        if (effectiveBranchIds != null)
+            query = query.Where(i => effectiveBranchIds.Contains(i.BranchId));
+
+        var total = await query.CountAsync();
+        var pendingApproval = await query.CountAsync(i => i.Status == "PendingApproval");
+        var approved = await query.CountAsync(i => i.Status == "Approved");
+        var completed = await query.CountAsync(i => i.Status == "Completed");
+        var cancelled = await query.CountAsync(i => i.Status == "Cancelled");
+
+        var byDay = await query
+            .GroupBy(i => i.CreatedAt.Date)
+            .Select(g => new DailyCountDto { Date = g.Key, Count = g.Count() })
+            .OrderBy(x => x.Date)
+            .ToListAsync();
+
+        var byBranch = await query
+            .Include(i => i.Branch)
+            .GroupBy(i => new { i.BranchId, i.Branch!.BranchName })
+            .Select(g => new BranchCountDto
+            {
+                BranchId = g.Key.BranchId,
+                BranchName = g.Key.BranchName ?? "",
+                Count = g.Count()
+            })
+            .OrderByDescending(x => x.Count)
+            .ToListAsync();
+
+        var topEquipment = await query
+            .Where(i => i.EquipmentId != null)
+            .Include(i => i.Equipment)
+            .GroupBy(i => new { i.EquipmentId, i.Equipment!.EquipmentName })
+            .Select(g => new EquipmentIncidentCountDto
+            {
+                EquipmentId = g.Key.EquipmentId!.Value,
+                EquipmentName = g.Key.EquipmentName ?? "",
+                IncidentCount = g.Count()
+            })
+            .OrderByDescending(x => x.IncidentCount)
+            .Take(10)
+            .ToListAsync();
+
+        return new IncidentReportDto
+        {
+            TotalIncidents = total,
+            PendingApproval = pendingApproval,
+            Approved = approved,
+            Completed = completed,
+            Cancelled = cancelled,
+            IncidentsByDay = byDay,
+            IncidentsByBranch = byBranch,
+            TopEquipmentByIncidents = topEquipment
+        };
+    }
+
+    public async Task<EquipmentReportDto> GetEquipmentReportAsync(ReportFilter filter)
+    {
+        var query = _context.Equipment.AsNoTracking().AsQueryable();
+
+        var effectiveBranchIds = GetEffectiveBranchIds(filter);
+        if (effectiveBranchIds != null)
+            query = query.Where(e => effectiveBranchIds.Contains(e.BranchId));
+
+        var total = await query.CountAsync();
+        var active = await query.CountAsync(e => e.Status == "Active");
+        var deleted = await query.CountAsync(e => e.Status == "Deleted");
+
+        var byCategory = await query
+            .Include(e => e.Category)
+            .GroupBy(e => new { e.CategoryId, e.Category!.CategoryName })
+            .Select(g => new CategoryCountDto
+            {
+                CategoryId = g.Key.CategoryId,
+                CategoryName = g.Key.CategoryName ?? "",
+                Count = g.Count()
+            })
+            .OrderByDescending(x => x.Count)
+            .ToListAsync();
+
+        var byBranch = await query
+            .Include(e => e.Branch)
+            .GroupBy(e => new { e.BranchId, e.Branch!.BranchName })
+            .Select(g => new BranchCountDto
+            {
+                BranchId = g.Key.BranchId,
+                BranchName = g.Key.BranchName ?? "",
+                Count = g.Count()
+            })
+            .OrderByDescending(x => x.Count)
+            .ToListAsync();
+
+        return new EquipmentReportDto
+        {
+            TotalEquipment = total,
+            ActiveEquipment = active,
+            DeletedEquipment = deleted,
+            EquipmentByCategory = byCategory,
+            EquipmentByBranch = byBranch
+        };
+    }
+
+    public async Task<ManagerDashboardDto> GetManagerDashboardAsync(ReportFilter filter)
+    {
+        return new ManagerDashboardDto
+        {
+            MemberReport = await GetMemberSummaryReportAsync(filter),
+            EmployeeReport = await GetEmployeeReportAsync(filter),
+            IncidentReport = await GetIncidentReportAsync(filter),
+            EquipmentReport = await GetEquipmentReportAsync(filter),
+            RevenueReport = await GetRevenueReportAsync(filter)
+        };
+    }
+
+    // =====================================================================
+    // HỖ TRỢ PHÂN QUYỀN CHI NHÁNH
+    // =====================================================================
+
+    public async Task<List<BranchListItemDto>> GetAllBranchesAsync()
+    {
+        return await _context.Branches.AsNoTracking()
+            .OrderBy(b => b.BranchName)
+            .Select(b => new BranchListItemDto { BranchId = b.BranchId, BranchName = b.BranchName ?? "" })
+            .ToListAsync();
+    }
+
+    public async Task<List<BranchListItemDto>> GetManagedBranchesAsync(long employeeId)
+    {
+        return await _context.Employees.AsNoTracking()
+            .Where(e => e.EmployeeId == employeeId)
+            .SelectMany(e => e.Branches)
+            .OrderBy(b => b.BranchName)
+            .Select(b => new BranchListItemDto { BranchId = b.BranchId, BranchName = b.BranchName ?? "" })
+            .ToListAsync();
+    }
+
+    public async Task<bool> IsBranchManagedByEmployeeAsync(long employeeId, int branchId)
+    {
+        return await _context.Employees.AsNoTracking()
+            .Where(e => e.EmployeeId == employeeId)
+            .SelectMany(e => e.Branches)
+            .AnyAsync(b => b.BranchId == branchId);
+    }
+}

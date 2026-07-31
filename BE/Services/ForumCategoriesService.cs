@@ -28,7 +28,6 @@ public class ForumCategoryService
             {
                 CategoryId = c.CategoryId,
                 CategoryName = c.CategoryName,
-            
                 Icon = c.Icon,
                 DisplayOrder = c.DisplayOrder,
                 Status = c.Status,
@@ -47,7 +46,6 @@ public class ForumCategoryService
             {
                 CategoryId = c.CategoryId,
                 CategoryName = c.CategoryName,
-              
                 Icon = c.Icon,
                 DisplayOrder = c.DisplayOrder,
                 Status = c.Status,
@@ -60,14 +58,13 @@ public class ForumCategoryService
     // Thêm danh mục mới
     public async Task<(bool Success, string? Error, ForumCategoryDto? Data)> CreateAsync(ForumCategoryCreateDto dto)
     {
-        var nameExists = await _context.ForumCategories
+        var daTonTai = await _context.ForumCategories
             .AnyAsync(c => c.CategoryName == dto.CategoryName);
 
-        if (nameExists)
+        if (daTonTai)
             return (false, "Tên danh mục đã tồn tại", null);
 
-        
-        var entity = new ForumCategory
+        var danhMucMoi = new ForumCategory
         {
             CategoryName = dto.CategoryName,
             Icon = dto.Icon,
@@ -76,18 +73,17 @@ public class ForumCategoryService
             CreatedAt = DateTime.UtcNow
         };
 
-        _context.ForumCategories.Add(entity);
+        _context.ForumCategories.Add(danhMucMoi);
         await _context.SaveChangesAsync();
 
         return (true, null, new ForumCategoryDto
         {
-            CategoryId = entity.CategoryId,
-            CategoryName = entity.CategoryName,
-           
-            Icon = entity.Icon,
-            DisplayOrder = entity.DisplayOrder,
-            Status = entity.Status,
-            CreatedAt = entity.CreatedAt,
+            CategoryId = danhMucMoi.CategoryId,
+            CategoryName = danhMucMoi.CategoryName,
+            Icon = danhMucMoi.Icon,
+            DisplayOrder = danhMucMoi.DisplayOrder,
+            Status = danhMucMoi.Status,
+            CreatedAt = danhMucMoi.CreatedAt,
             PostCount = 0
         });
     }
@@ -95,24 +91,54 @@ public class ForumCategoryService
     // Sửa danh mục
     public async Task<(bool Success, string? Error)> UpdateAsync(int id, ForumCategoryUpdateDto dto)
     {
-        var entity = await _context.ForumCategories.FindAsync(id);
-        if (entity is null)
+        var danhMuc = await _context.ForumCategories.FindAsync(id);
+        if (danhMuc is null)
             return (false, "Không tìm thấy danh mục");
 
-        var nameExists = await _context.ForumCategories
+        var daTonTai = await _context.ForumCategories
             .AnyAsync(c => c.CategoryName == dto.CategoryName && c.CategoryId != id);
 
-        if (nameExists)
+        if (daTonTai)
             return (false, "Tên danh mục đã tồn tại");
 
         if (dto.Status != "Active" && dto.Status != "Inactive")
             return (false, "Status không hợp lệ (chỉ Active hoặc Inactive)");
 
-        entity.CategoryName = dto.CategoryName;
-        entity.Icon = dto.Icon;
-        entity.DisplayOrder = dto.DisplayOrder;
-        entity.Status = dto.Status;
+        danhMuc.CategoryName = dto.CategoryName;
+        danhMuc.Icon = dto.Icon;
+        danhMuc.DisplayOrder = dto.DisplayOrder;
+        danhMuc.Status = dto.Status;
 
+        await _context.SaveChangesAsync();
+        return (true, null);
+    }
+
+    // Ẩn danh mục (chuyển Status sang Inactive, không xoá dữ liệu)
+    public async Task<(bool Success, string? Error)> DeactivateAsync(int id)
+    {
+        var danhMuc = await _context.ForumCategories.FindAsync(id);
+        if (danhMuc is null)
+            return (false, "Không tìm thấy danh mục");
+
+        if (danhMuc.Status == "Inactive")
+            return (false, "Danh mục này đã ở trạng thái ẩn");
+
+        danhMuc.Status = "Inactive";
+        await _context.SaveChangesAsync();
+        return (true, null);
+    }
+
+    // Hiện lại danh mục đã ẩn (chuyển Status về Active)
+    public async Task<(bool Success, string? Error)> ActivateAsync(int id)
+    {
+        var danhMuc = await _context.ForumCategories.FindAsync(id);
+        if (danhMuc is null)
+            return (false, "Không tìm thấy danh mục");
+
+        if (danhMuc.Status == "Active")
+            return (false, "Danh mục này đang hiển thị rồi");
+
+        danhMuc.Status = "Active";
         await _context.SaveChangesAsync();
         return (true, null);
     }
@@ -120,27 +146,18 @@ public class ForumCategoryService
     // Xóa danh mục
     public async Task<(bool Success, string? Error)> DeleteAsync(int id)
     {
-        var entity = await _context.ForumCategories
+        var danhMuc = await _context.ForumCategories
             .Include(c => c.ForumPosts)
             .FirstOrDefaultAsync(c => c.CategoryId == id);
 
-        if (entity is null)
+        if (danhMuc is null)
             return (false, "Không tìm thấy danh mục");
 
-        if (entity.ForumPosts.Any())
+        if (danhMuc.ForumPosts.Any())
             return (false, "Không thể xóa vì vẫn còn bài viết thuộc danh mục này. Hãy chuyển bài viết sang danh mục khác trước.");
 
-        _context.ForumCategories.Remove(entity);
+        _context.ForumCategories.Remove(danhMuc);
         await _context.SaveChangesAsync();
         return (true, null);
-    }
-
-    private static string GenerateSlug(string name)
-    {
-        var slug = name.Trim().ToLowerInvariant();
-        // Vietnamese/basic normalize - tối thiểu để không lỗi, có thể thay bằng thư viện dấu tiếng Việt
-        slug = System.Text.RegularExpressions.Regex.Replace(slug, @"\s+", "-");
-        slug = System.Text.RegularExpressions.Regex.Replace(slug, @"[^a-z0-9\-]", "");
-        return slug;
     }
 }

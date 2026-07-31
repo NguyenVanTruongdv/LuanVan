@@ -10,7 +10,7 @@ public class ForumCommentService
     private readonly GymManagementContext _context;
     private readonly ForumNotificationService _notificationService;
 
-    // Giới hạn độ sâu trả lời để tránh cây quá dài trên UI mobile (tùy chỉnh theo ý bạn)
+    // Giới hạn depth (độ sâu) trả lời để tránh cây quá dài trên UI mobile
     private const int MAX_DEPTH = 5;
 
     public ForumCommentService(GymManagementContext context, ForumNotificationService notificationService)
@@ -19,72 +19,103 @@ public class ForumCommentService
         _notificationService = notificationService;
     }
 
-    // ===== LẤY TOÀN BỘ BÌNH LUẬN CỦA 1 BÀI, DỰNG CÂY N CẤP =====
+ 
     public async Task<List<ForumCommentDto>> GetByPostIdAsync(long postId, long? currentMemberId)
     {
-        var all = await _context.ForumComments
+        // B1: lấy hết comment active của post này ra, sort theo ngày tạo
+        List<ForumComment> dsComment = await _context.ForumComments
             .Include(c => c.Member).ThenInclude(m => m.FaceDatum)
             .Include(c => c.ReplyToMember)
             .Where(c => c.PostId == postId && c.Status == "Active")
             .OrderBy(c => c.CreatedAt)
             .ToListAsync();
 
-        var commentIds = all.Select(c => c.CommentId).ToList();
-        var likedIds = currentMemberId.HasValue
-            ? await _context.ForumCommentLikes
-                .Where(l => commentIds.Contains(l.CommentId) && l.MemberId == currentMemberId.Value)
-                .Select(l => l.CommentId)
-                .ToListAsync()
-            : new List<long>();
-
-        var dtoById = all.ToDictionary(c => c.CommentId, c => MapToDto(c, likedIds));
-
-        var roots = new List<ForumCommentDto>();
-        foreach (var c in all)
+        // B2: lấy danh sách comment mà currentMember đã like (để show trái tim đỏ/xanh)
+        List<long> listIdCmtDaLike = new List<long>();
+        if (currentMemberId.HasValue)
         {
-            var dto = dtoById[c.CommentId];
-            if (c.ParentCommentId is null)
-                roots.Add(dto);
-            else if (dtoById.TryGetValue(c.ParentCommentId.Value, out var parentDto))
-                parentDto.Replies.Add(dto);
-            // Nếu cha đã bị xóa/ẩn (không tìm thấy trong dtoById) -> coi như mồ côi, ẩn luôn (bỏ qua)
+            List<long> dsCommentId = new List<long>();
+            foreach (var cmt in dsComment)
+            {
+                dsCommentId.Add(cmt.CommentId);
+            }
+
+            listIdCmtDaLike = await _context.ForumCommentLikes
+                .Where(l => dsCommentId.Contains(l.CommentId) && l.MemberId == currentMemberId.Value)
+                .Select(l => l.CommentId)
+                .ToListAsync();
         }
 
-        return roots;
+        // B3: map từng comment -> dto, đồng thời bỏ vào dictionary để lát nối cha - con
+        Dictionary<long, ForumCommentDto> dicDtoTheoId = new Dictionary<long, ForumCommentDto>();
+        foreach (var cmt in dsComment)
+        {
+            ForumCommentDto dto = MapToDto(cmt, listIdCmtDaLike);
+            dicDtoTheoId[cmt.CommentId] = dto;
+        }
+
+        // B4: duyệt lại 1 lần nữa, comment nào không có cha -> root, có cha -> nhét vào Replies của cha
+        List<ForumCommentDto> dsRoot = new List<ForumCommentDto>();
+        foreach (var cmt in dsComment)
+        {
+            ForumCommentDto dtoHienTai = dicDtoTheoId[cmt.CommentId];
+
+            if (cmt.ParentCommentId == null)
+            {
+                dsRoot.Add(dtoHienTai);
+            }
+            else
+            {
+                if (dicDtoTheoId.ContainsKey(cmt.ParentCommentId.Value))
+                {
+                    ForumCommentDto dtoCha = dicDtoTheoId[cmt.ParentCommentId.Value];
+                    dtoCha.Replies.Add(dtoHienTai);
+                }
+                // nếu không tìm thấy cha (cha đã bị xóa/ẩn) thì coi như mồ côi -> bỏ qua, không hiện
+            }
+        }
+
+        return dsRoot;
     }
 
-    // ===== TẠO BÌNH LUẬN / TRẢ LỜI + TẠO THÔNG BÁO ĐÚNG NGƯỜI =====
+
     public async Task<(bool Success, string? Error, ForumCommentDto? Data)> CreateAsync(
         long memberId, ForumCommentCreateDto dto)
     {
-        var post = await _context.ForumPosts.FirstOrDefaultAsync(p => p.PostId == dto.PostId);
-        if (post is null || post.Status != "Active")
+        var baiViet = await _context.ForumPosts.FirstOrDefaultAsync(p => p.PostId == dto.PostId);
+        if (baiViet == null || baiViet.Status != "Active")
+        {
             return (false, "Bài viết không tồn tại hoặc đã bị ẩn/xóa", null);
+        }
 
         long? replyToMemberId = null;
 
+        // Nếu là trả lời 1 comment khác (không phải comment gốc)
         if (dto.ParentCommentId.HasValue)
         {
-            var parent = await _context.ForumComments
+            var cmtCha = await _context.ForumComments
                 .FirstOrDefaultAsync(c => c.CommentId == dto.ParentCommentId.Value);
 
-            if (parent is null || parent.PostId != dto.PostId || parent.Status != "Active")
+            if (cmtCha == null || cmtCha.PostId != dto.PostId || cmtCha.Status != "Active")
+            {
                 return (false, "Bình luận không tồn tại", null);
+            }
 
-            var depth = await GetDepthAsync(parent.CommentId);
+            int depth = await GetDepthAsync(cmtCha.CommentId);
             if (depth >= MAX_DEPTH)
+            {
                 return (false, $"Chỉ hỗ trợ trả lời tối đa {MAX_DEPTH} cấp", null);
+            }
 
-            // Người sẽ nhận thông báo "đã trả lời bình luận của bạn" chính là CHỦ của comment cha
-            // (không phải chủ bài viết) — dù cây có sâu đến đâu, trỏ ĐÚNG cha trực tiếp
-            replyToMemberId = parent.MemberId;
+        
+            replyToMemberId = cmtCha.MemberId;
         }
 
-        var comment = new ForumComment
+        var cmtMoi = new ForumComment
         {
             PostId = dto.PostId,
             MemberId = memberId,
-            ParentCommentId = dto.ParentCommentId, // trỏ thẳng cha trực tiếp, hỗ trợ n cấp thật sự
+            ParentCommentId = dto.ParentCommentId, // trỏ thẳng cha trực tiếp, 
             ReplyToMemberId = replyToMemberId,
             Content = dto.Content,
             Status = "Active",
@@ -92,8 +123,8 @@ public class ForumCommentService
             UpdatedAt = DateTime.UtcNow
         };
 
-        _context.ForumComments.Add(comment);
-        post.CommentCount += 1; // đếm cả reply
+        _context.ForumComments.Add(cmtMoi);
+        baiViet.CommentCount = baiViet.CommentCount + 1; // đếm cả reply
 
         // Lưu trước để có CommentId thật (cần cho notification.comment_id)
         await _context.SaveChangesAsync();
@@ -101,122 +132,130 @@ public class ForumCommentService
         // ===== Tạo thông báo: phân biệt rõ "bình luận bài viết" và "trả lời bình luận" =====
         if (replyToMemberId.HasValue)
         {
-            // Trả lời -> báo cho CHỦ BÌNH LUẬN CHA: "<Tên người trả lời> đã trả lời bình luận của bạn"
+            // Trả lời -> báo cho CHỦ BÌNH LUẬN CHA
             await _notificationService.CreateAsync(
                 recipientMemberId: replyToMemberId.Value,
                 actorMemberId: memberId,
                 notifyType: ForumNotifyType.Reply,
                 postId: dto.PostId,
-                commentId: comment.CommentId);
+                commentId: cmtMoi.CommentId);
         }
         else
         {
-            // Bình luận gốc -> báo cho CHỦ BÀI VIẾT: "<Tên người bình luận> đã bình luận về bài viết của bạn"
+            // Bình luận gốc -> báo cho CHỦ BÀI VIẾT
             await _notificationService.CreateAsync(
-                recipientMemberId: post.MemberId,
+                recipientMemberId: baiViet.MemberId,
                 actorMemberId: memberId,
                 notifyType: ForumNotifyType.Comment,
                 postId: dto.PostId,
-                commentId: comment.CommentId);
+                commentId: cmtMoi.CommentId);
         }
 
-        var created = MapToDto(comment, new List<long>());
-        return (true, null, created);
+        ForumCommentDto ketQua = MapToDto(cmtMoi, new List<long>());
+        return (true, null, ketQua);
     }
 
     // ===== TYM / BỎ TYM BÌNH LUẬN =====
     public async Task<(bool Success, string? Error, bool IsLiked, int LikeCount)> ToggleLikeAsync(
         long commentId, long memberId)
     {
-        var comment = await _context.ForumComments.FirstOrDefaultAsync(c => c.CommentId == commentId);
-        if (comment is null || comment.Status != "Active")
+        var cmt = await _context.ForumComments.FirstOrDefaultAsync(c => c.CommentId == commentId);
+        if (cmt == null || cmt.Status != "Active")
+        {
             return (false, "Bình luận không tồn tại", false, 0);
+        }
 
-        var existing = await _context.ForumCommentLikes
+        var likeCu = await _context.ForumCommentLikes
             .FirstOrDefaultAsync(l => l.CommentId == commentId && l.MemberId == memberId);
 
-        bool isLiked;
+        bool dangLike;
 
-        if (existing is not null)
+        if (likeCu != null)
         {
-            _context.ForumCommentLikes.Remove(existing);
-            comment.LikeCount = Math.Max(0, comment.LikeCount - 1);
-            isLiked = false;
+            // đã like rồi -> bấm nữa là bỏ like
+            _context.ForumCommentLikes.Remove(likeCu);
+            cmt.LikeCount = Math.Max(0, cmt.LikeCount - 1);
+            dangLike = false;
         }
         else
         {
-            _context.ForumCommentLikes.Add(new ForumCommentLike
+            // chưa like -> thêm mới
+            var likeMoi = new ForumCommentLike
             {
                 CommentId = commentId,
                 MemberId = memberId,
                 CreatedAt = DateTime.UtcNow
-            });
-            comment.LikeCount += 1;
-            isLiked = true;
+            };
+            _context.ForumCommentLikes.Add(likeMoi);
+            cmt.LikeCount = cmt.LikeCount + 1;
+            dangLike = true;
         }
 
         await _context.SaveChangesAsync();
 
-        // NOTE: ForumNotification.LikeId hiện chỉ FK tới ForumLike (tym bài viết), không có cột
-        // riêng cho ForumCommentLike -> tạm KHÔNG tạo thông báo khi tym bình luận, tránh sai FK.
-        // Nếu bạn muốn có thông báo "đã tym bình luận của bạn", cần thêm cột
-        // comment_like_id (FK forum_comment_likes.like_id) vào bảng forum_notifications trước.
-
-        return (true, null, isLiked, comment.LikeCount);
+        return (true, null, dangLike, cmt.LikeCount);
     }
 
     // ===== XÓA BÌNH LUẬN (soft delete) — khách tự xóa của mình, hoặc admin xóa bất kỳ =====
     public async Task<(bool Success, string? Error)> DeleteAsync(long commentId, long requesterId, bool isAdmin = false)
     {
-        var comment = await _context.ForumComments.FirstOrDefaultAsync(c => c.CommentId == commentId);
-        if (comment is null)
+        var cmt = await _context.ForumComments.FirstOrDefaultAsync(c => c.CommentId == commentId);
+        if (cmt == null)
+        {
             return (false, "Không tìm thấy bình luận");
+        }
 
-        if (comment.Status == "Deleted")
+        if (cmt.Status == "Deleted")
+        {
             return (false, "Bình luận đã được xóa trước đó");
+        }
 
-        // Khách chỉ xóa được bình luận của chính mình; admin bỏ qua check quyền sở hữu
-        if (!isAdmin && comment.MemberId != requesterId)
+        // Khách chỉ xóa được bình luận của chính mình; admin thì bỏ qua check quyền sở hữu
+        if (isAdmin == false && cmt.MemberId != requesterId)
+        {
             return (false, "Bạn không có quyền xóa bình luận này");
+        }
 
-        // Xóa cả nhánh con (n cấp) bên dưới nó, vì reply không có nghĩa khi cha đã bị xóa
-        var descendantIds = await GetAllDescendantIdsAsync(commentId);
+        // Xóa cả nhánh con (n cấp) bên dưới nó, vì reply không còn nghĩa khi cha đã bị xóa
+        List<long> dsIdConChau = await GetAllDescendantIdsAsync(commentId);
 
-        comment.Status = "Deleted";
-        comment.UpdatedAt = DateTime.UtcNow;
+        cmt.Status = "Deleted";
+        cmt.UpdatedAt = DateTime.UtcNow;
 
-        if (descendantIds.Count > 0)
+        if (dsIdConChau.Count > 0)
         {
             await _context.ForumComments
-                .Where(c => descendantIds.Contains(c.CommentId) && c.Status == "Active")
+                .Where(c => dsIdConChau.Contains(c.CommentId) && c.Status == "Active")
                 .ExecuteUpdateAsync(s => s
                     .SetProperty(c => c.Status, "Deleted")
                     .SetProperty(c => c.UpdatedAt, DateTime.UtcNow));
         }
 
-        var post = await _context.ForumPosts.FirstOrDefaultAsync(p => p.PostId == comment.PostId);
-        if (post is not null)
-            post.CommentCount = Math.Max(0, post.CommentCount - 1 - descendantIds.Count);
+        var baiViet = await _context.ForumPosts.FirstOrDefaultAsync(p => p.PostId == cmt.PostId);
+        if (baiViet != null)
+        {
+            baiViet.CommentCount = Math.Max(0, baiViet.CommentCount - 1 - dsIdConChau.Count);
+        }
 
         await _context.SaveChangesAsync();
         return (true, null);
     }
 
-    // ===== Helper: đếm độ sâu hiện tại bằng cách leo ngược lên cha =====
+    // ===== Helper: đếm depth (độ sâu) hiện tại bằng cách leo ngược lên cha =====
     private async Task<int> GetDepthAsync(long commentId)
     {
         int depth = 0;
-        long? currentId = commentId;
+        long? idDangXet = commentId;
 
-        while (currentId.HasValue && depth < MAX_DEPTH + 1)
+        while (idDangXet.HasValue && depth < MAX_DEPTH + 1)
         {
-            var parentId = await _context.ForumComments
-                .Where(c => c.CommentId == currentId.Value)
+            long? idCha = await _context.ForumComments
+                .Where(c => c.CommentId == idDangXet.Value)
                 .Select(c => c.ParentCommentId)
                 .FirstOrDefaultAsync();
 
-            depth++;
-            currentId = parentId;
+            depth = depth + 1;
+            idDangXet = idCha;
         }
 
         return depth;
@@ -225,55 +264,72 @@ public class ForumCommentService
     // ===== Helper: BFS toàn bộ hậu duệ (con, cháu, chắt...) của 1 comment =====
     private async Task<List<long>> GetAllDescendantIdsAsync(long rootCommentId)
     {
-        var postId = await _context.ForumComments
+        long postId = await _context.ForumComments
             .Where(c => c.CommentId == rootCommentId)
             .Select(c => c.PostId)
             .FirstOrDefaultAsync();
 
-        var allInPost = await _context.ForumComments
+        var dsCommentTrongPost = await _context.ForumComments
             .Where(c => c.PostId == postId && c.Status == "Active")
             .Select(c => new { c.CommentId, c.ParentCommentId })
             .ToListAsync();
 
-        var childrenMap = allInPost
-            .Where(c => c.ParentCommentId.HasValue)
-            .GroupBy(c => c.ParentCommentId!.Value)
-            .ToDictionary(g => g.Key, g => g.Select(x => x.CommentId).ToList());
-
-        var result = new List<long>();
-        var queue = new Queue<long>();
-        queue.Enqueue(rootCommentId);
-
-        while (queue.Count > 0)
+        // gom con theo từng cha: key = id cha, value = danh sách id con
+        Dictionary<long, List<long>> dicConTheoCha = new Dictionary<long, List<long>>();
+        foreach (var cmt in dsCommentTrongPost)
         {
-            var current = queue.Dequeue();
-            if (childrenMap.TryGetValue(current, out var children))
+            if (cmt.ParentCommentId.HasValue)
             {
-                foreach (var childId in children)
+                long idCha = cmt.ParentCommentId.Value;
+                if (dicConTheoCha.ContainsKey(idCha) == false)
                 {
-                    result.Add(childId);
-                    queue.Enqueue(childId);
+                    dicConTheoCha[idCha] = new List<long>();
+                }
+                dicConTheoCha[idCha].Add(cmt.CommentId);
+            }
+        }
+
+        List<long> ketQua = new List<long>();
+        Queue<long> hangDoi = new Queue<long>();
+        hangDoi.Enqueue(rootCommentId);
+
+        while (hangDoi.Count > 0)
+        {
+            long idHienTai = hangDoi.Dequeue();
+
+            if (dicConTheoCha.ContainsKey(idHienTai))
+            {
+                List<long> dsCon = dicConTheoCha[idHienTai];
+                foreach (var idCon in dsCon)
+                {
+                    ketQua.Add(idCon);
+                    hangDoi.Enqueue(idCon);
                 }
             }
         }
 
-        return result;
+        return ketQua;
     }
 
-    // ===== MAPPER =====
-    private static ForumCommentDto MapToDto(ForumComment c, List<long> likedIds) => new()
+    // ===== MAPPER: đổi Entity -> Dto để trả về cho FE =====
+    private static ForumCommentDto MapToDto(ForumComment c, List<long> likedIds)
     {
-        CommentId = c.CommentId,
-        PostId = c.PostId,
-        MemberId = c.MemberId,
-        MemberName = c.Member?.FullName ?? "",
-        MemberAvatar = c.Member?.FaceDatum?.ProfileImage,
-        ParentCommentId = c.ParentCommentId,
-        ReplyToMemberId = c.ReplyToMemberId,
-        ReplyToMemberName = c.ReplyToMember?.FullName,
-        Content = c.Content,
-        LikeCount = c.LikeCount,
-        IsLikedByCurrentUser = likedIds.Contains(c.CommentId),
-        CreatedAt = c.CreatedAt,
-    };
+        ForumCommentDto dto = new ForumCommentDto
+        {
+            CommentId = c.CommentId,
+            PostId = c.PostId,
+            MemberId = c.MemberId,
+            MemberName = c.Member != null ? c.Member.FullName : "",
+            MemberAvatar = c.Member != null && c.Member.FaceDatum != null ? c.Member.FaceDatum.ProfileImage : null,
+            ParentCommentId = c.ParentCommentId,
+            ReplyToMemberId = c.ReplyToMemberId,
+            ReplyToMemberName = c.ReplyToMember != null ? c.ReplyToMember.FullName : null,
+            Content = c.Content,
+            LikeCount = c.LikeCount,
+            IsLikedByCurrentUser = likedIds.Contains(c.CommentId),
+            CreatedAt = c.CreatedAt,
+        };
+
+        return dto;
+    }
 }

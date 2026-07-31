@@ -19,6 +19,11 @@ namespace BE.Controllers
     // CreatedAt để đối chiếu khiến nhân viên tưởng hệ thống tính sai ngày hết hạn (vd: CreatedAt
     // 11/07 nhưng NewExpiryDate lại rơi vào ngày 09 của tháng, vì StartDate thật là 09/xx).
     // Từ giờ CẢ 3 endpoint dưới đây đều trả thêm StartDate để FE hiển thị đúng mốc tính toán.
+    //
+    // [MỚI - 31/07/2026] Thêm endpoint GET {id}/adjustment-history — trả toàn bộ lịch sử các lần
+    // điều chỉnh gói của MỘT giao dịch cụ thể (khác với GetPackageAdjustmentHistoryAsync bên
+    // MembersController, vốn lọc theo memberId để show mọi giao dịch của 1 hội viên). Dùng cho màn
+    // hình chi tiết giao dịch, để nhân viên xem lại ai đã sửa, sửa từ gói nào sang gói nào, lý do gì.
     [ApiController]
     [Route("api/transactions")]
     [Authorize]
@@ -234,7 +239,33 @@ namespace BE.Controllers
                 return BadRequest(new { message = ex.Message });
             }
         }
-    
+
+        // ===================== [MỚI] LỊCH SỬ ĐIỀU CHỈNH GÓI CỦA 1 GIAO DỊCH =====================
+        // FE dùng endpoint này ở màn hình chi tiết giao dịch để hiển thị "giao dịch này đã từng bị
+        // điều chỉnh N lần" (kết hợp với field IsAdjusted trả về ở GetHistory bên dưới để hiện badge
+        // trong bảng danh sách, rồi bấm vào xem chi tiết từng lần điều chỉnh qua endpoint này).
+        // Cùng quyền xem với adjust-plan/adjust-plan-preview: Admin xem mọi giao dịch, Manager chỉ
+        // xem được giao dịch thuộc chi nhánh mình quản lý.
+        [HttpGet("{id:long}/adjustment-history")]
+        public async Task<IActionResult> GetAdjustmentHistory(long id)
+        {
+            var employeeId = GetCurrentUserId();
+
+            try
+            {
+                var result = await _transactionService.GetTransactionAdjustmentHistoryAsync(id, employeeId);
+                return Ok(result);
+            }
+            catch (KeyNotFoundException ex)
+            {
+                return NotFound(new { message = ex.Message });
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return StatusCode(403, new { message = ex.Message });
+            }
+        }
+
         [HttpGet("history")]
         public async Task<IActionResult> GetHistory(
                 [FromQuery] string? keyword,
@@ -243,7 +274,7 @@ namespace BE.Controllers
                 [FromQuery] string? channel)
         {
             var employeeId = GetCurrentUserId();
-            var data = await _transactionService.GetHistoryRegisPac(keyword, status, channel,branchId, employeeId);
+            var data = await _transactionService.GetHistoryRegisPac(keyword, status, channel, branchId, employeeId);
             return Ok(data);
         }
     }

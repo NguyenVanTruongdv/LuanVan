@@ -108,7 +108,10 @@ namespace BE.Services
 
             var transactions = await query.OrderByDescending(t => t.CreatedAt).ToListAsync();
 
-            var result = transactions.Select(MapToHistoryResponse(includeBranch: true)).ToList();
+            // Tra trước tập TransactionId đã từng bị điều chỉnh gói, dùng để set IsAdjusted khi map.
+            var adjustedIds = await GetAdjustedTransactionIdsAsync(transactions.Select(t => t.TransactionId));
+
+            var result = transactions.Select(MapToHistoryResponse(includeBranch: true, adjustedIds)).ToList();
 
             if (!string.IsNullOrWhiteSpace(status) && status != "all")
                 result = result.Where(r => r.Status.Equals(status, StringComparison.OrdinalIgnoreCase)).ToList();
@@ -128,12 +131,17 @@ namespace BE.Services
                 .OrderByDescending(t => t.CreatedAt)
                 .ToListAsync();
 
-            return transactions.Select(MapToHistoryResponse(includeBranch: false)).ToList();
+            var adjustedIds = await GetAdjustedTransactionIdsAsync(transactions.Select(t => t.TransactionId));
+
+            return transactions.Select(MapToHistoryResponse(includeBranch: false, adjustedIds)).ToList();
         }
 
         // Gom logic map Transaction -> HistoryRegisPacReponse dùng chung cho 2 hàm trên
         // (trước đây bị lặp y hệt nhau). includeBranch=false vì GetMyHistoryAsync không Include Branch.
-        private static Func<Transaction, HistoryRegisPacReponse> MapToHistoryResponse(bool includeBranch)
+        // adjustedTransactionIds: tập TransactionId đã từng có ít nhất 1 lần điều chỉnh gói
+        // (xem GetAdjustedTransactionIdsAsync) — dùng để set field IsAdjusted cho FE hiển thị nhãn/badge.
+        private static Func<Transaction, HistoryRegisPacReponse> MapToHistoryResponse(
+            bool includeBranch, HashSet<long> adjustedTransactionIds)
         {
             return t =>
             {
@@ -153,9 +161,26 @@ namespace BE.Services
                     OriginalAmount = t.GiaGoc,
                     Amount = t.Amount,
                     Status = t.PaymentStatus,
-                    BankReferenceCode = t.BankReferenceCode   // <-- mới thêm
+                    BankReferenceCode = t.BankReferenceCode,   // <-- mới thêm
+                    IsAdjusted = adjustedTransactionIds.Contains(t.TransactionId)   // <-- mới thêm
                 };
             };
+        }
+
+        // Truy vấn 1 lần cho cả danh sách giao dịch (tránh N+1 query trong lúc map từng dòng)
+        // để biết TransactionId nào đã từng có bản ghi trong TransactionAdjustmentLogs.
+        private async Task<HashSet<long>> GetAdjustedTransactionIdsAsync(IEnumerable<long> transactionIds)
+        {
+            var ids = transactionIds.ToList();
+            if (ids.Count == 0) return new HashSet<long>();
+
+            var adjusted = await _context.TransactionAdjustmentLogs
+                .Where(a => ids.Contains(a.TransactionId))
+                .Select(a => a.TransactionId)
+                .Distinct()
+                .ToListAsync();
+
+            return adjusted.ToHashSet();
         }
 
         // ===================== TÍNH HIỆU LỰC KHUYẾN MÃI =====================
@@ -495,10 +520,45 @@ namespace BE.Services
             if (logs.Count == 0)
                 return new List<MemberUpdateSessionResponse>();
 
+            return BuildAdjustmentSessionResponses(logs);
+        }
+
+        // ===================== [MỚI] LỊCH SỬ ĐIỀU CHỈNH GÓI TẬP CỦA 1 GIAO DỊCH =====================
+        // Khác với GetPackageAdjustmentHistoryAsync ở trên (lọc theo MemberId, cho màn hình hồ sơ
+        // hội viên xem TẤT CẢ lần điều chỉnh của họ trên mọi giao dịch), hàm này lọc theo đúng 1
+        // TransactionId — dùng cho màn hình chi tiết 1 giao dịch cụ thể.
+        // Cùng quyền xem với luồng adjust-plan/preview: Admin xem mọi giao dịch, Manager chỉ xem
+        // được giao dịch thuộc chi nhánh mình quản lý (kiểm tra qua EnsureAdjustPermissionAsync).
+        public async Task<List<MemberUpdateSessionResponse>> GetTransactionAdjustmentHistoryAsync(
+            long transactionId, long employeeId)
+        {
+            var transaction = await _context.Transactions
+                .FirstOrDefaultAsync(t => t.TransactionId == transactionId)
+                ?? throw new KeyNotFoundException("Không tìm thấy giao dịch.");
+
+            await EnsureAdjustPermissionAsync(employeeId, transaction);
+
+            var logs = await _context.TransactionAdjustmentLogs
+                .Include(a => a.AdjustedByNavigation)
+                .Where(a => a.TransactionId == transactionId)
+                .OrderByDescending(a => a.AdjustedAt)
+                .ToListAsync();
+
+            if (logs.Count == 0)
+                return new List<MemberUpdateSessionResponse>();
+
+            return BuildAdjustmentSessionResponses(logs);
+        }
+
+        // Gom logic build response dùng chung cho GetPackageAdjustmentHistoryAsync (theo memberId)
+        // và GetTransactionAdjustmentHistoryAsync (theo transactionId) — trước đây bị lặp y hệt nhau.
+        private List<MemberUpdateSessionResponse> BuildAdjustmentSessionResponses(
+            List<TransactionAdjustmentLog> logs)
+        {
             var planIds = logs.SelectMany(l => new[] { l.OldPlanId, l.NewPlanId }).Distinct().ToList();
-            var planNames = await _context.MembershipPlans
+            var planNames = _context.MembershipPlans
                 .Where(p => planIds.Contains(p.PlanId))
-                .ToDictionaryAsync(p => p.PlanId, p => p.PlanName);
+                .ToDictionary(p => p.PlanId, p => p.PlanName);
 
             string PlanName(int planId) => planNames.TryGetValue(planId, out var name) ? name : $"#{planId}";
 
