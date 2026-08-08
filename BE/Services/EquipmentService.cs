@@ -11,7 +11,7 @@ namespace BE.Services
 
     public class ThongTinNhanVien
     {
-        public int Role;
+        public long Role;
         public List<int> DsChiNhanhQuanLy = new List<int>();
     }
 
@@ -302,10 +302,10 @@ namespace BE.Services
                 return ketQua;
             }
 
-            var nhanVien = await _context.Employees
+            var nhanVien = await _context.Employees.Include(nv=>nv.Account).ThenInclude(a=>a.Role)
                 .AsNoTracking()
                 .Where(e => e.EmployeeId == currentEmployeeId.Value)
-                .Select(e => new { e.Role }) // e.Role là int (role_id trong bảng roles)
+                .Select(e => new { e.Account.Role }) // e.Role là int (role_id trong bảng roles)
                 .FirstOrDefaultAsync();
 
             if (nhanVien == null)
@@ -313,7 +313,7 @@ namespace BE.Services
                 throw new UnauthorizedAccessException("Không xác định được thông tin nhân viên hiện tại");
             }
 
-            int role = nhanVien.Role.RoleId;
+            long role = nhanVien.Role.RoleId;
 
             if (role != ROLE_STAFF && role != ROLE_MANAGER && role != ROLE_ADMIN)
             {

@@ -23,7 +23,15 @@ public class BranchesController : ControllerBase
         var result = await _branchService.GetListAsync(filter);
         return Ok(result);
     }
+    // GET: api/branches/admin
 
+        [HttpGet("admin")]
+        [Authorize(Roles = "Admin")] // chỉnh lại role name cho khớp hệ thống của bạn
+        public async Task<IActionResult> GetListForAdmin([FromQuery] BranchFilterDto filter)
+        {
+            var result = await _branchService.GetListForAdminAsync(filter);
+            return Ok(result);
+        }
     // GET: api/branches/1
     [HttpGet("{id:int}")]
     public async Task<IActionResult> GetById(int id)

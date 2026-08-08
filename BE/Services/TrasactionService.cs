@@ -46,11 +46,11 @@ namespace BE.Services
             string? keyword, string? status, string? channel, int? branchId, long employeeId)
         {
             var employee = await _context.Employees
-        .Include(e => e.Role)
+        .Include(e => e.Account).ThenInclude(a=>a.Role)
         .Include(e => e.Branches)
         .FirstOrDefaultAsync(e => e.EmployeeId == employeeId)
         ?? throw new KeyNotFoundException("Không tìm thấy nhân viên.");
-            var isAdmin = employee.Role.RoleId == 3;
+            var isAdmin = employee.Account.Role.RoleId == 3;
 
             var query = _context.Transactions
                 .Include(t => t.Member).ThenInclude(m => m.Account)
@@ -92,7 +92,7 @@ namespace BE.Services
 
                 query = query.Where(t =>
                     t.Member.FullName.Contains(keyword) ||
-                    t.Member.Account.Phone.Contains(keyword) ||
+                    t.Member.Phone.Contains(keyword) ||
                     t.OrderCode.Contains(keyword) ||
                     (isNumericKeyword && t.TransactionId == keywordAsId));
             }
@@ -145,7 +145,7 @@ namespace BE.Services
                 {
                     transactionId = t.TransactionId,
                     UrlImg = t.Member.FaceDatum?.ProfileImage,
-                    Phone = t.Member.Account.Phone,
+                    Phone = t.Member.Phone,
                     FullName = t.Member.FullName,
                     OrderCode = t.OrderCode,
                     PlanName = t.Plan.PlanName,
@@ -288,11 +288,11 @@ namespace BE.Services
         private async Task<Employee> EnsureAdjustPermissionAsync(long employeeId, Transaction transaction)
         {
             var employee = await _context.Employees
-                 .Include(e => e.Role)
+                 .Include(e => e.Account).ThenInclude(a=>a.Role)
                  .Include(e => e.Branches)
                  .FirstOrDefaultAsync(e => e.EmployeeId == employeeId)
                  ?? throw new KeyNotFoundException("Không tìm thấy nhân viên.");
-            var roleId = employee.Role.RoleId;
+            var roleId = employee.Account.Role.RoleId;
             if (roleId != 2 && roleId != 3)
                 throw new UnauthorizedAccessException("Bạn không có quyền điều chỉnh giao dịch.");
 
@@ -432,7 +432,7 @@ namespace BE.Services
             {
                 OrderCode = transaction.OrderCode,
                 MemberName = transaction.Member.FullName,
-                MemberPhone = transaction.Member.Account.Phone,
+                MemberPhone = transaction.Member.Phone,
                 PlanName = newPlan.PlanName,
                 GiaGoc = effect.GiaGoc,
                 DiscountAmount = effect.DiscountAmount,

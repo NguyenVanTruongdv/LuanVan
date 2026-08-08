@@ -22,14 +22,14 @@ namespace BE.Controllers
         // ------------------------------------------------------------------
 
         public class CreateAccountRequest
-        {
-            public long? MemberId { get; set; }
-            public long? EmployeeId { get; set; }
-            public string? Phone { get; set; }
-            public string? Email { get; set; }
-            public string Password { get; set; } = string.Empty;
-        }
-
+    {
+        public long? MemberId { get; set; }
+        public long? EmployeeId { get; set; }
+        public long RoleId { get; set; }        // <-- thêm mới, bắt buộc theo service
+        public string? Phone { get; set; }
+        public string? Email { get; set; }
+        public string Password { get; set; } = string.Empty;
+    }
         public class UpdateAccountInfoRequest
         {
             public string? NewPhone { get; set; }
@@ -52,12 +52,7 @@ namespace BE.Controllers
             public string Reason { get; set; } = string.Empty;
         }
 
-        // ------------------------------------------------------------------
-        // Tạo tài khoản
-        // ------------------------------------------------------------------
-
-        // POST: api/account
-        [HttpPost]
+       [HttpPost]
         public async Task<ActionResult<Account>> CreateAccount([FromBody] CreateAccountRequest request)
         {
             try
@@ -65,6 +60,7 @@ namespace BE.Controllers
                 var account = await _accountService.CreateAccountAsync(
                     request.MemberId,
                     request.EmployeeId,
+                    request.RoleId,      // <-- bổ sung tham số roleId
                     request.Phone,
                     request.Email,
                     request.Password);
@@ -80,10 +76,6 @@ namespace BE.Controllers
                 return Conflict(new { message = ex.Message });
             }
         }
-
-        // ------------------------------------------------------------------
-        // Sửa thông tin tài khoản (phone / email)
-        // ------------------------------------------------------------------
 
         // PUT: api/account/{accountId}/info
         [HttpPut("{accountId:long}/info")]

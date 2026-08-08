@@ -183,7 +183,7 @@ public class IncidentService
         if (user.EntityType == "Employee")
         {
             var employee = await _db.Employees
-                .Include(e => e.Role)
+                .Include(e => e.Account).ThenInclude(a=>a.Role)
                 .FirstOrDefaultAsync(e => e.EmployeeId == user.Id);
 
             if (employee == null)
@@ -191,8 +191,8 @@ public class IncidentService
                 throw new Exception("Nhân viên không tồn tại!");
             }
 
-            bool isAdmin = employee.Role.RoleId == 3;
-            bool isManager = employee.Role.RoleId == 2;
+            bool isAdmin = employee.Account.Role.RoleId == 3;
+            bool isManager = employee.Account.Role.RoleId == 2;
 
             if (isAdmin)
             {
@@ -293,7 +293,7 @@ public class IncidentService
             {
                 reporterName = i.ReportedByMember.FullName;
                 // Kiểm tra null để tránh lỗi giống dòng 263 cũ
-                reporterPhone = i.ReportedByMember.Account != null ? i.ReportedByMember.Account.Phone : "";
+                reporterPhone = i.ReportedByMember.Account != null ? i.ReportedByMember.Phone: "";
                 reporterRole = "Member";
             }
             else
@@ -367,7 +367,7 @@ public class IncidentService
         if (incident.ReportedByMember != null)
         {
             reporterName = incident.ReportedByMember.FullName;
-            reporterPhone = incident.ReportedByMember.Account != null ? incident.ReportedByMember.Account.Phone : "";
+            reporterPhone = incident.ReportedByMember.Account != null ? incident.ReportedByMember.Phone : "";
             reporterRole = "Member";
         }
         else

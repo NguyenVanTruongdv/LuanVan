@@ -28,3 +28,9 @@ public class LoginEmployeeRequestDto
     [Required(ErrorMessage = "Mật khẩu không được để trống")]
     public string Password { get; set; } = string.Empty;
 }
+
+  public class LoginRequestDto
+    {
+        public string Username { get; set; } = null!;
+        public string Password { get; set; } = null!;
+    }

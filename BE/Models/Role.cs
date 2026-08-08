@@ -8,15 +8,12 @@ namespace BE.Models;
 /// </summary>
 public partial class Role
 {
-    /// <summary>
-    /// Mã vai trò
-    /// </summary>
-    public sbyte RoleId { get; set; }
+    public long RoleId { get; set; }
 
     /// <summary>
     /// Tên vai trò: Staff, Manager, Admin
     /// </summary>
     public string RoleName { get; set; } = null!;
 
-    public virtual ICollection<Employee> Employees { get; set; } = new List<Employee>();
+    public virtual ICollection<Account> Accounts { get; set; } = new List<Account>();
 }

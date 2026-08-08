@@ -9,8 +9,6 @@ public partial class ForumCategory
 
     public string CategoryName { get; set; } = null!;
 
-
-
     public string? Icon { get; set; }
 
     public int DisplayOrder { get; set; }

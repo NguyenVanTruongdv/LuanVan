@@ -1,24 +1,18 @@
-
 // Dùng để làm gì: quy định thời hạn refresh token theo từng role
 public static class TokenTtlHelper
 {
-    public const int AccessTokenMinutes = 30; // tất cả role đều 15 phút
+    public const int AccessTokenMinutes = 1; // tất cả role đều 30 phút
 
-    private static readonly Dictionary<string, int> EmployeeRefreshTokenDays = new()
+    private static readonly Dictionary<string, int> RefreshTokenDaysByRole = new()
     {
-        { "Staff",       30 }, // Thu ngân — máy quầy cố định
-        { "Technician",   7 }, // Kỹ thuật viên
-        { "Manager",      7 }, // Quản lý
-        { "Admin",        1 }, // Admin — bảo mật cao nhất
+        { "Member",       7 }, // Hội viên — app di động
+        { "Staff",        30 }, // Thu ngân — máy quầy cố định
+        { "Manager",       7 }, // Quản lý
+        { "Admin",         1 }, // Admin — bảo mật cao nhất
     };
 
-    public const int MemberRefreshTokenDays = 7; // Member app
-
-    public static int GetRefreshTokenDays(string entityType, string role)
+    public static int GetRefreshTokenDays(string role)
     {
-        if (entityType == "Member")
-            return MemberRefreshTokenDays;
-
-        return EmployeeRefreshTokenDays.TryGetValue(role, out var days) ? days : 1;
+        return RefreshTokenDaysByRole.TryGetValue(role, out var days) ? days : 1;
     }
 }

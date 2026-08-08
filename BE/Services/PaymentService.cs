@@ -174,7 +174,7 @@ namespace BE.Services
             return new PaymentPageInfoDto
             {
                 FullName = hoiVien.FullName,
-                Phone = hoiVien.Account.Phone,
+                Phone = hoiVien.Phone,
                 BranchName = goiHienTai?.Branch?.BranchName,
                 CurrentPackage = goiHienTai == null
                     ? null
@@ -380,7 +380,7 @@ namespace BE.Services
                 {
                     OrderCode = giaoDichDaThanhToan.OrderCode,
                     MemberName = hoiVien?.FullName,
-                    MemberPhone = hoiVien?.Account.Phone,
+                    MemberPhone = hoiVien?.Phone,
                     PlanName = goiDaThanhToan.PlanName,
                     GiaGoc = giaoDichDaThanhToan.GiaGoc,
                     DiscountAmount = giaoDichDaThanhToan.GiaGoc - giaoDichDaThanhToan.Amount,

@@ -263,14 +263,13 @@ public class IdentifyService
             };
         }
 
-        string? lyDoKhoa = GetAccountLockedReason(hoiVien);
-        if (lyDoKhoa != null)
+        if (hoiVien.Status == AccountStatusSuspended)
         {
             return new IdentifyAttendanceResponseDto
             {
                 Status = "ineligible",
                 Member = MapMember(hoiVien, GetLatestPackage(hoiVien)),
-                Reason = lyDoKhoa
+                Reason = "Tài khoản hội viên đang bị khóa. Không thể check-out."
             };
         }
 
@@ -355,7 +354,7 @@ public class IdentifyService
             .Include(m => m.Account)
             .Include(m => m.FaceDatum)
             .Include(m => m.MemberPackages).ThenInclude(p => p.Plan)
-            .FirstOrDefaultAsync(m => m.Account != null && m.Account.Phone == phone);
+            .FirstOrDefaultAsync(m => m.Account != null && m.Phone == phone);
     }
 
     private MemberPackage? GetLatestPackage(Member hoiVien)
@@ -377,10 +376,9 @@ public class IdentifyService
 
     private string? GetCheckinIneligibleReason(Member hoiVien, MemberPackage? goiTap)
     {
-        string? lyDoKhoa = GetAccountLockedReason(hoiVien);
-        if (lyDoKhoa != null)
+        if (hoiVien.Status == AccountStatusSuspended)
         {
-            return lyDoKhoa;
+            return "Tài khoản hội viên đang bị khóa. Không thể check-in.";
         }
 
         if (hoiVien.Status == MemberStatusPendingActivation)
@@ -396,28 +394,16 @@ public class IdentifyService
         return null;
     }
 
-    private static string? GetAccountLockedReason(Member hoiVien)
-    {
-        if (hoiVien.Account == null || hoiVien.Account.Status != AccountStatusSuspended)
-        {
-            return null;
-        }
-
-        return string.IsNullOrWhiteSpace(hoiVien.Account.SuspendReason)
-            ? "Tài khoản đã bị khoá."
-            : "Tài khoản đã bị khoá: " + hoiVien.Account.SuspendReason;
-    }
-
     private MemberDto MapMember(Member hoiVien, MemberPackage? goiTap)
     {
         var dto = new MemberDto
         {
             MemberId = hoiVien.MemberId,
             FullName = hoiVien.FullName,
-            Phone = hoiVien.Account?.Phone ?? "",
+            Phone = hoiVien.Phone ?? "",
             PhotoUrl = hoiVien.FaceDatum?.ProfileImage,
             AccountStatus = hoiVien.Account?.Status ?? hoiVien.Status,
-            SuspendReason = hoiVien.Account?.SuspendReason,
+
             InternalNotes = hoiVien.InternalNotes
         };
 
@@ -457,7 +443,7 @@ public class IdentifyService
     {
         Employee? nhanVien = await _context.Employees
             .AsNoTracking()
-            .Include(e => e.Role)
+            .Include(e => e.Account.Role)
             .Include(e => e.Branches)
             .FirstOrDefaultAsync(e => e.EmployeeId == staffId);
 
@@ -466,8 +452,8 @@ public class IdentifyService
             throw new KeyNotFoundException("Không tìm thấy nhân viên.");
         }
 
-        bool isAdmin = nhanVien.Role.RoleName == RoleAdmin;
-        bool isManager = nhanVien.Role.RoleName == RoleManager;
+        bool isAdmin = nhanVien.Account.Role.RoleName == RoleAdmin;
+        bool isManager = nhanVien.Account.Role.RoleName == RoleManager;
         List<int> dsChiNhanhDuocGan = nhanVien.Branches.Select(b => b.BranchId).ToList();
 
         IQueryable<Models.CheckIn> truyVan = _context.CheckIns
@@ -507,7 +493,7 @@ public class IdentifyService
             string tuKhoa = query.Keyword.Trim();
             truyVan = truyVan.Where(c =>
                 c.Member!.FullName.Contains(tuKhoa) ||
-                (c.Member!.Account != null && c.Member.Account.Phone != null && c.Member.Account.Phone.Contains(tuKhoa)));
+                (c.Member!.Account != null && c.Member.Phone != null && c.Member.Phone.Contains(tuKhoa)));
         }
 
         int totalCount = await truyVan.CountAsync();
@@ -525,7 +511,7 @@ public class IdentifyService
             CheckInId = c.CheckInId,
             MemberId = c.MemberId!.Value,
             MemberName = c.Member!.FullName,
-            MemberPhone = c.Member.Account?.Phone,
+            MemberPhone = c.Member.Phone,
             MemberAvatar = c.Member.FaceDatum?.ProfileImage,
             BranchId = c.BranchId,
             BranchName = c.Branch?.BranchName,

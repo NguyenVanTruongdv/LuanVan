@@ -134,7 +134,7 @@ namespace BE.Services
             {
                 MemberId = hoiVien.MemberId,
                 FullName = hoiVien.FullName,
-                Phone = taiKhoan?.Phone,
+                Phone = hoiVien?.Phone,
                 Gender = hoiVien.Gender,
                 BranchName = goiHienTai?.Branch?.BranchName,
                 Status = hoiVien.Status,
@@ -150,7 +150,7 @@ namespace BE.Services
                 PackageExpiryDate = goiHienTai?.ExpiryDate,
                 PackageStatus = goiHienTai?.PackageStatus,
 
-                LockReason = taiKhoan?.Status == "Suspended" ? taiKhoan.SuspendReason : null
+
             };
         }
 
@@ -210,7 +210,7 @@ namespace BE.Services
             if (string.IsNullOrWhiteSpace(phone))
                 throw new ArgumentException("Số điện thoại không được để trống.");
 
-            return await _context.Accounts.AnyAsync(a => a.Phone == phone);
+            return await _context.Members.AnyAsync(a => a.Phone == phone);
         }
 
         public async Task<PendingPurchaseStatusDto> CheckPendingPurchaseStatusAsync(long memberId)
@@ -402,7 +402,7 @@ namespace BE.Services
                 .ToListAsync();
 
             List<long> memberIdTheoPhone = await _context.Accounts
-                .Where(a => a.MemberId != null && a.Phone.Contains(tuKhoa))
+                .Where(a => a.MemberId != null && a.Member.Phone.Contains(tuKhoa))
                 .Select(a => a.MemberId!.Value)
                 .Take(20)
                 .ToListAsync();
@@ -448,7 +448,7 @@ namespace BE.Services
             List<long> dsId = memberIds.ToList();
             return await _context.Accounts
                 .Where(a => a.MemberId != null && dsId.Contains(a.MemberId.Value))
-                .ToDictionaryAsync(a => a.MemberId!.Value, a => a.Phone);
+                .ToDictionaryAsync(a => a.MemberId!.Value, a => a.Member.Phone);
         }
 
         // =========================================================================
@@ -457,7 +457,7 @@ namespace BE.Services
 
         public async Task<MemberResponse> CreateMemberAsync(CreateMemberRequest request, long performedBy)
         {
-            bool sdtDaTonTai = await _context.Accounts.AnyAsync(a => a.Phone == request.Phone);
+            bool sdtDaTonTai = await _context.Accounts.AnyAsync(a => a.Member.Phone == request.Phone);
             if (sdtDaTonTai)
                 throw new InvalidOperationException($"Số điện thoại '{request.Phone}' đã được sử dụng.");
 
@@ -504,7 +504,6 @@ namespace BE.Services
                     var taiKhoan = new Account
                     {
                         MemberId = hoiVien.MemberId,
-                        Phone = request.Phone,
                         PasswordHash = PasswordHelper.HashPassword(matKhauTaoMoi),
                         Status = "Active",
                         CreatedAt = now,
@@ -628,14 +627,14 @@ namespace BE.Services
             if (request.Phone != null)
             {
                 Account taiKhoan = await GetAccountByMemberIdAsync(memberId);
-                if (request.Phone != taiKhoan.Phone)
+                if (request.Phone != hoiVien.Phone)
                 {
-                    bool sdtDaTonTai = await _context.Accounts.AnyAsync(a => a.Phone == request.Phone && a.MemberId != memberId);
+                    bool sdtDaTonTai = await _context.Accounts.AnyAsync(a => a.Member.Phone == request.Phone && a.MemberId != memberId);
                     if (sdtDaTonTai)
                         throw new InvalidOperationException($"Số điện thoại '{request.Phone}' đã được sử dụng.");
 
-                    TrackChange("Số điện thoại", taiKhoan.Phone, request.Phone);
-                    taiKhoan.Phone = request.Phone;
+                    TrackChange("Số điện thoại", hoiVien.Phone, request.Phone);
+                    hoiVien.Phone = request.Phone;
                     taiKhoan.UpdatedAt = now;
                 }
             }
@@ -751,14 +750,14 @@ namespace BE.Services
                 hoiVien.FullName = request.FullName;
             }
 
-            if (!string.IsNullOrWhiteSpace(request.Phone) && request.Phone != taiKhoan.Phone)
+            if (!string.IsNullOrWhiteSpace(request.Phone) && request.Phone != hoiVien.Phone)
             {
-                bool sdtDaTonTai = await _context.Accounts.AnyAsync(a => a.Phone == request.Phone && a.MemberId != memberId);
+                bool sdtDaTonTai = await _context.Accounts.AnyAsync(a => a.Member.Phone == request.Phone && a.MemberId != memberId);
                 if (sdtDaTonTai)
                     throw new InvalidOperationException($"Số điện thoại '{request.Phone}' đã được sử dụng.");
 
-                TrackChange("Số điện thoại", taiKhoan.Phone, request.Phone);
-                taiKhoan.Phone = request.Phone;
+                TrackChange("Số điện thoại", hoiVien.Phone, request.Phone);
+                hoiVien.Phone = request.Phone;
                 taiKhoanCoThayDoi = true;
             }
 
@@ -879,7 +878,7 @@ namespace BE.Services
                     }
 
                     await GenerateInvoiceIfPaidAsync(
-                        giaoDich, hoiVien, taiKhoan.Phone, goiTap, paymentStatus,
+                        giaoDich, hoiVien, hoiVien.Phone, goiTap, paymentStatus,
                         giaGoc: request.GiaGoc,
                         discountAmount: request.GiaGoc - request.Amount,
                         amount: request.Amount,
@@ -1205,7 +1204,7 @@ namespace BE.Services
                     await _context.SaveChangesAsync();
 
                     string? invoiceUrl = await GenerateInvoiceIfPaidAsync(
-                        giaoDich, hoiVien, taiKhoan.Phone, goiTap, giaoDich.PaymentStatus,
+                        giaoDich, hoiVien, hoiVien.Phone, goiTap, giaoDich.PaymentStatus,
                         giaGoc: giaGoc,
                         discountAmount: discountAmt,
                         amount: amount,
@@ -1270,7 +1269,7 @@ namespace BE.Services
                 MemberId = hoiVien.MemberId,
                 FullName = hoiVien.FullName,
                 Avatar = hoiVien.FaceDatum?.ProfileImage,
-                Phone = (await _context.Accounts.FirstOrDefaultAsync(a => a.MemberId == memberId))?.Phone,
+                Phone = (await _context.Accounts.FirstOrDefaultAsync(a => a.MemberId == memberId))?.Member.Phone,
                 JoinedAt = hoiVien.CreatedAt,
                 PostCount = soBaiViet
             };
@@ -1305,7 +1304,7 @@ namespace BE.Services
                 FullName = hoiVien.FullName,
                 Avatar = hoiVien.FaceDatum?.ProfileImage,
 
-                Phone = taiKhoan?.Phone,
+                Phone = hoiVien?.Phone,
                 Gender = hoiVien.Gender,
                 JoinedAt = hoiVien.CreatedAt,
 

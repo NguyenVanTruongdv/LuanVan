@@ -162,7 +162,7 @@ public class PaymentMethodRevenueDto
 
 public class RoleCountDto
 {
-    public int RoleId { get; set; }
+    public long RoleId { get; set; }
     public string RoleName { get; set; } = string.Empty;
     public int Count { get; set; }
 }

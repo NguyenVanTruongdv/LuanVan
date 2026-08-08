@@ -12,19 +12,11 @@ public partial class Employee
 
     public string FullName { get; set; } = null!;
 
-    public string Phone { get; set; } = null!;
+    public string? Phone { get; set; }
 
-    public string Gender { get; set; } = null!;
+    public string? Gender { get; set; }
 
-    /// <summary>
-    /// Trạng thái làm việc của nhân viên: Active = đang làm việc, Inactive = đã nghỉ việc/ngưng hoạt động
-    /// </summary>
     public string Status { get; set; } = null!;
-
-    /// <summary>
-    /// FK tới roles.role_id
-    /// </summary>
-    public sbyte RoleId { get; set; }
 
     /// <summary>
     /// Nhân viên tạo tài khoản này — tự tham chiếu, NULL cho tài khoản khởi tạo đầu tiên
@@ -72,8 +64,6 @@ public partial class Employee
     public virtual ICollection<News> News { get; set; } = new List<News>();
 
     public virtual ICollection<Promotion> Promotions { get; set; } = new List<Promotion>();
-
-    public virtual Role Role { get; set; } = null!;
 
     public virtual ICollection<TransactionAdjustmentLog> TransactionAdjustmentLogs { get; set; } = new List<TransactionAdjustmentLog>();
 

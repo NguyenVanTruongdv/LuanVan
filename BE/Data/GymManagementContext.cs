@@ -75,6 +75,8 @@ public partial class GymManagementContext : DbContext
 
     public virtual DbSet<PromotionUsage> PromotionUsages { get; set; }
 
+    public virtual DbSet<Pt> Pts { get; set; }
+
     public virtual DbSet<RefreshToken> RefreshTokens { get; set; }
 
     public virtual DbSet<Role> Roles { get; set; }
@@ -84,9 +86,9 @@ public partial class GymManagementContext : DbContext
     public virtual DbSet<TransactionAdjustmentLog> TransactionAdjustmentLogs { get; set; }
 
     protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
-    {
+#warning To protect potentially sensitive information in your connection string, you should move it out of source code. You can avoid scaffolding the connection string by using the Name= syntax to read it from configuration - see https://go.microsoft.com/fwlink/?linkid=2131148. For more guidance on storing connection strings, see https://go.microsoft.com/fwlink/?LinkId=723263.
+        => optionsBuilder.UseMySql("server=localhost;port=3306;database=gym_management;user=root", Microsoft.EntityFrameworkCore.ServerVersion.Parse("9.1.0-mysql"));
 
-    }
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder
@@ -101,13 +103,13 @@ public partial class GymManagementContext : DbContext
                 .ToTable("accounts")
                 .UseCollation("utf8mb4_unicode_ci");
 
-            entity.HasIndex(e => e.Email, "uq_account_email").IsUnique();
+            entity.HasIndex(e => e.RoleId, "fk_account_role");
 
             entity.HasIndex(e => e.EmployeeId, "uq_account_employee").IsUnique();
 
             entity.HasIndex(e => e.MemberId, "uq_account_member").IsUnique();
 
-            entity.HasIndex(e => e.Phone, "uq_account_phone").IsUnique();
+            entity.HasIndex(e => e.Username, "uq_account_username").IsUnique();
 
             entity.Property(e => e.AccountId)
                 .HasComment("Mã tài khoản — khóa chính tự tăng")
@@ -116,10 +118,6 @@ public partial class GymManagementContext : DbContext
                 .HasDefaultValueSql("CURRENT_TIMESTAMP")
                 .HasColumnType("datetime")
                 .HasColumnName("created_at");
-            entity.Property(e => e.Email)
-                .HasMaxLength(150)
-                .HasComment("Email, dùng khôi phục mật khẩu/nhận thông báo, có thể NULL nhưng phải duy nhất nếu có")
-                .HasColumnName("email");
             entity.Property(e => e.EmployeeId)
                 .HasComment("Nhân viên sở hữu tài khoản — FK tới employees.employee_id. NULL nếu đây là tài khoản hội viên")
                 .HasColumnName("employee_id");
@@ -130,23 +128,16 @@ public partial class GymManagementContext : DbContext
                 .HasMaxLength(255)
                 .HasComment("Mật khẩu đã mã hóa bcrypt, không lưu bản rõ")
                 .HasColumnName("password_hash");
-            entity.Property(e => e.Phone)
-                .HasMaxLength(20)
-                .HasColumnName("phone");
+            entity.Property(e => e.RoleId).HasColumnName("role_id");
             entity.Property(e => e.Status)
-                .HasDefaultValueSql("'Active'")
-                .HasComment("Trạng thái đăng nhập: Active = được phép đăng nhập, Suspended = bị khóa")
-                .HasColumnType("enum('Active','Suspended')")
+                .HasMaxLength(20)
                 .HasColumnName("status");
-            entity.Property(e => e.SuspendReason)
-                .HasComment("Lý do khóa — bắt buộc điền khi status = Suspended")
-                .HasColumnType("text")
-                .HasColumnName("suspend_reason");
             entity.Property(e => e.UpdatedAt)
                 .ValueGeneratedOnAddOrUpdate()
                 .HasDefaultValueSql("CURRENT_TIMESTAMP")
                 .HasColumnType("datetime")
                 .HasColumnName("updated_at");
+            entity.Property(e => e.Username).HasColumnName("username");
 
             entity.HasOne(d => d.Employee).WithOne(p => p.Account)
                 .HasForeignKey<Account>(d => d.EmployeeId)
@@ -155,6 +146,11 @@ public partial class GymManagementContext : DbContext
             entity.HasOne(d => d.Member).WithOne(p => p.Account)
                 .HasForeignKey<Account>(d => d.MemberId)
                 .HasConstraintName("fk_account_member");
+
+            entity.HasOne(d => d.Role).WithMany(p => p.Accounts)
+                .HasForeignKey(d => d.RoleId)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("fk_account_role");
         });
 
         modelBuilder.Entity<Branch>(entity =>
@@ -306,8 +302,6 @@ public partial class GymManagementContext : DbContext
 
             entity.HasIndex(e => e.CreatedBy, "fk_employee_creator");
 
-            entity.HasIndex(e => e.RoleId, "fk_employee_role");
-
             entity.Property(e => e.EmployeeId).HasColumnName("employee_id");
             entity.Property(e => e.CreatedAt)
                 .HasDefaultValueSql("CURRENT_TIMESTAMP")
@@ -320,18 +314,13 @@ public partial class GymManagementContext : DbContext
                 .HasMaxLength(100)
                 .HasColumnName("full_name");
             entity.Property(e => e.Gender)
-                .HasColumnType("enum('Male','Female','Other')")
+                .HasMaxLength(20)
                 .HasColumnName("gender");
             entity.Property(e => e.Phone)
                 .HasMaxLength(15)
                 .HasColumnName("phone");
-            entity.Property(e => e.RoleId)
-                .HasComment("FK tới roles.role_id")
-                .HasColumnName("role_id");
             entity.Property(e => e.Status)
-                .HasDefaultValueSql("'Active'")
-                .HasComment("Trạng thái làm việc của nhân viên: Active = đang làm việc, Inactive = đã nghỉ việc/ngưng hoạt động")
-                .HasColumnType("enum('Active','Inactive')")
+                .HasMaxLength(20)
                 .HasColumnName("status");
             entity.Property(e => e.UpdatedAt)
                 .ValueGeneratedOnAddOrUpdate()
@@ -342,11 +331,6 @@ public partial class GymManagementContext : DbContext
             entity.HasOne(d => d.CreatedByNavigation).WithMany(p => p.InverseCreatedByNavigation)
                 .HasForeignKey(d => d.CreatedBy)
                 .HasConstraintName("fk_employee_creator");
-
-            entity.HasOne(d => d.Role).WithMany(p => p.Employees)
-                .HasForeignKey(d => d.RoleId)
-                .OnDelete(DeleteBehavior.ClientSetNull)
-                .HasConstraintName("fk_employee_role");
 
             entity.HasMany(d => d.Branches).WithMany(p => p.Employees)
                 .UsingEntity<Dictionary<string, object>>(
@@ -905,7 +889,6 @@ public partial class GymManagementContext : DbContext
             entity.Property(e => e.ImageUrl)
                 .HasMaxLength(500)
                 .HasColumnName("image_url");
-
             entity.Property(e => e.SortOrder).HasColumnName("sort_order");
             entity.Property(e => e.Status)
                 .HasDefaultValueSql("'Active'")
@@ -1034,6 +1017,8 @@ public partial class GymManagementContext : DbContext
 
             entity.HasIndex(e => e.CreatedBy, "fk_member_creator");
 
+            entity.HasIndex(e => e.Phone, "uq_member_phone").IsUnique();
+
             entity.Property(e => e.MemberId).HasColumnName("member_id");
             entity.Property(e => e.CreatedAt)
                 .HasDefaultValueSql("CURRENT_TIMESTAMP")
@@ -1046,16 +1031,17 @@ public partial class GymManagementContext : DbContext
                 .HasMaxLength(100)
                 .HasColumnName("full_name");
             entity.Property(e => e.Gender)
-                .HasColumnType("enum('Male','Female','Other')")
+                .HasMaxLength(20)
                 .HasColumnName("gender");
             entity.Property(e => e.InternalNotes)
                 .HasComment("Ghi chú nội bộ, hội viên không thấy")
                 .HasColumnType("text")
                 .HasColumnName("internal_notes");
+            entity.Property(e => e.Phone)
+                .HasMaxLength(20)
+                .HasColumnName("phone");
             entity.Property(e => e.Status)
-                .HasDefaultValueSql("'PendingActivation'")
-                .HasComment("PendingActivation=chờ kích hoạt, Active=đang hoạt động. Việc khóa đăng nhập nay do accounts.status quản lý, không còn Expired/Suspended ở đây.")
-                .HasColumnType("enum('PendingActivation','Active','Suspended')")
+                .HasMaxLength(30)
                 .HasColumnName("status");
             entity.Property(e => e.UpdatedAt)
                 .ValueGeneratedOnAddOrUpdate()
@@ -1417,6 +1403,16 @@ public partial class GymManagementContext : DbContext
                 .HasConstraintName("fk_su_dung_km");
         });
 
+        modelBuilder.Entity<Pt>(entity =>
+        {
+            entity
+                .HasNoKey()
+                .ToTable("pt");
+
+            entity.Property(e => e.Id).HasColumnName("ID");
+            entity.Property(e => e.Ten).HasColumnName("TEN");
+        });
+
         modelBuilder.Entity<RefreshToken>(entity =>
         {
             entity.HasKey(e => e.TokenId).HasName("PRIMARY");
@@ -1460,14 +1456,12 @@ public partial class GymManagementContext : DbContext
             entity.HasKey(e => e.RoleId).HasName("PRIMARY");
 
             entity
-                .ToTable("roles", tb => tb.HasComment("Vai trò của nhân viên"))
+                .ToTable("role", tb => tb.HasComment("Vai trò của nhân viên"))
                 .UseCollation("utf8mb4_unicode_ci");
 
             entity.HasIndex(e => e.RoleName, "uq_role_name").IsUnique();
 
-            entity.Property(e => e.RoleId)
-                .HasComment("Mã vai trò")
-                .HasColumnName("role_id");
+            entity.Property(e => e.RoleId).HasColumnName("role_id");
             entity.Property(e => e.RoleName)
                 .HasMaxLength(50)
                 .HasComment("Tên vai trò: Staff, Manager, Admin")

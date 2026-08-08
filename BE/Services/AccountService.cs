@@ -19,13 +19,18 @@ namespace BE.Services
         }
 
         // Tạo tài khoản mới cho member hoặc employee
-        public async Task<Account> CreateAccountAsync(long? memberId, long? employeeId, string? phone, string? email, string password)
+        // roleId: BẮT BUỘC vì accounts.role_id giờ là NOT NULL (FK -> role.role_id).
+        //         Với tài khoản hội viên, roleId phải là role_id của role 'Member'.
+        //         Với tài khoản nhân viên, roleId là role_id tương ứng (Staff/Technician/Manager/Admin).
+        public async Task<Account> CreateAccountAsync(long? memberId, long? employeeId, long roleId, string? phone, string? email, string password)
         {
             CheckOwner(memberId, employeeId);
 
+            string username;
+
             if (memberId != null)
             {
-                // Tài khoản khách hàng: bắt buộc có phone, không được có email
+                // Tài khoản khách hàng: đăng nhập bằng Số điện thoại -> username = phone
                 if (string.IsNullOrWhiteSpace(phone))
                 {
                     throw new ArgumentException("Tài khoản khách hàng bắt buộc phải có Số điện thoại.", nameof(phone));
@@ -34,11 +39,11 @@ namespace BE.Services
                 {
                     throw new ArgumentException("Tài khoản khách hàng chỉ đăng nhập bằng Số điện thoại, không được cung cấp Email.", nameof(email));
                 }
-                email = null;
+                username = phone;
             }
             else
             {
-                // Tài khoản nhân viên: bắt buộc có email, không được có phone
+                // Tài khoản nhân viên: đăng nhập bằng Email -> username = email
                 if (string.IsNullOrWhiteSpace(email))
                 {
                     throw new ArgumentException("Tài khoản nhân viên bắt buộc phải có Email.", nameof(email));
@@ -47,21 +52,21 @@ namespace BE.Services
                 {
                     throw new ArgumentException("Tài khoản nhân viên chỉ đăng nhập bằng Email, không được cung cấp Số điện thoại.", nameof(phone));
                 }
-                phone = null;
+                username = email;
             }
 
-            await CheckPhoneAndEmailAsync(phone, email, null);
+            await CheckUsernameAsync(username, null);
+            await CheckRoleExistsAsync(roleId);
 
             DateTime now = DateTime.UtcNow;
 
             Account newAccount = new Account();
             newAccount.MemberId = memberId;
             newAccount.EmployeeId = employeeId;
-            newAccount.Phone = phone;
-            newAccount.Email = email;
+            newAccount.Username = username;
+            newAccount.RoleId = roleId;
             newAccount.PasswordHash = PasswordHelper.HashPassword(password);
             newAccount.Status = STATUS_ACTIVE;
-            newAccount.SuspendReason = null;
             newAccount.CreatedAt = now;
             newAccount.UpdatedAt = now;
 
@@ -71,7 +76,8 @@ namespace BE.Services
             return newAccount;
         }
 
-        // Cập nhật số điện thoại hoặc email của tài khoản
+        // Cập nhật số điện thoại (hội viên) hoặc email (nhân viên) của tài khoản
+        // -> thực chất là cập nhật cột username duy nhất.
         public async Task<Account> UpdateAccountInfoAsync(long accountId, string? newPhone, string? newEmail)
         {
             Account account = await FindAccountAsync(accountId);
@@ -90,8 +96,8 @@ namespace BE.Services
                     {
                         throw new ArgumentException("Tài khoản khách hàng bắt buộc phải có Số điện thoại.", nameof(newPhone));
                     }
-                    await CheckPhoneAndEmailAsync(newPhone, null, accountId);
-                    account.Phone = newPhone;
+                    await CheckUsernameAsync(newPhone, accountId);
+                    account.Username = newPhone;
                 }
             }
             else
@@ -108,11 +114,25 @@ namespace BE.Services
                     {
                         throw new ArgumentException("Tài khoản nhân viên bắt buộc phải có Email.", nameof(newEmail));
                     }
-                    await CheckPhoneAndEmailAsync(null, newEmail, accountId);
-                    account.Email = newEmail;
+                    await CheckUsernameAsync(newEmail, accountId);
+                    account.Username = newEmail;
                 }
             }
 
+            account.UpdatedAt = DateTime.UtcNow;
+            await _context.SaveChangesAsync();
+
+            return account;
+        }
+
+        // Đổi vai trò (role) của tài khoản — nghiệp vụ mới vì role giờ nằm ở account, không ở employee
+        public async Task<Account> ChangeRoleAsync(long accountId, long newRoleId)
+        {
+            Account account = await FindAccountAsync(accountId);
+
+            await CheckRoleExistsAsync(newRoleId);
+
+            account.RoleId = newRoleId;
             account.UpdatedAt = DateTime.UtcNow;
             await _context.SaveChangesAsync();
 
@@ -148,6 +168,10 @@ namespace BE.Services
         }
 
         // Khóa tài khoản
+        // LƯU Ý: accounts.suspend_reason đã bị xoá khỏi DB, nên "reason" ở đây
+        // KHÔNG còn được lưu vào bảng accounts. Nếu cần lưu lý do khóa, hãy ghi
+        // vào member_update_logs (hội viên) hoặc employee_update_logs (nhân viên)
+        // ở tầng gọi service này — reason vẫn bắt buộc nhập để phục vụ việc đó.
         public async Task<Account> LockAccountAsync(long accountId, string reason, long performedBy)
         {
             if (string.IsNullOrWhiteSpace(reason))
@@ -163,7 +187,6 @@ namespace BE.Services
             }
 
             account.Status = STATUS_SUSPENDED;
-            account.SuspendReason = reason;
             account.UpdatedAt = DateTime.UtcNow;
 
             await RevokeAllTokensAsync(accountId);
@@ -183,7 +206,6 @@ namespace BE.Services
             }
 
             account.Status = STATUS_ACTIVE;
-            account.SuspendReason = null;
             account.UpdatedAt = DateTime.UtcNow;
 
             await _context.SaveChangesAsync();
@@ -191,24 +213,26 @@ namespace BE.Services
             return account;
         }
 
-        // Tìm tài khoản theo số điện thoại (đăng nhập khách hàng)
+        // Tìm tài khoản theo số điện thoại (đăng nhập khách hàng) -> tra theo Username
         public async Task<Account?> GetByPhoneAsync(string phone)
         {
-            Account? account = await _context.Accounts
-                .Include(a => a.Member)
-                .Include(a => a.Employee)
-                .FirstOrDefaultAsync(a => a.Phone == phone);
-
-            return account;
+            return await GetByUsernameAsync(phone);
         }
 
-        // Tìm tài khoản theo email (đăng nhập nhân viên)
+        // Tìm tài khoản theo email (đăng nhập nhân viên) -> tra theo Username
         public async Task<Account?> GetByEmailAsync(string email)
+        {
+            return await GetByUsernameAsync(email);
+        }
+
+        // Tìm tài khoản theo username (dùng chung cho cả 2 loại đăng nhập)
+        public async Task<Account?> GetByUsernameAsync(string username)
         {
             Account? account = await _context.Accounts
                 .Include(a => a.Member)
                 .Include(a => a.Employee)
-                .FirstOrDefaultAsync(a => a.Email == email);
+                .Include(a => a.Role)
+                .FirstOrDefaultAsync(a => a.Username == username);
 
             return account;
         }
@@ -249,37 +273,31 @@ namespace BE.Services
             return account;
         }
 
-        // Kiểm tra số điện thoại / email đã tồn tại chưa
-        private async Task CheckPhoneAndEmailAsync(string? phone, string? email, long? excludeAccountId)
+        // Kiểm tra username (số điện thoại hoặc email) đã tồn tại chưa
+        private async Task CheckUsernameAsync(string username, long? excludeAccountId)
         {
-            bool noPhone = string.IsNullOrWhiteSpace(phone);
-            bool noEmail = string.IsNullOrWhiteSpace(email);
-
-            if (noPhone && noEmail)
+            if (string.IsNullOrWhiteSpace(username))
             {
-                throw new ArgumentException("Phải cung cấp ít nhất Số điện thoại hoặc Email để đăng nhập.");
+                throw new ArgumentException("Phải cung cấp Số điện thoại hoặc Email để đăng nhập.", nameof(username));
             }
 
-            if (!noPhone)
-            {
-                bool phoneTaken = await _context.Accounts
-                    .AnyAsync(a => a.Phone == phone && a.AccountId != excludeAccountId);
+            bool usernameTaken = await _context.Accounts
+                .AnyAsync(a => a.Username == username && a.AccountId != excludeAccountId);
 
-                if (phoneTaken)
-                {
-                    throw new InvalidOperationException($"Số điện thoại '{phone}' đã được sử dụng.");
-                }
+            if (usernameTaken)
+            {
+                throw new InvalidOperationException($"Số điện thoại/Email '{username}' đã được sử dụng.");
             }
+        }
 
-            if (!noEmail)
+        // Kiểm tra role_id có tồn tại trong bảng role không
+        private async Task CheckRoleExistsAsync(long roleId)
+        {
+            bool roleExists = await _context.Roles.AnyAsync(r => r.RoleId == roleId);
+
+            if (!roleExists)
             {
-                bool emailTaken = await _context.Accounts
-                    .AnyAsync(a => a.Email == email && a.AccountId != excludeAccountId);
-
-                if (emailTaken)
-                {
-                    throw new InvalidOperationException($"Email '{email}' đã được sử dụng.");
-                }
+                throw new ArgumentException($"Không tìm thấy vai trò (role) có Id = {roleId}.", nameof(roleId));
             }
         }
 

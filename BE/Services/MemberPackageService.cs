@@ -237,62 +237,61 @@ public class MemberPackageService
     public async Task<List<MemberPackageHistoryItem>> GetPackageHistoryAsync(
         MemberPackageHistoryQuery query, List<int>? allowedBranchIds)
     {
-        var truyVan =
-            from mp in _db.MemberPackages
-                .Include(mp => mp.Member).ThenInclude(m => m.FaceDatum)
-                .Include(mp => mp.Plan)
-                .Include(mp => mp.Branch)
-                .Include(mp => mp.Transaction)
-            join acc in _db.Accounts on mp.MemberId equals acc.MemberId into accJoin
-            from acc in accJoin.DefaultIfEmpty()
-            select new { mp, Phone = acc != null ? acc.Phone : null };
+        var truyVan = _db.MemberPackages
+            .Include(mp => mp.Member).ThenInclude(m => m.FaceDatum)
+            .Include(mp => mp.Member).ThenInclude(m => m.Account)
+            .Include(mp => mp.Plan)
+            .Include(mp => mp.Branch)
+            .Include(mp => mp.Transaction)
+            .AsQueryable();
 
         // Giới hạn theo quyền chi nhánh của nhân viên TRƯỚC, rồi mới áp filter branchId người dùng chọn.
         if (allowedBranchIds != null)
-            truyVan = truyVan.Where(x => allowedBranchIds.Contains(x.mp.BranchId));
+            truyVan = truyVan.Where(mp => allowedBranchIds.Contains(mp.BranchId));
 
         if (query.BranchId.HasValue)
-            truyVan = truyVan.Where(x => x.mp.BranchId == query.BranchId.Value);
+            truyVan = truyVan.Where(mp => mp.BranchId == query.BranchId.Value);
 
         if (!string.IsNullOrWhiteSpace(query.keyword))
         {
             string tuKhoa = query.keyword.Trim();
 
-            truyVan = truyVan.Where(x =>
-                x.mp.Member.FullName.Contains(tuKhoa) ||
-                (x.Phone != null && x.Phone.Contains(tuKhoa)));
+            // Account.Username của hội viên chính là SĐT đăng nhập, dùng để tìm theo SĐT.
+            truyVan = truyVan.Where(mp =>
+                mp.Member.FullName.Contains(tuKhoa) ||
+                (mp.Member.Account != null && mp.Member.Account.Username.Contains(tuKhoa)));
         }
 
         if (!string.IsNullOrWhiteSpace(query.Status))
-            truyVan = truyVan.Where(x => x.mp.PackageStatus == query.Status);
+            truyVan = truyVan.Where(mp => mp.PackageStatus == query.Status);
 
         if (!string.IsNullOrWhiteSpace(query.Channel))
         {
             if (query.Channel == "Online")
-                truyVan = truyVan.Where(x => x.mp.Transaction.EmployeeId == null);
+                truyVan = truyVan.Where(mp => mp.Transaction.EmployeeId == null);
             else if (query.Channel == "Offline")
-                truyVan = truyVan.Where(x => x.mp.Transaction.EmployeeId != null);
+                truyVan = truyVan.Where(mp => mp.Transaction.EmployeeId != null);
         }
 
         List<MemberPackageHistoryItem> ketQua = await truyVan
-            .OrderByDescending(x => x.mp.CreatedAt)
-            .Select(x => new MemberPackageHistoryItem
+            .OrderByDescending(mp => mp.CreatedAt)
+            .Select(mp => new MemberPackageHistoryItem
             {
-                MemberPackageId = x.mp.MemberPackageId,
-                MemberId = x.mp.MemberId,
-                MemberAvatarUrl = x.mp.Member.FaceDatum != null ? x.mp.Member.FaceDatum.ProfileImage : null,
-                MemberFullName = x.mp.Member.FullName,
-                MemberPhone = x.Phone,
-                PlanName = x.mp.Plan.PlanName,
-                BranchId = x.mp.BranchId,
-                BranchName = x.mp.Branch.BranchName,
-                TransactionId = x.mp.TransactionId,
-                TransactionCode = x.mp.Transaction.OrderCode,
-                Channel = x.mp.Transaction.EmployeeId == null ? "Online" : "Offline",
-                StartDate = x.mp.StartDate,
-                ExpiryDate = x.mp.ExpiryDate,
-                Amount = x.mp.Amount,
-                PackageStatus = x.mp.PackageStatus
+                MemberPackageId = mp.MemberPackageId,
+                MemberId = mp.MemberId,
+                MemberAvatarUrl = mp.Member.FaceDatum != null ? mp.Member.FaceDatum.ProfileImage : null,
+                MemberFullName = mp.Member.FullName,
+                MemberPhone = mp.Member.Account != null ? mp.Member.Account.Username : null,
+                PlanName = mp.Plan.PlanName,
+                BranchId = mp.BranchId,
+                BranchName = mp.Branch.BranchName,
+                TransactionId = mp.TransactionId,
+                TransactionCode = mp.Transaction.OrderCode,
+                Channel = mp.Transaction.EmployeeId == null ? "Online" : "Offline",
+                StartDate = mp.StartDate,
+                ExpiryDate = mp.ExpiryDate,
+                Amount = mp.Amount,
+                PackageStatus = mp.PackageStatus
             })
             .ToListAsync();
 

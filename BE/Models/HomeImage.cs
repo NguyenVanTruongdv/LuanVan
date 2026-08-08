@@ -14,8 +14,6 @@ public partial class HomeImage
 
     public string? Title { get; set; }
 
-  
-
     public sbyte SortOrder { get; set; }
 
     public string Status { get; set; } = null!;

@@ -233,12 +233,12 @@ public class ReportService
         var inactive = await query.CountAsync(e => e.Status == "Inactive");
         var newInRange = await query.CountAsync(e => e.CreatedAt >= from && e.CreatedAt <= to);
 
-        var byRole = await query
-            .Include(e => e.Role)
-            .GroupBy(e => new { e.RoleId, e.Role!.RoleName })
+       var byRole = await query
+            .Include(e => e.Account).ThenInclude(a => a.Role)
+            .GroupBy(e => new { e.Account.Role.RoleId, e.Account.Role!.RoleName })
             .Select(g => new RoleCountDto
             {
-                RoleId = g.Key.RoleId,
+                RoleId = g.Key.RoleId,      // sửa: bỏ "Acou" thừa
                 RoleName = g.Key.RoleName ?? "",
                 Count = g.Count()
             })

@@ -12,11 +12,10 @@ public partial class Member
 
     public string FullName { get; set; } = null!;
 
-    public string Gender { get; set; } = null!;
+    public string Phone { get; set; } = null!;
 
-    /// <summary>
-    /// PendingActivation=chờ kích hoạt, Active=đang hoạt động. Việc khóa đăng nhập nay do accounts.status quản lý, không còn Expired/Suspended ở đây.
-    /// </summary>
+    public string? Gender { get; set; }
+
     public string Status { get; set; } = null!;
 
     /// <summary>

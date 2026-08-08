@@ -10,6 +10,8 @@ public partial class Account
     /// </summary>
     public long AccountId { get; set; }
 
+    public string Username { get; set; } = null!;
+
     /// <summary>
     /// Hội viên sở hữu tài khoản — FK tới members.member_id. NULL nếu đây là tài khoản nhân viên
     /// </summary>
@@ -20,27 +22,14 @@ public partial class Account
     /// </summary>
     public long? EmployeeId { get; set; }
 
-    public string? Phone { get; set; }
-
-    /// <summary>
-    /// Email, dùng khôi phục mật khẩu/nhận thông báo, có thể NULL nhưng phải duy nhất nếu có
-    /// </summary>
-    public string? Email { get; set; }
-
     /// <summary>
     /// Mật khẩu đã mã hóa bcrypt, không lưu bản rõ
     /// </summary>
     public string PasswordHash { get; set; } = null!;
 
-    /// <summary>
-    /// Trạng thái đăng nhập: Active = được phép đăng nhập, Suspended = bị khóa
-    /// </summary>
-    public string Status { get; set; } = null!;
+    public long RoleId { get; set; }
 
-    /// <summary>
-    /// Lý do khóa — bắt buộc điền khi status = Suspended
-    /// </summary>
-    public string? SuspendReason { get; set; }
+    public string Status { get; set; } = null!;
 
     public DateTime CreatedAt { get; set; }
 
@@ -51,4 +40,6 @@ public partial class Account
     public virtual Member? Member { get; set; }
 
     public virtual ICollection<RefreshToken> RefreshTokens { get; set; } = new List<RefreshToken>();
+
+    public virtual Role Role { get; set; } = null!;
 }
