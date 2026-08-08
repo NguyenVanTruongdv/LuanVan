@@ -18,19 +18,24 @@ namespace BE.Controllers
             _employeeService = employeeService;
         }
 
-        // Xem hồ sơ của chính mình — mọi role đăng nhập đều xem được.
+        // ====================================================================
+        // XEM HỒ SƠ / DANH SÁCH
+        // ====================================================================
+
+        // Xem hồ sơ "nhân viên" (info + FaceID) của chính mình — mọi role đăng nhập đều xem được.
         [HttpGet("profile")]
         public async Task<IActionResult> GetProfile()
         {
-            var employeeId = GetCurrentEmployeeId();
-            if (employeeId == null)
+            var currentEmployeeId = GetCurrentEmployeeId();
+            if (currentEmployeeId == null)
                 return Unauthorized();
 
-            var employee = await _employeeService.GetProfileAsync(employeeId.Value, employeeId.Value);
+            var employee = await _employeeService.GetProfileAsync(currentEmployeeId.Value, currentEmployeeId.Value);
             return employee == null ? NotFound() : Ok(employee);
         }
 
-        // Xem hồ sơ nhân viên khác — chỉ Admin/Manager, Manager bị giới hạn theo chi nhánh và không được xem Admin.
+        // Xem hồ sơ "nhân viên" (info + FaceID) của người khác — chỉ Admin/Manager, Manager bị giới hạn
+        // theo chi nhánh và không được xem Admin.
         [HttpGet("{id:long}")]
         [Authorize(Roles = "Admin,Manager")]
         public async Task<IActionResult> GetById(long id)
@@ -50,7 +55,27 @@ namespace BE.Controllers
             }
         }
 
-        // Danh sách nhân viên — hỗ trợ lọc theo tên/sđt/email/chi nhánh/trạng thái.
+        // Xem hồ sơ "tài khoản" (info + login) của 1 nhân viên — chỉ những nhân viên đã có Account.
+        [HttpGet("{id:long}/account")]
+        [Authorize(Roles = "Admin,Manager")]
+        public async Task<IActionResult> GetAccountProfile(long id)
+        {
+            var currentEmployeeId = GetCurrentEmployeeId();
+            if (currentEmployeeId == null)
+                return Unauthorized();
+
+            try
+            {
+                var profile = await _employeeService.GetAccountProfileAsync(id, currentEmployeeId.Value);
+                return profile == null ? NotFound() : Ok(profile);
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return StatusCode(StatusCodes.Status403Forbidden, new { message = ex.Message });
+            }
+        }
+
+        // Danh sách NHÂN VIÊN (luồng FaceID) — chỉ những nhân viên CHƯA có Account.
         [HttpGet]
         [Authorize(Roles = "Admin,Manager")]
         public async Task<IActionResult> GetList([FromQuery] EmployeeFilterDto filter)
@@ -70,11 +95,34 @@ namespace BE.Controllers
             }
         }
 
-        // Trường hợp 1: tạo nhân viên kèm tài khoản đăng nhập + FaceID (bắt buộc ảnh).
+        // Danh sách TÀI KHOẢN (luồng Account) — chỉ những nhân viên ĐÃ có Account.
+        [HttpGet("accounts")]
+        [Authorize(Roles = "Admin,Manager")]
+        public async Task<IActionResult> GetAccountList([FromQuery] EmployeeAccountFilterDto filter)
+        {
+            var currentEmployeeId = GetCurrentEmployeeId();
+            if (currentEmployeeId == null)
+                return Unauthorized();
+
+            try
+            {
+                var result = await _employeeService.GetAccountListAsync(filter, currentEmployeeId.Value);
+                return Ok(result);
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return StatusCode(StatusCodes.Status403Forbidden, new { message = ex.Message });
+            }
+        }
+
+        // ====================================================================
+        // TẠO NHÂN VIÊN
+        // ====================================================================
+
+        // Luồng 1: tạo nhân viên KÈM tài khoản đăng nhập — không đụng FaceID.
         [HttpPost("with-account")]
         [Authorize(Roles = "Admin,Manager")]
-        [Consumes("multipart/form-data")]
-        public async Task<IActionResult> CreateWithAccount([FromForm] CreateEmployeeWithAccountDto dto)
+        public async Task<IActionResult> CreateWithAccount([FromBody] CreateEmployeeAccountDto dto)
         {
             var currentEmployeeId = GetCurrentEmployeeId();
             if (currentEmployeeId == null)
@@ -83,7 +131,7 @@ namespace BE.Controllers
             try
             {
                 var result = await _employeeService.CreateWithAccountAsync(dto, currentEmployeeId.Value);
-                return CreatedAtAction(nameof(GetById), new { id = result.EmployeeId }, result);
+                return CreatedAtAction(nameof(GetAccountProfile), new { id = result.EmployeeId }, result);
             }
             catch (UnauthorizedAccessException ex)
             {
@@ -99,11 +147,11 @@ namespace BE.Controllers
             }
         }
 
-        // Trường hợp 2: tạo hồ sơ nhân viên + FaceID, chưa cấp tài khoản đăng nhập.
+        // Luồng 2: tạo nhân viên KÈM FaceID (bắt buộc ảnh) — không đụng tài khoản đăng nhập.
         [HttpPost("with-faceid")]
         [Authorize(Roles = "Admin,Manager")]
         [Consumes("multipart/form-data")]
-        public async Task<IActionResult> CreateWithFaceId([FromForm] CreateEmployeeWithFaceIdDto dto)
+        public async Task<IActionResult> CreateWithFaceId([FromForm] CreateEmployeeFaceIdDto dto)
         {
             var currentEmployeeId = GetCurrentEmployeeId();
             if (currentEmployeeId == null)
@@ -128,10 +176,14 @@ namespace BE.Controllers
             }
         }
 
-        // Sửa thông tin cơ bản của nhân viên (không đụng Account/FaceID).
-        [HttpPut("{id:long}")]
+        // ====================================================================
+        // SỬA THÔNG TIN CƠ BẢN
+        // ====================================================================
+
+        // Sửa thông tin cơ bản của nhân viên thuộc luồng TÀI KHOẢN — không đụng FaceID.
+        [HttpPut("{id:long}/account-info")]
         [Authorize(Roles = "Admin,Manager")]
-        public async Task<IActionResult> Update(long id, [FromBody] UpdateEmployeeDto dto)
+        public async Task<IActionResult> UpdateAccountInfo(long id, [FromBody] UpdateEmployeeAccountInfoDto dto)
         {
             var currentEmployeeId = GetCurrentEmployeeId();
             if (currentEmployeeId == null)
@@ -139,7 +191,7 @@ namespace BE.Controllers
 
             try
             {
-                var success = await _employeeService.UpdateAsync(id, dto, currentEmployeeId.Value);
+                var success = await _employeeService.UpdateAccountInfoAsync(id, dto, currentEmployeeId.Value);
                 return success ? NoContent() : NotFound();
             }
             catch (UnauthorizedAccessException ex)
@@ -151,6 +203,34 @@ namespace BE.Controllers
                 return BadRequest(new { message = ex.Message });
             }
         }
+
+        // Sửa thông tin cơ bản của nhân viên thuộc luồng FACEID — không đụng tài khoản.
+        [HttpPut("{id:long}/info")]
+        [Authorize(Roles = "Admin,Manager")]
+        public async Task<IActionResult> UpdateInfo(long id, [FromBody] UpdateEmployeeInfoDto dto)
+        {
+            var currentEmployeeId = GetCurrentEmployeeId();
+            if (currentEmployeeId == null)
+                return Unauthorized();
+
+            try
+            {
+                var success = await _employeeService.UpdateInfoAsync(id, dto, currentEmployeeId.Value);
+                return success ? NoContent() : NotFound();
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return StatusCode(StatusCodes.Status403Forbidden, new { message = ex.Message });
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+        }
+
+        // ====================================================================
+        // TÀI KHOẢN ĐĂNG NHẬP
+        // ====================================================================
 
         // Thêm tài khoản đăng nhập cho nhân viên đã có info nhưng chưa có tài khoản.
         [HttpPost("{id:long}/account")]
@@ -176,7 +256,7 @@ namespace BE.Controllers
             }
         }
 
-        // Sửa tài khoản đăng nhập đã có của nhân viên.
+        // Sửa tài khoản đăng nhập đã có của nhân viên (email đăng nhập, mật khẩu...).
         [HttpPut("{id:long}/account")]
         [Authorize(Roles = "Admin,Manager")]
         public async Task<IActionResult> UpdateAccount(long id, [FromBody] UpdateEmployeeAccountDto dto)
@@ -189,114 +269,6 @@ namespace BE.Controllers
             {
                 await _employeeService.UpdateAccountAsync(id, dto, currentEmployeeId.Value);
                 return NoContent();
-            }
-            catch (UnauthorizedAccessException ex)
-            {
-                return StatusCode(StatusCodes.Status403Forbidden, new { message = ex.Message });
-            }
-            catch (InvalidOperationException ex)
-            {
-                return BadRequest(new { message = ex.Message });
-            }
-        }
-
-        // Sửa / đăng ký lại FaceID cho nhân viên.
-        [HttpPut("{id:long}/face")]
-        [Authorize(Roles = "Admin,Manager")]
-        [Consumes("multipart/form-data")]
-        public async Task<IActionResult> UpdateFace(long id, [FromForm] UpdateEmployeeFaceIdDto dto)
-        {
-            var currentEmployeeId = GetCurrentEmployeeId();
-            if (currentEmployeeId == null)
-                return Unauthorized();
-
-            try
-            {
-                var result = await _employeeService.UpdateFaceAsync(id, dto, currentEmployeeId.Value);
-                return Ok(result);
-            }
-            catch (UnauthorizedAccessException ex)
-            {
-                return StatusCode(StatusCodes.Status403Forbidden, new { message = ex.Message });
-            }
-            catch (InvalidOperationException ex)
-            {
-                return BadRequest(new { message = ex.Message });
-            }
-        }
-
-        // Lịch sử cập nhật FaceID của nhân viên.
-        [HttpGet("{id:long}/face-history")]
-        [Authorize(Roles = "Admin,Manager")]
-        public async Task<IActionResult> GetFaceHistory(long id)
-        {
-            var currentEmployeeId = GetCurrentEmployeeId();
-            if (currentEmployeeId == null)
-                return Unauthorized();
-
-            try
-            {
-                var result = await _employeeService.GetFaceHistoryAsync(id, currentEmployeeId.Value);
-                return Ok(result);
-            }
-            catch (UnauthorizedAccessException ex)
-            {
-                return StatusCode(StatusCodes.Status403Forbidden, new { message = ex.Message });
-            }
-        }
-
-        // Khóa toàn diện nhân viên (Employee.Status + Account nếu có) — bắt buộc nhập lý do.
-        [HttpPatch("{id:long}/hide")]
-        [Authorize(Roles = "Admin,Manager")]
-        public async Task<IActionResult> Hide(long id, [FromBody] HideEmployeeDto dto)
-        {
-            var currentEmployeeId = GetCurrentEmployeeId();
-            if (currentEmployeeId == null)
-                return Unauthorized();
-
-            if (string.IsNullOrWhiteSpace(dto.Reason))
-                return BadRequest(new { message = "Vui lòng nhập lý do khóa tài khoản." });
-
-            try
-            {
-                await _employeeService.LockEmployeeAsync(id, dto.Reason, currentEmployeeId.Value);
-                return NoContent();
-            }
-            catch (KeyNotFoundException)
-            {
-                return NotFound();
-            }
-            catch (UnauthorizedAccessException ex)
-            {
-                return StatusCode(StatusCodes.Status403Forbidden, new { message = ex.Message });
-            }
-            catch (InvalidOperationException ex)
-            {
-                return BadRequest(new { message = ex.Message });
-            }
-            catch (ArgumentException ex)
-            {
-                return BadRequest(new { message = ex.Message });
-            }
-        }
-
-        // Mở khóa toàn diện nhân viên.
-        [HttpPatch("{id:long}/activate")]
-        [Authorize(Roles = "Admin,Manager")]
-        public async Task<IActionResult> Activate(long id)
-        {
-            var currentEmployeeId = GetCurrentEmployeeId();
-            if (currentEmployeeId == null)
-                return Unauthorized();
-
-            try
-            {
-                await _employeeService.UnlockEmployeeAsync(id, currentEmployeeId.Value);
-                return NoContent();
-            }
-            catch (KeyNotFoundException)
-            {
-                return NotFound();
             }
             catch (UnauthorizedAccessException ex)
             {
@@ -363,25 +335,148 @@ namespace BE.Controllers
             }
         }
 
-        private long? GetCurrentEmployeeId()
+        // ====================================================================
+        // FACEID
+        // ====================================================================
+
+        // Sửa / đăng ký lại FaceID cho nhân viên.
+        [HttpPut("{id:long}/face")]
+        [Authorize(Roles = "Admin,Manager")]
+        [Consumes("multipart/form-data")]
+        public async Task<IActionResult> UpdateFace(long id, [FromForm] UpdateEmployeeFaceIdDto dto)
         {
-            var claim = User.FindFirst(ClaimTypes.NameIdentifier);
-            return claim != null && long.TryParse(claim.Value, out var id) ? id : null;
-        }
-                [HttpGet("{employeeId:long}/history")]
-        public async Task<IActionResult> GetUpdateHistory(long employeeId)
-        {
-            var currentEmployeeId = long.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+            var currentEmployeeId = GetCurrentEmployeeId();
+            if (currentEmployeeId == null)
+                return Unauthorized();
 
             try
             {
-                var history = await _employeeService.GetUpdateHistoryAsync(employeeId, currentEmployeeId);
+                var result = await _employeeService.UpdateFaceAsync(id, dto, currentEmployeeId.Value);
+                return Ok(result);
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return StatusCode(StatusCodes.Status403Forbidden, new { message = ex.Message });
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+        }
+
+        // Lịch sử cập nhật FaceID của nhân viên.
+        [HttpGet("{id:long}/face-history")]
+        [Authorize(Roles = "Admin,Manager")]
+        public async Task<IActionResult> GetFaceHistory(long id)
+        {
+            var currentEmployeeId = GetCurrentEmployeeId();
+            if (currentEmployeeId == null)
+                return Unauthorized();
+
+            try
+            {
+                var result = await _employeeService.GetFaceHistoryAsync(id, currentEmployeeId.Value);
+                return Ok(result);
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return StatusCode(StatusCodes.Status403Forbidden, new { message = ex.Message });
+            }
+        }
+
+        // ====================================================================
+        // KHÓA / MỞ KHÓA TOÀN DIỆN
+        // ====================================================================
+
+        // Khóa toàn diện nhân viên (Employee.Status + Account nếu có) — bắt buộc nhập lý do.
+        [HttpPatch("{id:long}/hide")]
+        [Authorize(Roles = "Admin,Manager")]
+        public async Task<IActionResult> Hide(long id, [FromBody] HideEmployeeDto dto)
+        {
+            var currentEmployeeId = GetCurrentEmployeeId();
+            if (currentEmployeeId == null)
+                return Unauthorized();
+
+            if (string.IsNullOrWhiteSpace(dto.Reason))
+                return BadRequest(new { message = "Vui lòng nhập lý do khóa tài khoản." });
+
+            try
+            {
+                await _employeeService.LockEmployeeAsync(id, dto.Reason, currentEmployeeId.Value);
+                return NoContent();
+            }
+            catch (KeyNotFoundException)
+            {
+                return NotFound();
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return StatusCode(StatusCodes.Status403Forbidden, new { message = ex.Message });
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+        }
+
+        // Mở khóa toàn diện nhân viên.
+        [HttpPatch("{id:long}/activate")]
+        [Authorize(Roles = "Admin,Manager")]
+        public async Task<IActionResult> Activate(long id)
+        {
+            var currentEmployeeId = GetCurrentEmployeeId();
+            if (currentEmployeeId == null)
+                return Unauthorized();
+
+            try
+            {
+                await _employeeService.UnlockEmployeeAsync(id, currentEmployeeId.Value);
+                return NoContent();
+            }
+            catch (KeyNotFoundException)
+            {
+                return NotFound();
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return StatusCode(StatusCodes.Status403Forbidden, new { message = ex.Message });
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+        }
+
+        // ====================================================================
+        // LỊCH SỬ CẬP NHẬT CHUNG
+        // ====================================================================
+
+        [HttpGet("{id:long}/history")]
+        public async Task<IActionResult> GetUpdateHistory(long id)
+        {
+            var currentEmployeeId = GetCurrentEmployeeId();
+            if (currentEmployeeId == null)
+                return Unauthorized();
+
+            try
+            {
+                var history = await _employeeService.GetUpdateHistoryAsync(id, currentEmployeeId.Value);
                 return Ok(history);
             }
             catch (UnauthorizedAccessException ex)
             {
-                return StatusCode(403, new { message = ex.Message });
+                return StatusCode(StatusCodes.Status403Forbidden, new { message = ex.Message });
             }
+        }
+
+        private long? GetCurrentEmployeeId()
+        {
+            var claim = User.FindFirst(ClaimTypes.NameIdentifier);
+            return claim != null && long.TryParse(claim.Value, out var id) ? id : null;
         }
     }
 }

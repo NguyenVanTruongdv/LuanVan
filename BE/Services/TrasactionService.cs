@@ -13,8 +13,7 @@ namespace BE.Services
 
     public class TransactionService
     {
-        // Phải khớp MemberPackageService.CYCLE_DAYS (2 service không tham chiếu nhau nên có 2 hằng số
-        // trùng giá trị — nếu đổi định nghĩa "1 chu kỳ" phải sửa đồng thời cả 2 nơi).
+        
         private const int CYCLE_DAYS = 30;
 
         private readonly GymManagementContext _context;
@@ -88,7 +87,7 @@ namespace BE.Services
             {
                 keyword = keyword.Trim();
                 // Cho phép tìm theo tên/SĐT hội viên, mã hóa đơn (OrderCode)
-                // hoặc mã giao dịch (TransactionId — chỉ so khi keyword là số nguyên).
+                // hoặc mã giao dịch 
                 var isNumericKeyword = long.TryParse(keyword, out var keywordAsId);
 
                 query = query.Where(t =>
@@ -136,10 +135,6 @@ namespace BE.Services
             return transactions.Select(MapToHistoryResponse(includeBranch: false, adjustedIds)).ToList();
         }
 
-        // Gom logic map Transaction -> HistoryRegisPacReponse dùng chung cho 2 hàm trên
-        // (trước đây bị lặp y hệt nhau). includeBranch=false vì GetMyHistoryAsync không Include Branch.
-        // adjustedTransactionIds: tập TransactionId đã từng có ít nhất 1 lần điều chỉnh gói
-        // (xem GetAdjustedTransactionIdsAsync) — dùng để set field IsAdjusted cho FE hiển thị nhãn/badge.
         private static Func<Transaction, HistoryRegisPacReponse> MapToHistoryResponse(
             bool includeBranch, HashSet<long> adjustedTransactionIds)
         {
@@ -167,8 +162,7 @@ namespace BE.Services
             };
         }
 
-        // Truy vấn 1 lần cho cả danh sách giao dịch (tránh N+1 query trong lúc map từng dòng)
-        // để biết TransactionId nào đã từng có bản ghi trong TransactionAdjustmentLogs.
+
         private async Task<HashSet<long>> GetAdjustedTransactionIdsAsync(IEnumerable<long> transactionIds)
         {
             var ids = transactionIds.ToList();
@@ -184,10 +178,7 @@ namespace BE.Services
         }
 
         // ===================== TÍNH HIỆU LỰC KHUYẾN MÃI =====================
-        // asOf: thời điểm cần kiểm tra hiệu lực KM (mặc định = hiện tại). Khi điều chỉnh giao dịch
-        // cũ, truyền transaction.CreatedAt vào đây.
-        // checkUsageLimit: có chặn theo GioiHanLuot/SoLuotDaDung hay không — SoLuotDaDung LUÔN đếm
-        // tại HIỆN TẠI (không suy ngược theo asOf được), giữ true ở cả 2 luồng tạo mới và điều chỉnh.
+      
         public async Task<PromotionEffectResult> CalculatePromotionEffectAsync(
             int? promotionId, int planId, decimal planPrice, int planDurationDays,
             DateTime? asOf = null,
@@ -248,17 +239,11 @@ namespace BE.Services
             };
         }
 
-        // ExpiryDate = StartDate + planDurationDays + bonusDays, cộng bằng AddDays — khớp 100%
-        // công thức với MemberPackageService.CalculateExpiryDate. KHÔNG dùng AddMonths ở đây nữa.
+    
         private static DateOnly CalculateNewExpiryDate(DateOnly startDate, int planDurationDays, short bonusDays)
             => startDate.AddDays(planDurationDays + bonusDays);
 
-        // Tra KM đang hiệu lực cho 1 gói tại 1 thời điểm — dùng nội bộ khi điều chỉnh giao dịch,
-        // KHÔNG xét GioiHanLuot ở đây (CalculatePromotionEffectAsync xử lý riêng, luôn theo lượt
-        // dùng hiện tại). Nếu có nhiều hơn 1 KM cùng hiệu lực, lấy KM đầu tiên tìm được.
-        //
-        // LƯU Ý: transaction.CreatedAt lưu UTC, nhưng NgayBatDau/NgayKetThuc của Promotion có thể
-        // đang lưu theo giờ VN (UTC+7) chưa convert — cần rà lại để tránh lệch múi giờ khi so sánh.
+
         private async Task<int?> GetActivePromotionIdAtAsync(int planId, DateTime asOf)
         {
             var promo = await _context.Promotions
@@ -271,7 +256,7 @@ namespace BE.Services
             return promo?.PromotionId;
         }
 
-        // ===================== TẠO GIAO DỊCH (luồng tại quầy) =====================
+
         public async Task<Transaction> CreateTransactionAsync(CreateTransactionRequest request)
         {
             var now = DateTime.UtcNow;
@@ -299,10 +284,7 @@ namespace BE.Services
             return transaction;
         }
 
-        // ===================== KIỂM TRA QUYỀN ĐIỀU CHỈNH =====================
-        //   - RoleId 3 (Admin): qua mọi chi nhánh.
-        //   - RoleId 2 (Manager): chỉ qua nếu transaction.BranchId nằm trong chi nhánh quản lý.
-        //   - Role khác: từ chối.
+
         private async Task<Employee> EnsureAdjustPermissionAsync(long employeeId, Transaction transaction)
         {
             var employee = await _context.Employees
@@ -324,10 +306,7 @@ namespace BE.Services
             return employee;
         }
 
-        // ===================== VALIDATE DÙNG CHUNG CHO PREVIEW + ADJUST =====================
-        // Gom hết phần kiểm tra/điều kiện tiên quyết mà Preview và Adjust dùng CHUNG y hệt nhau
-        // (trước đây bị lặp 2 lần): tìm giao dịch, check quyền, check trạng thái, check trùng gói,
-        // tìm MemberPackage, tìm gói mới. Trả về đủ dữ liệu để 2 hàm gọi tiếp phần riêng của mình.
+
         private async Task<(Transaction Transaction, Employee Employee, MemberPackage MemberPackage, MembershipPlan NewPlan)>
             ValidateAdjustmentAsync(long transactionId, int newPlanId, long employeeId)
         {
@@ -365,9 +344,7 @@ namespace BE.Services
             return (transaction, employee, memberPackage, newPlan);
         }
 
-        // ===================== XEM TRƯỚC KẾT QUẢ ĐIỀU CHỈNH (KHÔNG LƯU DB) =====================
-        // Nếu KM của gói mới đã hết lượt Ở HIỆN TẠI, hàm sẽ ném lỗi ngay tại đây (xem
-        // CalculatePromotionEffectAsync) — chặn nhân viên trước khi họ bấm "Lưu thay đổi".
+
         public async Task<AdjustPlanPreviewResult> PreviewAdjustTransactionPlanAsync(
             long transactionId, int newPlanId, long employeeId)
         {
@@ -396,12 +373,7 @@ namespace BE.Services
             };
         }
 
-        // ===================== ĐIỀU CHỈNH LẠI GÓI TẬP DO CHỌN NHẦM =====================
-        // Chỉ áp dụng giao dịch tại quầy đã Paid. KM cho gói mới do BE tự tra tại transaction.CreatedAt
-        // — nếu KM đó hết lượt Ở HIỆN TẠI thì chặn luôn (không cho điều chỉnh).
-        // Sau khi lưu DB thành công: hoàn lượt dùng KM cũ, ghi lượt dùng KM mới, ghi log, và lập lại
-        // hóa đơn PDF (dùng branch gốc của giao dịch, đánh dấu IsAdjustmentReissue). Nếu lập hóa đơn
-        // lỗi thì KHÔNG rollback dữ liệu đã điều chỉnh (xem GenerateAndAttachInvoiceAsync).
+  
         public async Task<Transaction> AdjustTransactionPlanAsync(
             long transactionId, int newPlanId, long adjustedByEmployeeId, string? reason)
         {
@@ -482,8 +454,7 @@ namespace BE.Services
             return transaction;
         }
 
-        // Hoàn lại lượt dùng của các KM cũ từng ghi nhận cho memberPackage này, tránh
-        // SoLuotDaDung/PromotionUsage bị lệch sau khi ghi đè sang KM mới.
+      
         private async Task ReversePromotionUsagesAsync(long memberPackageId)
         {
             var oldUsages = await _context.PromotionUsages
@@ -507,7 +478,6 @@ namespace BE.Services
             _context.PromotionUsages.RemoveRange(oldUsages);
         }
 
-        // ===================== LỊCH SỬ ĐIỀU CHỈNH GÓI TẬP CỦA 1 HỘI VIÊN =====================
         public async Task<List<MemberUpdateSessionResponse>> GetPackageAdjustmentHistoryAsync(long memberId)
         {
             var logs = await _context.TransactionAdjustmentLogs
@@ -523,12 +493,6 @@ namespace BE.Services
             return BuildAdjustmentSessionResponses(logs);
         }
 
-        // ===================== [MỚI] LỊCH SỬ ĐIỀU CHỈNH GÓI TẬP CỦA 1 GIAO DỊCH =====================
-        // Khác với GetPackageAdjustmentHistoryAsync ở trên (lọc theo MemberId, cho màn hình hồ sơ
-        // hội viên xem TẤT CẢ lần điều chỉnh của họ trên mọi giao dịch), hàm này lọc theo đúng 1
-        // TransactionId — dùng cho màn hình chi tiết 1 giao dịch cụ thể.
-        // Cùng quyền xem với luồng adjust-plan/preview: Admin xem mọi giao dịch, Manager chỉ xem
-        // được giao dịch thuộc chi nhánh mình quản lý (kiểm tra qua EnsureAdjustPermissionAsync).
         public async Task<List<MemberUpdateSessionResponse>> GetTransactionAdjustmentHistoryAsync(
             long transactionId, long employeeId)
         {

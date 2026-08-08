@@ -7,20 +7,10 @@ using Microsoft.EntityFrameworkCore;
 
 namespace BE.Services.Reports;
 
-/// <summary>
-/// Service tổng hợp báo cáo cho 3 vai trò:
-///  - Thu ngân (Cashier): hội viên, check-in, doanh thu
-///  - Quản lý (Manager) : hội viên, nhân viên, sự cố, thiết bị
-///  - Admin              : dùng chung toàn bộ hàm của Quản lý
-///
-/// Controller nên gọi thẳng các hàm theo role, hoặc dùng 2 hàm dashboard
-/// (GetCashierDashboardAsync / GetManagerDashboardAsync) để lấy 1 lần cho cả trang tổng quan.
-/// </summary>
 public class ReportService 
 {
     private readonly GymManagementContext _context;
 
-    // Khoảng thời gian mặc định nếu người dùng không chọn lọc: 30 ngày gần nhất
     private const int DefaultRangeDays = 30;
 
     public ReportService(GymManagementContext context)
@@ -30,36 +20,28 @@ public class ReportService
 
     private (DateTime from, DateTime to) ResolveRange(ReportFilter filter)
     {
-        var to = (filter.ToDate ?? DateTime.Now).Date.AddDays(1).AddTicks(-1); // hết ngày ToDate
+        var to = (filter.ToDate ?? DateTime.Now).Date.AddDays(1).AddTicks(-1);
         var from = (filter.FromDate ?? to.AddDays(-DefaultRangeDays)).Date;
         return (from, to);
     }
 
-    /// <summary>
-    /// Tính danh sách chi nhánh THỰC SỰ được phép lọc, kết hợp giữa BranchId người dùng chọn
-    /// và AllowedBranchIds (giới hạn quyền, do controller gán cho Quản lý).
-    /// Trả về null nghĩa là không giới hạn (xem tất cả chi nhánh — chỉ áp dụng cho Admin).
-    /// </summary>
     private static List<int>? GetEffectiveBranchIds(ReportFilter filter)
     {
-        // Quản lý (hoặc bất kỳ role nào bị giới hạn) sẽ có AllowedBranchIds != null
         if (filter.AllowedBranchIds != null)
         {
             if (filter.BranchId.HasValue)
             {
-                // Chỉ giữ lại nếu chi nhánh được chọn nằm trong danh sách được phép
                 return filter.AllowedBranchIds.Contains(filter.BranchId.Value)
                     ? new List<int> { filter.BranchId.Value }
-                    : new List<int>(); // chọn ngoài quyền -> trả về rỗng, không thấy dữ liệu nào
+                    : new List<int>();
             }
             return filter.AllowedBranchIds;
         }
 
-        // Không bị giới hạn quyền (Admin): lọc theo đúng chi nhánh được chọn nếu có
         if (filter.BranchId.HasValue)
             return new List<int> { filter.BranchId.Value };
 
-        return null; // Admin không chọn chi nhánh -> xem tất cả
+        return null;
     }
 
     // =====================================================================
@@ -263,7 +245,6 @@ public class ReportService
             .OrderByDescending(x => x.Count)
             .ToListAsync();
 
-        // Đếm theo chi nhánh (quan hệ nhiều-nhiều employees <-> branches)
         var branchesQuery = _context.Branches.AsNoTracking().AsQueryable();
         if (effectiveBranchIds != null)
             branchesQuery = branchesQuery.Where(b => effectiveBranchIds.Contains(b.BranchId));

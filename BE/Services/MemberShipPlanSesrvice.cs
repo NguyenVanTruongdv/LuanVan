@@ -15,7 +15,6 @@ public class MembershipPlanService
         _db = db;
     }
 
-    // Lấy danh sách gói tập đang bán
     public async Task<List<MembershipPlan>> GetAllAsync(string? packageName)
     {
         var query = _db.MembershipPlans
@@ -35,14 +34,14 @@ public class MembershipPlanService
         return dsGoiTap;
     }
 
-    // Lấy chi tiết gói tập
+
     public async Task<MembershipPlan?> GetByIdAsync(int id)
     {
         var goiTap = await _db.MembershipPlans.FirstOrDefaultAsync(p => p.PlanId == id);
         return goiTap;
     }
 
-    // Tạo gói tập — Status luôn do service set, không nhận từ client
+
     public async Task<MembershipPlan> CreateAsync(MembershipPlanRequest request)
     {
         var goiTapMoi = new MembershipPlan
@@ -62,8 +61,7 @@ public class MembershipPlanService
         return goiTapMoi;
     }
 
-    // Cập nhật thông tin gói tập — KHÔNG đụng tới Status ở đây.
-    // Đổi trạng thái (ngừng bán / mở bán lại) đi qua UpdateStatusAsync / DeleteAsync riêng.
+    
     public async Task<bool> UpdateAsync(int id, MembershipPlanRequest request)
     {
         var goiTapCu = await _db.MembershipPlans.FindAsync(id);
@@ -84,8 +82,6 @@ public class MembershipPlanService
         return true;
     }
 
-    // Đổi trạng thái gói tập (tách riêng khỏi UpdateAsync).
-    // status truyền vào phải khớp tên value của MembershipPlanEnum (vd: "OnSale", "Discontinued").
     public async Task<bool> UpdateStatusAsync(int id, MembershipPlanEnum status)
     {
         var goiTapCu = await _db.MembershipPlans.FindAsync(id);
@@ -121,8 +117,7 @@ public class MembershipPlanService
         public bool IsPopular { get; set; }
     }
 
-    // Dùng riêng cho endpoint PATCH /api/packages/{id}/status.
-    // Status là MembershipPlanEnum nên body chỉ cần { "status": "OnSale" } hoặc { "status": "Discontinued" }.
+
     public class UpdateMembershipPlanStatusRequest
     {
         public MembershipPlanEnum Status { get; set; }

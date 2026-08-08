@@ -39,12 +39,7 @@ namespace BE.Controllers
             }
         }
 
-        // ==========================================================
-        // DASHBOARD TỔNG QUAN
-        // ==========================================================
-// ==========================================================
-        // DASHBOARD TỔNG QUAN (ADMIN) — DashboardOverview.jsx
-        // ==========================================================
+     
 
         [HttpGet("admin-overview")]
         [Authorize(Roles = "Admin")]
@@ -96,9 +91,7 @@ namespace BE.Controllers
             return Ok(await _dashboardService.GetExpiringPackagesAsync(CurrentBranchId, days));
         }
 
-        // ==========================================================
-        // DASHBOARD THU NGÂN
-        // ==========================================================
+       
 
         [HttpGet("cashier")]
         public async Task<IActionResult> GetCashierDashboard(
@@ -109,9 +102,7 @@ namespace BE.Controllers
             return Ok(await _dashboardService.GetCashierDashboardAsync(CurrentBranchId, query));
         }
 
-        // ==========================================================
-        // DASHBOARD QUẢN LÝ
-        // ==========================================================
+ 
 
        [HttpGet("manager")]
         [Authorize(Roles = "Admin,Manager")]
@@ -122,9 +113,7 @@ namespace BE.Controllers
             return Ok(await _dashboardService.GetManagerDashboardAsync(CurrentBranchId, query));
         }
 
-        // ==========================================================
-        // Validate Range
-        // ==========================================================
+       
 
         private static string NormalizeRange(string? range)
         {

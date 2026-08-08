@@ -9,73 +9,13 @@ using Microsoft.EntityFrameworkCore;
 
 namespace BE.Services
 {
-    // [MỚI] BranchId của Transaction giờ là cột BẮT BUỘC (int, not null) — khách mua online phải
-    // chọn chi nhánh ngay từ CreatePaymentRequestDto.BranchId. Giá trị này được lưu thẳng vào
-    // Transaction.BranchId lúc tạo QR (CreatePaymentAsync), rồi webhook (HandleWebhookAsync) đọc
-    // lại để gán cho MemberPackage — đảm bảo MemberPackage.BranchId luôn là chi nhánh khách đã
-    // chọn lúc mua, không phụ thuộc chi nhánh nhân viên đứng kích hoạt sau này.
-    //
-    // [SỬA] Đã bỏ bảng PromotionPlans (quan hệ many-to-many giữa Promotion và MembershipPlan).
-    // Promotion giờ gắn trực tiếp 1-1 với 1 MembershipPlan qua cột Promotion.PlanId, nên mọi chỗ
-    // trước đây join qua PromotionPlans giờ chỉ cần lọc thẳng Promotions.Where(p => p.PlanId == ...).
-    //
-    // [FIX - 13/07/2026] 2 lỗi liên quan tới khuyến mãi phát hiện trong file này (đã sửa ở lần
-    // trước, giữ nguyên):
-    //
-    // 1) HandleWebhookAsync: tính bonus ngày cho loại "TangChuKy" từng dùng
-    //        soNgayTang = (short)((promotion.SoChuKyTang ?? 0) * plan.DurationDays);
-    //    -> bug gốc "1 chu kỳ = DurationDays của gói" thay vì 30 ngày cố định.
-    //
-    // 2) CreatePaymentAsync: điều kiện lọc khuyến mãi trước đây thiếu check null cho NgayKetThuc,
-    //    khiến khuyến mãi "vĩnh viễn" (NgayKetThuc == null) bị loại oan khỏi kết quả.
-    //
-    // [MỚI - 13/07/2026] GOM CÔNG THỨC VỀ MemberPackageService — trước đây PaymentService tự viết
-    // riêng cả 2 công thức (tính giá sau giảm ở CreatePaymentAsync bằng switch thủ công, và tính
-    // bonus ngày ở HandleWebhookAsync bằng hằng CYCLE_DAYS riêng của chính file này) vì không có
-    // tham chiếu logic dùng chung — đây chính là "nguồn công thức thứ 3" từng được ghi chú ở trên.
-    // Giờ PaymentService đã có sẵn _packageService (MemberPackageService) tiêm vào constructor, nên
-    // dùng thẳng:
-    //   - _packageService.CalculateDiscountedAmount(promotion, giaGoc) thay cho switch tính giảm giá
-    //     thủ công trong CreatePaymentAsync.
-    //   - _packageService.CalculateBonusDays(promotion, plan) thay cho if/else + CYCLE_DAYS thủ công
-    //     trong HandleWebhookAsync.
-    // Xóa hằng CYCLE_DAYS cục bộ của file này — không còn "3 nguồn công thức" nữa, chỉ còn đúng 1
-    // nguồn duy nhất ở MemberPackageService, khớp với TransactionService cũng đang dùng chung.
-    //
-    // [FIX - 13/07/2026] HandleWebhookAsync, nhánh member.Status == "PendingActivation": trước đây
-    // vẫn còn SÓT 1 chỗ tự viết lại công thức cộng ngày bằng tay để tính paidExpiryDate ước tính
-    // cho hóa đơn (todayForInvoice.AddDays(plan.DurationDays + soNgayTang)), dù comment đầu file
-    // đã khẳng định "gom về 1 nguồn công thức duy nhất". Giá trị ra vẫn ĐÚNG vì công thức viết tay
-    // giống hệt bên trong CalculateExpiryDate, nhưng đây vẫn là 1 điểm trùng lặp: nếu sau này
-    // MemberPackageService.CalculateExpiryDate đổi cách tính (VD đổi quy tắc làm tròn, đổi cách xử
-    // lý ngày lễ...) mà quên sửa chỗ này thì số hiển thị trên hóa đơn (paidExpiryDate) sẽ LỆCH so
-    // với ExpiryDate thật được lưu khi khách kích hoạt gói (ActivatePendingPackageAsync). Đổi sang
-    // gọi thẳng _packageService.CalculateExpiryDate(...) để chỉ còn đúng 1 nguồn công thức, không
-    // đổi kết quả tính toán, chỉ đổi chỗ viết công thức — cùng nguyên tắc đã áp dụng cho
-    // ActivatePendingPackageAsync/CreateActivePackageForCustomerAsync bên MemberPackageService.
-    //
-    // [FIX - 19/07/2026] ĐỒNG BỘ MÃ ĐƠN HÀNG (OrderCode) VỚI TRANSACTIONSERVICE.
-    // Trước đây file này tự có 1 hàm GenerateOrderCode() RIÊNG, sinh mã prefix "GYM" (dựa vào
-    // DateTime.Now với mili-giây: yyyyMMddHHmmssfff + 4 số random), trong khi TransactionService
-    // (luồng tại quầy) lại có 1 hàm GenerateOrderCode() KHÁC, sinh mã prefix "HD" (dựa vào
-    // DateTime.UtcNow: yyyyMMddHHmmss + 4 số random). Hậu quả: giao dịch tạo tại quầy và giao dịch
-    // mua online có 2 ĐỊNH DẠNG MÃ KHÁC NHAU cho cùng 1 khái niệm nghiệp vụ (OrderCode của
-    // Transaction) — đây chính là "nguồn sinh mã thứ 2" tương tự kiểu lỗi "nhiều nguồn công thức"
-    // đã từng gặp và sửa ở các file khác (MemberPackageService/TransactionService).
-    //
-    // FIX: Bỏ hẳn hàm GenerateOrderCode() riêng của PaymentService. PaymentService đã có sẵn
-    // _transactionService (TransactionService) tiêm qua constructor, nên dùng thẳng
-    // TransactionService.GenerateOrderCode() (hàm static, prefix "HD") làm NGUỒN SINH MÃ DUY NHẤT
-    // cho toàn hệ thống — cả tại quầy lẫn online giờ luôn ra cùng 1 định dạng mã "HD..." không còn
-    // phân biệt kênh mua.
-    //
-    // [QUAN TRỌNG] Vì đổi prefix mã từ "GYM" sang "HD", đoạn regex trong HandleWebhookAsync dùng để
-    // bóc tách OrderCode từ nội dung chuyển khoản ngân hàng (SePay content) PHẢI đổi theo, nếu
-    // không webhook sẽ không nhận diện được bất kỳ giao dịch online nào nữa (không tìm thấy chuỗi
-    // "GYM..." trong content vì mã QR mới sinh ra luôn có dạng "HD..."):
-    //     Cũ: @"\bGYM\d{18,}\b"
-    //     Mới: @"\bHD\d{18,}\b"   (HD + 14 số thời gian + 4 số random = 18 số, khớp định dạng
-    //                              TransactionService.GenerateOrderCode() đang sinh ra)
+    // Ghi chú quan trọng còn giữ lại:
+    // - Transaction.BranchId là cột bắt buộc: chi nhánh khách chọn lúc mua online (CreatePaymentAsync)
+    //   được lưu ngay từ đầu, webhook (HandleWebhookAsync) đọc lại để gán cho MemberPackage.
+    // - Công thức tính giá giảm / số ngày tặng / ngày hết hạn dùng chung từ MemberPackageService
+    //   (_packageService) — không tự viết lại công thức ở file này.
+    // - Mã đơn hàng (OrderCode) dùng chung TransactionService.GenerateOrderCode() (prefix "HD") cho
+    //   cả kênh tại quầy lẫn online, nên regex bóc mã trong HandleWebhookAsync phải khớp prefix "HD".
     public class PaymentService
     {
         private readonly GymManagementContext _db;
@@ -97,100 +37,86 @@ namespace BE.Services
 
         public async Task<CreatePaymentResponseDto> CreatePaymentAsync(long member_id, CreatePaymentRequestDto dto)
         {
-            var pac = await _db.MembershipPlans.FirstOrDefaultAsync(x => x.PlanId == dto.PlanId);
-            if (pac == null)
+            MembershipPlan? goiTap = await _db.MembershipPlans.FirstOrDefaultAsync(x => x.PlanId == dto.PlanId);
+            if (goiTap == null)
             {
                 throw new NotFoundException("Không tìm thấy gói tập!");
             }
-            var member = await _db.Members.FirstOrDefaultAsync(m => m.MemberId == member_id);
-            if (member == null)
+
+            Member? hoiVien = await _db.Members.FirstOrDefaultAsync(m => m.MemberId == member_id);
+            if (hoiVien == null)
             {
                 throw new NotFoundException("Không tìm thấy hội viên");
             }
 
-            // BranchId bắt buộc phải hợp lệ — khách phải chọn chi nhánh muốn gắn cho gói tập
-            // này ngay lúc mua online (dto.BranchId do FE gửi lên).
+            // Khách phải chọn chi nhánh hợp lệ ngay lúc mua online.
             await _packageService.EnsureBranchExistsAsync(dto.BranchId);
 
-            var existingPending = await _db.Transactions
+            Transaction? giaoDichDangCho = await _db.Transactions
                 .FirstOrDefaultAsync(t => t.MemberId == member_id
                                         && t.PaymentStatus == PaymentStatus.Pending.ToString());
-            if (existingPending != null)
+            if (giaoDichDangCho != null)
             {
                 return new CreatePaymentResponseDto
                 {
-                    OrderCode = existingPending.OrderCode,
-                    Amount = existingPending.Amount,
-                    QrImage = BuildQrImage(existingPending)
+                    OrderCode = giaoDichDangCho.OrderCode,
+                    Amount = giaoDichDangCho.Amount,
+                    QrImage = BuildQrImage(giaoDichDangCho)
                 };
             }
 
-            if (member.Status == "PendingActivation")
+            if (hoiVien.Status == "PendingActivation")
             {
-                var pendingPackage = await _packageService.GetPendingPackageAsync(member_id);
-                if (pendingPackage != null)
+                MemberPackage? goiDangCho = await _packageService.GetPendingPackageAsync(member_id);
+                if (goiDangCho != null)
                     throw new InvalidOperationException(
                         "Tài khoản đang chờ kích hoạt chỉ được mua 1 gói tập. " +
                         "Vui lòng đến quầy kích hoạt gói đã mua trước khi mua thêm gói khác.");
             }
 
-            decimal giaGoc = pac.Price;
+            decimal giaGoc = goiTap.Price;
 
-            // [SỬA] Trước đây join PromotionPlans để tìm khuyến mãi áp cho gói pac.PlanId.
-            // Giờ Promotion có sẵn cột PlanId nên query thẳng bảng Promotions, không cần join nữa.
-            //
-            // [FIX] Check "p.NgayKetThuc == null" TRƯỚC khi so sánh >= DateTime.Now — thiếu điều
-            // kiện này khiến khuyến mãi KHÔNG giới hạn ngày kết thúc (vĩnh viễn) bị loại khỏi kết
-            // quả oan (NULL >= x luôn unknown/false trong SQL), giống hệt cách các nơi khác trong
-            // hệ thống (PromotionService, TransactionService) đã xử lý.
-            var now = DateTime.Now;
-            var promotion = await _db.Promotions
+            // Promotion gắn 1-1 với 1 MembershipPlan qua cột PlanId nên lọc thẳng, không cần join.
+            // NgayKetThuc == null nghĩa là khuyến mãi vĩnh viễn, phải cho qua chứ không loại oan.
+            DateTime bayGio = DateTime.Now;
+            Promotion? khuyenMai = await _db.Promotions
                 .FirstOrDefaultAsync(p =>
-                    p.PlanId == pac.PlanId
+                    p.PlanId == goiTap.PlanId
                     && p.TrangThai == "HoatDong"
-                    && p.NgayBatDau <= now
-                    && (p.NgayKetThuc == null || p.NgayKetThuc >= now) // [FIX]
-                    && (
-                        p.GioiHanLuot == null
-                        || p.SoLuotDaDung < p.GioiHanLuot
-                    ));
+                    && p.NgayBatDau <= bayGio
+                    && (p.NgayKetThuc == null || p.NgayKetThuc >= bayGio)
+                    && (p.GioiHanLuot == null || p.SoLuotDaDung < p.GioiHanLuot));
 
-            // [MỚI] Dùng thẳng công thức DUY NHẤT ở MemberPackageService thay vì tự switch tính
-            // giảm giá thủ công ở đây. Với promotion == null hoặc promotion là loại TangNgay/
-            // TangChuKy (không giảm giá), hàm này tự trả về giaGoc, khỏi cần if riêng.
-            decimal amount = _packageService.CalculateDiscountedAmount(promotion, giaGoc);
+            decimal amount = _packageService.CalculateDiscountedAmount(khuyenMai, giaGoc);
 
-            // [FIX - 19/07/2026] Dùng chung TransactionService.GenerateOrderCode() (prefix "HD")
-            // thay vì hàm GenerateOrderCode() riêng (prefix "GYM") của chính file này — đảm bảo
-            // giao dịch tại quầy và giao dịch online luôn ra CÙNG 1 định dạng mã đơn hàng.
-            var OrderCode = TransactionService.GenerateOrderCode();
+            string orderCode = TransactionService.GenerateOrderCode();
 
-            var transaction = new Transaction
+            var giaoDichMoi = new Transaction
             {
-                OrderCode = OrderCode,
-                MemberId = member.MemberId,
-                PlanId = pac.PlanId,
-                PromotionId = promotion?.PromotionId,
+                OrderCode = orderCode,
+                MemberId = hoiVien.MemberId,
+                PlanId = goiTap.PlanId,
+                PromotionId = khuyenMai?.PromotionId,
                 BranchId = dto.BranchId, // giữ chi nhánh khách chọn, webhook sẽ đọc lại
 
                 PaymentMethod = PaymentMethod.BankTransfer.ToString(),
                 PaymentStatus = PaymentStatus.Pending.ToString(),
 
-                GiaGoc = pac.Price,
+                GiaGoc = goiTap.Price,
                 Amount = amount,
 
                 CreatedAt = DateTime.Now,
                 UpdatedAt = DateTime.Now
             };
-            _db.Transactions.Add(transaction);
+            _db.Transactions.Add(giaoDichMoi);
 
             await _db.SaveChangesAsync();
 
-            var qrImage = BuildQrImage(transaction);
+            string qrImage = BuildQrImage(giaoDichMoi);
 
             return new CreatePaymentResponseDto
             {
-                OrderCode = OrderCode,
+                OrderCode = orderCode,
                 Amount = amount,
                 QrImage = qrImage
             };
@@ -198,31 +124,31 @@ namespace BE.Services
 
         public async Task<PaymentStatusResponseDto> GetPaymentStatusAsync(string orderCode)
         {
-            var transaction = await _db.Transactions
+            Transaction? giaoDich = await _db.Transactions
                 .AsNoTracking()
                 .FirstOrDefaultAsync(x => x.OrderCode == orderCode);
 
-            if (transaction == null)
+            if (giaoDich == null)
             {
                 throw new Exception("Không tìm thấy giao dịch.");
             }
 
             return new PaymentStatusResponseDto
             {
-                PaymentStatus = transaction.PaymentStatus
+                PaymentStatus = giaoDich.PaymentStatus
             };
         }
 
         public async Task<PaymentPageInfoDto> GetPaymentPageInfoAsync(long memberId)
         {
-            var member = await _db.Members.Include(m=>m.Account)
+            Member? hoiVien = await _db.Members.Include(m => m.Account)
                 .AsNoTracking()
                 .FirstOrDefaultAsync(m => m.MemberId == memberId);
 
-            if (member == null)
+            if (hoiVien == null)
                 throw new Exception("Không tìm thấy hội viên.");
 
-            var currentPackage = await _db.MemberPackages
+            MemberPackage? goiHienTai = await _db.MemberPackages
                 .Include(mp => mp.Plan)
                 .Include(mp => mp.Branch)
                 .AsNoTracking()
@@ -230,7 +156,7 @@ namespace BE.Services
                 .OrderByDescending(mp => mp.ExpiryDate)
                 .FirstOrDefaultAsync();
 
-            var availablePlans = await _db.MembershipPlans
+            List<AvailablePlanDto> dsGoiDangBan = await _db.MembershipPlans
                 .AsNoTracking()
                 .Where(p => p.Status == "OnSale")
                 .OrderBy(p => p.Price)
@@ -247,62 +173,62 @@ namespace BE.Services
 
             return new PaymentPageInfoDto
             {
-                FullName = member.FullName,
-                Phone = member.Account.Phone,
-                BranchName = currentPackage?.Branch?.BranchName,
-                CurrentPackage = currentPackage == null
+                FullName = hoiVien.FullName,
+                Phone = hoiVien.Account.Phone,
+                BranchName = goiHienTai?.Branch?.BranchName,
+                CurrentPackage = goiHienTai == null
                     ? null
                     : new CurrentPackageDto
                     {
-                        MemberPackageId = currentPackage.MemberPackageId,
-                        PlanId = currentPackage.PlanId,
-                        PlanName = currentPackage.Plan.PlanName,
-                        StartDate = currentPackage.StartDate,
-                        ExpiryDate = currentPackage.ExpiryDate,
-                        PackageStatus = currentPackage.PackageStatus
+                        MemberPackageId = goiHienTai.MemberPackageId,
+                        PlanId = goiHienTai.PlanId,
+                        PlanName = goiHienTai.Plan.PlanName,
+                        StartDate = goiHienTai.StartDate,
+                        ExpiryDate = goiHienTai.ExpiryDate,
+                        PackageStatus = goiHienTai.PackageStatus
                     },
-                AvailablePlans = availablePlans
+                AvailablePlans = dsGoiDangBan
             };
         }
 
         public async Task<PendingPaymentResponseDto> GetPendingPaymentAsync(long memberId)
         {
-            var transaction = await _db.Transactions
+            Transaction? giaoDich = await _db.Transactions
                 .Include(t => t.Plan)
                 .AsNoTracking()
                 .Where(t => t.MemberId == memberId && t.PaymentStatus == PaymentStatus.Pending.ToString())
                 .OrderByDescending(t => t.CreatedAt)
                 .FirstOrDefaultAsync();
 
-            if (transaction == null)
+            if (giaoDich == null)
                 return new PendingPaymentResponseDto { HasPending = false };
 
             return new PendingPaymentResponseDto
             {
                 HasPending = true,
-                OrderCode = transaction.OrderCode,
-                Amount = transaction.Amount,
-                QrImage = BuildQrImage(transaction),
-                PlanId = transaction.PlanId,
-                PlanName = transaction.Plan?.PlanName,
-                DurationDays = transaction.Plan?.DurationDays,
-                PlanPrice = transaction.Plan?.Price
+                OrderCode = giaoDich.OrderCode,
+                Amount = giaoDich.Amount,
+                QrImage = BuildQrImage(giaoDich),
+                PlanId = giaoDich.PlanId,
+                PlanName = giaoDich.Plan?.PlanName,
+                DurationDays = giaoDich.Plan?.DurationDays,
+                PlanPrice = giaoDich.Plan?.Price
             };
         }
 
         public async Task CancelPaymentAsync(long memberId, string orderCode)
         {
-            var transaction = await _db.Transactions
+            Transaction? giaoDich = await _db.Transactions
                 .FirstOrDefaultAsync(t => t.OrderCode == orderCode && t.MemberId == memberId);
 
-            if (transaction == null)
+            if (giaoDich == null)
                 throw new NotFoundException("Không tìm thấy giao dịch.");
 
-            if (transaction.PaymentStatus != PaymentStatus.Pending.ToString())
+            if (giaoDich.PaymentStatus != PaymentStatus.Pending.ToString())
                 throw new Exception("Giao dịch này không thể hủy.");
 
-            transaction.PaymentStatus = PaymentStatus.Cancelled.ToString();
-            transaction.UpdatedAt = DateTime.Now;
+            giaoDich.PaymentStatus = PaymentStatus.Cancelled.ToString();
+            giaoDich.UpdatedAt = DateTime.Now;
 
             await _db.SaveChangesAsync();
         }
@@ -312,19 +238,19 @@ namespace BE.Services
             if (!request.TransferType.Equals("in", StringComparison.OrdinalIgnoreCase))
                 return;
 
-            bool alreadyProcessed = await _db.Transactions
+            bool daXuLyRoi = await _db.Transactions
                 .AnyAsync(t => t.BankReferenceCode == request.ReferenceCode);
-            if (alreadyProcessed)
+            if (daXuLyRoi)
                 return;
 
-            Transaction? paidTransaction = null;
-            MembershipPlan? paidPlan = null;
-            Promotion? paidPromotion = null;
-            short paidBonusDays = 0;
-            DateOnly paidStartDate = default;
-            DateOnly paidExpiryDate = default;
-            int paidBranchId = 0; // [MỚI] dùng để lấy thông tin chi nhánh in hóa đơn sau khi commit
-            bool shouldGenerateInvoice = false;
+            Transaction? giaoDichDaThanhToan = null;
+            MembershipPlan? goiDaThanhToan = null;
+            Promotion? khuyenMaiDaDung = null;
+            short soNgayTangDaChot = 0;
+            DateOnly ngayBatDauDaChot = default;
+            DateOnly ngayHetHanDaChot = default;
+            int branchIdDaChot = 0; // dùng để lấy thông tin chi nhánh in hóa đơn sau khi commit
+            bool canTaoHoaDon = false;
 
             var strategy = _db.Database.CreateExecutionStrategy();
 
@@ -334,115 +260,104 @@ namespace BE.Services
                     .BeginTransactionAsync(IsolationLevel.Serializable);
                 try
                 {
-                    // [FIX - 19/07/2026] Đổi prefix regex từ "GYM" sang "HD" cho khớp với định
-                    // dạng mã đơn hàng mới do TransactionService.GenerateOrderCode() sinh ra
-                    // (HD + 14 số thời gian UTC + 4 số random = 18 số). Nếu không đổi, webhook sẽ
-                    // KHÔNG tìm thấy mã đơn hàng nào trong nội dung chuyển khoản nữa vì QR mới
-                    // không còn sinh ra chuỗi "GYM..." như trước.
+                    // Mã đơn hàng luôn có dạng "HD" + 14 số thời gian + 4 số random (18 số),
+                    // khớp với TransactionService.GenerateOrderCode().
                     var match = System.Text.RegularExpressions.Regex.Match(
                         request.Content,
                         @"\bHD\d{18,}\b"
                     );
 
-                    var orderCode = match.Value;
+                    string orderCode = match.Value;
 
-                    var transaction = await _db.Transactions
+                    Transaction? giaoDich = await _db.Transactions
                         .FirstOrDefaultAsync(t => t.OrderCode == orderCode);
 
-                    if (transaction == null)
+                    if (giaoDich == null)
                         throw new Exception("Không tìm thấy giao dịch.");
 
-                    if (transaction.PaymentStatus == "Paid")
+                    if (giaoDich.PaymentStatus == "Paid")
                     {
                         await dbTransaction.CommitAsync();
                         return;
                     }
 
-                    if (transaction.Amount != request.TransferAmount)
+                    if (giaoDich.Amount != request.TransferAmount)
                         throw new Exception("Số tiền thanh toán không khớp.");
 
-                    // [MỚI] BranchId giờ là cột bắt buộc (int, not null) trên Transaction — đã được
-                    // gán ngay lúc CreatePaymentAsync nên không cần check null nữa.
-                    int branchId = transaction.BranchId;
+                    int branchId = giaoDich.BranchId;
 
-                    var member = await _db.Members
-                        .FirstOrDefaultAsync(m => m.MemberId == transaction.MemberId);
-                    if (member == null)
+                    Member? hoiVien = await _db.Members
+                        .FirstOrDefaultAsync(m => m.MemberId == giaoDich.MemberId);
+                    if (hoiVien == null)
                         throw new Exception("Không tìm thấy hội viên.");
 
-                    transaction.PaymentStatus = "Paid";
-                    transaction.UpdatedAt = DateTime.Now;
-                    transaction.BankReferenceCode = request.ReferenceCode;
+                    giaoDich.PaymentStatus = "Paid";
+                    giaoDich.UpdatedAt = DateTime.Now;
+                    giaoDich.BankReferenceCode = request.ReferenceCode;
 
-                    var plan = await _db.MembershipPlans
-                        .FirstOrDefaultAsync(x => x.PlanId == transaction.PlanId);
+                    MembershipPlan? goiTap = await _db.MembershipPlans
+                        .FirstOrDefaultAsync(x => x.PlanId == giaoDich.PlanId);
 
-                    if (plan == null)
+                    if (goiTap == null)
                         throw new Exception("Không tìm thấy gói tập.");
 
-                    Promotion? promotion = null;
+                    Promotion? khuyenMai = null;
 
-                    if (transaction.PromotionId.HasValue)
+                    if (giaoDich.PromotionId.HasValue)
                     {
-                        promotion = await _db.Promotions
-                            .FirstOrDefaultAsync(x => x.PromotionId == transaction.PromotionId);
+                        khuyenMai = await _db.Promotions
+                            .FirstOrDefaultAsync(x => x.PromotionId == giaoDich.PromotionId);
 
-                        if (promotion != null)
+                        if (khuyenMai != null)
                         {
-                            promotion.SoLuotDaDung++;
+                            khuyenMai.SoLuotDaDung++;
                         }
                     }
 
-                    // [MỚI] Dùng thẳng công thức DUY NHẤT ở MemberPackageService.CalculateBonusDays
-                    // thay cho if/else + hằng CYCLE_DAYS thủ công trước đây trong chính file này.
-                    // Với promotion == null hoặc là loại GiamPhanTram/GiamTienMat (không tặng
-                    // ngày), hàm này tự trả về 0, khỏi cần if riêng.
-                    short soNgayTang = _packageService.CalculateBonusDays(promotion, plan);
+                    short soNgayTang = _packageService.CalculateBonusDays(khuyenMai, goiTap);
 
-                    MemberPackage memberPackage;
+                    MemberPackage goiTapMoi;
 
-                    if (member.Status == "PendingActivation")
+                    if (hoiVien.Status == "PendingActivation")
                     {
-                        memberPackage = await _packageService.CreatePendingPackageAsync(
-                            member.MemberId, transaction.PlanId, transaction.PromotionId,
-                            transaction.GiaGoc, transaction.Amount, soNgayTang,
-                            transaction.TransactionId, branchId);
+                        goiTapMoi = await _packageService.CreatePendingPackageAsync(
+                            hoiVien.MemberId, giaoDich.PlanId, giaoDich.PromotionId,
+                            giaoDich.GiaGoc, giaoDich.Amount, soNgayTang,
+                            giaoDich.TransactionId, branchId);
 
-                        // [FIX] Trước đây tự viết tay: todayForInvoice.AddDays(plan.DurationDays + soNgayTang).
-                        // Gói này chưa có StartDate/ExpiryDate thật (PackageStatus = PendingActivation),
-                        // nên đây CHỈ là ngày ước tính để in lên hóa đơn ngay lúc thanh toán — nhưng vẫn
-                        // phải đi qua đúng 1 nguồn công thức duy nhất (_packageService.CalculateExpiryDate)
-                        // như mọi luồng khác, để không có nguy cơ lệch nếu công thức đổi sau này.
-                        var todayForInvoice = DateOnly.FromDateTime(DateTime.Today);
-                        paidStartDate = todayForInvoice;
-                        paidExpiryDate = _packageService.CalculateExpiryDate(todayForInvoice, plan, soNgayTang);
+                        // Gói này chưa có StartDate/ExpiryDate thật (còn PendingActivation),
+                        // đây chỉ là ngày ước tính để in hóa đơn ngay lúc thanh toán, nhưng vẫn
+                        // phải tính qua đúng 1 nguồn công thức (_packageService.CalculateExpiryDate).
+                        DateOnly homNay = DateOnly.FromDateTime(DateTime.Today);
+                        ngayBatDauDaChot = homNay;
+                        ngayHetHanDaChot = _packageService.CalculateExpiryDate(homNay, goiTap, soNgayTang);
                     }
                     else
                     {
-                        memberPackage = await _packageService.CreateActivePackageOnlineAsync(
-                            member.MemberId, transaction.PlanId, transaction.PromotionId,
-                            transaction.GiaGoc, transaction.Amount, soNgayTang,
-                            transaction.TransactionId, branchId);
+                        goiTapMoi = await _packageService.CreateActivePackageOnlineAsync(
+                            hoiVien.MemberId, giaoDich.PlanId, giaoDich.PromotionId,
+                            giaoDich.GiaGoc, giaoDich.Amount, soNgayTang,
+                            giaoDich.TransactionId, branchId);
 
-                        paidStartDate = memberPackage.StartDate!.Value;
-                        paidExpiryDate = memberPackage.ExpiryDate!.Value;
+                        ngayBatDauDaChot = goiTapMoi.StartDate!.Value;
+                        ngayHetHanDaChot = goiTapMoi.ExpiryDate!.Value;
 
-                        if (member.Status == "Expired")
+                        if (hoiVien.Status == "Expired")
                         {
-                            member.Status = "Active";
-                            member.UpdatedAt = DateTime.Now;
+                            hoiVien.Status = "Active";
+                            hoiVien.UpdatedAt = DateTime.Now;
                         }
                     }
 
                     await _db.SaveChangesAsync();
                     await dbTransaction.CommitAsync();
 
-                    paidTransaction = transaction;
-                    paidPlan = plan;
-                    paidPromotion = promotion;
-                    paidBonusDays = soNgayTang;
-                    paidBranchId = branchId; // [MỚI]
-                    shouldGenerateInvoice = true;
+                    giaoDichDaThanhToan = giaoDich;
+                    goiDaThanhToan = goiTap;
+                    khuyenMaiDaDung = khuyenMai;
+                    soNgayTangDaChot = soNgayTang;
+                    branchIdDaChot = branchId;
+                    canTaoHoaDon = true;
                 }
                 catch
                 {
@@ -451,47 +366,46 @@ namespace BE.Services
                 }
             });
 
-            if (shouldGenerateInvoice && paidTransaction != null && paidPlan != null)
+            if (canTaoHoaDon && giaoDichDaThanhToan != null && goiDaThanhToan != null)
             {
-                var member = await _db.Members.Include(m=>m.Account)
+                Member? hoiVien = await _db.Members.Include(m => m.Account)
                     .AsNoTracking()
-                    .FirstOrDefaultAsync(m => m.MemberId == paidTransaction.MemberId);
+                    .FirstOrDefaultAsync(m => m.MemberId == giaoDichDaThanhToan.MemberId);
 
-                // [MỚI] Lấy thông tin chi nhánh khách đã chọn lúc mua online để in lên hóa đơn
-                var branch = await _db.Branches
+                Branch? chiNhanh = await _db.Branches
                     .AsNoTracking()
-                    .FirstOrDefaultAsync(b => b.BranchId == paidBranchId);
+                    .FirstOrDefaultAsync(b => b.BranchId == branchIdDaChot);
 
-                await _transactionService.GenerateAndAttachInvoiceAsync(paidTransaction, new InvoiceData
+                await _transactionService.GenerateAndAttachInvoiceAsync(giaoDichDaThanhToan, new InvoiceData
                 {
-                    OrderCode = paidTransaction.OrderCode,
-                    MemberName = member?.FullName,
-                    MemberPhone = member?.Account.Phone,
-                    PlanName = paidPlan.PlanName,
-                    GiaGoc = paidTransaction.GiaGoc,
-                    DiscountAmount = paidTransaction.GiaGoc - paidTransaction.Amount,
-                    Amount = paidTransaction.Amount,
-                    BonusDays = paidBonusDays,
-                    StartDate = paidStartDate,
-                    ExpiryDate = paidExpiryDate,
-                    PaymentMethod = paidTransaction.PaymentMethod,
-                    CreatedAt = paidTransaction.CreatedAt,
+                    OrderCode = giaoDichDaThanhToan.OrderCode,
+                    MemberName = hoiVien?.FullName,
+                    MemberPhone = hoiVien?.Account.Phone,
+                    PlanName = goiDaThanhToan.PlanName,
+                    GiaGoc = giaoDichDaThanhToan.GiaGoc,
+                    DiscountAmount = giaoDichDaThanhToan.GiaGoc - giaoDichDaThanhToan.Amount,
+                    Amount = giaoDichDaThanhToan.Amount,
+                    BonusDays = soNgayTangDaChot,
+                    StartDate = ngayBatDauDaChot,
+                    ExpiryDate = ngayHetHanDaChot,
+                    PaymentMethod = giaoDichDaThanhToan.PaymentMethod,
+                    CreatedAt = giaoDichDaThanhToan.CreatedAt,
                     EmployeeName = null,
-                    PromotionName = paidPromotion?.TenKhuyenMai,
-                    BranchName = branch?.BranchName,     // [MỚI]
-                    BranchAddress = branch?.Address,      // [MỚI]
-                    BranchPhone = branch?.Phone            // [MỚI]
+                    PromotionName = khuyenMaiDaDung?.TenKhuyenMai,
+                    BranchName = chiNhanh?.BranchName,
+                    BranchAddress = chiNhanh?.Address,
+                    BranchPhone = chiNhanh?.Phone
                 });
             }
         }
 
         private string BuildQrImage(Transaction transaction)
         {
-            var bank = _configuration["SePay:Bank"];
-            var account = _configuration["SePay:AccountNumber"];
-            var holder = _configuration["SePay:AccountHolder"];
-            var template = _configuration["SePay:Template"];
-            var showInfo = _configuration["SePay:ShowInfo"];
+            string? bank = _configuration["SePay:Bank"];
+            string? account = _configuration["SePay:AccountNumber"];
+            string? holder = _configuration["SePay:AccountHolder"];
+            string? template = _configuration["SePay:Template"];
+            string? showInfo = _configuration["SePay:ShowInfo"];
 
             return $"https://vietqr.app/img" +
                 $"?bank={bank}" +
@@ -504,9 +418,5 @@ namespace BE.Services
                 $"&holder={Uri.EscapeDataString(holder!)}";
         }
 
-        // [FIX - 19/07/2026] Đã XÓA hàm GenerateOrderCode() riêng của PaymentService (prefix "GYM").
-        // Toàn bộ việc sinh OrderCode giờ đi qua đúng 1 nguồn duy nhất:
-        // TransactionService.GenerateOrderCode() (static, prefix "HD") — xem CreatePaymentAsync
-        // phía trên. Không còn 2 định dạng mã khác nhau giữa kênh tại quầy và kênh online nữa.
     }
 }

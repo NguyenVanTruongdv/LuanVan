@@ -25,55 +25,14 @@ namespace BE.Services
             _faceService = faceService;
         }
 
-        // ------------------------------------------------------------------
-        // KIỂM TRA HỢP LỆ CHO HỘI VIÊN (KHÔNG throw) — dùng cho endpoint
-        // preview trước khi tạo hội viên mới / kích hoạt / đổi FaceID hội viên.
-        //
-        // excludeMemberId: truyền memberId nếu đang kiểm tra ảnh ĐỔI FaceID cho
-        // chính hội viên đó (khớp lại chính họ không tính là trùng). Để null khi
-        // đăng ký MỚI (chưa có FaceId nào để loại trừ).
-        //
-        // Chỉ so khớp trong phạm vi Member — nếu Rekognition khớp ra 1 Employee
-        // thì KHÔNG tính là trùng ở luồng này (2 pool Member/Employee độc lập).
-        // ------------------------------------------------------------------
+
         public async Task<FaceCheckResultDto> CheckMemberFaceAsync(IFormFile profileImage, long? excludeMemberId = null)
             => await CheckFaceInternalAsync(profileImage, FaceOwnerType.Member, excludeMemberId: excludeMemberId, excludeEmployeeId: null);
 
-        // ------------------------------------------------------------------
-        // KIỂM TRA HỢP LỆ CHO NHÂN VIÊN (KHÔNG throw) — dùng cho endpoint
-        // preview trước khi tạo/đổi FaceID nhân viên.
-        //
-        // excludeEmployeeId: truyền employeeId nếu đang kiểm tra ảnh ĐỔI FaceID
-        // cho chính nhân viên đó.
-        //
-        // Chỉ so khớp trong phạm vi Employee — nếu Rekognition khớp ra 1 Member
-        // thì KHÔNG tính là trùng ở luồng này (2 pool Member/Employee độc lập).
-        // ------------------------------------------------------------------
+
         public async Task<FaceCheckResultDto> CheckEmployeeFaceAsync(IFormFile profileImage, long? excludeEmployeeId = null)
             => await CheckFaceInternalAsync(profileImage, FaceOwnerType.Employee, excludeMemberId: null, excludeEmployeeId: excludeEmployeeId);
 
-        // ------------------------------------------------------------------
-        // Logic dùng chung cho CheckMemberFaceAsync/CheckEmployeeFaceAsync và
-        // EnsureFaceNotDuplicateAsync bên dưới.
-        //
-        // ĐÃ FIX (bug cũ): trước đây hàm này gọi SearchFaceByImageAsync — hàm CHỈ
-        // trả về 1 kết quả duy nhất và LUÔN ưu tiên Employee nếu có (thiết kế cho
-        // luồng check-in, nơi 1 người vừa là NV vừa là hội viên thì ưu tiên coi là
-        // NV). Khi tái sử dụng cho luồng CHECK TRÙNG lúc đăng ký, nếu 1 khuôn mặt
-        // được index cả 2 dạng (member-X và employee-Y), việc "ưu tiên Employee"
-        // khiến kết quả trả về luôn là Employee dù caller đang cần scope Member —
-        // code cũ so `OwnerType != scope` rồi coi là "không khớp trong scope này"
-        // và cho pass NHẦM, dù thực ra có 1 Member khớp nằm ngay trong danh sách
-        // match trả về từ AWS nhưng bị che mất bởi logic ưu tiên.
-        //
-        // FIX: dùng SearchAllFaceMatchesAsync (lấy TOÀN BỘ match, không tự ưu
-        // tiên ai), rồi tự lọc đúng theo scope đang cần kiểm tra.
-        //
-        // scope: phạm vi đang kiểm tra (Member hoặc Employee). Nếu trong toàn bộ
-        // match không có ai thuộc đúng scope này thì coi là không trùng, hợp lệ
-        // để đăng ký (dù có thể khớp 1 người ở scope khác — đó là chuyện của
-        // luồng check-in, không phải luồng đăng ký).
-        // ------------------------------------------------------------------
         private async Task<FaceCheckResultDto> CheckFaceInternalAsync(
             IFormFile profileImage,
             FaceOwnerType scope,
@@ -155,22 +114,7 @@ namespace BE.Services
             };
         }
 
-        // ------------------------------------------------------------------
-        // KIỂM TRA TRÙNG KHUÔN MẶT (throw nếu trùng) — gọi TRƯỚC khi
-        // RegisterFirstFaceAsync/UpdateFaceAsync thực sự đăng ký/cập nhật.
-        //
-        // Tái sử dụng CHUNG logic search với CheckMemberFaceAsync/CheckEmployeeFaceAsync
-        // ở trên (không viết lại lần 2) — chỉ khác là ném exception khi trùng thay vì
-        // trả DTO, để giữ đúng hành vi chặn cứng của luồng đăng ký/cập nhật thật.
-        //
-        // scope: BẮT BUỘC truyền đúng phạm vi đang đăng ký/cập nhật (Member hoặc
-        // Employee) để không bị chặn nhầm chéo pool.
-        //
-        // excludeMemberId / excludeEmployeeId: dùng khi ĐỔI ảnh cho chính người đó
-        // (UpdateFaceAsync) — nếu Rekognition khớp lại chính họ thì không tính là trùng.
-        // Khi ĐĂNG KÝ LẦN ĐẦU (RegisterFirstFaceAsync) thì không truyền (hoặc truyền null)
-        // vì người đó chưa có FaceId nào để loại trừ.
-        // ------------------------------------------------------------------
+
         public async Task EnsureFaceNotDuplicateAsync(
             IFormFile profileImage,
             FaceOwnerType scope,
@@ -186,13 +130,13 @@ namespace BE.Services
                 throw new InvalidOperationException(ketQuaKiemTra.Message);
         }
 
+
         /// <summary>
-        /// Đăng ký FaceID lần đầu cho member HOẶC employee (chưa có FaceDatum).
-        /// Truyền đúng MỘT trong hai: memberId hoặc employeeId.
-        /// performedBy luôn là EmployeeId của nhân viên thực hiện thao tác (khớp
-        /// FaceDatum.CreatedBy — chỉ nhân viên mới được tạo faceId, kể cả khi
-        /// faceId đó là của hội viên).
-        /// Không SaveChanges — caller tự gọi SaveChanges khi gộp chung transaction.
+        /// Đăng ký FaceID lần đầu cho member/employee.
+        /// Thứ tự cố ý: đăng ký khuôn mặt trên AWS TRƯỚC, upload ảnh lên S3 SAU.
+        /// Lý do: đăng ký AWS dễ lỗi hơn (ảnh không rõ mặt...), nên làm trước để nếu lỗi
+        /// thì chưa tốn công/tiền upload ảnh. Nếu AWS đăng ký xong mà upload S3 lại lỗi,
+        /// thì xóa lại face vừa đăng ký trên AWS để không bị rác dữ liệu mồ côi.
         /// </summary>
         public async Task<FaceDatum> RegisterFirstFaceAsync(
             long? memberId,
@@ -211,13 +155,23 @@ namespace BE.Services
             var thoiDiemHienTai = DateTime.UtcNow;
             var maPhienCapNhat = Guid.NewGuid();
 
-            var urlAnhDaiDien = await _storageService.UploadFileAsync(profileImage, FaceImageFolder);
-
-            // Đăng ký khuôn mặt lên AWS Rekognition — tách rõ nhánh Member/Employee
-            // để ExternalImageId luôn đúng quy ước prefix (member-/employee-).
+            // Bước 1: đăng ký khuôn mặt lên AWS Rekognition trước.
             var faceIdAws = memberId.HasValue
                 ? await _faceService.RegisterMemberFaceAsync(profileImage, memberId.Value)
                 : await _faceService.RegisterEmployeeFaceAsync(profileImage, employeeId!.Value);
+
+            // Bước 2: AWS đăng ký xong mới upload ảnh lên S3.
+            // Nếu upload lỗi thì phải xóa lại face vừa tạo ở bước 1.
+            string urlAnhDaiDien;
+            try
+            {
+                urlAnhDaiDien = await _storageService.UploadFileAsync(profileImage, FaceImageFolder);
+            }
+            catch
+            {
+                await _faceService.DeleteFaceAsync(faceIdAws);
+                throw;
+            }
 
             var duLieuKhuonMat = new FaceDatum
             {
@@ -258,10 +212,12 @@ namespace BE.Services
             return duLieuKhuonMat;
         }
 
+
         /// <summary>
-        /// Cập nhật FaceID cho member HOẶC employee (có thể đã có hoặc chưa có FaceDatum).
-        /// Truyền đúng MỘT trong hai: memberId hoặc employeeId.
-        /// Tự SaveChanges, và chỉ xóa face cũ trên AWS SAU KHI DB đã lưu thành công.
+        /// Đăng ký lại / cập nhật FaceID cho member/employee đã có sẵn (hoặc tạo mới nếu chưa có).
+        /// Thứ tự cố ý giống RegisterFirstFaceAsync: đăng ký khuôn mặt MỚI trên AWS trước,
+        /// upload ảnh MỚI lên S3 sau. Ảnh cũ / face cũ hoàn toàn chưa bị đụng tới cho đến khi
+        /// DB lưu thành công ở cuối hàm — nên nếu có lỗi ở giữa chừng, dữ liệu cũ vẫn nguyên vẹn.
         /// </summary>
         public async Task<FaceDatum> UpdateFaceAsync(
             long? memberId,
@@ -284,11 +240,23 @@ namespace BE.Services
             var faceIdCu = duLieuKhuonMat?.FaceIdAws;
             var urlAnhCu = duLieuKhuonMat?.ProfileImage;
 
-            var urlAnhMoi = await _storageService.UploadFileAsync(profileImage, FaceImageFolder);
-
+            // Bước 1: đăng ký khuôn mặt MỚI lên AWS trước. Chưa đụng gì tới ảnh cũ / face cũ.
             var faceIdMoi = memberId.HasValue
                 ? await _faceService.RegisterMemberFaceAsync(profileImage, memberId.Value)
                 : await _faceService.RegisterEmployeeFaceAsync(profileImage, employeeId!.Value);
+
+            // Bước 2: AWS đăng ký xong mới upload ảnh MỚI lên S3.
+            // Nếu upload lỗi thì xóa face mới vừa đăng ký ở bước 1; face cũ/ảnh cũ giữ nguyên.
+            string urlAnhMoi;
+            try
+            {
+                urlAnhMoi = await _storageService.UploadFileAsync(profileImage, FaceImageFolder);
+            }
+            catch
+            {
+                await _faceService.DeleteFaceAsync(faceIdMoi);
+                throw;
+            }
 
             if (duLieuKhuonMat == null)
             {
@@ -345,6 +313,35 @@ namespace BE.Services
         }
 
 
+        /// <summary>
+        /// Dọn dẹp khi FaceID đã đăng ký thành công (đã có face trên AWS + đã upload ảnh lên S3)
+        /// nhưng transaction DB ở caller (vd: EmployeeService.CreateWithFaceIdAsync) bị lỗi phải
+        /// rollback. Transaction DB chỉ hoàn tác được phần ghi SQL, không tự xóa được face trên
+        /// AWS hay ảnh trên S3 — nên phải tự gọi hàm này để xóa, tránh rác dữ liệu mồ côi.
+        /// Không throw lỗi ra ngoài vì hàm này chạy trong catch của caller — nếu ném lỗi tiếp
+        /// sẽ che mất lỗi gốc gây ra rollback.
+        /// </summary>
+        public async Task XoaFaceIdDaDangKyAsync(string? faceIdAws, string? urlAnhDaiDien)
+        {
+            try
+            {
+                if (!string.IsNullOrEmpty(faceIdAws))
+                {
+                    await _faceService.DeleteFaceAsync(faceIdAws);
+                }
+
+                if (!string.IsNullOrEmpty(urlAnhDaiDien))
+                {
+                    await _storageService.DeleteFileAsync(urlAnhDaiDien);
+                }
+            }
+            catch
+            {
+                // TODO: thay bằng ILogger để ghi log lại nếu xóa rollback thất bại
+            }
+        }
+
+
         /// Lấy lịch sử thay đổi FaceID của 1 member HOẶC 1 employee, đã map sẵn sang response chung.
         /// Truyền đúng MỘT trong hai: memberId hoặc employeeId.
 
@@ -370,7 +367,7 @@ namespace BE.Services
             }).ToList();
         }
 
-      
+
         private static void ValidateOwner(long? memberId, long? employeeId)
         {
             var coMember = memberId.HasValue;
@@ -381,7 +378,7 @@ namespace BE.Services
         }
 
         /// Ghi log thay đổi FaceID/ProfileImage của nhân viên vào EmployeeUpdateLog (mỗi field 1 dòng, chung 1 session).
-  
+
         private void AddEmployeeUpdateLogs(
             Guid sessionId,
             long employeeId,

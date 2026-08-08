@@ -7,10 +7,7 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace BE.Controllers
 {
-    // Mọi endpoint thao tác trên gói tập của hội viên: kích hoạt (tạo gói lần đầu),
-    // gia hạn/mua gói mới, kiểm tra đã có gói chưa, tra khuyến mãi áp dụng cho 1 gói.
-    // Renew/Activate vẫn gọi qua MemberService vì đó là orchestration (ghép Transaction +
-    // MemberPackage) — chỉ phần đọc thuần khuyến mãi mới gọi trực tiếp PromotionService.
+
     [ApiController]
     [Route("api/members/{memberId:long}/packages")]
     // [Authorize]
@@ -78,15 +75,7 @@ namespace BE.Controllers
             return Ok(result);
         }
 
-        // ===================== [TẠM VÔ HIỆU HÓA] NGƯNG DÙNG GÓI NỘI BỘ =====================
-        // GIỮ NGUYÊN route để FE không phải sửa call API, nhưng logic bên dưới KHÔNG còn tương
-        // thích với MemberPackageService hiện tại: hệ thống đã bỏ khái niệm "gói nội bộ"
-        // (PlanType NoiBo/KhachHang) — MemberPackageService giờ chỉ còn 1 loại gói duy nhất và
-        // KHÔNG có phương thức SuspendInternalPackageAsync.
-        // => Trả 501 kèm thông báo rõ ràng thay vì gọi 1 method không tồn tại (sẽ lỗi build),
-        //    và thay vì âm thầm xóa endpoint. Cần bạn xác nhận:
-        //      (1) Bỏ hẳn tính năng này (xóa endpoint), hoặc
-        //      (2) Viết lại nghiệp vụ tương đương cho model 1-loại-gói hiện tại.
+     
         [HttpPost("cancel-internal")]
         [Authorize(Roles = "Staff,Manager,Admin")]
         public IActionResult CancelInternalPackage(long memberId)
@@ -97,9 +86,6 @@ namespace BE.Controllers
             });
         }
 
-        // ===================== KHUYẾN MÃI ÁP DỤNG ĐƯỢC CHO 1 GÓI =====================
-        // Đọc thuần, không đụng Member/Transaction — gọi thẳng PromotionService, không qua MemberService.
-        // Route KHÔNG phụ thuộc memberId cụ thể, nhưng để trong nhóm này cho gần luồng gia hạn ở FE.
         [HttpGet("~/api/plans/{planId:int}/applicable-promotions")]
         public async Task<IActionResult> GetApplicablePromotions(int planId)
         {

@@ -7,7 +7,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace BE.Services
 {
-   
+
 
 
     // ====================== SERVICE ======================
@@ -376,7 +376,7 @@ namespace BE.Services
         /// branchId = null => xem toàn hệ thống (Admin)
         /// branchId = X    => chỉ xem chi nhánh X (Manager)
         /// </summary>
-       public async Task<ManagerDashboardDto> GetManagerDashboardAsync(int? branchId, ManagerDashboardQueryDto query)
+        public async Task<ManagerDashboardDto> GetManagerDashboardAsync(int? branchId, ManagerDashboardQueryDto query)
         {
             var (from, to) = ResolveManagerRange(query);
 
@@ -394,7 +394,15 @@ namespace BE.Services
             var recentMembers = await GetRecentMembersWithStatusAsync(branchId, take: 10);
             var unresolvedIssues = await GetUnresolvedIssuesAsync(branchId, take: 10);
             var equipmentStatus = await GetEquipmentStatusAsync(branchId);
-            var kpi = BuildManagerKpi(revenueTrend, recentMembers, unresolvedIssues, equipmentStatus);
+
+            // Mốc so sánh: doanh thu thực tế của kỳ liền trước, cùng độ dài với kỳ đang xem
+            // (thay cho mục tiêu hardcode cũ assumedDailyGoal)
+            var periodLength = (to.Date - from.Date).Days + 1;
+            var prevFrom = from.AddDays(-periodLength);
+            var prevTo = from.AddTicks(-1);
+            decimal previousPeriodRevenue = await GetTotalRevenueAsync(branchId, prevFrom, prevTo);
+
+            var kpi = BuildManagerKpi(revenueTrend, recentMembers, unresolvedIssues, equipmentStatus, previousPeriodRevenue);
 
             return new ManagerDashboardDto
             {
@@ -451,6 +459,19 @@ namespace BE.Services
                 });
             }
             return result;
+        }
+
+        // ---- Tổng doanh thu (Paid) trong 1 khoảng thời gian bất kỳ ----
+        // Dùng làm mốc so sánh (kỳ trước) thay cho mục tiêu hardcode cũ.
+        private async Task<decimal> GetTotalRevenueAsync(int? branchId, DateTime from, DateTime to)
+        {
+            var txQuery = _context.Transactions
+                .Where(t => t.PaymentStatus == "Paid" && t.CreatedAt >= from && t.CreatedAt <= to);
+
+            if (branchId.HasValue)
+                txQuery = txQuery.Where(t => t.BranchId == branchId);
+
+            return await txQuery.SumAsync(t => (decimal?)t.Amount) ?? 0;
         }
 
         // ---- Hội viên check-in gần đây, kèm trạng thái gói (active/expiring/expired) ----
@@ -584,65 +605,49 @@ namespace BE.Services
         }
 
         // ---- Gộp số liệu cho 3 vòng tròn (RingCluster) và 3 thẻ KPI ----
+        // previousPeriodRevenue: doanh thu thực tế của kỳ liền trước (cùng độ dài kỳ đang xem),
+        // dùng làm mốc so sánh thay cho mục tiêu hardcode cũ (assumedDailyGoal).
         private ManagerDashboardKpiDto BuildManagerKpi(
-    List<RevenueTrendPointDto> revenueTrend,
-    List<MemberCheckinRowDto> recentMembers,
-    List<IssueRowDto> unresolvedIssues,
-    List<EquipmentRowDto> equipmentStatus)
-{
-    decimal totalRevenue = revenueTrend.Sum(r => r.Revenue);
+            List<RevenueTrendPointDto> revenueTrend,
+            List<MemberCheckinRowDto> recentMembers,
+            List<IssueRowDto> unresolvedIssues,
+            List<EquipmentRowDto> equipmentStatus,
+            decimal previousPeriodRevenue)
+        {
+            decimal totalRevenue = revenueTrend.Sum(r => r.Revenue);
 
-    int half = revenueTrend.Count / 2;
-    decimal firstHalf = revenueTrend.Take(half).Sum(r => r.Revenue);
-    decimal secondHalf = revenueTrend.Skip(half).Sum(r => r.Revenue);
+            // Dùng đúng doanh thu kỳ trước để so sánh, thay vì chia đôi kỳ hiện tại
+            int changePercent = (int)Math.Round(CalcPercentChange(previousPeriodRevenue, totalRevenue));
 
-    int changePercent = firstHalf > 0
-        ? (int)Math.Round((double)(secondHalf - firstHalf) / (double)firstHalf * 100)
-        : 0;
+            int activeMembers = _context.MemberPackages
+                .Where(mp => mp.PackageStatus == "Active")
+                .Select(mp => mp.MemberId)
+                .Distinct()
+                .Count();
 
-    // ===========================
-    // Tổng hội viên đang hoạt động
-    // ===========================
-    int activeMembers = _context.MemberPackages
-        .Where(mp => mp.PackageStatus == "Active")
-        .Select(mp => mp.MemberId)
-        .Distinct()
-        .Count();
+            int totalMembers = _context.MemberPackages
+                .Select(mp => mp.MemberId)
+                .Distinct()
+                .Count();
 
-    // Tỷ lệ dùng cho RingCluster
-    int totalMembers = _context.MemberPackages
-        .Select(mp => mp.MemberId)
-        .Distinct()
-        .Count();
+            double activeRatio = totalMembers > 0 ? (double)activeMembers / totalMembers : 0;
 
-    double activeRatio = totalMembers > 0
-        ? (double)activeMembers / totalMembers
-        : 0;
+            double revenueGoalProgress = previousPeriodRevenue > 0
+                ? (double)(totalRevenue / previousPeriodRevenue)
+                : (totalRevenue > 0 ? 1.0 : 0);
 
-    // ===========================
-    // KPI doanh thu
-    // ===========================
-    const decimal assumedDailyGoal = 1_000_000m;
+            return new ManagerDashboardKpiDto
+            {
+                TotalRevenue = totalRevenue,
+                RevenueChangePercent = changePercent,
+                ActiveMembersCount = activeMembers,
+                UnresolvedIssuesCount = unresolvedIssues.Count,
+                RevenueGoalProgress = revenueGoalProgress,
+                ActiveMemberRatio = activeRatio,
+                IssueResolvedRatio = 0
+            };
+        }
 
-    int dayCount = Math.Max(revenueTrend.Count, 1);
-
-    decimal periodGoal = assumedDailyGoal * dayCount;
-
-    double revenueGoalProgress = periodGoal > 0
-        ? Math.Min(1.0, (double)(totalRevenue / periodGoal))
-        : 0;
-
-    return new ManagerDashboardKpiDto
-    {
-        TotalRevenue = totalRevenue,
-        RevenueChangePercent = changePercent,
-        ActiveMembersCount = activeMembers,
-        UnresolvedIssuesCount = unresolvedIssues.Count,
-        RevenueGoalProgress = revenueGoalProgress,
-        ActiveMemberRatio = activeRatio,
-        IssueResolvedRatio = 0
-    };
-}
         // ====================== DASHBOARD TỔNG QUAN ADMIN (DashboardOverview.jsx) ======================
 
         /// <summary>

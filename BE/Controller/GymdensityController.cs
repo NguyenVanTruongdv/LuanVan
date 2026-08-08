@@ -16,11 +16,7 @@ public class GymDensityController : ControllerBase
         _gymDensityService = gymDensityService;
     }
 
-    /// <summary>
-    /// Lấy mật độ người tập theo giờ của 1 chi nhánh — dùng để vẽ biểu đồ "Lượng người tập theo giờ"
-    /// </summary>
-    /// <param name="branchId">Mã chi nhánh</param>
-    /// <param name="hoursCount">Số khung giờ gần nhất muốn lấy (mặc định 5)</param>
+    
     [HttpGet("branch/{branchId:int}")]
     [ProducesResponseType(typeof(List<GymDensityHourDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]

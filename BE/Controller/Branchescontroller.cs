@@ -5,8 +5,6 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace BE.Controllers;
 
-// Chỉ chứa endpoint CRUD thông tin chi nhánh (tên, địa chỉ, sđt, quản lý, trạng thái).
-// Mọi thao tác ảnh chi nhánh đã tách sang BranchImagesController.
 [ApiController]
 [Route("api/branches")]
 public class BranchesController : ControllerBase

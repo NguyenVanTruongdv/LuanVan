@@ -13,7 +13,7 @@ public class ForumCommentController : ControllerBase
     private readonly ForumCommentService _service;
     public ForumCommentController(ForumCommentService service) => _service = service;
 
-    /// <summary>Lấy toàn bộ bình luận của 1 bài viết, đã dựng sẵn cây n cấp</summary>
+   
     [HttpGet("post/{postId}")]
     public async Task<IActionResult> GetByPost(long postId)
     {
@@ -22,7 +22,7 @@ public class ForumCommentController : ControllerBase
         return Ok(result);
     }
 
-    /// <summary>Tạo bình luận mới hoặc trả lời 1 bình luận đã có</summary>
+ 
     [HttpPost]
     [Authorize(Roles = "Member")]
     public async Task<IActionResult> Create([FromBody] ForumCommentCreateDto dto)
@@ -35,7 +35,6 @@ public class ForumCommentController : ControllerBase
         return Ok(data);
     }
 
-    /// <summary>Tym / bỏ tym 1 bình luận</summary>
     [HttpPost("{commentId}/like")]
     [Authorize(Roles = "Member")]
     public async Task<IActionResult> ToggleLike(long commentId)
@@ -48,7 +47,6 @@ public class ForumCommentController : ControllerBase
         return Ok(new { isLiked, likeCount });
     }
 
-    /// <summary>Hội viên tự xóa bình luận của chính mình</summary>
     [HttpDelete("{commentId}")]
     [Authorize(Roles = "Member,Admin")]
     public async Task<IActionResult> DeleteOwn(long commentId)
@@ -61,7 +59,7 @@ public class ForumCommentController : ControllerBase
         return Ok(new { message = "Đã xóa bình luận" });
     }
 
-    /// <summary>Admin/nhân viên xóa bất kỳ bình luận nào (vi phạm nội quy...)</summary>
+  
     [HttpDelete("{commentId}/admin")]
     [Authorize(Roles = "Admin,Employee")]
     public async Task<IActionResult> DeleteByAdmin(long commentId)

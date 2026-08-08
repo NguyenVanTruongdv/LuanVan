@@ -19,10 +19,6 @@ public class ReportsController : ControllerBase
         _reportService = reportService;
     }
 
-    /// <summary>
-    /// Lấy employeeId của người đang đăng nhập từ claim.
-    /// Đổi tên claim ("employeeId") cho khớp với claim thực tế trong JWT của bạn.
-    /// </summary>
     private long? GetCurrentEmployeeId()
     {
         var raw = User.FindFirstValue("employeeId") ?? User.FindFirstValue(ClaimTypes.NameIdentifier);
@@ -31,11 +27,7 @@ public class ReportsController : ControllerBase
 
     private bool IsAdmin() => User.IsInRole("Admin");
 
-    /// <summary>
-    /// Dựng ReportFilter cho THU NGÂN / vai trò không giới hạn chi nhánh theo quyền quản lý
-    /// (Thu ngân được xem theo branchId được chọn, hoặc tất cả nếu không chọn — tuỳ chính sách của bạn,
-    /// ở đây giữ đơn giản: không giới hạn AllowedBranchIds).
-    /// </summary>
+    
     private static ReportFilter BuildFilter(DateTime? from, DateTime? to, int? branchId) => new()
     {
         FromDate = from,
@@ -43,12 +35,7 @@ public class ReportsController : ControllerBase
         BranchId = branchId
     };
 
-    /// <summary>
-    /// Dựng ReportFilter cho QUẢN LÝ / ADMIN:
-    ///  - Admin: không giới hạn, xem theo branchId được chọn hoặc tất cả.
-    ///  - Quản lý: bắt buộc AllowedBranchIds = danh sách chi nhánh họ quản lý.
-    ///    Nếu họ truyền branchId không thuộc danh sách này -> 403 Forbid.
-    /// </summary>
+   
     private async Task<(ReportFilter? filter, IActionResult? error)> BuildManagerFilterAsync(
         DateTime? from, DateTime? to, int? branchId)
     {
@@ -99,9 +86,7 @@ public class ReportsController : ControllerBase
     public async Task<IActionResult> GetCashierDashboard(DateTime? from, DateTime? to, int? branchId)
         => Ok(await _reportService.GetCashierDashboardAsync(BuildFilter(from, to, branchId)));
 
-    // ================= QUẢN LÝ / ADMIN =================
-    // Admin dùng chung toàn bộ endpoint bên dưới, KHÔNG bị giới hạn chi nhánh.
-    // Quản lý chỉ được lọc trong phạm vi chi nhánh mình quản lý (kiểm tra qua BuildManagerFilterAsync).
+    
 
     [Authorize(Roles = "Manager,Admin")]
     [HttpGet("manager/employees")]

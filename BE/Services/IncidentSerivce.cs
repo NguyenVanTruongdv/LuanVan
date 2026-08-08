@@ -7,6 +7,16 @@ using Microsoft.EntityFrameworkCore;
 
 namespace BE.Services.Identify;
 
+// Class đơn giản để trả kết quả phân trang
+public class PagedResult<T>
+{
+    public List<T> Items { get; set; } = new List<T>();
+    public int TotalItems { get; set; }
+    public int Page { get; set; }
+    public int PageSize { get; set; }
+    public int TotalPages { get; set; }
+}
+
 public class IncidentService
 {
     private readonly GymManagementContext _db;
@@ -133,31 +143,35 @@ public class IncidentService
         }
     }
 
-    public async Task<List<IncidentListDto>> GetListAsync(IncidentFilterDto filter, JwtUserInfo user)
+    public async Task<PagedResult<IncidentListDto>> GetListAsync(IncidentFilterDto filter, JwtUserInfo user)
     {
+        // QUAN TRỌNG: phải ThenInclude(Account) thì mới lấy được số điện thoại của hội viên
         var query = _db.Incidents
             .Include(i => i.Branch)
             .Include(i => i.Equipment)
             .Include(i => i.ReportedByEmployee)
             .Include(i => i.ReportedByMember)
+                .ThenInclude(m => m.Account)
             .AsQueryable();
 
+        // Lọc theo người báo cáo là Member hay Staff
         if (!string.IsNullOrWhiteSpace(filter.ReportRole))
         {
             if (filter.ReportRole.Equals("Member", StringComparison.OrdinalIgnoreCase))
             {
-                query = query.Where(i => i.ReportedByMemberId != null && i.ReportedByEmployeeId == null);
+                query = query.Where(i => i.ReportedByMemberId != null);
             }
             else if (filter.ReportRole.Equals("Staff", StringComparison.OrdinalIgnoreCase))
             {
-                query = query.Where(i => i.ReportedByMemberId == null && i.ReportedByEmployeeId != null);
+                query = query.Where(i => i.ReportedByEmployeeId != null);
             }
             else
             {
-                throw new BadRequestException("Nguoi gui bao cáo không họp lệ");
+                throw new BadRequestException("Người gửi báo cáo không hợp lệ");
             }
         }
 
+        // Lọc theo từ khóa
         if (!string.IsNullOrWhiteSpace(filter.Keyword))
         {
             query = query.Where(i =>
@@ -165,6 +179,7 @@ public class IncidentService
                 i.Description.Contains(filter.Keyword));
         }
 
+        // Lọc theo quyền của nhân viên
         if (user.EntityType == "Employee")
         {
             var employee = await _db.Employees
@@ -223,15 +238,24 @@ public class IncidentService
             query = query.Where(i => i.Status == filter.Status);
         }
 
-        var ordered = query
-            .OrderByDescending(i => i.CreatedAt)
-            .ThenBy(i => i.Status == "PendingApproval" ? 0 : 1);
+        // Sắp xếp: báo cáo chờ duyệt lên trước, sau đó mới tới ngày tạo mới nhất
+        query = query
+            .OrderBy(i => i.Status == "PendingApproval" ? 0 : 1)
+            .ThenByDescending(i => i.CreatedAt);
 
-        var incidents = await ordered
-            .Skip((filter.Page - 1) * filter.PageSize)
-            .Take(filter.PageSize)
+        // Đếm tổng số bản ghi để tính tổng số trang
+        int totalItems = await query.CountAsync();
+
+        // Đảm bảo Page và PageSize hợp lệ
+        int page = filter.Page < 1 ? 1 : filter.Page;
+        int pageSize = filter.PageSize < 1 ? 10 : filter.PageSize;
+
+        var incidents = await query
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
             .ToListAsync();
 
+        // Lấy ảnh đại diện (thumbnail) cho từng incident
         List<int> ids = new List<int>();
         foreach (var i in incidents)
         {
@@ -251,7 +275,8 @@ public class IncidentService
             thumbnailMap[t.IncidentId] = t.MediaUrl;
         }
 
-        List<IncidentListDto> result = new List<IncidentListDto>();
+        // Build danh sách DTO trả về
+        List<IncidentListDto> items = new List<IncidentListDto>();
         foreach (var i in incidents)
         {
             string? thumbnail = null;
@@ -260,24 +285,50 @@ public class IncidentService
                 thumbnail = thumbnailMap[i.IncidentId];
             }
 
-            var dto = new IncidentListDto
+            string reporterName;
+            string reporterPhone;
+            string reporterRole;
+
+            if (i.ReportedByMember != null)
+            {
+                reporterName = i.ReportedByMember.FullName;
+                // Kiểm tra null để tránh lỗi giống dòng 263 cũ
+                reporterPhone = i.ReportedByMember.Account != null ? i.ReportedByMember.Account.Phone : "";
+                reporterRole = "Member";
+            }
+            else
+            {
+                reporterName = i.ReportedByEmployee!.FullName;
+                reporterPhone = i.ReportedByEmployee.Phone;
+                reporterRole = "Employee";
+            }
+
+            items.Add(new IncidentListDto
             {
                 IncidentId = i.IncidentId,
                 Title = i.Title,
                 BranchName = i.Branch.BranchName,
                 EquipmentName = i.Equipment?.EquipmentName,
-                ReporterName = i.ReportedByMember != null ? i.ReportedByMember.FullName : i.ReportedByEmployee!.FullName,
-                ReporterPhone = i.ReportedByMember != null ? i.ReportedByMember.Account.Phone : i.ReportedByEmployee!.Phone,
-                ReporterRole = i.ReportedByMember != null ? "Member" : "Employee",
+                ReporterName = reporterName,
+                ReporterPhone = reporterPhone,
+                ReporterRole = reporterRole,
                 Status = i.Status,
                 CreatedAt = i.CreatedAt,
                 Thumbnail = thumbnail
-            };
-
-            result.Add(dto);
+            });
         }
 
-        return result;
+        // Tính tổng số trang
+        int totalPages = (int)Math.Ceiling(totalItems / (double)pageSize);
+
+        return new PagedResult<IncidentListDto>
+        {
+            Items = items,
+            TotalItems = totalItems,
+            Page = page,
+            PageSize = pageSize,
+            TotalPages = totalPages
+        };
     }
 
     public async Task<IncidentDetailDto?> GetByIdAsync(int id)
@@ -286,6 +337,7 @@ public class IncidentService
             .Include(x => x.Branch)
             .Include(x => x.Equipment)
             .Include(x => x.ReportedByMember)
+                .ThenInclude(m => m.Account)
             .Include(x => x.ReportedByEmployee)
             .FirstOrDefaultAsync(x => x.IncidentId == id);
 
@@ -308,7 +360,24 @@ public class IncidentService
             });
         }
 
-        var result = new IncidentDetailDto
+        string reporterName;
+        string reporterPhone;
+        string reporterRole;
+
+        if (incident.ReportedByMember != null)
+        {
+            reporterName = incident.ReportedByMember.FullName;
+            reporterPhone = incident.ReportedByMember.Account != null ? incident.ReportedByMember.Account.Phone : "";
+            reporterRole = "Member";
+        }
+        else
+        {
+            reporterName = incident.ReportedByEmployee!.FullName;
+            reporterPhone = incident.ReportedByEmployee.Phone;
+            reporterRole = "Employee";
+        }
+
+        return new IncidentDetailDto
         {
             IncidentId = incident.IncidentId,
             Title = incident.Title,
@@ -317,17 +386,15 @@ public class IncidentService
             BranchName = incident.Branch.BranchName,
             EquipmentId = incident.EquipmentId,
             EquipmentName = incident.Equipment?.EquipmentName,
-            ReporterName = incident.ReportedByMember != null ? incident.ReportedByMember.FullName : incident.ReportedByEmployee!.FullName,
-            ReporterPhone = incident.ReportedByMember != null ? incident.ReportedByMember.Account.Phone : incident.ReportedByEmployee!.Phone,
-            ReporterRole = incident.ReportedByMember != null ? "Member" : "Employee",
+            ReporterName = reporterName,
+            ReporterPhone = reporterPhone,
+            ReporterRole = reporterRole,
             Status = incident.Status,
             RejectReason = incident.RejectReason,
             CreatedAt = incident.CreatedAt,
             UpdatedAt = incident.UpdatedAt,
             Medias = mediaDtos
         };
-
-        return result;
     }
 
     public async Task UpdateAsync(int incidentId, UpdateIncidentDto dto, JwtUserInfo user)

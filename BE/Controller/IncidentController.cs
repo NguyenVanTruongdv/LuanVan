@@ -18,9 +18,7 @@ public class IncidentController : ApiControllerBase
         _incidentService = incidentService;
     }
 
-    /// <summary>
-    /// Danh sách TẤT CẢ báo cáo sự cố (dành cho Manager/Admin duyệt, xem toàn bộ)
-    /// </summary>
+ 
     [HttpGet]
     public async Task<IActionResult> GetList([FromQuery] IncidentFilterDto filter)
     {
@@ -29,10 +27,7 @@ public class IncidentController : ApiControllerBase
         return Ok(result);
     }
 
-    /// <summary>
-    /// Lịch sử báo cáo sự cố do CHÍNH người dùng hiện tại gửi
-    /// (nhân viên chỉ xem báo cáo của mình, hội viên chỉ xem báo cáo của mình)
-    /// </summary>
+   
     [HttpGet("my")]
     public async Task<IActionResult> GetMyList([FromQuery] IncidentFilterDto filter)
     {
@@ -42,9 +37,7 @@ public class IncidentController : ApiControllerBase
         return Ok(result);
     }
 
-    /// <summary>
-    /// Chi tiết báo cáo sự cố
-    /// </summary>
+    
     [HttpGet("{id:int}")]
     public async Task<IActionResult> GetById(int id)
     {
@@ -71,9 +64,7 @@ public class IncidentController : ApiControllerBase
         }
     }
 
-    /// <summary>
-    /// Tạo báo cáo sự cố
-    /// </summary>
+  
     [HttpPost]
     [Consumes("multipart/form-data")]
     public async Task<IActionResult> Create([FromForm] CreateIncidentDto dto)
@@ -88,9 +79,7 @@ public class IncidentController : ApiControllerBase
         });
     }
 
-    /// <summary>
-    /// Cập nhật báo cáo
-    /// </summary>
+ 
     [HttpPut("{id:int}")]
         public async Task<IActionResult> Update(int id, [FromBody] UpdateIncidentDto dto)
         {
@@ -106,9 +95,7 @@ public class IncidentController : ApiControllerBase
             }
         }
 
-    /// <summary>
-    /// Xóa báo cáo
-    /// </summary>
+   
     [HttpDelete("{id:int}")]
     public async Task<IActionResult> Delete(int id)
     {
@@ -120,10 +107,7 @@ public class IncidentController : ApiControllerBase
         });
     }
 
-    /// <summary>
-    /// Lấy user hiện tại từ JWT claims, dùng chung cho Create/GetMyList
-    /// để tránh lặp lại logic build JwtUserInfo ở nhiều action.
-    /// </summary>
+   
   private JwtUserInfo GetCurrentUser()
     {
         return new JwtUserInfo

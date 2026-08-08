@@ -17,7 +17,7 @@ namespace BE.Controllers
             _equipmentService = equipmentService;
         }
 
-        /// <summary>Khách (không cần đăng nhập), Manager, Admin đều xem được — Service tự phân quyền theo role.</summary>
+       
         [HttpGet]
         [AllowAnonymous]
         public async Task<IActionResult> GetList([FromQuery] EquipmentFilterDto filter)

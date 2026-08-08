@@ -16,10 +16,7 @@ namespace BE.Controllers
             _faceIdService = faceIdService;
         }
 
-        /// <summary>
-        /// [HỘI VIÊN] Kiểm tra ảnh khuôn mặt trước khi tạo hội viên mới, kích hoạt,
-        /// hoặc đổi FaceID hội viên. KHÔNG lưu gì vào DB.
-        /// </summary>
+        
         [HttpPost("member/check")]
         [Authorize]
         [Consumes("multipart/form-data")]
@@ -32,10 +29,7 @@ namespace BE.Controllers
             return Ok(result);
         }
 
-        /// <summary>
-        /// [NHÂN VIÊN] Kiểm tra ảnh khuôn mặt trước khi tạo/đổi FaceID cho nhân viên.
-        /// KHÔNG lưu gì vào DB.
-        /// </summary>
+    
         [HttpPost("employee/check")]
         [Authorize(Roles = "Admin,Manager")]
         [Consumes("multipart/form-data")]

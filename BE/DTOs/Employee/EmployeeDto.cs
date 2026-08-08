@@ -2,41 +2,38 @@ using System.ComponentModel.DataAnnotations;
 
 namespace BE.DTOs.Employee
 {
+    /// <summary>Value object thuần (không mang nghiệp vụ Account/FaceID) — dùng chung cho cả 2 luồng.</summary>
     public class EmployeeBranchDto
     {
         public int BranchId { get; set; }
         public string BranchName { get; set; } = "";
     }
 
-    public class EmployeeProfileDto
+    // ======================================================================
+    // LUỒNG 1: TÀI KHOẢN (info + login) — KHÔNG có field nào liên quan FaceID.
+    // Danh sách tài khoản = những Employee đang tồn tại Account.
+    // ======================================================================
+
+    public class EmployeeAccountProfileDto
     {
         public long EmployeeId { get; set; }
         public string FullName { get; set; } = "";
-        public string Phone { get; set; } = "";        // Employee.Phone — số liên hệ
+        public string Phone { get; set; } = "";         // Employee.Phone — số liên hệ
         public string Gender { get; set; } = "";
-        public string Status { get; set; } = "";        // Employee.Status — Active/Inactive (đi làm/nghỉ việc)
+        public string Status { get; set; } = "";         // Employee.Status — Active/Inactive
         public string Role { get; set; } = "";
 
-        // Thông tin tài khoản đăng nhập — null nếu nhân viên chưa được cấp tài khoản
-        public long? AccountId { get; set; }
+        public long AccountId { get; set; }
         public string? LoginPhone { get; set; }
         public string? LoginEmail { get; set; }
-        public string? AccountStatus { get; set; }       // Active/Suspended
+        public string AccountStatus { get; set; } = "";  // Active/Suspended
         public string? SuspendReason { get; set; }
 
-        public bool HasFaceId { get; set; }
-
-        // Ảnh khuôn mặt đã đăng ký (FaceDatum.ProfileImage) — null nếu chưa có FaceID
-        public string? FaceProfileImage { get; set; }
-
-        // Chi nhánh đang được chọn mặc định (chi nhánh đầu tiên gán cho nhân viên)
         public int? DefaultBranchId { get; set; }
-
-        // Danh sách tất cả chi nhánh nhân viên được quản lý/thu ngân
         public List<EmployeeBranchDto> Branches { get; set; } = new();
     }
 
-    public class EmployeeListItemDto
+    public class EmployeeAccountListItemDto
     {
         public long EmployeeId { get; set; }
         public string FullName { get; set; } = "";
@@ -45,20 +42,17 @@ namespace BE.DTOs.Employee
         public string Status { get; set; } = "";
         public string Role { get; set; } = "";
 
+        public long AccountId { get; set; }
         public string? LoginPhone { get; set; }
         public string? LoginEmail { get; set; }
-        public string? AccountStatus { get; set; }
+        public string AccountStatus { get; set; } = "";
         public string? SuspendReason { get; set; }
-
-        public bool HasFaceId { get; set; }
-
-        // Ảnh khuôn mặt đã đăng ký (FaceDatum.ProfileImage) — null nếu chưa có FaceID
-        public string? FaceProfileImage { get; set; }
 
         public List<EmployeeBranchDto> Branches { get; set; } = new();
     }
 
-    public class EmployeeFilterDto
+    /// <summary>Filter cho danh sách tài khoản (chỉ những nhân viên có Account).</summary>
+    public class EmployeeAccountFilterDto
     {
         public int? BranchId { get; set; }
         public string? Name { get; set; }
@@ -74,53 +68,33 @@ namespace BE.DTOs.Employee
         public int PageSize { get; set; } = 20;
     }
 
-    /// <summary>Thông tin cơ bản dùng chung để tạo hồ sơ nhân viên (không gồm login/FaceID).</summary>
-    public class CreateEmployeeInfoDto
+    /// <summary>Tạo nhân viên KÈM tài khoản đăng nhập. KHÔNG có field FaceID.</summary>
+    public class CreateEmployeeAccountDto
     {
         [Required] public string FullName { get; set; } = null!;
         [Required] public string Phone { get; set; } = null!;
         [Required] public string Gender { get; set; } = null!;
         [Required] public sbyte RoleId { get; set; }
         public List<int> BranchIds { get; set; } = new();
-    }
 
-    /// <summary>Dùng khi tạo nhân viên đầy đủ: info + tài khoản đăng nhập + FaceID (bắt buộc).</summary>
-    public class CreateEmployeeWithAccountDto : CreateEmployeeInfoDto
-    {
-        public string? LoginPhone { get; set; } = null!;
+        public string? LoginPhone { get; set; }
         public string? LoginEmail { get; set; }
 
         [Required, MinLength(6, ErrorMessage = "Mật khẩu tối thiểu 6 ký tự.")]
         public string Password { get; set; } = null!;
-
-        public IFormFile? ProfileImage { get; set; } = null!;
-        public string? FaceIdReason { get; set; }
     }
 
-    /// <summary>Dùng khi tạo hồ sơ + FaceID nhưng chưa cấp tài khoản đăng nhập.</summary>
-    public class CreateEmployeeWithFaceIdDto : CreateEmployeeInfoDto
-    {
-        [Required] public IFormFile ProfileImage { get; set; } = null!;
-        public string? FaceIdReason { get; set; }
-    }
-
-    /// <summary>Sửa thông tin nhân viên — không đụng tới Account/FaceID.</summary>
-    public class UpdateEmployeeDto
+    /// <summary>Sửa thông tin cơ bản của nhân viên thuộc luồng tài khoản — không đụng FaceID.</summary>
+    public class UpdateEmployeeAccountInfoDto
     {
         [Required] public string FullName { get; set; } = null!;
-        [Required] public string Phone { get; set; } = null!;
+         public string Phone { get; set; } = null!;
         [Required] public string Gender { get; set; } = null!;
         [Required] public sbyte RoleId { get; set; }
         public List<int> BranchIds { get; set; } = new();
     }
 
-    public class UpdateEmployeeFaceIdDto
-    {
-        [Required] public IFormFile ProfileImage { get; set; } = null!;
-        public string? Reason { get; set; }
-    }
-
-    /// <summary>Thêm tài khoản đăng nhập cho nhân viên đã có info/FaceID nhưng chưa có tài khoản.</summary>
+    /// <summary>Thêm tài khoản đăng nhập cho nhân viên chưa có tài khoản.</summary>
     public class AddEmployeeAccountDto
     {
         [Required] public string LoginPhone { get; set; } = null!;
@@ -141,6 +115,92 @@ namespace BE.DTOs.Employee
         public string? NewPassword { get; set; }
     }
 
+    public class LockAccountOnlyDto
+    {
+        [Required] public string Reason { get; set; } = null!;
+    }
+
+    // ======================================================================
+    // LUỒNG 2: NHÂN VIÊN + FACEID — KHÔNG có field nào liên quan tài khoản.
+    // Danh sách nhân viên = phần còn lại (những Employee CHƯA có Account).
+    // ======================================================================
+
+    public class EmployeeProfileDto
+    {
+        public long EmployeeId { get; set; }
+        public string FullName { get; set; } = "";
+        public string Phone { get; set; } = "";
+        public string Gender { get; set; } = "";
+        public string Status { get; set; } = "";
+        public string Role { get; set; } = "";
+
+        public bool HasFaceId { get; set; }
+        public string? FaceProfileImage { get; set; }   // FaceDatum.ProfileImage — null nếu chưa có FaceID
+
+        public int? DefaultBranchId { get; set; }
+        public List<EmployeeBranchDto> Branches { get; set; } = new();
+    }
+
+    public class EmployeeListItemDto
+    {
+        public long EmployeeId { get; set; }
+        public string FullName { get; set; } = "";
+        public string Phone { get; set; } = "";
+        public string Gender { get; set; } = "";
+        public string Status { get; set; } = "";
+        public string Role { get; set; } = "";
+
+        public bool HasFaceId { get; set; }
+        public string? FaceProfileImage { get; set; }
+
+        public List<EmployeeBranchDto> Branches { get; set; } = new();
+    }
+
+    /// <summary>Filter cho danh sách nhân viên (những Employee CHƯA có Account).</summary>
+    public class EmployeeFilterDto
+    {
+        public int? BranchId { get; set; }
+        public string? Name { get; set; }
+        public string? Phone { get; set; }   // Employee.Phone — không có Account nên không tìm theo sđt đăng nhập
+        public string? Status { get; set; }
+        public int Page { get; set; } = 1;
+        public int PageSize { get; set; } = 20;
+    }
+
+    /// <summary>Tạo nhân viên KÈM FaceID (bắt buộc). KHÔNG có field tài khoản.</summary>
+    public class CreateEmployeeFaceIdDto
+    {
+        [Required] public string FullName { get; set; } = null!;
+        [Required] public string Phone { get; set; } = null!;
+        [Required] public string Gender { get; set; } = null!;
+        [Required] public sbyte RoleId { get; set; }
+        public List<int> BranchIds { get; set; } = new();
+
+        [Required] public IFormFile ProfileImage { get; set; } = null!;
+        public string? FaceIdReason { get; set; }
+    }
+
+    /// <summary>Sửa thông tin cơ bản của nhân viên thuộc luồng FaceID — không đụng tài khoản.</summary>
+    public class UpdateEmployeeInfoDto
+    {
+        [Required] public string FullName { get; set; } = null!;
+        [Required] public string Phone { get; set; } = null!;
+        [Required] public string Gender { get; set; } = null!;
+        [Required] public sbyte RoleId { get; set; }
+        public List<int> BranchIds { get; set; } = new();
+    }
+
+    public class UpdateEmployeeFaceIdDto
+    {
+        [Required] public IFormFile ProfileImage { get; set; } = null!;
+        public string? Reason { get; set; }
+    }
+
+    // ======================================================================
+    // HẠ TẦNG DÙNG CHUNG (không phải DTO nghiệp vụ của luồng nào — khóa toàn
+    // diện cả 2 phía cùng lúc, và lịch sử cập nhật chung của nhân viên)
+    // ======================================================================
+
     public class LockEmployeeDto
     {
         [Required] public string Reason { get; set; } = null!;
@@ -151,10 +211,6 @@ namespace BE.DTOs.Employee
         [Required] public string Reason { get; set; } = null!;
     }
 
-    public class LockAccountOnlyDto
-    {
-        [Required] public string Reason { get; set; } = null!;
-    }
     public class EmployeeUpdateHistoryItemDto
     {
         public Guid UpdateSessionId { get; set; }

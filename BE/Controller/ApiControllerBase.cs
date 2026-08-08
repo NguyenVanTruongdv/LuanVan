@@ -5,9 +5,7 @@ using BE.Helpers;
 
 namespace BE.Controllers
 {
-    // Chứa các helper lấy thông tin người dùng đang đăng nhập — dùng chung cho mọi controller
-    // cần biết "ai đang thực hiện hành động" (nhân viên hay khách tự thao tác).
-    public abstract class ApiControllerBase : ControllerBase
+       public abstract class ApiControllerBase : ControllerBase
     {
         protected long GetCurrentUserId()
         {

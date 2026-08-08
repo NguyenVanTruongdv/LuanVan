@@ -37,9 +37,7 @@ namespace BE.Controllers
             return CreatedAtAction(nameof(GetMember), new { id = result.MemberId }, result);
         }
 
-        // =========================================================================
-        // NHÓM 2: [THU NGÂN] DANH SÁCH / TÌM KIẾM / TRA CỨU
-        // =========================================================================
+
 
         [HttpGet]
         public async Task<IActionResult> GetMembers([FromQuery] string? phone, [FromQuery] string? fullName, [FromQuery] int? branchId)
@@ -86,8 +84,7 @@ namespace BE.Controllers
         }
 
         // ===================== KIỂM TRA TRÙNG SỐ ĐIỆN THOẠI =====================
-        // Cho phép cả 2 phía gọi (thu ngân tạo hội viên mới, hội viên tự đăng ký online đều
-        // cần check trùng SĐT trước khi submit) — không cần memberId nên không có rủi ro lộ dữ liệu.
+      
         [HttpGet("check-phone")]
         public async Task<IActionResult> CheckPhoneExists([FromQuery] string phone)
         {
@@ -111,13 +108,12 @@ namespace BE.Controllers
             return Ok(new { member = member });
         }
 
-        // =========================================================================
-        // NHÓM 3: XEM HỒ SƠ HỘI VIÊN
-        // =========================================================================
+       
+        // XEM HỒ SƠ HỘI VIÊN
+     
 
-        // ===================== LẤY THÔNG TIN CHI TIẾT 1 HỘI VIÊN =====================
-        // Nhân viên: xem bất kỳ hội viên nào theo "id" trên route.
-        // Hội viên: chỉ được xem hồ sơ của chính mình -> ép memberId về JWT, bỏ qua "id" trên route.
+        // =LẤY THÔNG TIN CHI TIẾT 1 HỘI VIÊN 
+     
         [HttpGet("{id:long}")]
         public async Task<IActionResult> GetMember(long id)
         {
@@ -142,8 +138,7 @@ namespace BE.Controllers
         }
 
         // ===================== [HỘI VIÊN] HỒ SƠ ĐẦY ĐỦ (thông tin + gói tập + lịch sử) =====================
-        // [SỬA LỖI] Route trước đây là "/my-profile" (route TUYỆT ĐỐI) -> phá vỡ prefix
-        // "api/members" của controller. Đã đổi thành route tương đối "my-profile".
+     
         [Authorize(Roles = "Member")]
         [HttpGet("my-profile")]
         public async Task<IActionResult> GetMyProfile()
@@ -157,13 +152,9 @@ namespace BE.Controllers
             return Ok(profile);
         }
 
-        // =========================================================================
-        // NHÓM 4: CẬP NHẬT THÔNG TIN HỘI VIÊN
-        // =========================================================================
-
-        // ===================== [NHÂN VIÊN] SỬA THÔNG TIN HỘI VIÊN =====================
-        // Chỉ nhân viên gọi endpoint này (sửa hồ sơ của khách theo "id" trên route, bao gồm cả
-        // InternalNotes — field ghi chú nội bộ mà hội viên KHÔNG được phép tự sửa).
+    
+     // CẬP NHẬT THÔNG TIN HỘI VIÊN
+ 
         [HttpPut("{id:long}")]
         public async Task<IActionResult> UpdateMemberInfo(long id, [FromBody] UpdateMemberInfoRequest request)
         {
@@ -175,13 +166,8 @@ namespace BE.Controllers
             return Ok(result);
         }
 
-        // ===================== [MỚI] [HỘI VIÊN] TỰ CẬP NHẬT HỒ SƠ CỦA CHÍNH MÌNH =====================
-        // Thay thế cho endpoint "PUT api/members" (UpdateMyInfo) cũ đã bị xóa do không an toàn
-        // (xem ghi chú SỬA LỖI ở đầu file). memberId LUÔN lấy từ JWT, không nhận qua route/body,
-        // nên hội viên không thể tự sửa hồ sơ của người khác.
-        // Cho phép đổi: FullName, Phone, Gender, mật khẩu (CurrentPassword + NewPassword).
-        // KHÔNG cho sửa InternalNotes/Status — những field đó chỉ nhân viên mới được sửa qua
-        // endpoint UpdateMemberInfo(id) ở trên.
+        //  [MỚI] [HỘI VIÊN] TỰ CẬP NHẬT HỒ SƠ CỦA CHÍNH MÌNH 
+      
         [Authorize(Roles = "Member")]
         [HttpPut("me")]
         public async Task<IActionResult> UpdateMyProfile([FromBody] UpdateMyProfileRequest request)
@@ -191,12 +177,8 @@ namespace BE.Controllers
             return Ok(result);
         }
 
-        // ===================== [THU NGÂN] SỬA FACE ID / ẢNH ĐẠI DIỆN =====================
-        // Chỉ nhân viên được đăng ký/sửa FaceID (yêu cầu chụp ảnh trực tiếp tại quầy),
-        // "id" trên route là hội viên nhân viên đang thao tác.
-        // LƯU Ý: dùng để SỬA FaceID cho hội viên ĐÃ Active sẵn có FaceID. Trường hợp KÍCH HOẠT
-        // hội viên mới (Status = PendingActivation) phải dùng ActivateWithPackage/ActivateFaceId
-        // bên dưới — 2 API đó còn xử lý thêm việc chuyển Status -> Active, kích hoạt gói Pending...
+        // [THU NGÂN] SỬA FACE ID / ẢNH ĐẠI DIỆN
+        
         [HttpPut("{id:long}/face-id")]
         public async Task<IActionResult> UpdateFaceId(long id, [FromForm] UpdateFaceIdRequest request)
         {
@@ -208,13 +190,12 @@ namespace BE.Controllers
             return Ok(result);
         }
 
-        // =========================================================================
-        // NHÓM 5: LỊCH SỬ CẬP NHẬT
-        // =========================================================================
+        
+        // LỊCH SỬ CẬP NHẬT
+        
 
-        // ===================== LỊCH SỬ CẬP NHẬT THÔNG TIN =====================
-        // Nhân viên: xem lịch sử của bất kỳ hội viên nào theo "id" trên route.
-        // Hội viên: chỉ được xem lịch sử của chính mình -> ép memberId về JWT.
+        // LỊCH SỬ CẬP NHẬT THÔNG TIN 
+   
         [HttpGet("{id:long}/update-history")]
         public async Task<IActionResult> GetUpdateHistory(long id)
         {
@@ -224,15 +205,12 @@ namespace BE.Controllers
             return Ok(result);
         }
 
-        // =========================================================================
-        // NHÓM 6: [THU NGÂN] KÍCH HOẠT HỘI VIÊN
-        // =========================================================================
+        
+        // [THU NGÂN] KÍCH HOẠT HỘI VIÊN
+      
 
-        // ===================== KIỂM TRA XEM CÓ GÓI TẬP (PENDING) K ĐỂ KÍCH HOẠT TK =====================
-        // Trả về boolean THÔ: true nếu hội viên đang có 1 gói ở trạng thái PendingActivation
-        // (đã mua online, chưa kích hoạt). Dùng ở màn "Kích hoạt hội viên" để quyết định có cần
-        // hiển thị bước chọn gói hay không (false -> cần chọn gói -> gọi ActivateWithPackage;
-        // true -> chỉ cần đăng ký FaceID -> gọi ActivateFaceId, BE tự kích hoạt gói Pending đó).
+        // KIỂM TRA XEM CÓ GÓI TẬP (PENDING) K ĐỂ KÍCH HOẠT TK 
+       
         [HttpGet("{id:long}/has-package")]
         public async Task<IActionResult> CheckHasPack(long id)
         {
@@ -268,9 +246,7 @@ namespace BE.Controllers
             return Ok(result);
         }
 
-        // =========================================================================
-        // NHÓM 7: [THU NGÂN] KHÓA / MỞ KHÓA TÀI KHOẢN
-        // =========================================================================
+   
 
         [HttpPut("{id:long}/lock")]
         public async Task<IActionResult> LockMember(long id, [FromBody] LockMemberRequest request)

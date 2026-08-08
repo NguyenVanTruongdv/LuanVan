@@ -17,10 +17,7 @@ namespace BE.Controllers
             _homeImageService = homeImageService;
         }
 
-        // =========================================
-        // GET /api/home-images
-        // Public — trả về danh sách ảnh Active cho trang chủ, đã sort theo SortOrder
-        // =========================================
+      
         [HttpGet]
         [AllowAnonymous]
         public async Task<IActionResult> GetHomeImages()
@@ -29,10 +26,7 @@ namespace BE.Controllers
             return Ok(images);
         }
 
-        // =========================================
-        // GET /api/home-images/all
-        // Admin — trả về toàn bộ ảnh, kể cả Inactive
-        // =========================================
+      
         [HttpGet("all")]
         public async Task<IActionResult> GetAllImages()
         {
@@ -40,9 +34,6 @@ namespace BE.Controllers
             return Ok(images);
         }
 
-        // =========================================
-        // GET /api/home-images/{id}
-        // =========================================
         [HttpGet("{id:int}")]
         [Authorize(Roles = "Admin")]
         public async Task<IActionResult> GetById(int id)
@@ -55,10 +46,7 @@ namespace BE.Controllers
             return Ok(image);
         }
 
-        // =========================================
-        // POST /api/home-images
-        // Admin — upload ảnh mới (multipart/form-data)
-        // =========================================
+     
         [HttpPost]
         [Authorize(Roles = "Admin")]
         public async Task<IActionResult> Create([FromForm] CreateHomeImageRequest request)
@@ -76,10 +64,7 @@ namespace BE.Controllers
             }
         }
 
-        // =========================================
-        // PUT /api/home-images/{id}
-        // Admin — cập nhật thông tin / đổi ảnh / đổi trạng thái
-        // =========================================
+       
         [HttpPut("{id:int}")]
         [Authorize(Roles = "Admin")]
         public async Task<IActionResult> Update(int id, [FromForm] UpdateHomeImageRequest request)
@@ -95,10 +80,7 @@ namespace BE.Controllers
             }
         }
 
-        // =========================================
-        // DELETE /api/home-images/{id}
-        // Admin — xóa ảnh (cả S3 lẫn DB)
-        // =========================================
+      
         [HttpDelete("{id:int}")]
         [Authorize(Roles = "Admin")]
         public async Task<IActionResult> Delete(int id)
@@ -114,10 +96,7 @@ namespace BE.Controllers
             }
         }
 
-        // =========================================
-        // HELPER — lấy EmployeeId của Admin đang đăng nhập từ JWT claim
-        // ⚠️ Đổi tên claim cho đúng với hệ thống Auth hiện tại của bạn
-        // =========================================
+     
         private long GetCurrentEmployeeId()
         {
             var claim = User.FindFirst("EmployeeId")

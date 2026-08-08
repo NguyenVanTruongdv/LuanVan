@@ -16,7 +16,7 @@ public class ForumLikeService
         _notificationService = notificationService;
     }
 
-    // ===== TYM / BỎ TYM BÀI VIẾT 
+
     public async Task<(bool Success, string? Error, ForumLikeToggleResultDto? Data)> ToggleLikeAsync(long memberId, long postId)
     {
         var baiViet = await _context.ForumPosts.FirstOrDefaultAsync(p => p.PostId == postId);
@@ -44,7 +44,7 @@ public class ForumLikeService
         }
         else
         {
-            // Chưa tym -> thêm tym mới
+            
             likeMoi = new ForumLike
             {
                 PostId = postId,
@@ -79,7 +79,7 @@ public class ForumLikeService
         return (true, null, ketQua);
     }
 
-    // ===== KIỂM TRA 1 HỘI VIÊN ĐÃ TYM BÀI CHƯA =====
+  
     public async Task<bool> HasLikedAsync(long postId, long memberId)
     {
         bool daTym = await _context.ForumLikes.AnyAsync(l => l.PostId == postId && l.MemberId == memberId);

@@ -16,10 +16,6 @@ public class PromotionsController : ControllerBase
         _promotionService = promotionService;
     }
 
-    // ===================== GET: api/promotions =====================
-    // Danh sách khuyến mãi (ADMIN) — lọc theo tên (keyword) và/hoặc planId, có phân trang.
-    // Trả về TẤT CẢ trạng thái (kể cả đã ẩn/hết hạn) để admin quản lý được toàn bộ.
-    // Ví dụ: GET /api/promotions?keyword=he&planId=3&page=1&pageSize=10
     [HttpGet]
     public async Task<ActionResult<PagedResult<PromotionListItem>>> GetPromotions(
         [FromQuery] string? keyword,
@@ -46,9 +42,7 @@ public class PromotionsController : ControllerBase
         }
     }
 
-    // ===================== GET: api/promotions/applicable/{planId} =====================
-    // Danh sách khuyến mãi ĐANG áp dụng được cho 1 gói tại thời điểm hiện tại — dùng khi
-    // tạo giao dịch mới cho khách (khác GetPromotions ở trên, chỉ dùng cho màn quản lý).
+  
     [HttpGet("applicable/{planId:int}")]
     public async Task<ActionResult<List<ApplicablePromotionItem>>> GetApplicablePromotions(int planId)
     {
@@ -131,8 +125,7 @@ public class PromotionsController : ControllerBase
         }
     }
 
-    // ===================== PATCH: api/promotions/{id}/visibility =====================
-    // Ẩn / hiện khuyến mãi. Body: { "an": true } để ẩn, { "an": false } để hiện lại.
+   
     [HttpPatch("{id:int}/visibility")]
     public async Task<ActionResult<PromotionListItem>> SetVisibility(int id, [FromBody] SetPromotionVisibilityRequest request)
     {
@@ -148,10 +141,7 @@ public class PromotionsController : ControllerBase
         }
     }
 
-    // ===================== DELETE: api/promotions/{id} =====================
-    // Xóa cứng — chỉ thành công nếu khuyến mãi CHƯA từng được áp dụng lần nào (xem
-    // PromotionService.DeletePromotionAsync). Nếu đã dùng rồi, trả 400 kèm hướng dẫn dùng
-    // chức năng ẩn (PATCH .../visibility) thay thế.
+    
     [HttpDelete("{id:int}")]
     public async Task<IActionResult> DeletePromotion(int id)
     {

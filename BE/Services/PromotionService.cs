@@ -293,17 +293,7 @@ public class PromotionService
         return promotion;
     }
 
-    // ===================== [MỚI] SỬA KHUYẾN MÃI ĐÃ CÓ =====================
-    // `updated` chứa các giá trị MỚI muốn ghi đè (do Controller map từ DTO request). Hàm này tự
-    // load bản ghi gốc, ghi đè các field cho phép sửa, validate lại TOÀN BỘ tổ hợp field SAU khi
-    // ghi đè (không chỉ validate riêng field vừa đổi) — vì đổi promo_type mà không đổi kèm các
-    // cột số liệu tương ứng cũng phải bị chặn y như lúc tạo mới.
-    //
-    // TrangThai: giống Create — TỰ ĐỘNG tính lại theo ngày MỚI, trừ khi FE gửi "TamDung" (đổi ngày
-    // xong nhưng vẫn muốn giữ/chuyển sang tạm dừng thủ công).
-    //
-    // KHÔNG cho sửa SoLuotDaDung qua đường này (cột đếm dồn, chỉ được tăng/giảm bởi
-    // TransactionService.RecordPromotionUsage / hoàn lượt khi điều chỉnh giao dịch).
+
     public async Task<Promotion> UpdatePromotionAsync(int promotionId, Promotion updated)
     {
         var promotion = await _db.Promotions.FirstOrDefaultAsync(p => p.PromotionId == promotionId);
@@ -330,8 +320,6 @@ public class PromotionService
         promotion.NgayKetThuc = updated.NgayKetThuc;
         promotion.GioiHanLuot = updated.GioiHanLuot;
         promotion.UpdatedAt = DateTime.Now;
-        // SoLuotDaDung: KHÔNG copy từ `updated` — giữ nguyên giá trị đang đếm dồn trong DB.
-        // NguoiTao/CreatedAt: KHÔNG cho sửa — giữ nguyên người tạo & thời điểm tạo gốc.
 
         ValidatePromotionData(promotion);
 
@@ -344,16 +332,6 @@ public class PromotionService
         return promotion;
     }
 
-    // ===================== [MỚI] ẨN / HIỆN KHUYẾN MÃI =====================
-    // Không xóa dữ liệu — chỉ đổi TrangThai. Khi ẨN (an = true): set cứng STATUS_PAUSED, đây là
-    // override thủ công nên SẼ KHÔNG bị SyncAutoStatusesAsync tự đổi lại về sau. Khi HIỆN lại
-    // (an = false): KHÔNG ép cứng về HoatDong — mà TÍNH LẠI theo ngày hiện tại, vì một KM đã hết
-    // hạn hoặc chưa tới ngày bắt đầu thì "hiện lại" đúng ra phải trả nó về NhapLieu/HetHan tương
-    // ứng, không phải HoatDong giả tạo.
-    //
-    // Khi ẩn, KM sẽ KHÔNG còn xuất hiện trong GetApplicablePromotionsAsync/AtAsync (2 hàm đó loại
-    // trừ TrangThai == STATUS_PAUSED), nhưng vẫn còn nguyên trong danh sách quản lý
-    // (GetPromotionsAsync) và vẫn giữ lịch sử SoLuotDaDung / các PromotionUsages đã phát sinh trước đó.
     public async Task<Promotion> SetPromotionVisibilityAsync(int promotionId, bool an)
     {
         var promotion = await _db.Promotions.FirstOrDefaultAsync(p => p.PromotionId == promotionId);
@@ -368,12 +346,6 @@ public class PromotionService
         await _db.SaveChangesAsync();
         return promotion;
     }
-
-    // ===================== [MỚI] XÓA KHUYẾN MÃI =====================
-    // Xóa CỨNG khỏi DB. Chỉ nên cho phép khi khuyến mãi CHƯA từng được áp dụng lần nào
-    // (SoLuotDaDung == 0), để tránh mất dấu vết cho các giao dịch cũ đã tham chiếu tới KM này
-    // (PromotionUsages.PromotionId, Transactions liên quan...). Nếu đã từng dùng, hướng dẫn admin
-    // dùng chức năng ẨN (SetPromotionVisibilityAsync) thay vì xóa.
     public async Task DeletePromotionAsync(int promotionId)
     {
         var promotion = await _db.Promotions.FirstOrDefaultAsync(p => p.PromotionId == promotionId);
@@ -389,23 +361,7 @@ public class PromotionService
         await _db.SaveChangesAsync();
     }
 
-    // ===================== VALIDATE DỮ LIỆU KHUYẾN MÃI THEO ĐÚNG promo_type =====================
-    // Dùng chung cho cả Create và Update, gọi NGAY TRƯỚC KHI tính TrangThai / SaveChanges. Mục tiêu:
-    // chặn đứng các tổ hợp dữ liệu vô lý/nhầm loại ngay từ lúc nhập liệu, thay vì để lỗi trôi tới
-    // tận lúc tính ngày hết hạn / giá tiền cho một giao dịch thật của khách hàng.
-    //
-    // Quy tắc:
-    //   - GiamPhanTram: BẮT BUỘC có PhanTramGiam > 0; KHÔNG được set SoTienGiam/SoNgayTang/SoChuKyTang.
-    //   - GiamTienMat : BẮT BUỘC có SoTienGiam > 0; KHÔNG được set PhanTramGiam/SoNgayTang/SoChuKyTang.
-    //   - TangNgay    : BẮT BUỘC có SoNgayTang > 0; KHÔNG được set PhanTramGiam/SoTienGiam/SoChuKyTang.
-    //                   Nếu SoNgayTang là bội số "sạch" của 30 (30, 60, 90, 120...) -> rất có
-    //                   khả năng người tạo đang MUỐN tặng theo CHU KỲ (1 chu kỳ = 30 ngày cố định,
-    //                   nên dùng TangChuKy với SoChuKyTang tương ứng), không phải ngày lẻ thật ->
-    //                   NÉM LỖI, bắt sửa lại đúng loại thay vì lặng lẽ cho qua và tái diễn bug đã gặp.
-    //   - TangChuKy   : BẮT BUỘC có SoChuKyTang > 0; KHÔNG được set PhanTramGiam/SoTienGiam/SoNgayTang.
-    //                   Số ngày tặng thực tế = SoChuKyTang × 30 (1 chu kỳ = 30 ngày CỐ ĐỊNH, xem
-    //                   MemberPackageService.CalculateBonusDays — KHÔNG phụ thuộc DurationDays của
-    //                   gói đang mua, và KHÔNG dùng AddMonths theo lịch).
+
     private static void ValidatePromotionData(Promotion promotion)
     {
         switch (promotion.PromoType)
@@ -433,10 +389,7 @@ public class PromotionService
                     throw new InvalidOperationException(
                         "Khuyến mãi 'Tặng ngày' không được có PhanTramGiam/SoTienGiam/SoChuKyTang.");
 
-                // Chặn phòng vệ: SoNgayTang là bội số "sạch" của 30 (>= 30) rất có khả năng admin
-                // đang muốn tặng theo CHU KỲ (30 ngày/chu kỳ), không phải ngày lẻ thật. Nếu để lọt
-                // qua sẽ tái diễn đúng bug đã gặp thực tế (khai nhầm TangNgay=90 thay vì
-                // TangChuKy=3).
+
                 if (promotion.SoNgayTang.Value >= 30 && promotion.SoNgayTang.Value % 30 == 0)
                     throw new InvalidOperationException(
                         $"SoNgayTang = {promotion.SoNgayTang} là bội số của 30 — có vẻ bạn đang " +
@@ -465,14 +418,7 @@ public class PromotionService
             throw new InvalidOperationException("GioiHanLuot (nếu có) phải lớn hơn 0.");
     }
     // ===================== [MỚI] LỊCH SỬ SỬ DỤNG KHUYẾN MÃI =====================
-    // Đọc từ bảng PromotionUsage (mỗi lần 1 khuyến mãi được áp dụng thành công cho 1
-    // MemberPackage sẽ có 1 dòng ở đây — ghi bởi TransactionService.RecordPromotionUsage,
-    // xem comment ở PromotionUsage entity). Hỗ trợ lọc theo PromotionId / MemberId / PlanId /
-    // khoảng ApDungLuc, sắp mới nhất lên trước, có phân trang.
-    //
-    // Lưu ý: SoTienDaGiam / SoNgayDuocTang ở đây là giá trị THỰC TẾ đã áp dụng tại thời điểm
-    // giao dịch đó (đã "đóng băng"), không suy ra lại từ cấu hình Promotion hiện tại — vì cấu
-    // hình khuyến mãi có thể đã bị sửa/xóa sau này, không được phép làm lệch lịch sử.
+
     public async Task<PagedResult<PromotionUsageHistoryItem>> GetPromotionUsageHistoryAsync(
         PromotionUsageHistoryQueryDto query)
     {

@@ -8,7 +8,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace BE.Services
 {
-    public class ThongKeService 
+    public class ThongKeService
     {
         private readonly GymManagementContext _context;
 
@@ -33,23 +33,21 @@ namespace BE.Services
 
         public async Task<GymDensityResponseDto> GetGymDensityAsync(int? branchId = null, int soNgayGanNhat = 90)
         {
-            var tuNgay = DateTime.Now.AddDays(-Math.Abs(soNgayGanNhat));
+            DateTime tuNgay = DateTime.Now.AddDays(-Math.Abs(soNgayGanNhat));
 
-            var query = _context.GymDensities
-                .Where(d => d.RecordedAt >= tuNgay);
+            var query = _context.GymDensities.Where(d => d.RecordedAt >= tuNgay);
 
             if (branchId.HasValue)
             {
                 query = query.Where(d => d.BranchId == branchId.Value);
             }
 
-            // Chỉ lấy 2 trường cần thiết để gộp nhóm ở phía application (tránh dịch DayOfWeek sang SQL không ổn định)
-            var rawData = await query
+            // Lấy dữ liệu thô trước, gộp nhóm theo thứ/giờ ở phía application cho chắc ăn.
+            var duLieuTho = await query
                 .Select(d => new { d.RecordedAt, d.Headcount })
                 .ToListAsync();
 
-            // Gộp theo (thứ trong tuần, giờ trong ngày) -> lấy trung bình headcount
-            var grouped = rawData
+            var gomNhom = duLieuTho
                 .GroupBy(x => new { x.RecordedAt.DayOfWeek, Hour = x.RecordedAt.Hour })
                 .ToDictionary(
                     g => g.Key,
@@ -63,13 +61,13 @@ namespace BE.Services
                 var slots = new List<DensitySlotDto>();
                 for (int h = 0; h < 24; h++)
                 {
-                    grouped.TryGetValue(new { DayOfWeek = dow, Hour = h }, out var avg);
-                    var start = h.ToString("00");
-                    var end = ((h + 1) % 24).ToString("00");
+                    gomNhom.TryGetValue(new { DayOfWeek = dow, Hour = h }, out int trungBinh);
+                    string start = h.ToString("00");
+                    string end = ((h + 1) % 24).ToString("00");
                     slots.Add(new DensitySlotDto
                     {
                         Slot = $"{start}:00-{end}:00",
-                        Luot = avg,
+                        Luot = trungBinh,
                     });
                 }
                 result.Data[key] = slots;
@@ -82,9 +80,9 @@ namespace BE.Services
 
         public async Task<ThongKeSummaryDto> GetSummaryAsync(int memberId)
         {
-            var now = DateTime.Now;
-            var dauThang = new DateTime(now.Year, now.Month, 1);
-            var dauThangSau = dauThang.AddMonths(1);
+            DateTime now = DateTime.Now;
+            DateTime dauThang = new DateTime(now.Year, now.Month, 1);
+            DateTime dauThangSau = dauThang.AddMonths(1);
 
             var checkInsThangNay = await _context.CheckIns
                 .Where(c => c.MemberId == memberId
@@ -93,18 +91,18 @@ namespace BE.Services
                 .Select(c => new { c.CheckInTime, c.CheckOutTime })
                 .ToListAsync();
 
-            var buoiTapThangNay = checkInsThangNay.Count;
+            int buoiTapThangNay = checkInsThangNay.Count;
 
-            var tongPhut = checkInsThangNay
+            double tongPhut = checkInsThangNay
                 .Where(c => c.CheckOutTime.HasValue)
                 .Sum(c => (c.CheckOutTime!.Value - c.CheckInTime).TotalMinutes);
 
-            var gio = (int)(tongPhut / 60);
-            var phut = (int)(tongPhut % 60);
+            int gio = (int)(tongPhut / 60);
+            int phut = (int)(tongPhut % 60);
 
-            var buoiSangSom = checkInsThangNay.Count(c => c.CheckInTime.Hour < 8);
+            int buoiSangSom = checkInsThangNay.Count(c => c.CheckInTime.Hour < 8);
 
-            var streak = await TinhStreakAsync(memberId);
+            int streak = await TinhStreakAsync(memberId);
 
             return new ThongKeSummaryDto
             {
@@ -117,17 +115,17 @@ namespace BE.Services
 
         private async Task<int> TinhStreakAsync(int memberId)
         {
-            var cacNgayTap = await _context.CheckIns
+            List<DateTime> cacNgayTap = await _context.CheckIns
                 .Where(c => c.MemberId == memberId)
                 .Select(c => c.CheckInTime.Date)
                 .Distinct()
                 .ToListAsync();
 
             var tapSet = cacNgayTap.ToHashSet();
-            var homNay = DateTime.Today;
+            DateTime homNay = DateTime.Today;
 
-            // Nếu hôm nay chưa tập, cho phép tính streak bắt đầu từ hôm qua
-            var conTro = tapSet.Contains(homNay) ? homNay : homNay.AddDays(-1);
+            // Hôm nay chưa tập thì cho phép streak tính bắt đầu từ hôm qua.
+            DateTime conTro = tapSet.Contains(homNay) ? homNay : homNay.AddDays(-1);
 
             int streak = 0;
             while (tapSet.Contains(conTro))
@@ -150,16 +148,15 @@ namespace BE.Services
                 .Where(c => c.MemberId == memberId)
                 .OrderByDescending(c => c.CheckInTime);
 
-            var totalCount = await baseQuery.CountAsync();
+            int totalCount = await baseQuery.CountAsync();
 
-            // Lấy dữ liệu thô trước (EF dịch được sang SQL), format chuỗi được xử lý sau ở phía application
             var raw = await baseQuery
                 .Skip((page - 1) * pageSize)
                 .Take(pageSize)
                 .Select(c => new { c.CheckInId, c.CheckInTime, c.CheckOutTime })
                 .ToListAsync();
 
-            var items = raw.Select(c => new CheckInHistoryItemDto
+            List<CheckInHistoryItemDto> items = raw.Select(c => new CheckInHistoryItemDto
             {
                 CheckInId = c.CheckInId,
                 Date = c.CheckInTime.ToString("dd/MM/yyyy"),
@@ -182,8 +179,8 @@ namespace BE.Services
 
         private static string FormatDuration(TimeSpan ts)
         {
-            var gio = (int)ts.TotalHours;
-            var phut = ts.Minutes;
+            int gio = (int)ts.TotalHours;
+            int phut = ts.Minutes;
             return $"{gio}h {phut}m";
         }
     }

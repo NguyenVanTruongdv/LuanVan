@@ -9,11 +9,13 @@ namespace BE.Services.Storage;
 public class S3StorageService
 {
     private readonly IAmazonS3 _s3Client;
+    private readonly TransferUtility _transferUtility;
     private readonly string _bucketName;
 
     public S3StorageService(IAmazonS3 s3Client, IConfiguration configuration)
     {
         _s3Client = s3Client;
+        _transferUtility = new TransferUtility(_s3Client);
         _bucketName = configuration["Aws:BucketName"]
             ?? throw new InvalidOperationException("Thiếu cấu hình Aws:BucketName");
     }
@@ -33,8 +35,7 @@ public class S3StorageService
             ContentType = file.ContentType
         };
 
-        var transferUtility = new TransferUtility(_s3Client);
-        await transferUtility.UploadAsync(uploadRequest);
+        await _transferUtility.UploadAsync(uploadRequest);
 
         return $"https://{_bucketName}.s3.amazonaws.com/{key}";
     }
@@ -57,13 +58,11 @@ public class S3StorageService
             ContentType = contentType
         };
 
-        var transferUtility = new TransferUtility(_s3Client);
-        await transferUtility.UploadAsync(uploadRequest);
+        await _transferUtility.UploadAsync(uploadRequest);
 
         return $"https://{_bucketName}.s3.amazonaws.com/{key}";
     }
 
-    /// <summary>Xóa 1 file khỏi S3 theo URL đã lưu trong DB. Nuốt lỗi có chủ đích.</summary>
     public async Task DeleteFileAsync(string fileUrl)
     {
         try
@@ -88,6 +87,63 @@ public class S3StorageService
     {
         foreach (var url in fileUrls)
             await DeleteFileAsync(url);
+    }
+
+    /// <summary>
+    /// Rollback ảnh đã upload lên S3 khi DB transaction fail (VD: SaveChanges lỗi sau khi đã upload ảnh).
+    /// Dùng batch delete (tối đa 1000 key/lần) để xóa nhanh, không throw ra ngoài — chỉ trả về danh sách
+    /// URL nào xóa thất bại (nếu cần log/retry sau), tránh làm gãy luồng rollback đang chạy trong catch.
+    /// </summary>
+    public async Task<List<string>> RollbackUploadedFilesAsync(IEnumerable<string> uploadedFileUrls)
+    {
+        var failedUrls = new List<string>();
+        var urlList = uploadedFileUrls?.Where(u => !string.IsNullOrWhiteSpace(u)).ToList()
+            ?? new List<string>();
+
+        if (urlList.Count == 0) return failedUrls;
+
+        // map key -> url để biết url nào lỗi, và bỏ qua url không thuộc bucket này
+        var keyToUrl = new Dictionary<string, string>();
+        foreach (var url in urlList)
+        {
+            var key = ExtractS3Key(url);
+            if (!string.IsNullOrEmpty(key))
+                keyToUrl[key] = url;
+        }
+
+        if (keyToUrl.Count == 0) return failedUrls;
+
+        // S3 DeleteObjects giới hạn 1000 key/request -> chia batch
+        const int batchSize = 1000;
+        foreach (var batch in keyToUrl.Keys.Chunk(batchSize))
+        {
+            try
+            {
+                var response = await _s3Client.DeleteObjectsAsync(new DeleteObjectsRequest
+                {
+                    BucketName = _bucketName,
+                    Objects = batch.Select(k => new KeyVersion { Key = k }).ToList(),
+                    Quiet = false
+                });
+
+                if (response.DeleteErrors?.Count > 0)
+                {
+                    foreach (var err in response.DeleteErrors)
+                    {
+                        // TODO: log err.Key / err.Code / err.Message qua ILogger
+                        if (keyToUrl.TryGetValue(err.Key, out var failedUrl))
+                            failedUrls.Add(failedUrl);
+                    }
+                }
+            }
+            catch
+            {
+                // TODO: thay bằng ILogger để ghi log lỗi rollback lại nếu cần
+                failedUrls.AddRange(batch.Select(k => keyToUrl[k]));
+            }
+        }
+
+        return failedUrls;
     }
 
     private string? ExtractS3Key(string imageUrl)
