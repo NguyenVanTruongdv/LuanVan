@@ -76,7 +76,7 @@ namespace BE.Dtos.Member
         public string? PackageStatus { get; set; }
 
         public string? GeneratedPassword { get; set; }
-        public string ? LockReason {get; set; }
+        public string? LockReason { get; set; }
     }
 
     // ===================== DANH SÁCH HỘI VIÊN (kèm ảnh + gói tập đang dùng hôm nay) =====================
@@ -110,7 +110,6 @@ namespace BE.Dtos.Member
 
         [Phone(ErrorMessage = "Số điện thoại không hợp lệ")]
         [StringLength(15, ErrorMessage = "Số điện thoại tối đa 15 ký tự")]
-        public string? Phone { get; set; }
 
         public string? Gender { get; set; }
         public string? InternalNotes { get; set; }
@@ -137,9 +136,9 @@ namespace BE.Dtos.Member
     //     public string? Reason { get; set; }
     // }
     public class ResetMemberPasswordRequest
-        {
-            public string NewPassword { get; set; } = string.Empty;
-        }
+    {
+        public string NewPassword { get; set; } = string.Empty;
+    }
     // ===================== LỊCH SỬ CẬP NHẬT =====================
     public class MemberUpdateLogItem
     {

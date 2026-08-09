@@ -357,6 +357,17 @@ public class IdentifyService
             .FirstOrDefaultAsync(m => m.Account != null && m.Phone == phone);
     }
 
+    // Gói tập được coi là còn hiệu lực khi status = Active VÀ (không có ngày hết hạn hoặc ngày hết hạn >= hôm nay).
+    private static bool IsPackageEffectivelyActive(MemberPackage? goiTap)
+    {
+        if (goiTap == null || goiTap.PackageStatus != PackageStatusActive)
+        {
+            return false;
+        }
+
+        return goiTap.ExpiryDate == null || goiTap.ExpiryDate.Value >= DateOnly.FromDateTime(DateTime.Today);
+    }
+
     private MemberPackage? GetLatestPackage(Member hoiVien)
     {
         if (hoiVien.MemberPackages == null || hoiVien.MemberPackages.Count == 0)
@@ -364,12 +375,13 @@ public class IdentifyService
             return null;
         }
 
-        MemberPackage? goiDangActive = hoiVien.MemberPackages
-            .Where(p => p.PackageStatus == PackageStatusActive)
+        // Ưu tiên gói còn hiệu lực thật sự (status Active và chưa hết hạn theo ngày), gần hết hạn nhất trước.
+        MemberPackage? goiDangHieuLuc = hoiVien.MemberPackages
+            .Where(IsPackageEffectivelyActive)
             .OrderByDescending(p => p.ExpiryDate)
             .FirstOrDefault();
 
-        return goiDangActive ?? hoiVien.MemberPackages
+        return goiDangHieuLuc ?? hoiVien.MemberPackages
             .OrderByDescending(p => p.ExpiryDate)
             .FirstOrDefault();
     }
@@ -386,7 +398,8 @@ public class IdentifyService
             return "Tài khoản chưa được kích hoạt. Không thể check-in.";
         }
 
-        if (goiTap == null || goiTap.PackageStatus != PackageStatusActive)
+        // Chặn check-in nếu: không có gói, sai status, HOẶC đã qua ngày hết hạn (dù status trong DB vẫn là Active).
+        if (!IsPackageEffectivelyActive(goiTap))
         {
             return "Gói tập đã hết hạn. Vui lòng gia hạn trước khi check-in.";
         }
@@ -410,7 +423,8 @@ public class IdentifyService
         if (goiTap != null)
         {
             dto.Package = goiTap.Plan?.PlanName;
-            dto.PackageStatus = goiTap.PackageStatus == PackageStatusActive ? "active" : "expired";
+            // Hiển thị "active" chỉ khi status = Active VÀ chưa qua ngày hết hạn, đồng bộ với logic check-in.
+            dto.PackageStatus = IsPackageEffectivelyActive(goiTap) ? "active" : "expired";
             dto.ExpiryDate = goiTap.ExpiryDate?.ToString("dd/MM/yyyy");
         }
 
