@@ -62,7 +62,9 @@ namespace BE.Services
             return nhanVien?.FullName;
         }
 
-        // Phone/PasswordHash nằm trên bảng accounts (dùng chung member + employee), không còn trên Member.
+        // Phone nằm trên bảng members (không phải accounts). Account chỉ giữ thông tin đăng nhập
+        // (Username/PasswordHash/Status/SuspendReason) dùng chung cho cả member lẫn employee.
+        // Hàm này dùng khi cần AccountId để đổi mật khẩu, khóa/mở khóa, hoặc đọc SuspendReason.
         private async Task<Account> GetAccountByMemberIdAsync(long memberId)
         {
             Account? taiKhoan = await _context.Accounts.FirstOrDefaultAsync(a => a.MemberId == memberId);
@@ -109,7 +111,7 @@ namespace BE.Services
         }
 
         // Gói chỉ còn 1 loại duy nhất -> lấy thẳng gói Active mới nhất theo ExpiryDate.
-        // Nếu tài khoản đang bị khóa thì trả kèm lý do (SuspendReason sống trên Account).
+        // Nếu tài khoản đang bị khóa (Status == "Suspended") thì trả kèm SuspendReason (sống trên Account).
         private async Task<MemberResponse> BuildMemberResponse(long memberId)
         {
             Member? hoiVien = await _context.Members
@@ -134,7 +136,7 @@ namespace BE.Services
             {
                 MemberId = hoiVien.MemberId,
                 FullName = hoiVien.FullName,
-                Phone = hoiVien?.Phone,
+                Phone = hoiVien.Phone,
                 Gender = hoiVien.Gender,
                 BranchName = goiHienTai?.Branch?.BranchName,
                 Status = hoiVien.Status,
@@ -146,11 +148,11 @@ namespace BE.Services
                 FaceIdAws = hoiVien.FaceDatum?.FaceIdAws,
                 ProfileImage = hoiVien.FaceDatum?.ProfileImage,
 
+                // NOTE: field này tên là "...PackageId" nhưng đang gán PlanName (string).
+                // Giữ nguyên như code gốc để không phá vỡ DTO/FE đang dùng - cần xác nhận lại ý đồ ban đầu.
                 CurrentMemberPackageId = goiHienTai?.Plan?.PlanName,
                 PackageExpiryDate = goiHienTai?.ExpiryDate,
                 PackageStatus = goiHienTai?.PackageStatus,
-
-
             };
         }
 
@@ -284,7 +286,8 @@ namespace BE.Services
         public async Task<List<MemberListItem>> GetPendingMembersAsync(string? phone, string? fullName, int? branchId)
             => await QueryMemberList(phone, fullName, branchId, pendingOnly: true);
 
-        // Danh sách hội viên theo phone/fullName/branch (Phone lấy từ Account, không còn trên Member).
+        // Danh sách hội viên theo phone/fullName/branch. Phone nằm thẳng trên Member nên lọc
+        // được ngay trong câu SQL, không cần join qua Account hay lọc lại ở bộ nhớ.
         private async Task<List<MemberListItem>> QueryMemberList(string? phone, string? fullName, int? branchId, bool pendingOnly)
         {
             var truyVan = _context.Members
@@ -301,6 +304,9 @@ namespace BE.Services
             if (!string.IsNullOrWhiteSpace(fullName))
                 truyVan = truyVan.Where(m => m.FullName.Contains(fullName));
 
+            if (!string.IsNullOrWhiteSpace(phone))
+                truyVan = truyVan.Where(m => m.Phone != null && m.Phone.Contains(phone));
+
             if (branchId.HasValue)
                 truyVan = truyVan.Where(m => m.MemberPackages.Any(p => p.BranchId == branchId));
 
@@ -308,22 +314,18 @@ namespace BE.Services
                 .OrderByDescending(m => m.CreatedAt)
                 .ToListAsync();
 
-            Dictionary<long, string?> phoneTheoMemberId = await GetPhonesByMemberIdsAsync(danhSachHoiVien.Select(m => m.MemberId));
-
-            List<MemberListItem> ketQua = danhSachHoiVien.Select(hoiVien =>
+            return danhSachHoiVien.Select(hoiVien =>
             {
                 MemberPackage? goiHienTai = hoiVien.MemberPackages
                     .Where(p => p.PackageStatus == "Active")
                     .OrderByDescending(p => p.ExpiryDate)
                     .FirstOrDefault();
 
-                phoneTheoMemberId.TryGetValue(hoiVien.MemberId, out string? sdt);
-
                 return new MemberListItem
                 {
                     MemberId = hoiVien.MemberId,
                     FullName = hoiVien.FullName,
-                    Phone = sdt,
+                    Phone = hoiVien.Phone,
                     BranchName = goiHienTai?.Branch?.BranchName,
                     Status = hoiVien.Status,
                     ProfileImage = hoiVien.FaceDatum?.ProfileImage,
@@ -343,11 +345,6 @@ namespace BE.Services
                         .ToList()
                 };
             }).ToList();
-
-            if (!string.IsNullOrWhiteSpace(phone))
-                ketQua = ketQua.Where(m => m.Phone != null && m.Phone.Contains(phone)).ToList();
-
-            return ketQua;
         }
 
         private async Task<List<MemberListItem>> QueryAll(string? phone, string? fullName)
@@ -359,97 +356,60 @@ namespace BE.Services
             if (!string.IsNullOrWhiteSpace(fullName))
                 truyVan = truyVan.Where(m => m.FullName.Contains(fullName));
 
+            if (!string.IsNullOrWhiteSpace(phone))
+                truyVan = truyVan.Where(m => m.Phone != null && m.Phone.Contains(phone));
+
             List<Member> danhSachHoiVien = await truyVan
                 .OrderByDescending(m => m.CreatedAt)
                 .ToListAsync();
 
-            Dictionary<long, string?> phoneTheoMemberId = await GetPhonesByMemberIdsAsync(danhSachHoiVien.Select(m => m.MemberId));
-
-            List<MemberListItem> ketQua = danhSachHoiVien.Select(hoiVien =>
+            return danhSachHoiVien.Select(hoiVien => new MemberListItem
             {
-                phoneTheoMemberId.TryGetValue(hoiVien.MemberId, out string? sdt);
-                return new MemberListItem
-                {
-                    MemberId = hoiVien.MemberId,
-                    FullName = hoiVien.FullName,
-                    Phone = sdt,
-                    Status = hoiVien.Status,
-                    ProfileImage = hoiVien.FaceDatum?.ProfileImage,
-                    BranchName = null,
-                    CurrentPackages = new List<CurrentPackageItem>()
-                };
+                MemberId = hoiVien.MemberId,
+                FullName = hoiVien.FullName,
+                Phone = hoiVien.Phone,
+                Status = hoiVien.Status,
+                ProfileImage = hoiVien.FaceDatum?.ProfileImage,
+                BranchName = null,
+                CurrentPackages = new List<CurrentPackageItem>()
             }).ToList();
-
-            if (!string.IsNullOrWhiteSpace(phone))
-                ketQua = ketQua.Where(m => m.Phone != null && m.Phone.Contains(phone)).ToList();
-
-            return ketQua;
         }
 
+        // Tìm hội viên theo tên HOẶC số điện thoại — cả hai cột đều nằm trên Member nên gộp
+        // được thành một query duy nhất (không cần query Account rồi map ngược lại).
         public async Task<List<MemberSearchItem>> SearchMembersForRenewAsync(string query)
+{
+    if (string.IsNullOrWhiteSpace(query))
+        return new List<MemberSearchItem>();
+
+    string tuKhoa = query.Trim();
+
+    List<Member> danhSachHoiVien = await _context.Members
+        .Include(m => m.FaceDatum)
+        .Include(m => m.MemberPackages).ThenInclude(p => p.Plan)
+        .Where(m => m.FullName.Contains(tuKhoa) 
+                 || (m.Phone != null && m.Phone.Contains(tuKhoa)))
+        .OrderByDescending(m => m.CreatedAt)
+        .Take(20)
+        .ToListAsync();
+
+    return danhSachHoiVien.Select(hoiVien =>
+    {
+        MemberPackage? goi = hoiVien.MemberPackages.OrderByDescending(p => p.ExpiryDate).FirstOrDefault();
+        return new MemberSearchItem
         {
-            if (string.IsNullOrWhiteSpace(query))
-                return new List<MemberSearchItem>();
-
-            string tuKhoa = query.Trim();
-
-            List<Member> theoTen = await _context.Members
-                .Include(m => m.FaceDatum)
-                .Include(m => m.MemberPackages).ThenInclude(p => p.Plan)
-                .Where(m => m.FullName.Contains(tuKhoa))
-                .OrderByDescending(m => m.CreatedAt)
-                .Take(20)
-                .ToListAsync();
-
-            List<long> memberIdTheoPhone = await _context.Accounts
-                .Where(a => a.MemberId != null && a.Member.Phone.Contains(tuKhoa))
-                .Select(a => a.MemberId!.Value)
-                .Take(20)
-                .ToListAsync();
-
-            List<Member> theoPhone = await _context.Members
-                .Include(m => m.FaceDatum)
-                .Include(m => m.MemberPackages).ThenInclude(p => p.Plan)
-                .Where(m => memberIdTheoPhone.Contains(m.MemberId))
-                .ToListAsync();
-
-            List<Member> danhSachHoiVien = theoTen
-                .Concat(theoPhone)
-                .GroupBy(m => m.MemberId)
-                .Select(g => g.First())
-                .OrderByDescending(m => m.CreatedAt)
-                .Take(20)
-                .ToList();
-
-            Dictionary<long, string?> phoneTheoMemberId = await GetPhonesByMemberIdsAsync(danhSachHoiVien.Select(m => m.MemberId));
-
-            return danhSachHoiVien.Select(hoiVien =>
-            {
-                MemberPackage? goi = hoiVien.MemberPackages.OrderByDescending(p => p.ExpiryDate).FirstOrDefault();
-                phoneTheoMemberId.TryGetValue(hoiVien.MemberId, out string? sdt);
-                return new MemberSearchItem
-                {
-                    MemberId = hoiVien.MemberId,
-                    FullName = hoiVien.FullName,
-                    Phone = sdt,
-                    Status = hoiVien.Status,
-                    ProfileImage = hoiVien.FaceDatum?.ProfileImage,
-                    CurrentPlanName = goi?.Plan?.PlanName,
-                    CurrentStartDate = goi?.StartDate,
-                    CurrentExpiryDate = goi?.ExpiryDate,
-                    CurrentPackageStatus = goi?.PackageStatus
-                };
-            }).ToList();
-        }
-
-        // Lấy Phone theo MemberId hàng loạt (dùng chung cho các hàm liệt kê ở trên)
-        private async Task<Dictionary<long, string?>> GetPhonesByMemberIdsAsync(IEnumerable<long> memberIds)
-        {
-            List<long> dsId = memberIds.ToList();
-            return await _context.Accounts
-                .Where(a => a.MemberId != null && dsId.Contains(a.MemberId.Value))
-                .ToDictionaryAsync(a => a.MemberId!.Value, a => a.Member.Phone);
-        }
+            MemberId = hoiVien.MemberId,
+            FullName = hoiVien.FullName,
+            Phone = hoiVien.Phone,
+            Status = hoiVien.Status,
+            ProfileImage = hoiVien.FaceDatum?.ProfileImage,
+            CurrentPlanName = goi?.Plan?.PlanName,
+            CurrentStartDate = goi?.StartDate,
+            CurrentExpiryDate = goi?.ExpiryDate,
+            CurrentPackageStatus = goi?.PackageStatus
+        };
+    }).ToList();
+}
 
         // =========================================================================
         // NHÓM 3: [THU NGÂN] TẠO HỘI VIÊN MỚI
@@ -457,9 +417,16 @@ namespace BE.Services
 
         public async Task<MemberResponse> CreateMemberAsync(CreateMemberRequest request, long performedBy)
         {
-            bool sdtDaTonTai = await _context.Accounts.AnyAsync(a => a.Member.Phone == request.Phone);
+            bool sdtDaTonTai = await _context.Members.AnyAsync(m => m.Phone == request.Phone);
             if (sdtDaTonTai)
                 throw new InvalidOperationException($"Số điện thoại '{request.Phone}' đã được sử dụng.");
+
+            // FIX: Username của Account đang dùng chung số điện thoại làm username, nên phải
+            // đảm bảo username này (trên bảng Account) cũng chưa bị dùng — Account dùng chung
+            // cho cả Member và Employee nên check riêng ở đây, không thể suy ra từ check Phone ở trên.
+            bool usernameDaTonTai = await _context.Accounts.AnyAsync(a => a.Username == request.Phone);
+            if (usernameDaTonTai)
+                throw new InvalidOperationException($"Tên đăng nhập '{request.Phone}' đã được sử dụng.");
 
             DateTime now = DateTime.UtcNow;
             string matKhauTaoMoi = GenerateRandomPassword();
@@ -469,6 +436,10 @@ namespace BE.Services
             MembershipPlan? goiTap = await _context.MembershipPlans.FirstOrDefaultAsync(p => p.PlanId == request.PlanId);
             if (goiTap == null)
                 throw new KeyNotFoundException("Không tìm thấy gói tập.");
+
+            // FIX: bổ sung check gói tập còn bán, cho đồng nhất với ActivateWithPackageAsync/RenewMembershipAsync.
+            if (goiTap.Status != "OnSale")
+                throw new InvalidOperationException("Gói tập hiện không còn bán.");
 
             Promotion? khuyenMai = await ValidateAndGetPromotionAsync(request.PromotionId, request.PlanId, now);
             short soNgayTangThucTe = _packageService.CalculateBonusDays(khuyenMai, goiTap);
@@ -491,8 +462,9 @@ namespace BE.Services
                     var hoiVien = new Member
                     {
                         FullName = request.FullName,
+                        Phone = request.Phone,
                         Gender = request.Gender,
-                        Status = "Activate",
+                        Status = "Active",
                         InternalNotes = request.InternalNotes,
                         CreatedBy = performedBy,
                         CreatedAt = now,
@@ -504,13 +476,17 @@ namespace BE.Services
                     var taiKhoan = new Account
                     {
                         MemberId = hoiVien.MemberId,
+                        // FIX (bug chính gây crash "Column 'username' cannot be null"):
+                        // trước đây thiếu gán Username. Dùng số điện thoại làm username cho hội viên.
+                        Username = request.Phone,
+                        RoleId=4,
                         PasswordHash = PasswordHelper.HashPassword(matKhauTaoMoi),
                         Status = "Active",
                         CreatedAt = now,
                         UpdatedAt = now
                     };
                     _context.Accounts.Add(taiKhoan);
-                    await _context.SaveChangesAsync();
+                      await _context.SaveChangesAsync();
 
                     // Nếu upload ảnh lỗi -> throw -> rollback member + account vừa Add.
                     await _faceIdService.RegisterFirstFaceAsync(
@@ -558,9 +534,6 @@ namespace BE.Services
                         performedBy: performedBy,
                         promotion: khuyenMai,
                         branchId: branchId);
-
-                    hoiVien.Status = "Active";
-                    hoiVien.UpdatedAt = now;
 
                     _context.MemberUpdateLogs.Add(new MemberUpdateLog
                     {
@@ -622,21 +595,6 @@ namespace BE.Services
             {
                 TrackChange("Họ và tên", hoiVien.FullName, request.FullName);
                 hoiVien.FullName = request.FullName;
-            }
-
-            if (request.Phone != null)
-            {
-                Account taiKhoan = await GetAccountByMemberIdAsync(memberId);
-                if (request.Phone != hoiVien.Phone)
-                {
-                    bool sdtDaTonTai = await _context.Accounts.AnyAsync(a => a.Member.Phone == request.Phone && a.MemberId != memberId);
-                    if (sdtDaTonTai)
-                        throw new InvalidOperationException($"Số điện thoại '{request.Phone}' đã được sử dụng.");
-
-                    TrackChange("Số điện thoại", hoiVien.Phone, request.Phone);
-                    hoiVien.Phone = request.Phone;
-                    taiKhoan.UpdatedAt = now;
-                }
             }
 
             if (request.Gender != null && request.Gender != hoiVien.Gender)
@@ -713,7 +671,7 @@ namespace BE.Services
             return await BuildMemberResponse(memberId);
         }
 
-        // Hội viên tự cập nhật thông tin của chính mình. Phone + đổi mật khẩu thao tác trên Account.
+        // Hội viên tự cập nhật thông tin của chính mình. Phone nằm trên Member; đổi mật khẩu thao tác trên Account.
         public async Task<MemberResponse> UpdateMyProfileAsync(long memberId, UpdateMyProfileRequest request)
         {
             Member? hoiVien = await _context.Members.FirstOrDefaultAsync(m => m.MemberId == memberId);
@@ -723,12 +681,11 @@ namespace BE.Services
             if (hoiVien.Status == "Suspended")
                 throw new InvalidOperationException("Tài khoản đang bị khóa, không thể tự cập nhật thông tin.");
 
-            Account taiKhoan = await GetAccountByMemberIdAsync(memberId);
-
             DateTime now = DateTime.UtcNow;
             Guid sessionId = Guid.NewGuid();
             var danhSachLog = new List<MemberUpdateLog>();
             bool taiKhoanCoThayDoi = false;
+            Account? taiKhoan = null;
 
             void TrackChange(string field, string? oldValue, string? newValue)
             {
@@ -752,13 +709,12 @@ namespace BE.Services
 
             if (!string.IsNullOrWhiteSpace(request.Phone) && request.Phone != hoiVien.Phone)
             {
-                bool sdtDaTonTai = await _context.Accounts.AnyAsync(a => a.Member.Phone == request.Phone && a.MemberId != memberId);
+                bool sdtDaTonTai = await _context.Members.AnyAsync(m => m.Phone == request.Phone && m.MemberId != memberId);
                 if (sdtDaTonTai)
                     throw new InvalidOperationException($"Số điện thoại '{request.Phone}' đã được sử dụng.");
 
                 TrackChange("Số điện thoại", hoiVien.Phone, request.Phone);
                 hoiVien.Phone = request.Phone;
-                taiKhoanCoThayDoi = true;
             }
 
             if (!string.IsNullOrWhiteSpace(request.Gender) && request.Gender != hoiVien.Gender)
@@ -771,6 +727,8 @@ namespace BE.Services
             {
                 if (string.IsNullOrWhiteSpace(request.CurrentPassword))
                     throw new InvalidOperationException("Vui lòng nhập mật khẩu hiện tại để đổi mật khẩu.");
+
+                taiKhoan = await GetAccountByMemberIdAsync(memberId);
 
                 // Dùng lại AccountService.ChangePasswordAsync (có verify mật khẩu cũ) cho đồng nhất.
                 await _accountService.ChangePasswordAsync(taiKhoan.AccountId, request.CurrentPassword, request.NewPassword);
@@ -791,7 +749,7 @@ namespace BE.Services
             if (danhSachLog.Count == 0)
                 return await BuildMemberResponse(memberId);
 
-            if (taiKhoanCoThayDoi)
+            if (taiKhoanCoThayDoi && taiKhoan != null)
                 taiKhoan.UpdatedAt = now;
 
             hoiVien.UpdatedAt = now;
@@ -827,7 +785,9 @@ namespace BE.Services
 
             int branchId = await GetEmployeeBranchIdAsync(performedBy);
             string? tenNhanVien = await GetEmployeeNameAsync(performedBy);
-            Account taiKhoan = await GetAccountByMemberIdAsync(memberId);
+
+            // Chỉ dùng để xác nhận hội viên đã có tài khoản (ném lỗi nếu chưa) — không cần dùng tiếp.
+            await GetAccountByMemberIdAsync(memberId);
 
             DateTime now = DateTime.UtcNow;
             Promotion? khuyenMai = await ValidateAndGetPromotionAsync(request.PromotionId, request.PlanId, now);
@@ -1012,6 +972,10 @@ namespace BE.Services
         // Member.Status chỉ là bản sao hiển thị đồng bộ theo Account.Status thật sự.
         // AccountService lo validate/lưu SuspendReason/thu hồi refresh token, không tự ghi log.
         // MemberService ghi log MemberUpdateLog (LOCK_MEMBER/UNLOCK_MEMBER) để có đủ lịch sử.
+        //
+        // FIX: bọc transaction để Account.Status và Member.Status luôn đổi cùng lúc — nếu
+        // SaveChangesAsync (ghi log + đổi Member.Status) lỗi thì đổi Account.Status cũng bị rollback,
+        // tránh tình trạng 2 bảng lệch trạng thái với nhau.
         // =========================================================================
 
         public async Task LockMemberAsync(long memberId, string reason, long performedBy)
@@ -1028,24 +992,38 @@ namespace BE.Services
             string trangThaiCu = hoiVien.Status;
             DateTime now = DateTime.UtcNow;
 
-            // AccountService: validate reason, đổi Account.Status + SuspendReason, thu hồi refresh token.
-            await _accountService.LockAccountAsync(taiKhoan.AccountId, reason, performedBy);
-
-            hoiVien.Status = "Suspended";
-            hoiVien.UpdatedAt = now;
-
-            _context.MemberUpdateLogs.Add(new MemberUpdateLog
+            var strategy = _context.Database.CreateExecutionStrategy();
+            await strategy.ExecuteAsync(async () =>
             {
-                UpdateSessionId = Guid.NewGuid(),
-                MemberId = memberId,
-                FieldName = "Khóa hội viên",
-                OldValue = trangThaiCu,
-                NewValue = $"Khóa tài khoản - Lý do: {reason}",
-                UpdatedByEmployeeId = performedBy,
-                UpdatedAt = now
-            });
+                await using var dbTransaction = await _context.Database.BeginTransactionAsync();
+                try
+                {
+                    // AccountService: validate reason, đổi Account.Status + SuspendReason, thu hồi refresh token.
+                    await _accountService.LockAccountAsync(taiKhoan.AccountId, reason, performedBy);
 
-            await _context.SaveChangesAsync();
+                    hoiVien.Status = "Suspended";
+                    hoiVien.UpdatedAt = now;
+
+                    _context.MemberUpdateLogs.Add(new MemberUpdateLog
+                    {
+                        UpdateSessionId = Guid.NewGuid(),
+                        MemberId = memberId,
+                        FieldName = "Khóa hội viên",
+                        OldValue = trangThaiCu,
+                        NewValue = $"Khóa tài khoản - Lý do: {reason}",
+                        UpdatedByEmployeeId = performedBy,
+                        UpdatedAt = now
+                    });
+
+                    await _context.SaveChangesAsync();
+                    await dbTransaction.CommitAsync();
+                }
+                catch
+                {
+                    await dbTransaction.RollbackAsync();
+                    throw;
+                }
+            });
         }
 
         public async Task UnlockMemberAsync(long memberId, long performedBy, string? note = null)
@@ -1059,26 +1037,40 @@ namespace BE.Services
             string trangThaiCu = hoiVien.Status;
             DateTime now = DateTime.UtcNow;
 
-            // AccountService: đổi Account.Status về Active, xóa SuspendReason.
-            await _accountService.UnlockAccountAsync(taiKhoan.AccountId, performedBy);
-
-            hoiVien.Status = "Active";
-            hoiVien.UpdatedAt = now;
-
-            _context.MemberUpdateLogs.Add(new MemberUpdateLog
+            var strategy = _context.Database.CreateExecutionStrategy();
+            await strategy.ExecuteAsync(async () =>
             {
-                UpdateSessionId = Guid.NewGuid(),
-                MemberId = memberId,
-                FieldName = "Mở khóa hội viên",
-                OldValue = trangThaiCu,
-                NewValue = string.IsNullOrWhiteSpace(note)
-                    ? "Mở khóa tài khoản"
-                    : $"Mở khóa tài khoản - Ghi chú: {note}",
-                UpdatedByEmployeeId = performedBy,
-                UpdatedAt = now
-            });
+                await using var dbTransaction = await _context.Database.BeginTransactionAsync();
+                try
+                {
+                    // AccountService: đổi Account.Status về Active, xóa SuspendReason.
+                    await _accountService.UnlockAccountAsync(taiKhoan.AccountId, performedBy);
 
-            await _context.SaveChangesAsync();
+                    hoiVien.Status = "Active";
+                    hoiVien.UpdatedAt = now;
+
+                    _context.MemberUpdateLogs.Add(new MemberUpdateLog
+                    {
+                        UpdateSessionId = Guid.NewGuid(),
+                        MemberId = memberId,
+                        FieldName = "Mở khóa hội viên",
+                        OldValue = trangThaiCu,
+                        NewValue = string.IsNullOrWhiteSpace(note)
+                            ? "Mở khóa tài khoản"
+                            : $"Mở khóa tài khoản - Ghi chú: {note}",
+                        UpdatedByEmployeeId = performedBy,
+                        UpdatedAt = now
+                    });
+
+                    await _context.SaveChangesAsync();
+                    await dbTransaction.CommitAsync();
+                }
+                catch
+                {
+                    await dbTransaction.RollbackAsync();
+                    throw;
+                }
+            });
         }
 
         // =========================================================================
@@ -1139,7 +1131,6 @@ namespace BE.Services
                 throw new InvalidOperationException("Gói tập hiện không còn bán.");
 
             int branchId = await GetEmployeeBranchIdAsync(performedBy);
-            Account taiKhoan = await GetAccountByMemberIdAsync(memberId);
 
             DateOnly homNay = DateOnly.FromDateTime(DateTime.UtcNow);
 
@@ -1186,6 +1177,9 @@ namespace BE.Services
                         _transactionService.RecordPromotionUsage(khuyenMaiApDung, memberId, goiTapMoi.MemberPackageId, goiTap.PlanId, bonusDays, discountAmt);
 
                     DateTime now = DateTime.UtcNow;
+
+                    // Gói mới đã Active -> nếu hội viên đang ở trạng thái "Expired" (do gói cũ hết hạn
+                    // và chưa gia hạn kịp) thì đưa về "Active" trở lại.
                     if (hoiVien.Status == "Expired")
                         hoiVien.Status = "Active";
                     hoiVien.UpdatedAt = now;
@@ -1201,8 +1195,10 @@ namespace BE.Services
                         UpdatedAt = now
                     });
 
-                    await _context.SaveChangesAsync();
-
+                    // FIX: gọi GenerateInvoiceIfPaidAsync TRƯỚC SaveChangesAsync cuối cùng.
+                    // Hàm này chỉ gán InvoiceUrl lên entity `giaoDich` (không tự SaveChanges),
+                    // nên phải gọi trước để thay đổi được lưu xuống DB cùng lượt save này.
+                    // Code cũ gọi SAU SaveChangesAsync -> InvoiceUrl trả về cho client nhưng KHÔNG lưu vào DB.
                     string? invoiceUrl = await GenerateInvoiceIfPaidAsync(
                         giaoDich, hoiVien, hoiVien.Phone, goiTap, giaoDich.PaymentStatus,
                         giaGoc: giaGoc,
@@ -1215,6 +1211,7 @@ namespace BE.Services
                         promotion: khuyenMaiApDung,
                         branchId: branchId);
 
+                    await _context.SaveChangesAsync();
                     await dbTransaction.CommitAsync();
 
                     ketQua = new RenewMembershipResponse
@@ -1269,7 +1266,7 @@ namespace BE.Services
                 MemberId = hoiVien.MemberId,
                 FullName = hoiVien.FullName,
                 Avatar = hoiVien.FaceDatum?.ProfileImage,
-                Phone = (await _context.Accounts.FirstOrDefaultAsync(a => a.MemberId == memberId))?.Member.Phone,
+                Phone = hoiVien.Phone,
                 JoinedAt = hoiVien.CreatedAt,
                 PostCount = soBaiViet
             };
@@ -1304,7 +1301,7 @@ namespace BE.Services
                 FullName = hoiVien.FullName,
                 Avatar = hoiVien.FaceDatum?.ProfileImage,
 
-                Phone = hoiVien?.Phone,
+                Phone = hoiVien.Phone,
                 Gender = hoiVien.Gender,
                 JoinedAt = hoiVien.CreatedAt,
 
