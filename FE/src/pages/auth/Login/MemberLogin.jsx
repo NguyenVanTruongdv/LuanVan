@@ -56,18 +56,6 @@ export default function MemberLogin() {
                     <h2 style={styles.panelTitle} className="vtgym-paneltitle">Member Portal</h2>
                     <p style={styles.panelDesc} className="vtgym-paneldesc">Quản lý tài khoản thành viên và theo dõi hành trình luyện tập của bạn</p>
 
-                    <div style={styles.statsRow} className="vtgym-statsrow">
-                        <div style={styles.statBox}>
-                            <span style={styles.statNum}>1,248</span>
-                            <span style={styles.statLabel}>Thành viên</span>
-                        </div>
-                        <div style={styles.statDivider} />
-                        <div style={styles.statBox}>
-                            <span style={styles.statNum}>36</span>
-                            <span style={styles.statLabel}>Buổi hôm nay</span>
-                        </div>
-                    </div>
-
                     <p style={styles.sysLabel} className="vtgym-syslabel">VT Gym Management System v2.1</p>
                 </div>
 
@@ -233,11 +221,6 @@ export default function MemberLogin() {
                     }
                     .vtgym-paneldesc {
                         font-size: 13px !important;
-                        margin-bottom: 24px !important;
-                    }
-                    .vtgym-statsrow {
-                        margin-bottom: 20px !important;
-                        padding: 16px 18px !important;
                     }
                     .vtgym-syslabel {
                         margin-top: 20px !important;
@@ -253,10 +236,6 @@ export default function MemberLogin() {
                     }
                     .vtgym-left, .vtgym-right {
                         padding: 22px 18px !important;
-                    }
-                    .vtgym-statsrow {
-                        gap: 12px !important;
-                        padding: 14px !important;
                     }
                     .vtgym-heading {
                         font-size: 21px !important;
@@ -318,38 +297,7 @@ const styles = {
         fontSize: "14px",
         color: "#8a8a8a",
         lineHeight: 1.6,
-        margin: "0 0 36px",
-    },
-    statsRow: {
-        display: "flex",
-        alignItems: "center",
-        background: "#111111",
-        borderRadius: "14px",
-        padding: "20px 24px",
-        gap: "24px",
-        marginBottom: "auto",
-    },
-    statBox: {
-        display: "flex",
-        flexDirection: "column",
-        gap: "4px",
-        flex: 1,
-    },
-    statNum: {
-        fontSize: "26px",
-        fontWeight: 800,
-        color: "#ff5a3c",
-        lineHeight: 1,
-    },
-    statLabel: {
-        fontSize: "12px",
-        color: "#8a8a8a",
-        fontWeight: 500,
-    },
-    statDivider: {
-        width: "1px",
-        height: "36px",
-        background: "rgba(255,255,255,0.08)",
+        margin: "0 0 auto",
     },
     sysLabel: {
         fontSize: "12px",

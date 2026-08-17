@@ -1,28 +1,47 @@
 import authApi from "./authApi";
 
 const cashierApi = {
-     getCashierDashboard({ range = "30d", start, end, method, channel } = {}) {
-        const params = { range };
- 
+    getCashierDashboard({ range = "30d", start, end, method, channel } = {}) {
+        const params = new URLSearchParams();
+
+        params.append("range", range);
+
         if (range === "custom") {
-            if (start) params.start = start instanceof Date ? start.toISOString() : start;
-            if (end) params.end = end instanceof Date ? end.toISOString() : end;
+            if (start) {
+                params.append(
+                    "start",
+                    start instanceof Date ? start.toISOString() : start
+                );
+            }
+
+            if (end) {
+                params.append(
+                    "end",
+                    end instanceof Date ? end.toISOString() : end
+                );
+            }
         }
-        if (method && method !== "Tất cả") params.method = method;
-        if (channel && channel !== "Tất cả") params.channel = channel;
- 
-        return authApi.get(`/api/dashboard/cashier`, { params });
+
+        if (method && method !== "Tất cả") {
+            params.append("method", method);
+        }
+
+        if (channel && channel !== "Tất cả") {
+            params.append("channel", channel);
+        }
+
+        return authApi.get(`/api/dashboard/cashier?${params.toString()}`);
     },
 
     // =========================================================================
     // NHÂN VIÊN — thông tin cá nhân đang đăng nhập
     // =========================================================================
     // GET /api/employee/profile
-    // -> response: { employeeId, fullName, phone, email, gender, status,
-    //                suspendReason, role, branches: string[] }
     getEmployeeProfile() {
-        return authApi.get(`/api/employee/profile`);
+        return authApi.get("/api/employee/profile");
     },
+
+
 
 
 
@@ -89,6 +108,9 @@ const cashierApi = {
             )
         ).toString();
         return authApi.get(`/api/members/pending${query ? `?${query}` : ""}`);
+    },
+    searchMembersForRenew(q) {
+        return authApi.get(`/api/members/search?q=${encodeURIComponent(q)}`);
     },
     // GET /api/members/{id}/has-package -> trả về boolean THÔ (Ok(hasPackage)),
     // KHÔNG phải { hasPackage: bool }. Nơi gọi phải dùng thẳng giá trị trả về.
@@ -266,6 +288,56 @@ const cashierApi = {
     deleteIncident(id) {
         return authApi.delete(`/api/incidents/${id}`);
     },
+    // =========================================================================
+    // BÁO CÁO THU NGÂN (Reports)
+    // =========================================================================
+    // Cả 4 hàm bên dưới dùng chung ReportFilter ở BE (ReportService.ResolveRange):
+    // filter.FromDate / filter.ToDate / filter.BranchId — nên query string PHẢI
+    // đúng tên "FromDate"/"ToDate"/"BranchId" thì model binding của ASP.NET mới
+    // gán được giá trị (query key khác tên property sẽ bị bỏ qua, không lỗi, chỉ
+    // âm thầm null). Truyền vào đây bằng tên thân thiện { from, to, branchId, ... }
+    // rồi hàm tự map sang đúng tên field.
+    buildReportQuery({ from, to, branchId, ...rest } = {}) {
+        const params = new URLSearchParams();
+
+        if (from) params.append("FromDate", from instanceof Date ? from.toISOString() : from);
+        if (to) params.append("ToDate", to instanceof Date ? to.toISOString() : to);
+        if (branchId !== undefined && branchId !== null && branchId !== "") {
+            params.append("BranchId", branchId);
+        }
+
+        Object.entries(rest).forEach(([key, value]) => {
+            if (value !== undefined && value !== null && value !== "") {
+                params.append(key, value);
+            }
+        });
+
+        return params.toString();
+    },
+
+    // Gọi 1 endpoint duy nhất, gộp sẵn dữ liệu ở BE — trả về đúng shape
+    // { memberReport, checkInReport, revenueReport }. Khớp với action
+    // [HttpGet("cashier/dashboard")] trong ReportsController.
+    getCashierReport(params = {}) {
+        const query = this.buildReportQuery(params);
+        return authApi.get(`/api/reports/cashier/dashboard${query ? `?${query}` : ""}`);
+    },
+
+    getMemberReport(params = {}) {
+        const query = this.buildReportQuery(params);
+        return authApi.get(`/api/reports/cashier/members${query ? `?${query}` : ""}`);
+    },
+
+    getCheckInReport(params = {}) {
+        const query = this.buildReportQuery(params);
+        return authApi.get(`/api/reports/cashier/checkins${query ? `?${query}` : ""}`);
+    },
+
+    getRevenueReport(params = {}) {
+        const query = this.buildReportQuery(params);
+        return authApi.get(`/api/reports/cashier/revenue${query ? `?${query}` : ""}`);
+    },
+
 };
 
 export default cashierApi;

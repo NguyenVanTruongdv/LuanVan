@@ -52,7 +52,7 @@ public class MembershipPlanService
             Description = request.Description,
             IsPopular = request.IsPopular,
             Status = MembershipPlanEnum.OnSale.ToString(),
-            CreatedAt = DateTime.UtcNow,
+            CreatedAt = DateTime.Now,
         };
 
         _db.MembershipPlans.Add(goiTapMoi);

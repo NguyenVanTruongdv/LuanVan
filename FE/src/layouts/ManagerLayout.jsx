@@ -1,7 +1,5 @@
 import {
     AlertTriangle,
-    BarChart3,
-    Bell,
     CheckSquare,
     ChevronDown,
     ChevronRight,
@@ -13,14 +11,12 @@ import {
     MapPin,
     Menu,
     Newspaper,
-    Package,
     Receipt,
     ShieldCheck,
-    UserCircle,
     UserCog,
     Users,
     Wrench,
-    X,
+    X
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
@@ -32,11 +28,13 @@ import logo from "../assets/logo.png";
  * ManagerLayout
  * ------------------------------------------------------------------
  * Layout khung cho trang Manager (Sidebar + Header + vùng nội dung).
- * Đồng bộ 1:1 với hệ thống thiết kế của AdminLayout: CSS thuần gộp
- * vào 1 file qua thẻ <style>, icon từ lucide-react, cùng bảng màu
- * navy đậm (#0B1120 / #1E293B), viền slate (#334155), điểm nhấn
- * cyan (#06B6D4).
- * Khác biệt so với Admin (đặc thù của Manager):
+ * Đồng bộ 1:1 với hệ thống thiết kế của AdminLayout (bản sáng):
+ * nền xám nhạt (#F1F5F9), sidebar/header trắng, viền xanh mint nhạt
+ * (#A7F3D0 / #E2E8F0), điểm nhấn xanh lá (#059669), chữ tối
+ * (#1E293B / #64748B / #94A3B8), cùng bo góc / khoảng cách / bóng đổ
+ * giống Admin. CSS thuần gộp vào 1 file qua thẻ <style>, icon từ
+ * lucide-react.
+ * Khác biệt so với Admin (đặc thù của Manager, được giữ nguyên):
  * - Menu hỗ trợ lồng nhiều cấp (Hội viên > Quản lý gói tập > ...).
  * - Header hiển thị danh sách chi nhánh (chỉ xem, lấy từ profile API).
  * - Sidebar có nút Đăng xuất thật (gọi authApi.logout()).
@@ -54,17 +52,25 @@ const NAV_ITEMS = [
         matchPrefix: "/manager/member",
         children: [
             { id: "members-list", icon: ListTree, label: "Danh sách hội viên", path: "/manager/member/member-list" },
-            { id: "members-checkin", icon: CheckSquare, label: "Check-in", path: "/manager/member/checkin-history" },
-            {
-                id: "members-packages",
-                icon: Package,
-                label: "Quản lý gói tập",
-                matchPrefix: "/manager/members",
-                children: [
-                    { id: "packages-history", icon: History, label: "Lịch sử đăng ký gói tập", path: "/manager/members/packages/history" },
-                    { id: "invoice", icon: Receipt, label: "Hóa đơn", path: "/manager/members/transactions/invoice" },
-                ],
-            },
+        ],
+    },
+    {
+        id: "history",
+        icon: History,
+        label: "Lịch sử",
+        matchPrefix: "/manager/statistics",
+        children: [
+            { id: "packages-history", icon: History, label: "Lịch sử đăng ký gói tập", path: "/manager/members/packages/history" },
+            { id: "members-checkin", icon: CheckSquare, label: "Lịch sử Check-in /Out", path: "/manager/member/checkin-history" },
+        ],
+    },
+    {
+        id: "transactions",
+        icon: Receipt,
+        label: "Giao dịch",
+        matchPrefix: "/manager/members/transactions",
+        children: [
+            { id: "invoice", icon: Receipt, label: "Hóa đơn", path: "/manager/members/transactions/invoice" },
         ],
     },
     {
@@ -73,9 +79,9 @@ const NAV_ITEMS = [
         label: "Nhân viên",
         matchPrefix: "/manager/staff",
         children: [
-            { id: "staff-list", icon: ListTree, label: "Nhân viên", path: "/manager/staff" },
-            // TODO: đổi path cho khớp route thực tế của "Nhân viên hệ thống"
-            { id: "staff-create", icon: ShieldCheck, label: "Tạo nhân viên", path: "/manager/staff/create" },
+            { id: "staff-list", icon: ListTree, label: "Nhân viên", path: "/manager/employees" },
+            // TODO: đổi path cho khớp route thực tế của "Tạo nhân viên"
+            { id: "staff-create", icon: ShieldCheck, label: "Tạo nhân viên", path: "/manager/employee/create" },
         ],
     },
     {
@@ -109,20 +115,11 @@ const NAV_ITEMS = [
     },
     {
         id: "reports",
-        icon: BarChart3,
-        label: "Báo cáo",
+        icon: ListTree, // TODO: cân nhắc đổi sang icon riêng (vd: BarChart3) nếu đã import
+        label: "Báo cáo ",
         matchPrefix: "/manager/reports",
         children: [
-            { id: "reports", icon: BarChart3, label: "Báo cáo", path: "/manager/reports" },
-        ],
-    },
-    {
-        id: "profile",
-        icon: UserCircle,
-        label: "Hồ sơ",
-        matchPrefix: "/manager/profile",
-        children: [
-            { id: "profile-info", icon: ListTree, label: "Thông tin cá nhân", path: "/manager/profile" },
+            { id: "reports-overview", icon: ListTree, label: "Báo cáo tổng quan", path: "/manager/reports" },
         ],
     },
 ];
@@ -192,7 +189,7 @@ function NavLink({ item, active, expanded, onClick, level = 0 }) {
         <button
             onClick={() => onClick(item)}
             className={cx("ml-navlink", level > 0 && "ml-navlink-sub", active && "ml-navlink-active")}
-            style={level > 1 ? { paddingLeft: 32 + (level - 1) * 18 } : undefined}
+            style={level > 1 ? { paddingLeft: 30 + (level - 1) * 18 } : undefined}
         >
             {level === 0 && Icon ? (
                 <Icon size={18} strokeWidth={2} className="ml-navlink-icon" />
@@ -276,31 +273,10 @@ function Sidebar({
                 </nav>
 
                 <div className="ml-sidebar-foot">
-                    <button className="ml-account-btn" onClick={() => navigate("/manager/profile")}>
-                        <div className="ml-avatar">
-                            {profileLoading ? (
-                                <span className="ml-skeleton" style={{ width: 18, height: 10 }} />
-                            ) : (
-                                staffInitials
-                            )}
-                        </div>
-                        <div className="ml-account-text">
-                            {profileLoading ? (
-                                <>
-                                    <span className="ml-skeleton" style={{ width: 100, height: 12, marginBottom: 4 }} />
-                                    <span className="ml-skeleton" style={{ width: 60, height: 10 }} />
-                                </>
-                            ) : (
-                                <>
-                                    <p className="ml-account-name">{staffName}</p>
-                                    <p className="ml-account-role">{staffRole}</p>
-                                </>
-                            )}
-                        </div>
-                    </button>
+
 
                     <button className="ml-logout-btn" onClick={onLogout} disabled={loggingOut}>
-                        <LogOut size={16} />
+                        <LogOut size={16} className="ml-logout-icon" />
                         <span>{loggingOut ? "Đang đăng xuất..." : "Đăng xuất"}</span>
                     </button>
                 </div>
@@ -339,10 +315,6 @@ function Header({ onMenuClick, branches, branchesLoading, branchesError, staffNa
                 </div>
 
                 <div className="ml-header-right">
-                    <button className="ml-icon-btn" aria-label="Thông báo">
-                        <Bell size={19} />
-                    </button>
-
                     <button className="ml-user-btn">
                         <div className="ml-avatar ml-avatar-small">
                             {profileLoading ? (
@@ -480,8 +452,9 @@ export default function ManagerLayout() {
 
 /* ------------------------------------------------------------------
  * CSS thuần, gộp chung vào file này.
- * Prefix "ml-" (Manager Layout), song song với "al-" của AdminLayout —
- * cùng 1 hệ thống thiết kế: nền navy đậm, viền slate, điểm nhấn cyan.
+ * Prefix "ml-" (Manager Layout) — đồng bộ 1:1 bảng màu / kích thước
+ * với "al-" của AdminLayout: nền sáng, sidebar/header trắng, viền
+ * xanh mint nhạt, điểm nhấn xanh lá (#059669).
  * ------------------------------------------------------------------ */
 const CSS = `
 * { box-sizing: border-box; }
@@ -490,11 +463,11 @@ const CSS = `
   display: flex;
   height: 100vh;
   width: 100%;
-  background: #0B1120;
-  color: #F1F5F9;
+  background: #F1F5F9;
+  color: #1E293B;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  gap: 16px;
-  padding: 16px;
+  gap: 10px;
+  padding: 10px;
   overflow: hidden;
 }
 
@@ -512,19 +485,19 @@ const CSS = `
 /* ---------- Sidebar ---------- */
 .ml-sidebar {
   position: fixed;
-  top: 16px;
-  bottom: 16px;
-  left: 16px;
+  top: 10px;
+  bottom: 10px;
+  left: 10px;
   z-index: 40;
-  width: 240px;
+  width: 230px;
   display: flex;
   flex-direction: column;
-  background: #1E293B;
-  border: 1px solid #334155;
-  border-radius: 18px;
-  box-shadow: 0 24px 48px -12px rgba(0, 0, 0, 0.55), 0 8px 16px -6px rgba(0, 0, 0, 0.35);
+  background: #FFFFFF;
+  border: 1.5px solid #A7F3D0;
+  border-radius: 14px;
+  box-shadow: 0 20px 40px -12px rgba(15, 23, 42, 0.28), 0 8px 16px -6px rgba(15, 23, 42, 0.16);
   overflow: hidden;
-  transform: translateX(calc(-100% - 32px));
+  transform: translateX(calc(-100% - 20px));
   transition: transform 0.2s ease;
 }
 
@@ -536,16 +509,16 @@ const CSS = `
   position: fixed;
   inset: 0;
   z-index: 30;
-  background: rgba(2, 6, 23, 0.6);
+  background: rgba(15, 23, 42, 0.35);
 }
 
 .ml-sidebar-head {
-  height: 68px;
+  height: 60px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 16px;
-  border-bottom: 1px solid #334155;
+  padding: 0 14px;
+  border-bottom: 1px solid #E2E8F0;
 }
 
 .ml-logo {
@@ -556,52 +529,52 @@ const CSS = `
 }
 
 .ml-logo-badge {
-  width: 38px;
-  height: 38px;
+  width: 36px;
+  height: 36px;
   flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: center;
   border-radius: 10px;
-  background: linear-gradient(135deg, #0E7490, #0B4A57);
-  box-shadow: 0 0 0 1px rgba(6, 182, 212, 0.25) inset;
+  background: linear-gradient(135deg, #059669, #047857);
+  box-shadow: 0 0 0 1px rgba(5, 150, 105, 0.2) inset;
 }
 
-.ml-logo-img { height: 22px; width: 22px; object-fit: contain; }
+.ml-logo-img { height: 20px; width: 20px; object-fit: contain; }
 
 .ml-logo-text { line-height: 1.2; min-width: 0; }
-.ml-logo-title { margin: 0; font-size: 14px; font-weight: 800; color: #F1F5F9; letter-spacing: -0.2px; white-space: nowrap; }
-.ml-logo-sub { margin: 0; font-size: 11px; color: #06B6D4; font-weight: 500; white-space: nowrap; }
+.ml-logo-title { margin: 0; font-size: 14px; font-weight: 800; color: #1E293B; letter-spacing: -0.2px; white-space: nowrap; }
+.ml-logo-sub { margin: 0; font-size: 11px; color: #059669; font-weight: 500; white-space: nowrap; }
 
 .ml-close-btn {
   border: none;
   background: none;
   padding: 6px;
   border-radius: 6px;
-  color: #64748B;
+  color: #94A3B8;
   cursor: pointer;
   display: flex;
   flex-shrink: 0;
 }
-.ml-close-btn:hover { background: #0F172A; }
+.ml-close-btn:hover { background: #F1F5F9; }
 
 .ml-nav {
   flex: 1;
   overflow-y: auto;
-  padding: 18px 10px;
+  padding: 14px 8px;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
   scrollbar-width: none;
   -ms-overflow-style: none;
 }
 .ml-nav::-webkit-scrollbar { display: none; width: 0; height: 0; }
 
 .ml-submenu {
-  margin-top: 4px;
+  margin-top: 3px;
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 2px;
 }
 
 .ml-navlink {
@@ -612,48 +585,47 @@ const CSS = `
   border: none;
   background: none;
   cursor: pointer;
-  padding: 10px 12px;
-  border-radius: 10px;
-  font-size: 14px;
+  padding: 9px 10px;
+  border-radius: 8px;
+  font-size: 13.5px;
   font-weight: 500;
-  color: #94A3B8;
+  color: #475569;
   text-align: left;
   transition: background 0.15s, color 0.15s, box-shadow 0.15s, transform 0.15s;
 }
 
-.ml-navlink:hover { background: #0F172A; color: #F1F5F9; }
+.ml-navlink:hover { background: #F0FDF4; color: #059669; }
 
-.ml-navlink-sub { padding-left: 32px; font-size: 13px; }
+.ml-navlink-sub { padding-left: 30px; font-size: 12.5px; }
 
 .ml-navlink-active {
-  background: #06B6D4;
-  color: #0F172A;
+  background: #ECFDF5;
+  color: #059669;
   font-weight: 700;
-  box-shadow: 0 10px 20px -6px rgba(6, 182, 212, 0.45), 0 2px 6px rgba(6, 182, 212, 0.3);
-  transform: translateY(-1px);
+  box-shadow: inset 0 0 0 1px rgba(5, 150, 105, 0.25);
 }
 
-.ml-navlink-active:hover { background: #06B6D4; color: #0F172A; }
+.ml-navlink-active:hover { background: #ECFDF5; color: #059669; }
 
-.ml-navlink-icon { color: #64748B; flex-shrink: 0; }
-.ml-navlink-active .ml-navlink-icon { color: #0F172A; }
+.ml-navlink-icon { color: #94A3B8; flex-shrink: 0; }
+.ml-navlink-active .ml-navlink-icon { color: #059669; }
 
 .ml-navdot {
   width: 6px;
   height: 6px;
   border-radius: 999px;
-  background: #475569;
+  background: #CBD5E1;
   flex-shrink: 0;
 }
-.ml-navdot-active { background: #0F172A; }
+.ml-navdot-active { background: #059669; }
 
 .ml-navlink-label { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ml-navlink-chevron { color: #64748B; flex-shrink: 0; }
-.ml-navlink-active .ml-navlink-chevron { color: #0F172A; }
+.ml-navlink-chevron { color: #94A3B8; flex-shrink: 0; }
+.ml-navlink-active .ml-navlink-chevron { color: #059669; }
 
 .ml-sidebar-foot {
-  border-top: 1px solid #334155;
-  padding: 12px;
+  border-top: 1px solid #E2E8F0;
+  padding: 10px;
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -671,44 +643,50 @@ const CSS = `
   border-radius: 10px;
   text-align: left;
 }
-.ml-account-btn:hover { background: #0F172A; }
+.ml-account-btn:hover { background: #F1F5F9; }
 
 .ml-avatar {
-  width: 36px;
-  height: 36px;
+  width: 34px;
+  height: 34px;
   flex-shrink: 0;
   border-radius: 999px;
-  background: linear-gradient(135deg, #22D3EE, #3B82F6);
-  color: #04222B;
+  border: 1.5px solid #A7F3D0;
+  background: #E2E8F0;
+  color: #64748B;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 12px;
-  font-weight: 800;
+  font-size: 13px;
+  font-weight: 700;
 }
 
-.ml-avatar-small { width: 34px; height: 34px; font-size: 11px; }
+.ml-avatar-small { width: 32px; height: 32px; font-size: 12.5px; background: rgba(5, 150, 105, 0.12); color: #059669; border: 1.5px solid #6EE7B7; }
 
 .ml-account-text { min-width: 0; flex: 1; line-height: 1.2; }
-.ml-account-name { margin: 0; font-size: 14px; font-weight: 700; color: #F1F5F9; }
-.ml-account-role { margin: 0; font-size: 11.5px; color: #64748B; font-weight: 500; }
+.ml-account-name { margin: 0; font-size: 13.5px; font-weight: 700; color: #1E293B; }
+.ml-account-role { margin: 0; font-size: 11px; color: #64748B; font-weight: 500; }
 
+/* ---------- Logout button (sidebar) ---------- */
 .ml-logout-btn {
+  width: 100%;
   display: flex;
   align-items: center;
-  gap: 10px;
-  border: 1px solid rgba(248, 113, 113, 0.28);
-  background: rgba(248, 113, 113, 0.1);
-  color: #F87171;
+  justify-content: center;
+  gap: 8px;
+  border: 1.5px solid #FCA5A5;
+  background: rgba(220, 38, 38, 0.06);
   cursor: pointer;
-  padding: 10px 12px;
+  margin-top: 2px;
+  padding: 8px 10px;
   border-radius: 10px;
-  font-size: 14px;
+  font-size: 12.5px;
   font-weight: 600;
-  transition: background 0.15s, border-color 0.15s;
+  color: #DC2626;
+  transition: background 0.15s, border-color 0.15s, opacity 0.15s;
 }
-.ml-logout-btn:hover { background: rgba(248, 113, 113, 0.18); border-color: rgba(248, 113, 113, 0.45); }
+.ml-logout-btn:hover { background: rgba(220, 38, 38, 0.12); border-color: #F87171; }
 .ml-logout-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+.ml-logout-icon { flex-shrink: 0; }
 
 /* ---------- Main column ---------- */
 .ml-main-col {
@@ -716,25 +694,25 @@ const CSS = `
   flex-direction: column;
   flex: 1;
   min-width: 0;
-  gap: 16px;
+  gap: 10px;
   overflow: hidden;
 }
 
 /* ---------- Header ---------- */
 .ml-header {
   flex-shrink: 0;
-  background: #1E293B;
-  border: 1px solid #334155;
-  border-radius: 18px;
-  box-shadow: 0 20px 40px -14px rgba(0, 0, 0, 0.5), 0 6px 14px -4px rgba(0, 0, 0, 0.25);
+  background: #FFFFFF;
+  border: 1.5px solid #A7F3D0;
+  border-radius: 14px;
+  box-shadow: 0 16px 32px -12px rgba(15, 23, 42, 0.24), 0 6px 14px -4px rgba(15, 23, 42, 0.14);
 }
 
 .ml-header-top {
-  height: 68px;
+  height: 60px;
   display: flex;
   align-items: center;
   gap: 14px;
-  padding: 0 16px;
+  padding: 0 14px;
 }
 
 .ml-menu-btn {
@@ -742,12 +720,12 @@ const CSS = `
   background: none;
   padding: 8px;
   border-radius: 8px;
-  color: #94A3B8;
+  color: #64748B;
   cursor: pointer;
   display: flex;
   flex-shrink: 0;
 }
-.ml-menu-btn:hover { background: #0F172A; }
+.ml-menu-btn:hover { background: #F1F5F9; }
 
 .ml-branch-row {
   display: none;
@@ -765,15 +743,15 @@ const CSS = `
   gap: 6px;
   padding: 6px 12px;
   border-radius: 999px;
-  border: 1px solid #334155;
-  background: rgba(6, 182, 212, 0.08);
-  color: #94A3B8;
+  border: 1px solid #A7F3D0;
+  background: #F0FDF4;
+  color: #047857;
   font-size: 12.5px;
   font-weight: 500;
   white-space: nowrap;
   flex-shrink: 0;
 }
-.ml-branch-chip svg { color: #06B6D4; flex-shrink: 0; }
+.ml-branch-chip svg { color: #059669; flex-shrink: 0; }
 
 .ml-branch-empty {
   font-size: 12.5px;
@@ -789,21 +767,6 @@ const CSS = `
   flex-shrink: 0;
 }
 
-.ml-icon-btn {
-  width: 38px;
-  height: 38px;
-  border: none;
-  background: none;
-  border-radius: 10px;
-  color: #94A3B8;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: background 0.15s;
-}
-.ml-icon-btn:hover { background: #0F172A; }
-
 .ml-user-btn {
   display: flex;
   align-items: center;
@@ -814,18 +777,18 @@ const CSS = `
   padding: 6px 8px 6px 4px;
   border-radius: 8px;
 }
-.ml-user-btn:hover { background: #0F172A; }
+.ml-user-btn:hover { background: #F1F5F9; }
 
 .ml-user-text { display: none; text-align: left; line-height: 1.25; }
-.ml-user-name { margin: 0; font-size: 13px; font-weight: 700; color: #F1F5F9; }
+.ml-user-name { margin: 0; font-size: 13.5px; font-weight: 700; color: #1E293B; }
 .ml-user-role { margin: 0; font-size: 11px; color: #64748B; font-weight: 500; }
-.ml-user-chevron { display: none; color: #64748B; }
+.ml-user-chevron { display: none; color: #94A3B8; }
 
 /* ---------- Content ---------- */
 .ml-content {
   flex: 1;
   overflow-y: auto;
-  padding: 16px;
+  padding: 8px;
   scrollbar-width: none;
   -ms-overflow-style: none;
 }
@@ -846,7 +809,7 @@ const CSS = `
   .ml-overlay { display: none; }
   .ml-close-btn { display: none; }
   .ml-menu-btn { display: none; }
-  .ml-content { padding: 24px; }
-  .ml-header-top { padding: 0 24px; }
+  .ml-content { padding: 12px; }
+  .ml-header-top { padding: 0 18px; }
 }
 `;

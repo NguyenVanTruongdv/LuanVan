@@ -58,15 +58,10 @@ function extractItem(res) {
     return null;
 }
 
-// ============================================================
-// CSS nhúng trực tiếp trong file (không tách riêng .css)
-// Nền: #0B1120 | Khối: #1E293B | Viền: #334155
-// Điểm nhấn: #06B6D4 (cyan) | Chữ chính: #F1F5F9 | Chữ phụ: #94A3B8 / #64748B
-// ============================================================
 const STYLES = `
 .incident-page {
-    background: #0B1120;
-    color: #F1F5F9;
+    background: #F8FAFC;
+    color: #0F172A;
     min-height: 100%;
     padding: 28px 32px;
     font-family: inherit;
@@ -81,7 +76,7 @@ const STYLES = `
 }
 
 .incident-header h1 {
-    color: #F1F5F9;
+    color: #0F172A;
     font-size: 26px;
     font-weight: 700;
     margin: 0;
@@ -105,11 +100,12 @@ const STYLES = `
     display: flex;
     align-items: center;
     gap: 12px;
-    background: #1E293B;
-    border: 1px solid #334155;
+    background: #FFFFFF;
+    border: 2px solid #15803D;
     border-radius: 12px;
     padding: 14px 18px;
     flex: 1 1 180px;
+    box-shadow: 0 6px 16px rgba(21, 128, 61, 0.25);
 }
 
 .stat-icon {
@@ -121,17 +117,17 @@ const STYLES = `
     justify-content: center;
     font-size: 18px;
     flex-shrink: 0;
-    background: rgba(6, 182, 212, 0.12);
-    color: #06B6D4;
+    background: rgba(22, 163, 74, 0.12);
+    color: #16A34A;
 }
 
-.stat-icon-total { background: rgba(6, 182, 212, 0.12); color: #06B6D4; }
+.stat-icon-total { background: rgba(22, 163, 74, 0.12); color: #16A34A; }
 .stat-icon-pending { background: rgba(245, 158, 11, 0.14); color: #F59E0B; }
 .stat-icon-approved { background: rgba(59, 130, 246, 0.14); color: #3B82F6; }
-.stat-icon-done { background: rgba(16, 185, 129, 0.14); color: #10B981; }
+.stat-icon-done { background: rgba(139, 92, 246, 0.14); color: #8B5CF6; }
 
 .stat-value {
-    color: #F1F5F9;
+    color: #0F172A;
     font-size: 20px;
     font-weight: 700;
     line-height: 1.1;
@@ -156,19 +152,18 @@ const STYLES = `
     display: flex;
     align-items: center;
     gap: 8px;
-    background: #1E293B;
-    border: 1px solid #334155;
+    background: #FFFFFF;
+    border: 1.5px solid #94A3B8;
     border-radius: 10px;
     padding: 10px 14px;
     flex: 1 1 240px;
+    box-shadow: 0 2px 6px rgba(15, 23, 42, 0.08);
     transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
-
 .filter-input:focus-within {
-    border-color: #06B6D4;
-    box-shadow: 0 0 0 3px rgba(6, 182, 212, 0.18);
+    border-color: #16A34A;
+    box-shadow: 0 0 0 3px rgba(22, 163, 74, 0.15);
 }
-
 .filter-icon {
     color: #64748B;
     font-size: 14px;
@@ -178,30 +173,31 @@ const STYLES = `
     background: transparent;
     border: none;
     outline: none;
-    color: #F1F5F9;
+    color: #0F172A;
     font-size: 14px;
     width: 100%;
 }
 
 .filter-input input::placeholder {
-    color: #64748B;
+    color: #94A3B8;
 }
 
 .btn-reset {
-    background: #1E293B;
-    border: 1px solid #334155;
-    color: #94A3B8;
+    background: #FFFFFF;
+    border: 1.5px solid #94A3B8;
+    color: #64748B;
     border-radius: 10px;
     padding: 10px 16px;
     font-size: 14px;
     cursor: pointer;
+    box-shadow: 0 2px 6px rgba(15, 23, 42, 0.08);
     transition: all 0.15s ease;
     white-space: nowrap;
 }
 
 .btn-reset:hover {
-    border-color: #06B6D4;
-    color: #06B6D4;
+    border-color: #16A34A;
+    color: #16A34A;
 }
 
 /* ---------- Custom select ---------- */
@@ -215,34 +211,35 @@ const STYLES = `
     align-items: center;
     justify-content: space-between;
     gap: 8px;
-    background: #1E293B;
-    border: 1px solid #334155;
+    background: #FFFFFF;
+    border: 1.5px solid #94A3B8;
     border-radius: 10px;
     padding: 10px 14px;
     cursor: pointer;
-    color: #F1F5F9;
+    color: #0F172A;
     font-size: 14px;
+    box-shadow: 0 2px 6px rgba(15, 23, 42, 0.08);
     transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
 .custom-select.open .custom-select-trigger {
-    border-color: #06B6D4;
-    box-shadow: 0 0 0 3px rgba(6, 182, 212, 0.18);
+    border-color: #16A34A;
+    box-shadow: 0 0 0 3px rgba(22, 163, 74, 0.15);
 }
 
 .custom-select-value.is-placeholder {
-    color: #64748B;
+    color: #94A3B8;
 }
 
 .custom-select-arrow {
-    color: #64748B;
+    color: #94A3B8;
     font-size: 12px;
     transition: transform 0.15s ease;
 }
 
 .custom-select.open .custom-select-arrow {
     transform: rotate(180deg);
-    color: #06B6D4;
+    color: #16A34A;
 }
 
 .custom-select-menu {
@@ -250,30 +247,30 @@ const STYLES = `
     top: calc(100% + 6px);
     left: 0;
     right: 0;
-    background: #1E293B;
-    border: 1px solid #334155;
+    background: #FFFFFF;
+    border: 1px solid #E2E8F0;
     border-radius: 10px;
     overflow: hidden;
     z-index: 20;
-    box-shadow: 0 12px 28px rgba(0, 0, 0, 0.45);
+    box-shadow: 0 12px 28px rgba(15, 23, 42, 0.10);
 }
 
 .custom-select-option {
     padding: 10px 14px;
     font-size: 14px;
-    color: #CBD5E1;
+    color: #475569;
     cursor: pointer;
     transition: background 0.12s ease, color 0.12s ease;
 }
 
 .custom-select-option:hover {
-    background: rgba(6, 182, 212, 0.10);
-    color: #F1F5F9;
+    background: rgba(22, 163, 74, 0.08);
+    color: #0F172A;
 }
 
 .custom-select-option.selected {
-    background: rgba(6, 182, 212, 0.16);
-    color: #06B6D4;
+    background: rgba(22, 163, 74, 0.14);
+    color: #16A34A;
     font-weight: 600;
 }
 
@@ -297,11 +294,11 @@ const STYLES = `
     background: currentColor;
 }
 
-.status-pendingapproval { background: rgba(245, 158, 11, 0.14); color: #F59E0B; }
-.status-approved { background: rgba(59, 130, 246, 0.14); color: #3B82F6; }
-.status-completed { background: rgba(6, 182, 212, 0.14); color: #06B6D4; }
-.status-cancelled { background: rgba(239, 68, 68, 0.14); color: #EF4444; }
-.status-unknown { background: rgba(148, 163, 184, 0.14); color: #94A3B8; }
+.status-pendingapproval { background: rgba(245, 158, 11, 0.14); color: #B45309; }
+.status-approved { background: rgba(59, 130, 246, 0.14); color: #1D4ED8; }
+.status-completed { background: rgba(139, 92, 246, 0.14); color: #6D28D9; }
+.status-cancelled { background: rgba(239, 68, 68, 0.14); color: #B91C1C; }
+.status-unknown { background: rgba(148, 163, 184, 0.16); color: #64748B; }
 
 /* ---------- Workspace layout ---------- */
 .incident-workspace {
@@ -316,9 +313,9 @@ const STYLES = `
 
 /* ---------- List ---------- */
 .incident-error {
-    background: rgba(239, 68, 68, 0.12);
-    border: 1px solid rgba(239, 68, 68, 0.35);
-    color: #FCA5A5;
+    background: rgba(239, 68, 68, 0.08);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    color: #B91C1C;
     padding: 12px 16px;
     border-radius: 10px;
     margin-bottom: 14px;
@@ -327,7 +324,7 @@ const STYLES = `
 
 .incident-empty {
     text-align: center;
-    color: #64748B;
+    color: #94A3B8;
     padding: 48px 0;
     font-size: 14px;
 }
@@ -340,7 +337,7 @@ const STYLES = `
 
 .incident-table thead th {
     text-align: left;
-    color: #64748B;
+    color: #94A3B8;
     font-size: 12px;
     font-weight: 600;
     text-transform: uppercase;
@@ -349,21 +346,22 @@ const STYLES = `
 }
 
 .incident-table tbody tr {
-    background: #1E293B;
-    border: 1px solid #334155;
-    border-left: 3px solid #334155;
+    background: #FFFFFF;
+    border: 1px solid #E2E8F0;
+    border-left: 3px solid #E2E8F0;
     cursor: pointer;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.03);
     transition: border-color 0.15s ease, transform 0.1s ease;
 }
 
 .incident-table tbody tr:hover {
-    border-color: #06B6D4;
-    border-left-color: #06B6D4;
+    border-color: #16A34A;
+    border-left-color: #16A34A;
 }
 
 .incident-table tbody tr td {
     padding: 14px 16px;
-    color: #CBD5E1;
+    color: #475569;
     font-size: 14px;
 }
 
@@ -381,25 +379,46 @@ const STYLES = `
     height: 44px;
     border-radius: 8px;
     object-fit: cover;
-    background: #0B1120;
-    border: 1px solid #334155;
+    background: #F1F5F9;
+    border: 1px solid #E2E8F0;
 }
 
 .incident-title-text {
-    color: #F1F5F9;
+    color: #0F172A;
     font-weight: 600;
 }
 
 .incident-muted {
-    color: #64748B;
+    color: #94A3B8;
     font-size: 12px;
     margin-top: 2px;
 }
 
+/* Dòng người báo cáo là Hội viên -> tô đỏ để lưu ý */
+.reporter-info {
+    display: inline-block;
+}
+
+.reporter-info.is-member {
+    background: rgba(239, 68, 68, 0.08);
+    border: 1px solid rgba(239, 68, 68, 0.25);
+    border-radius: 8px;
+    padding: 4px 8px;
+}
+
+.reporter-info.is-member .reporter-name,
+.reporter-info.is-member .incident-muted {
+    color: #B91C1C;
+}
+
+.reporter-name {
+    color: #0F172A;
+}
+
 .btn-view {
-    background: rgba(6, 182, 212, 0.10);
-    border: 1px solid rgba(6, 182, 212, 0.4);
-    color: #06B6D4;
+    background: rgba(22, 163, 74, 0.08);
+    border: 1px solid rgba(22, 163, 74, 0.4);
+    color: #16A34A;
     border-radius: 8px;
     padding: 7px 14px;
     font-size: 13px;
@@ -409,8 +428,8 @@ const STYLES = `
 }
 
 .btn-view:hover {
-    background: #06B6D4;
-    color: #0B1120;
+    background: #16A34A;
+    color: #FFFFFF;
 }
 
 .incident-cards {
@@ -420,18 +439,18 @@ const STYLES = `
 }
 
 .incident-card {
-    background: #1E293B;
-    border: 1px solid #334155;
-    border-left: 3px solid #334155;
+    background: #FFFFFF;
+    border: 2px solid #15803D;
     border-radius: 12px;
     padding: 16px;
     cursor: pointer;
-    transition: border-color 0.15s ease;
+    box-shadow: 0 6px 16px rgba(21, 128, 61, 0.25);
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
 .incident-card:hover {
-    border-color: #06B6D4;
-    border-left-color: #06B6D4;
+    border-color: #16A34A;
+    box-shadow: 0 8px 20px rgba(21, 128, 61, 0.32);
 }
 
 .incident-card-head {
@@ -442,7 +461,7 @@ const STYLES = `
 }
 
 .incident-card-title {
-    color: #F1F5F9;
+    color: #0F172A;
     font-weight: 700;
     font-size: 15px;
     margin-bottom: 6px;
@@ -452,9 +471,14 @@ const STYLES = `
     display: flex;
     justify-content: space-between;
     font-size: 13px;
-    color: #94A3B8;
+    color: #64748B;
     padding: 6px 0;
-    border-top: 1px solid #334155;
+    border-top: 1px solid #E2E8F0;
+}
+
+.incident-card-row.is-member span:last-child {
+    color: #B91C1C;
+    font-weight: 600;
 }
 
 .btn-view-full {
@@ -481,9 +505,9 @@ const STYLES = `
 }
 
 .incident-pagination button {
-    background: #1E293B;
-    border: 1px solid #334155;
-    color: #CBD5E1;
+    background: #FFFFFF;
+    border: 1px solid #E2E8F0;
+    color: #475569;
     border-radius: 8px;
     padding: 8px 14px;
     cursor: pointer;
@@ -492,8 +516,8 @@ const STYLES = `
 }
 
 .incident-pagination button:hover:not(:disabled) {
-    border-color: #06B6D4;
-    color: #06B6D4;
+    border-color: #16A34A;
+    color: #16A34A;
 }
 
 .incident-pagination button:disabled {
@@ -503,16 +527,17 @@ const STYLES = `
 
 /* ---------- Detail panel ---------- */
 .detail-panel {
-    background: #1E293B;
-    border: 1px solid #334155;
+    background: #FFFFFF;
+    border: 2px solid #15803D;
     border-radius: 14px;
     padding: 24px;
+    box-shadow: 0 8px 24px rgba(21, 128, 61, 0.25);
 }
 
 .detail-back-btn {
-    background: transparent;
-    border: 1px solid #334155;
-    color: #94A3B8;
+    background: #FFFFFF;
+    border: 1px solid #E2E8F0;
+    color: #64748B;
     border-radius: 8px;
     padding: 8px 14px;
     font-size: 13px;
@@ -522,13 +547,13 @@ const STYLES = `
 }
 
 .detail-back-btn:hover {
-    border-color: #06B6D4;
-    color: #06B6D4;
+    border-color: #16A34A;
+    color: #16A34A;
 }
 
 .detail-placeholder {
     text-align: center;
-    color: #64748B;
+    color: #94A3B8;
     padding: 60px 20px;
     font-size: 14px;
 }
@@ -538,7 +563,7 @@ const STYLES = `
     margin-bottom: 12px;
 }
 
-.detail-error { color: #FCA5A5; }
+.detail-error { color: #DC2626; }
 
 .detail-title-row {
     display: flex;
@@ -549,13 +574,13 @@ const STYLES = `
 }
 
 .detail-title-row h3 {
-    color: #F1F5F9;
+    color: #0F172A;
     font-size: 20px;
     margin: 0;
 }
 
 .detail-description {
-    color: #CBD5E1;
+    color: #475569;
     font-size: 14px;
     line-height: 1.6;
     margin-bottom: 14px;
@@ -567,11 +592,12 @@ const STYLES = `
     display: grid;
     grid-template-columns: repeat(2, 1fr);
     gap: 14px 20px;
-    background: #0B1120;
-    border: 1px solid #334155;
+    background: #F8FAFC;
+    border: 2px solid #15803D;
     border-radius: 12px;
     padding: 16px 20px;
     margin: 18px 0;
+    box-shadow: 0 6px 16px rgba(21, 128, 61, 0.20);
 }
 
 .detail-info-grid > div {
@@ -581,21 +607,38 @@ const STYLES = `
 }
 
 .detail-info-label {
-    color: #64748B;
+    color: #94A3B8;
     font-size: 12px;
     text-transform: uppercase;
     letter-spacing: 0.03em;
 }
 
 .detail-info-grid > div > span:last-child {
-    color: #F1F5F9;
+    color: #0F172A;
     font-size: 14px;
 }
 
-.detail-reject-reason {
-    background: rgba(239, 68, 68, 0.10);
+/* Dòng người báo cáo / SĐT khi là Hội viên -> tô đỏ cả dòng */
+.detail-info-grid > div.info-highlight-member {
+    background: rgba(239, 68, 68, 0.08);
     border: 1px solid rgba(239, 68, 68, 0.3);
-    color: #FCA5A5;
+    border-radius: 8px;
+    padding: 8px 12px;
+}
+
+.detail-info-grid > div.info-highlight-member .detail-info-label {
+    color: #B91C1C;
+}
+
+.detail-info-grid > div.info-highlight-member > span:last-child {
+    color: #B91C1C;
+    font-weight: 600;
+}
+
+.detail-reject-reason {
+    background: rgba(239, 68, 68, 0.08);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    color: #B91C1C;
     border-radius: 10px;
     padding: 12px 16px;
     font-size: 13px;
@@ -616,7 +659,7 @@ const STYLES = `
     height: 110px;
     object-fit: cover;
     border-radius: 8px;
-    border: 1px solid #334155;
+    border: 1px solid #E2E8F0;
 }
 
 /* ---------- Edit form ---------- */
@@ -628,7 +671,7 @@ const STYLES = `
 }
 
 .detail-edit-label {
-    color: #94A3B8;
+    color: #64748B;
     font-size: 12px;
     margin-bottom: 6px;
 }
@@ -636,11 +679,11 @@ const STYLES = `
 .detail-edit-input,
 .detail-reason-input {
     width: 100%;
-    background: #0B1120;
-    border: 1px solid #334155;
+    background: #F8FAFC;
+    border: 1px solid #E2E8F0;
     border-radius: 10px;
     padding: 10px 14px;
-    color: #F1F5F9;
+    color: #0F172A;
     font-size: 14px;
     outline: none;
     transition: border-color 0.15s ease, box-shadow 0.15s ease;
@@ -656,13 +699,13 @@ const STYLES = `
 
 .detail-edit-input:focus,
 .detail-reason-input:focus {
-    border-color: #06B6D4;
-    box-shadow: 0 0 0 3px rgba(6, 182, 212, 0.18);
+    border-color: #16A34A;
+    box-shadow: 0 0 0 3px rgba(22, 163, 74, 0.15);
 }
 
 .detail-edit-input::placeholder,
 .detail-reason-input::placeholder {
-    color: #64748B;
+    color: #94A3B8;
 }
 
 .detail-edit-actions {
@@ -671,15 +714,15 @@ const STYLES = `
 }
 
 .detail-submit-error {
-    color: #FCA5A5;
+    color: #DC2626;
     font-size: 13px;
     margin-top: 8px;
 }
 
 /* ---------- Status update actions ---------- */
 .detail-actions {
-    background: #0B1120;
-    border: 1px solid #334155;
+    background: #F8FAFC;
+    border: 1px solid #E2E8F0;
     border-radius: 12px;
     padding: 18px 20px;
     display: flex;
@@ -698,9 +741,9 @@ const STYLES = `
 }
 
 .btn-primary {
-    background: #06B6D4;
-    border: 1px solid #06B6D4;
-    color: #0B1120;
+    background: #16A34A;
+    border: 1px solid #16A34A;
+    color: #FFFFFF;
     font-weight: 700;
     border-radius: 10px;
     padding: 10px 20px;
@@ -710,13 +753,13 @@ const STYLES = `
     white-space: nowrap;
 }
 
-.btn-primary:hover:not(:disabled) { filter: brightness(1.1); }
+.btn-primary:hover:not(:disabled) { filter: brightness(1.08); }
 .btn-primary:disabled { opacity: 0.45; cursor: not-allowed; }
 
 .btn-approve {
-    background: rgba(16, 185, 129, 0.12);
-    border: 1px solid #10B981;
-    color: #10B981;
+    background: rgba(22, 163, 74, 0.10);
+    border: 1px solid #16A34A;
+    color: #16A34A;
     border-radius: 10px;
     padding: 10px 18px;
     font-size: 14px;
@@ -726,13 +769,13 @@ const STYLES = `
     align-self: flex-start;
 }
 
-.btn-approve:hover:not(:disabled) { background: #10B981; color: #0B1120; }
+.btn-approve:hover:not(:disabled) { background: #16A34A; color: #FFFFFF; }
 .btn-approve:disabled { opacity: 0.45; cursor: not-allowed; }
 
 .detail-final-note {
-    background: #0B1120;
-    border: 1px solid #334155;
-    color: #64748B;
+    background: #F8FAFC;
+    border: 1px solid #E2E8F0;
+    color: #94A3B8;
     border-radius: 10px;
     padding: 14px 18px;
     font-size: 13px;
@@ -1117,81 +1160,99 @@ export default function IncidentPage() {
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {incidents.map((item) => (
-                                            <tr key={item.incidentId} onClick={() => handleSelectIncident(item.incidentId)}>
-                                                <td>
-                                                    <div className="incident-title-cell">
-                                                        {item.thumbnail && (
-                                                            <img src={item.thumbnail} alt="" className="incident-thumb" />
-                                                        )}
-                                                        <span className="incident-title-text">{item.title}</span>
-                                                    </div>
-                                                </td>
-                                                <td>{item.branchName}</td>
-                                                <td>
-                                                    <div>{item.reporterName}</div>
-                                                    <div className="incident-muted">{item.reporterPhone}</div>
-                                                </td>
-                                                <td>
-                                                    <StatusBadge status={item.status} />
-                                                </td>
-                                                <td>
-                                                    {item.createdAt
-                                                        ? new Date(item.createdAt).toLocaleDateString("vi-VN")
-                                                        : "—"}
-                                                </td>
-                                                <td>
-                                                    <button
-                                                        className="btn-view"
-                                                        onClick={(e) => {
-                                                            e.stopPropagation();
-                                                            handleSelectIncident(item.incidentId);
-                                                        }}
-                                                    >
-                                                        👁 Xem
-                                                    </button>
-                                                </td>
-                                            </tr>
-                                        ))}
+                                        {incidents.map((item) => {
+                                            const isMember = item.reporterRole === "Member";
+                                            return (
+                                                <tr key={item.incidentId} onClick={() => handleSelectIncident(item.incidentId)}>
+                                                    <td>
+                                                        <div className="incident-title-cell">
+                                                            {item.thumbnail && (
+                                                                <img src={item.thumbnail} alt="" className="incident-thumb" />
+                                                            )}
+                                                            <span className="incident-title-text">{item.title}</span>
+                                                        </div>
+                                                    </td>
+                                                    <td>{item.branchName}</td>
+                                                    <td>
+                                                        {/* Staff: chỉ hiện tên, không hiện SĐT. Member: tô đỏ cả dòng */}
+                                                        <div className={`reporter-info ${isMember ? "is-member" : ""}`}>
+                                                            <div className="reporter-name">{item.reporterName}</div>
+                                                            {isMember && (
+                                                                <div className="incident-muted">{item.reporterPhone}</div>
+                                                            )}
+                                                        </div>
+                                                    </td>
+                                                    <td>
+                                                        <StatusBadge status={item.status} />
+                                                    </td>
+                                                    <td>
+                                                        {item.createdAt
+                                                            ? new Date(item.createdAt).toLocaleDateString("vi-VN")
+                                                            : "—"}
+                                                    </td>
+                                                    <td>
+                                                        <button
+                                                            className="btn-view"
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                handleSelectIncident(item.incidentId);
+                                                            }}
+                                                        >
+                                                            👁 Xem
+                                                        </button>
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })}
                                     </tbody>
                                 </table>
 
                                 {/* Card cho màn hình nhỏ (mobile) */}
                                 <div className="incident-cards">
-                                    {incidents.map((item) => (
-                                        <div
-                                            className="incident-card"
-                                            key={item.incidentId}
-                                            onClick={() => handleSelectIncident(item.incidentId)}
-                                        >
-                                            <div className="incident-card-head">
-                                                {item.thumbnail && (
-                                                    <img src={item.thumbnail} alt="" className="incident-thumb" />
-                                                )}
-                                                <div>
-                                                    <div className="incident-card-title">{item.title}</div>
-                                                    <StatusBadge status={item.status} />
-                                                </div>
-                                            </div>
-                                            <div className="incident-card-row">
-                                                <span>Chi nhánh</span>
-                                                <span>{item.branchName}</span>
-                                            </div>
-                                            <div className="incident-card-row">
-                                                <span>Người báo cáo</span>
-                                                <span>{item.reporterName}</span>
-                                            </div>
-                                            <button
-                                                className="btn-view btn-view-full"
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    handleSelectIncident(item.incidentId);
-                                                }}
+                                    {incidents.map((item) => {
+                                        const isMember = item.reporterRole === "Member";
+                                        return (
+                                            <div
+                                                className="incident-card"
+                                                key={item.incidentId}
+                                                onClick={() => handleSelectIncident(item.incidentId)}
                                             >
-                                                👁 Xem chi tiết
-                                            </button>
-                                        </div>
-                                    ))}
+                                                <div className="incident-card-head">
+                                                    {item.thumbnail && (
+                                                        <img src={item.thumbnail} alt="" className="incident-thumb" />
+                                                    )}
+                                                    <div>
+                                                        <div className="incident-card-title">{item.title}</div>
+                                                        <StatusBadge status={item.status} />
+                                                    </div>
+                                                </div>
+                                                <div className="incident-card-row">
+                                                    <span>Chi nhánh</span>
+                                                    <span>{item.branchName}</span>
+                                                </div>
+                                                <div className={`incident-card-row ${isMember ? "is-member" : ""}`}>
+                                                    <span>Người báo cáo</span>
+                                                    <span>{item.reporterName}</span>
+                                                </div>
+                                                {/* Chỉ hiện SĐT khi người báo cáo là Hội viên */}
+                                                {isMember && (
+                                                    <div className="incident-card-row is-member">
+                                                        <span>SĐT</span>
+                                                        <span>{item.reporterPhone}</span>
+                                                    </div>
+                                                )}
+                                                <button
+                                                    className="btn-view btn-view-full"
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        handleSelectIncident(item.incidentId);
+                                                    }}
+                                                >
+                                                    👁 Xem chi tiết
+                                                </button>
+                                            </div>
+                                        );
+                                    })}
                                 </div>
                             </>
                         )}
@@ -1288,17 +1349,24 @@ export default function IncidentPage() {
                                         <span className="detail-info-label">Thiết bị</span>
                                         <span>{incident.equipmentName || "—"}</span>
                                     </div>
-                                    <div>
+
+                                    {/* Người báo cáo là Hội viên -> tô đỏ cả dòng để lưu ý */}
+                                    <div className={incident.reporterRole === "Member" ? "info-highlight-member" : ""}>
                                         <span className="detail-info-label">Người báo cáo</span>
                                         <span>
                                             {incident.reporterName} (
                                             {incident.reporterRole === "Member" ? "Hội viên" : "Nhân viên"})
                                         </span>
                                     </div>
-                                    <div>
-                                        <span className="detail-info-label">Số điện thoại</span>
-                                        <span>{incident.reporterPhone || "—"}</span>
-                                    </div>
+
+                                    {/* Staff (Nhân viên): không cần hiện SĐT */}
+                                    {incident.reporterRole === "Member" && (
+                                        <div className="info-highlight-member">
+                                            <span className="detail-info-label">Số điện thoại</span>
+                                            <span>{incident.reporterPhone || "—"}</span>
+                                        </div>
+                                    )}
+
                                     <div>
                                         <span className="detail-info-label">Ngày tạo</span>
                                         <span>

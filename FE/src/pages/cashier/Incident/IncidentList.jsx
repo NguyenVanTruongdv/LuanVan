@@ -2,9 +2,9 @@ import { useEffect, useState } from "react";
 import cashierApi from "../../../api/cashierApi";
 
 /* ─────────────────────────────────────────────
-   STYLES — đồng bộ tông navy/cyan với CashierLayout
-   Nền: #0B1120 | Khối: #1E293B | Viền: #334155
-   Điểm nhấn cyan: #06B6D4 | Chữ: #F1F5F9 / #94A3B8 / #64748B
+   STYLES — đồng bộ tông trắng/xanh lá với sidebar VT Gym
+   Nền: #F1F5F9 | Khối: #FFFFFF | Viền: #94A3B8 (đậm)
+   Điểm nhấn xanh lá: #16A34A | Chữ: #1E293B / #64748B / #94A3B8
 ───────────────────────────────────────────── */
 const css = `
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
@@ -12,54 +12,61 @@ const css = `
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 :root {
-  --cyan:          #06B6D4;
-  --cyan-dark:     #0E7490;
-  --cyan-soft:     rgba(6,182,212,0.14);
-  --cyan-border:   rgba(6,182,212,0.35);
+  --cyan:          #16A34A;
+  --cyan-dark:     #15803D;
+  --cyan-soft:     rgba(22,163,74,0.14);
+  --cyan-border:   rgba(22,163,74,0.45);
   --blue:          #3B82F6;
 
-  --bg:        #0B1120;
-  --surface:   #1E293B;
-  --border:    #334155;
-  --border-md: #475569;
-  --text-1:    #F1F5F9;
-  --text-2:    #94A3B8;
-  --text-3:    #64748B;
+  --page-bg:   #EFECE4;
+  --bg:        #F1F5F9;
+  --surface:   #FFFFFF;
+  --border:    #94A3B8;
+  --border-md: #64748B;
+  --text-1:    #1E293B;
+  --text-2:    #64748B;
+  --text-3:    #94A3B8;
 
-  --danger:        #F87171;
-  --danger-bg:     rgba(220,38,38,0.14);
-  --danger-border: rgba(248,113,113,0.4);
+  --danger:        #DC2626;
+  --danger-bg:     rgba(220,38,38,0.08);
+  --danger-border: rgba(220,38,38,0.4);
 
   --radius:    12px;
   --radius-sm: 8px;
-  --shadow-sm: 0 1px 3px rgba(0,0,0,.35), 0 1px 2px rgba(0,0,0,.25);
-  --shadow-md: 0 4px 16px rgba(0,0,0,.45), 0 1px 4px rgba(0,0,0,.3);
-  --shadow-lg: 0 12px 40px rgba(0,0,0,.55), 0 4px 12px rgba(0,0,0,.35);
+  --shadow-sm: 0 1px 3px rgba(15,23,42,.08), 0 1px 2px rgba(15,23,42,.06);
+  --shadow-md: 0 4px 16px rgba(15,23,42,.12), 0 1px 4px rgba(15,23,42,.08);
+  --shadow-lg: 0 12px 40px rgba(15,23,42,.22), 0 4px 12px rgba(15,23,42,.14);
 }
 
-html, body { height: 100%; font-family: 'Inter', system-ui, sans-serif; background: var(--bg); color: var(--text-1); -webkit-font-smoothing: antialiased; }
+html, body { height: 100%; font-family: 'Inter', system-ui, sans-serif; background: var(--page-bg); color: var(--text-1); -webkit-font-smoothing: antialiased; }
 
-.shell { min-height: 100vh; display: flex; flex-direction: column; background: var(--bg); }
+.shell { min-height: 100vh; display: flex; flex-direction: column; background: var(--page-bg); padding: 24px; }
+
+/* ── Viền trang ở ngoài — khung lớn bo góc, cao 80% màn hình ── */
+.page-frame { flex: 1; display: flex; }
+.main-card { flex: 1; background: var(--surface); border: 1.5px solid var(--border); border-radius: 20px; box-shadow: var(--shadow-md); height: 80vh; display: flex; flex-direction: column; overflow: hidden; }
+.main-card-scroll { flex: 1; overflow-y: auto; }
+
 .main { flex: 1; max-width: 1100px; width: 100%; margin: 0 auto; padding: 32px 28px 60px; }
 
 .page-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; gap: 16px; flex-wrap: wrap; }
 .page-head-left { display: flex; align-items: center; gap: 14px; }
-.page-icon { width: 42px; height: 42px; border-radius: 11px; background: linear-gradient(135deg, var(--cyan), var(--cyan-dark)); display: flex; align-items: center; justify-content: center; flex-shrink: 0; box-shadow: 0 3px 10px rgba(6,182,212,0.35); }
+.page-icon { width: 42px; height: 42px; border-radius: 11px; background: linear-gradient(135deg, var(--cyan), var(--cyan-dark)); display: flex; align-items: center; justify-content: center; flex-shrink: 0; box-shadow: 0 3px 10px rgba(22,163,74,0.35); border: 1.5px solid var(--cyan-dark); }
 .page-title { font-size: 22px; font-weight: 800; color: var(--text-1); letter-spacing: -0.5px; line-height: 1; }
 .page-subtitle { font-size: 13px; color: var(--text-2); margin-top: 3px; font-weight: 500; }
 
 .stats-row { display: flex; gap: 8px; flex-wrap: wrap; }
-.stat-chip { display: flex; align-items: center; gap: 6px; padding: 6px 13px; border-radius: 20px; background: var(--surface); border: 1px solid var(--border); font-size: 12px; font-weight: 700; color: var(--text-2); box-shadow: var(--shadow-sm); }
+.stat-chip { display: flex; align-items: center; gap: 6px; padding: 6px 13px; border-radius: 20px; background: var(--surface); border: 1.5px solid var(--border); font-size: 12px; font-weight: 700; color: var(--text-2); box-shadow: var(--shadow-sm); }
 .stat-dot { width: 7px; height: 7px; border-radius: 50%; }
 
 .toolbar { display: flex; gap: 10px; margin-bottom: 18px; flex-wrap: wrap; align-items: center; justify-content: space-between; }
 
-.filter-bar { display: flex; gap: 4px; flex-wrap: wrap; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 5px; box-shadow: var(--shadow-sm); }
+.filter-bar { display: flex; gap: 4px; flex-wrap: wrap; background: var(--surface); border: 1.5px solid var(--border); border-radius: var(--radius); padding: 5px; box-shadow: var(--shadow-sm); }
 .filter-tab { padding: 7px 16px; border-radius: 8px; border: none; background: transparent; font-size: 13px; font-weight: 600; color: var(--text-2); cursor: pointer; transition: all 0.15s; white-space: nowrap; }
 .filter-tab:hover { background: var(--bg); color: var(--text-1); }
-.filter-tab.active { background: linear-gradient(135deg, var(--cyan), var(--cyan-dark)); color: #04222B; }
+.filter-tab.active { background: linear-gradient(135deg, var(--cyan), var(--cyan-dark)); color: #FFFFFF; }
 
-.search-box { display: flex; align-items: center; gap: 8px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 8px 14px; box-shadow: var(--shadow-sm); min-width: 220px; transition: border-color 0.15s, box-shadow 0.15s; }
+.search-box { display: flex; align-items: center; gap: 8px; background: var(--surface); border: 1.5px solid var(--border); border-radius: var(--radius); padding: 8px 14px; box-shadow: var(--shadow-sm); min-width: 220px; transition: border-color 0.15s, box-shadow 0.15s; }
 .search-box:focus-within { border-color: var(--cyan); box-shadow: 0 0 0 3px var(--cyan-soft); }
 .search-box input { border: none; outline: none; font-size: 13px; font-family: inherit; flex: 1; background: transparent; color: var(--text-1); }
 .search-box input::placeholder { color: var(--text-3); }
@@ -67,14 +74,14 @@ html, body { height: 100%; font-family: 'Inter', system-ui, sans-serif; backgrou
 
 .incident-list { display: flex; flex-direction: column; gap: 8px; }
 
-.inc-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow-sm); display: flex; overflow: hidden; transition: box-shadow 0.18s, transform 0.18s, border-color 0.18s; }
+.inc-card { background: var(--surface); border: 1.5px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow-sm); display: flex; overflow: hidden; transition: box-shadow 0.18s, transform 0.18s, border-color 0.18s; }
 .inc-card:hover { box-shadow: var(--shadow-md); transform: translateY(-1px); border-color: var(--cyan-border); }
-.inc-stripe { width: 4px; flex-shrink: 0; }
+.inc-stripe { width: 5px; flex-shrink: 0; }
 .inc-body { flex: 1; padding: 16px 20px; display: flex; align-items: center; gap: 18px; min-width: 0; }
 .inc-info { flex: 1; min-width: 0; }
 .inc-eyebrow { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
 .inc-id { font-size: 11px; font-weight: 700; color: var(--text-3); letter-spacing: 0.7px; }
-.status-pill { display: inline-flex; align-items: center; gap: 4px; padding: 2px 9px; border-radius: 20px; font-size: 11px; font-weight: 700; border: 1px solid; }
+.status-pill { display: inline-flex; align-items: center; gap: 4px; padding: 2px 9px; border-radius: 20px; font-size: 11px; font-weight: 700; border: 1.5px solid; }
 .inc-title { font-size: 14.5px; font-weight: 700; color: var(--text-1); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 5px; }
 .inc-meta { display: flex; flex-wrap: wrap; gap: 12px; }
 .meta-tag { display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--text-2); font-weight: 500; }
@@ -85,42 +92,42 @@ html, body { height: 100%; font-family: 'Inter', system-ui, sans-serif; backgrou
 .inc-actions { display: flex; gap: 8px; align-items: center; flex-shrink: 0; }
 
 .btn-ghost { padding: 7px 14px; border-radius: var(--radius-sm); border: 1.5px solid var(--border-md); background: var(--surface); color: var(--text-1); font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.15s; white-space: nowrap; }
-.btn-ghost:hover { border-color: var(--cyan); background: var(--bg); color: var(--cyan); }
+.btn-ghost:hover { border-color: var(--cyan); background: var(--bg); color: var(--cyan-dark); }
 .btn-ghost:disabled { opacity: 0.5; cursor: not-allowed; }
 
-.btn-primary { padding: 7px 16px; border-radius: var(--radius-sm); background: linear-gradient(135deg, var(--cyan), var(--cyan-dark)); color: #04222B; font-size: 13px; font-weight: 700; border: none; cursor: pointer; transition: filter 0.15s; white-space: nowrap; box-shadow: 0 2px 8px rgba(6,182,212,0.3); }
+.btn-primary { padding: 7px 16px; border-radius: var(--radius-sm); background: linear-gradient(135deg, var(--cyan), var(--cyan-dark)); color: #FFFFFF; font-size: 13px; font-weight: 700; border: 1.5px solid var(--cyan-dark); cursor: pointer; transition: filter 0.15s; white-space: nowrap; box-shadow: 0 2px 8px rgba(22,163,74,0.3); }
 .btn-primary:hover { filter: brightness(1.06); }
 .btn-primary:disabled { opacity: 0.6; cursor: not-allowed; }
 
-.btn-danger { padding: 7px 14px; border-radius: var(--radius-sm); border: 1.5px solid #EF4444; background: transparent; color: var(--danger); font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.15s; white-space: nowrap; }
+.btn-danger { padding: 7px 14px; border-radius: var(--radius-sm); border: 1.5px solid #DC2626; background: transparent; color: var(--danger); font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.15s; white-space: nowrap; }
 .btn-danger:hover { background: var(--danger-bg); }
 .btn-danger:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .btn-back { display: inline-flex; align-items: center; gap: 6px; background: var(--surface); border: 1.5px solid var(--border-md); color: var(--text-1); font-size: 13px; font-weight: 600; padding: 7px 14px; border-radius: var(--radius-sm); cursor: pointer; transition: all 0.15s; white-space: nowrap; }
-.btn-back:hover { border-color: var(--cyan); color: var(--cyan); background: var(--cyan-soft); }
+.btn-back:hover { border-color: var(--cyan); color: var(--cyan-dark); background: var(--cyan-soft); }
 
 .empty { text-align: center; padding: 80px 20px; color: var(--text-3); }
 .empty-icon { font-size: 40px; margin-bottom: 10px; }
 .empty-label { font-size: 15px; font-weight: 600; }
-.err-box { text-align: center; padding: 40px 20px; color: var(--danger); background: var(--danger-bg); border: 1px solid var(--danger-border); border-radius: var(--radius); font-size: 13.5px; font-weight: 600; }
+.err-box { text-align: center; padding: 40px 20px; color: var(--danger); background: var(--danger-bg); border: 1.5px solid var(--danger-border); border-radius: var(--radius); font-size: 13.5px; font-weight: 600; }
 
 .detail-layout { display: grid; grid-template-columns: 1fr 380px; gap: 24px; align-items: start; }
 .detail-topbar { display: flex; align-items: center; gap: 12px; margin-bottom: 22px; }
 
-.media-main { border-radius: var(--radius); overflow: hidden; background: #0B1120; aspect-ratio: 16/9; margin-bottom: 8px; box-shadow: var(--shadow-md); position: relative; display: flex; align-items: center; justify-content: center; color: var(--text-3); font-size: 13px; font-weight: 600; border: 1px solid var(--border); }
+.media-main { border-radius: var(--radius); overflow: hidden; background: #0B1120; aspect-ratio: 16/9; margin-bottom: 8px; box-shadow: var(--shadow-md); position: relative; display: flex; align-items: center; justify-content: center; color: var(--text-3); font-size: 13px; font-weight: 600; border: 1.5px solid var(--border); }
 .media-main img, .media-main video { width: 100%; height: 100%; object-fit: cover; display: block; }
 .media-type-badge { position: absolute; top: 10px; left: 10px; background: rgba(0,0,0,0.6); color: #fff; font-size: 10px; font-weight: 700; letter-spacing: 0.5px; padding: 3px 8px; border-radius: 20px; backdrop-filter: blur(4px); }
 
 .media-thumbs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
-.thumb { aspect-ratio: 16/10; border-radius: 8px; overflow: hidden; cursor: pointer; border: 2px solid transparent; transition: border-color 0.15s, opacity 0.15s; background: #0B1120; position: relative; }
+.thumb { aspect-ratio: 16/10; border-radius: 8px; overflow: hidden; cursor: pointer; border: 2px solid var(--border); transition: border-color 0.15s, opacity 0.15s; background: #0B1120; position: relative; }
 .thumb:hover { opacity: 0.85; }
 .thumb.active { border-color: var(--cyan); }
 .thumb img, .thumb video { width: 100%; height: 100%; object-fit: cover; display: block; pointer-events: none; }
 .thumb-video-icon { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.4); color: #fff; font-size: 18px; }
 
 .info-col { position: sticky; top: 24px; }
-.info-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow-sm); overflow: hidden; }
-.info-card-head { padding: 20px 22px 18px; border-bottom: 1px solid var(--border); border-top: 4px solid var(--cyan); }
+.info-card { background: var(--surface); border: 1.5px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow-sm); overflow: hidden; }
+.info-card-head { padding: 20px 22px 18px; border-bottom: 1.5px solid var(--border); border-top: 4px solid var(--cyan); }
 .info-badge-row { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
 .info-id { font-size: 11px; font-weight: 700; color: var(--text-3); letter-spacing: 0.8px; }
 .info-title { font-size: 18px; font-weight: 800; color: var(--text-1); line-height: 1.3; letter-spacing: -0.3px; }
@@ -130,20 +137,20 @@ html, body { height: 100%; font-family: 'Inter', system-ui, sans-serif; backgrou
 .field { display: flex; flex-direction: column; gap: 3px; }
 .field-label { font-size: 10.5px; font-weight: 700; color: var(--text-3); letter-spacing: 0.8px; text-transform: uppercase; }
 .field-value { font-size: 13.5px; font-weight: 600; color: var(--text-1); }
-.info-card-actions { padding: 14px 22px; border-top: 1px solid var(--border); }
+.info-card-actions { padding: 14px 22px; border-top: 1.5px solid var(--border); }
 
-.timeline { margin-top: 16px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow-sm); padding: 18px 20px; }
+.timeline { margin-top: 16px; background: var(--surface); border: 1.5px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow-sm); padding: 18px 20px; }
 .timeline-title { font-size: 11px; font-weight: 700; color: var(--text-3); letter-spacing: 0.7px; text-transform: uppercase; margin-bottom: 16px; }
 .tl-item { display: flex; gap: 12px; position: relative; }
 .tl-item:not(:last-child) { padding-bottom: 16px; }
-.tl-item:not(:last-child)::before { content: ''; position: absolute; left: 9px; top: 20px; bottom: 0; width: 1px; background: var(--border); }
+.tl-item:not(:last-child)::before { content: ''; position: absolute; left: 9px; top: 20px; bottom: 0; width: 1.5px; background: var(--border); }
 .tl-dot { width: 20px; height: 20px; border-radius: 50%; background: var(--cyan-soft); border: 2px solid var(--cyan-border); flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 10px; }
 .tl-content { flex: 1; }
 .tl-label { font-size: 13px; font-weight: 600; color: var(--text-1); }
 .tl-time { font-size: 11.5px; color: var(--text-3); margin-top: 2px; }
 
-.overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; z-index: 200; padding: 20px; }
-.confirm-box { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 30px 26px; max-width: 380px; width: 100%; box-shadow: var(--shadow-lg); text-align: center; animation: popIn 0.18s cubic-bezier(.34,1.56,.64,1); }
+.overlay { position: fixed; inset: 0; background: rgba(15,23,42,0.55); display: flex; align-items: center; justify-content: center; z-index: 200; padding: 20px; }
+.confirm-box { background: var(--surface); border: 1.5px solid var(--border); border-radius: 16px; padding: 30px 26px; max-width: 380px; width: 100%; box-shadow: var(--shadow-lg); text-align: center; animation: popIn 0.18s cubic-bezier(.34,1.56,.64,1); }
 @keyframes popIn { from { transform: scale(0.92); opacity: 0; } to { transform: scale(1); opacity: 1; } }
 .confirm-icon { font-size: 36px; margin-bottom: 12px; }
 .confirm-title { font-size: 17px; font-weight: 800; color: var(--text-1); margin-bottom: 7px; letter-spacing: -0.3px; }
@@ -172,10 +179,10 @@ html, body { height: 100%; font-family: 'Inter', system-ui, sans-serif; backgrou
 /* ── Trạng thái thật theo DB (Incident.Status) ──
    PendingApproval | Approved | Completed | Cancelled */
 const STATUS_META = {
-  PendingApproval: { label: "Chờ duyệt", stripe: "#F59E0B", bg: "rgba(245,158,11,0.14)", text: "#F59E0B", border: "rgba(245,158,11,0.4)" },
-  Approved: { label: "Đã duyệt", stripe: "#3B82F6", bg: "rgba(59,130,246,0.14)", text: "#3B82F6", border: "rgba(59,130,246,0.4)" },
-  Completed: { label: "Hoàn tất", stripe: "#06B6D4", bg: "rgba(6,182,212,0.14)", text: "#06B6D4", border: "rgba(6,182,212,0.4)" },
-  Cancelled: { label: "Đã hủy", stripe: "#EF4444", bg: "rgba(239,68,68,0.14)", text: "#F87171", border: "rgba(239,68,68,0.4)" },
+  PendingApproval: { label: "Chờ duyệt", stripe: "#F59E0B", bg: "rgba(245,158,11,0.12)", text: "#B45309", border: "rgba(245,158,11,0.5)" },
+  Approved: { label: "Đã duyệt", stripe: "#3B82F6", bg: "rgba(59,130,246,0.12)", text: "#1D4ED8", border: "rgba(59,130,246,0.5)" },
+  Completed: { label: "Hoàn tất", stripe: "#16A34A", bg: "rgba(22,163,74,0.12)", text: "#15803D", border: "rgba(22,163,74,0.5)" },
+  Cancelled: { label: "Đã hủy", stripe: "#DC2626", bg: "rgba(220,38,38,0.12)", text: "#B91C1C", border: "rgba(220,38,38,0.5)" },
 };
 
 const FILTERS = [
@@ -197,6 +204,21 @@ const fmtDate = (s) => {
 // Nếu authApi trả nguyên response axios thì cần .data — unwrap() xử lý cả 2
 // trường hợp cho an toàn, bạn có thể xóa nếu chắc chắn shape trả về.
 const unwrap = (res) => (res && typeof res === "object" && "data" in res ? res.data : res);
+
+// FIX: BE có thể trả về mảng thuần [...] hoặc object phân trang dạng
+// { items: [...] } / { data: [...] } / { results: [...] } / { incidents: [...] }.
+// Trước đây code gọi thẳng `unwrap(res) || []` nên khi BE trả object phân
+// trang, incidents lại là object -> incidents.filter is not a function.
+// toArray() chuẩn hoá mọi trường hợp về mảng an toàn.
+const toArray = (v) => {
+  if (Array.isArray(v)) return v;
+  if (!v || typeof v !== "object") return [];
+  if (Array.isArray(v.items)) return v.items;
+  if (Array.isArray(v.data)) return v.data;
+  if (Array.isArray(v.results)) return v.results;
+  if (Array.isArray(v.incidents)) return v.incidents;
+  return [];
+};
 
 function StatusPill({ status }) {
   const m = STATUS_META[status] || {};
@@ -367,7 +389,7 @@ function DetailPage({ incidentId, onBack, onRequestCancel }) {
                 {detail.status === "Cancelled" && detail.rejectReason && (
                   <div className="field" style={{ gridColumn: "1 / -1" }}>
                     <span className="field-label">Lý do hủy</span>
-                    <span className="field-value" style={{ color: "#F87171" }}>{detail.rejectReason}</span>
+                    <span className="field-value" style={{ color: "#DC2626" }}>{detail.rejectReason}</span>
                   </div>
                 )}
               </div>
@@ -430,9 +452,10 @@ export default function IncidentPage() {
         pageSize: 50,
       };
       const res = await cashierApi.getIncidents(params);
-      setIncidents(unwrap(res) || []);
+      setIncidents(toArray(unwrap(res)));
     } catch (e) {
       setError(e?.response?.data?.message || e?.message || "Không tải được danh sách báo cáo.");
+      setIncidents([]);
     } finally {
       setLoading(false);
     }
@@ -490,112 +513,118 @@ export default function IncidentPage() {
     <>
       <style>{css}</style>
       <div className="shell">
-        {!viewingId && (
-          <div className="main page-enter">
-            <div className="page-head">
-              <div className="page-head-left">
-                <div className="page-icon">
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#04222B" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
-                    <line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" />
-                  </svg>
-                </div>
-                <div>
-                  <div className="page-title">Lịch sử báo cáo sự cố</div>
-                  <div className="page-subtitle">{incidents.length} báo cáo của bạn</div>
-                </div>
-              </div>
-              <div className="stats-row">
-                <div className="stat-chip"><span className="stat-dot" style={{ background: "#F59E0B" }} />{counts.PendingApproval} chờ duyệt</div>
-                <div className="stat-chip"><span className="stat-dot" style={{ background: "#3B82F6" }} />{counts.Approved} đã duyệt</div>
-                <div className="stat-chip"><span className="stat-dot" style={{ background: "#06B6D4" }} />{counts.Completed} hoàn tất</div>
-              </div>
-            </div>
-
-            <div className="toolbar">
-              <div className="filter-bar">
-                {FILTERS.map((f) => (
-                  <button key={f.key} className={`filter-tab${filter === f.key ? " active" : ""}`} onClick={() => setFilter(f.key)}>
-                    {f.label}
-                  </button>
-                ))}
-              </div>
-              <div className="search-box">
-                🔍
-                <input
-                  placeholder="Tìm theo tiêu đề, mô tả..."
-                  value={keywordInput}
-                  onChange={(e) => setKeywordInput(e.target.value)}
-                />
-              </div>
-            </div>
-
-            {loading && <div className="spinner-row">Đang tải danh sách báo cáo...</div>}
-            {!loading && error && <div className="err-box">{error}</div>}
-
-            {!loading && !error && (
-              <div className="incident-list">
-                {incidents.length === 0 && (
-                  <div className="empty">
-                    <div className="empty-icon">🔍</div>
-                    <div className="empty-label">Không có sự cố nào.</div>
-                  </div>
-                )}
-                {incidents.map((inc) => {
-                  const sm = STATUS_META[inc.status] || {};
-                  return (
-                    <div className="inc-card" key={inc.incidentId}>
-                      <div className="inc-stripe" style={{ background: sm.stripe }} />
-                      <div className="inc-body">
-                        <div className="inc-thumb">
-                          {inc.thumbnail ? <img src={inc.thumbnail} alt="" /> : "📷"}
-                        </div>
-
-                        <div className="inc-info">
-                          <div className="inc-eyebrow">
-                            <span className="inc-id">#{inc.incidentId}</span>
-                            <StatusPill status={inc.status} />
-                          </div>
-                          <div className="inc-title">{inc.title}</div>
-                          <div className="inc-meta">
-                            <span className="meta-tag">🏢 <strong>{inc.branchName}</strong></span>
-                            {inc.equipmentName && <span className="meta-tag">⚙️ <strong>{inc.equipmentName}</strong></span>}
-                            <span className="meta-tag">👤 {inc.reporterName}</span>
-                            <span className="meta-tag">🕐 {fmtDate(inc.createdAt)}</span>
-                          </div>
-                        </div>
-
-                        <div className="inc-actions">
-                          {inc.status === "PendingApproval" && (
-                            <button
-                              className="btn-danger"
-                              disabled={cancelFetchingId === inc.incidentId}
-                              onClick={() => handleRequestCancelFromCard(inc)}
-                            >
-                              {cancelFetchingId === inc.incidentId ? "Đang tải..." : "Hủy"}
-                            </button>
-                          )}
-                          <button className="btn-primary" onClick={() => setViewingId(inc.incidentId)}>
-                            Xem chi tiết →
-                          </button>
-                        </div>
+        <div className="page-frame">
+          <div className="main-card">
+            <div className="main-card-scroll">
+              {!viewingId && (
+                <div className="main page-enter">
+                  <div className="page-head">
+                    <div className="page-head-left">
+                      <div className="page-icon">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+                          <line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" />
+                        </svg>
+                      </div>
+                      <div>
+                        <div className="page-title">Lịch sử báo cáo sự cố</div>
+                        <div className="page-subtitle">{incidents.length} báo cáo của bạn</div>
                       </div>
                     </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        )}
+                    <div className="stats-row">
+                      <div className="stat-chip"><span className="stat-dot" style={{ background: "#F59E0B" }} />{counts.PendingApproval} chờ duyệt</div>
+                      <div className="stat-chip"><span className="stat-dot" style={{ background: "#3B82F6" }} />{counts.Approved} đã duyệt</div>
+                      <div className="stat-chip"><span className="stat-dot" style={{ background: "#16A34A" }} />{counts.Completed} hoàn tất</div>
+                    </div>
+                  </div>
 
-        {viewingId && (
-          <DetailPage
-            key={viewingId}
-            incidentId={viewingId}
-            onBack={() => setViewingId(null)}
-            onRequestCancel={(detail) => setConfirmCancel(detail)}
-          />
-        )}
+                  <div className="toolbar">
+                    <div className="filter-bar">
+                      {FILTERS.map((f) => (
+                        <button key={f.key} className={`filter-tab${filter === f.key ? " active" : ""}`} onClick={() => setFilter(f.key)}>
+                          {f.label}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="search-box">
+                      🔍
+                      <input
+                        placeholder="Tìm theo tiêu đề, mô tả..."
+                        value={keywordInput}
+                        onChange={(e) => setKeywordInput(e.target.value)}
+                      />
+                    </div>
+                  </div>
+
+                  {loading && <div className="spinner-row">Đang tải danh sách báo cáo...</div>}
+                  {!loading && error && <div className="err-box">{error}</div>}
+
+                  {!loading && !error && (
+                    <div className="incident-list">
+                      {incidents.length === 0 && (
+                        <div className="empty">
+                          <div className="empty-icon">🔍</div>
+                          <div className="empty-label">Không có sự cố nào.</div>
+                        </div>
+                      )}
+                      {incidents.map((inc) => {
+                        const sm = STATUS_META[inc.status] || {};
+                        return (
+                          <div className="inc-card" key={inc.incidentId}>
+                            <div className="inc-stripe" style={{ background: sm.stripe }} />
+                            <div className="inc-body">
+                              <div className="inc-thumb">
+                                {inc.thumbnail ? <img src={inc.thumbnail} alt="" /> : "📷"}
+                              </div>
+
+                              <div className="inc-info">
+                                <div className="inc-eyebrow">
+                                  <span className="inc-id">#{inc.incidentId}</span>
+                                  <StatusPill status={inc.status} />
+                                </div>
+                                <div className="inc-title">{inc.title}</div>
+                                <div className="inc-meta">
+                                  <span className="meta-tag">🏢 <strong>{inc.branchName}</strong></span>
+                                  {inc.equipmentName && <span className="meta-tag">⚙️ <strong>{inc.equipmentName}</strong></span>}
+                                  <span className="meta-tag">👤 {inc.reporterName}</span>
+                                  <span className="meta-tag">🕐 {fmtDate(inc.createdAt)}</span>
+                                </div>
+                              </div>
+
+                              <div className="inc-actions">
+                                {inc.status === "PendingApproval" && (
+                                  <button
+                                    className="btn-danger"
+                                    disabled={cancelFetchingId === inc.incidentId}
+                                    onClick={() => handleRequestCancelFromCard(inc)}
+                                  >
+                                    {cancelFetchingId === inc.incidentId ? "Đang tải..." : "Hủy"}
+                                  </button>
+                                )}
+                                <button className="btn-primary" onClick={() => setViewingId(inc.incidentId)}>
+                                  Xem chi tiết →
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {viewingId && (
+                <DetailPage
+                  key={viewingId}
+                  incidentId={viewingId}
+                  onBack={() => setViewingId(null)}
+                  onRequestCancel={(detail) => setConfirmCancel(detail)}
+                />
+              )}
+            </div>
+          </div>
+        </div>
       </div>
 
       {confirmCancel && (

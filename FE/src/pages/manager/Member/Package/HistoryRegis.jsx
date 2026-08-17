@@ -19,16 +19,18 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import authApi from "../../../../api/authApi";
 import managerApi from "../../../../api/managerApi";
 
+const PAGE_SIZE = 10;
+
 // Trạng thái của MemberPackage (gói tập đã đăng ký) — khác với paymentStatus của Transaction.
 const STATUS_CONFIG = {
-    Active: { label: "Đang hoạt động", icon: CheckCircle2, bg: "rgba(4,120,87,0.16)", color: "#34d399" },
-    Expired: { label: "Hết hạn", icon: Clock, bg: "rgba(100,116,139,0.16)", color: "#94a3b8" },
-    Cancelled: { label: "Đã hủy", icon: XCircle, bg: "rgba(190,18,60,0.16)", color: "#fb7185" },
+    Active: { label: "Đang hoạt động", icon: CheckCircle2, bg: "rgba(5,150,105,0.1)", color: "#059669" },
+    Expired: { label: "Hết hạn", icon: Clock, bg: "rgba(100,116,139,0.12)", color: "#64748b" },
+    Cancelled: { label: "Đã hủy", icon: XCircle, bg: "rgba(190,18,60,0.1)", color: "#e11d48" },
 };
 
 const CHANNEL_CONFIG = {
-    "Online": { label: "Online", icon: Globe, bg: "rgba(3,105,161,0.16)", color: "#38bdf8" },
-    "Offline": { label: "Tại quầy", icon: Store, bg: "rgba(4,120,87,0.16)", color: "#34d399" },
+    "Online": { label: "Online", icon: Globe, bg: "rgba(3,105,161,0.1)", color: "#0369a1" },
+    "Offline": { label: "Tại quầy", icon: Store, bg: "rgba(5,150,105,0.1)", color: "#059669" },
 };
 
 function formatCurrency(v) {
@@ -44,83 +46,105 @@ function formatDate(d) {
     return `${dd}/${m}/${y}`;
 }
 
+// Danh sách số trang dạng: 1 … 4 5 [6] 7 8 … 20
+function getPageNumbers(page, totalPages) {
+    const pages = [];
+    for (let p = 1; p <= totalPages; p++) {
+        if (p === 1 || p === totalPages || Math.abs(p - page) <= 1) pages.push(p);
+    }
+    const result = [];
+    pages.forEach((p, i) => {
+        if (i > 0 && p - pages[i - 1] > 1) result.push("...");
+        result.push(p);
+    });
+    return result;
+}
+
 const S = {
-    root: { display: "flex", flexDirection: "column", height: "100vh", backgroundColor: "#0b1220", fontFamily: "'Inter', 'Segoe UI', system-ui, sans-serif" },
-    main: { flex: 1, overflow: "visible", padding: "24px 32px", display: "flex", flexDirection: "column", minHeight: 0 },
+    root: { display: "flex", flexDirection: "column", height: "100vh", backgroundColor: "#f8fafc", fontFamily: "'Inter', 'Segoe UI', system-ui, sans-serif" },
+    main: { flex: 1, overflow: "visible", padding: "18px 32px 20px", display: "flex", flexDirection: "column", minHeight: 0 },
 
-    pageTitle: { display: "flex", alignItems: "center", gap: 12, marginBottom: 20 },
-    pageTitleIcon: { width: 44, height: 44, borderRadius: 12, backgroundColor: "#0d9488", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 },
-    h1: { fontSize: 22, fontWeight: 700, color: "#f1f5f9", margin: 0 },
-    pageDesc: { fontSize: 13, color: "#94a3b8", margin: 0 },
+    pageTitle: { display: "flex", alignItems: "center", gap: 10, marginBottom: 12 },
+    pageTitleIcon: { width: 34, height: 34, borderRadius: 10, backgroundColor: "#059669", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 },
+    h1: { fontSize: 18, fontWeight: 700, color: "#0f172a", margin: 0, lineHeight: 1.2 },
+    pageDesc: { fontSize: 12, color: "#64748b", margin: 0 },
 
-    branchStrip: { display: "flex", alignItems: "center", gap: 10, marginBottom: 20, flexWrap: "wrap" },
+    branchStrip: { display: "flex", alignItems: "center", gap: 8, marginBottom: 10, flexWrap: "wrap" },
     branchChip: (active) => ({
-        display: "inline-flex", alignItems: "center", gap: 8, borderRadius: 10,
-        border: `1px solid ${active ? "#0d9488" : "#1e293b"}`,
-        backgroundColor: active ? "rgba(13,148,136,0.14)" : "#111827",
-        padding: "8px 14px", fontSize: 12.5, fontWeight: 600,
-        color: active ? "#5eead4" : "#94a3b8", cursor: "pointer", whiteSpace: "nowrap",
+        display: "inline-flex", alignItems: "center", gap: 6, borderRadius: 8,
+        border: `1px solid ${active ? "#059669" : "#e2e8f0"}`,
+        backgroundColor: active ? "rgba(5,150,105,0.08)" : "#ffffff",
+        padding: "6px 11px", fontSize: 12, fontWeight: 600,
+        color: active ? "#059669" : "#64748b", cursor: "pointer", whiteSpace: "nowrap",
     }),
-    branchChipIcon: (active) => ({ display: "flex", color: active ? "#2dd4bf" : "#475569" }),
+    branchChipIcon: (active) => ({ display: "flex", color: active ? "#059669" : "#94a3b8" }),
 
-    filterPanel: { marginBottom: 20, borderRadius: 16, border: "1px solid #1e293b", backgroundColor: "#111827", padding: 20, flexShrink: 0 },
-    filterGrid: { display: "grid", gridTemplateColumns: "1fr auto auto auto auto", gap: 12 },
+    filterPanel: { marginBottom: 10, borderRadius: 12, border: "1px solid #a7f3d0", backgroundColor: "#ffffff", padding: 12, flexShrink: 0 },
+    filterGrid: { display: "grid", gridTemplateColumns: "1fr auto auto auto auto", gap: 10 },
     searchWrap: { position: "relative" },
-    searchIcon: { position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: "#64748b", pointerEvents: "none" },
-    searchInput: { width: "100%", boxSizing: "border-box", borderRadius: 8, border: "1px solid #1e293b", backgroundColor: "#0b1220", padding: "10px 36px 10px 36px", fontSize: 13, color: "#e2e8f0", outline: "none" },
-    clearBtn: { position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", color: "#64748b", display: "flex", padding: 2 },
+    searchIcon: { position: "absolute", left: 11, top: "50%", transform: "translateY(-50%)", color: "#94a3b8", pointerEvents: "none" },
+    searchInput: { width: "100%", boxSizing: "border-box", borderRadius: 7, border: "1px solid #e2e8f0", backgroundColor: "#f8fafc", padding: "7px 32px 7px 32px", fontSize: 12.5, color: "#0f172a", outline: "none" },
+    clearBtn: { position: "absolute", right: 9, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", color: "#94a3b8", display: "flex", padding: 2 },
 
     customSelectWrap: { position: "relative" },
     customSelectBtn: (open, disabled) => ({
         width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10,
-        borderRadius: 8, border: `1px solid ${open ? "#0d9488" : "#1e293b"}`, backgroundColor: disabled ? "#0d131f" : "#0b1220",
-        padding: "10px 12px", fontSize: 13, color: disabled ? "#475569" : "#e2e8f0", cursor: disabled ? "not-allowed" : "pointer", whiteSpace: "nowrap",
-        boxShadow: open ? "0 0 0 3px rgba(13,148,136,0.18)" : "none",
+        borderRadius: 7, border: `1px solid ${open ? "#059669" : "#e2e8f0"}`, backgroundColor: disabled ? "#f1f5f9" : "#ffffff",
+        padding: "7px 10px", fontSize: 12.5, color: disabled ? "#94a3b8" : "#0f172a", cursor: disabled ? "not-allowed" : "pointer", whiteSpace: "nowrap",
+        boxShadow: open ? "0 0 0 3px rgba(5,150,105,0.15)" : "none",
     }),
     customSelectBtnLabel: { overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
-    customSelectChevron: (open) => ({ display: "flex", flexShrink: 0, color: "#64748b", transform: open ? "rotate(180deg)" : "none", transition: "transform 0.15s ease" }),
-    customSelectMenu: { position: "absolute", top: "calc(100% + 6px)", left: 0, right: 0, minWidth: 180, zIndex: 60, borderRadius: 10, border: "1px solid #1e293b", backgroundColor: "#111827", boxShadow: "0 16px 32px rgba(0,0,0,0.45)", padding: 6, maxHeight: 260, overflowY: "auto" },
+    customSelectChevron: (open) => ({ display: "flex", flexShrink: 0, color: "#94a3b8", transform: open ? "rotate(180deg)" : "none", transition: "transform 0.15s ease" }),
+    customSelectMenu: { position: "absolute", top: "calc(100% + 6px)", left: 0, right: 0, minWidth: 180, zIndex: 60, borderRadius: 10, border: "1px solid #e2e8f0", backgroundColor: "#ffffff", boxShadow: "0 16px 32px rgba(15,23,42,0.12)", padding: 6, maxHeight: 260, overflowY: "auto" },
     customSelectOption: (active) => ({
         display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8,
         borderRadius: 8, padding: "9px 10px", fontSize: 13, cursor: "pointer",
-        color: active ? "#5eead4" : "#cbd5e1",
-        backgroundColor: active ? "rgba(13,148,136,0.14)" : "transparent",
+        color: active ? "#059669" : "#334155",
+        backgroundColor: active ? "rgba(5,150,105,0.08)" : "transparent",
     }),
-    resetBtn: { borderRadius: 8, border: "1px solid #1e293b", backgroundColor: "#0b1220", padding: "10px 16px", fontSize: 13, fontWeight: 500, color: "#94a3b8", cursor: "pointer" },
+    resetBtn: { borderRadius: 7, border: "1px solid #e2e8f0", backgroundColor: "#ffffff", padding: "7px 14px", fontSize: 12.5, fontWeight: 500, color: "#64748b", cursor: "pointer" },
 
-    card: { borderRadius: 16, border: "1px solid #1e293b", backgroundColor: "#111827", flex: 1, display: "flex", flexDirection: "column", minHeight: 0 },
-    cardHeader: { display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: "1px solid #1e293b", padding: "14px 20px", flexShrink: 0 },
-    countText: { fontSize: 13, color: "#94a3b8" },
-    countBold: { fontWeight: 600, color: "#f1f5f9" },
+    card: { borderRadius: 14, border: "1px solid #a7f3d0", backgroundColor: "#ffffff", flex: 1, display: "flex", flexDirection: "column", minHeight: 0, overflow: "hidden" },
 
     table: { width: "100%", borderCollapse: "collapse", fontSize: 13, textAlign: "left" },
-    th: { padding: "10px 20px", fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", color: "#64748b", borderBottom: "1px solid #1e293b", textTransform: "uppercase", whiteSpace: "nowrap", backgroundColor: "#111827" },
-    thRight: { padding: "10px 20px", fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", color: "#64748b", borderBottom: "1px solid #1e293b", textAlign: "right", textTransform: "uppercase", backgroundColor: "#111827" },
-    td: { padding: "14px 20px", borderBottom: "1px solid #1e293b", verticalAlign: "middle" },
-    tdRight: { padding: "14px 20px", borderBottom: "1px solid #1e293b", textAlign: "right", verticalAlign: "middle" },
+    th: { padding: "9px 20px", fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", color: "#ffffff", textTransform: "uppercase", whiteSpace: "nowrap" },
+    thRight: { padding: "9px 20px", fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", color: "#ffffff", textAlign: "right", textTransform: "uppercase" },
+    td: { padding: "12px 20px", borderBottom: "1px solid #e2e8f0", verticalAlign: "middle" },
+    tdRight: { padding: "12px 20px", borderBottom: "1px solid #e2e8f0", textAlign: "right", verticalAlign: "middle" },
     memberRow: { display: "flex", alignItems: "center", gap: 10 },
-    avatarImg: { width: 36, height: 36, borderRadius: "50%", objectFit: "cover", flexShrink: 0, border: "1px solid #1e293b" },
-    avatarFallback: { width: 36, height: 36, borderRadius: "50%", backgroundColor: "#1e293b", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, color: "#64748b" },
-    memberName: { fontWeight: 600, color: "#f1f5f9", fontSize: 13 },
-    memberPhone: { display: "flex", alignItems: "center", gap: 4, fontSize: 11, color: "#64748b", marginTop: 2 },
-    planName: { color: "#cbd5e1" },
-    orderCodeTag: { fontSize: 11, color: "#64748b", marginTop: 2 },
-    branchTag: { display: "inline-flex", alignItems: "center", gap: 5, fontSize: 12, color: "#94a3b8" },
-    dateRange: { color: "#94a3b8", whiteSpace: "nowrap" },
-    amountMain: { fontWeight: 600, color: "#f1f5f9" },
+    avatarImg: { width: 34, height: 34, borderRadius: "50%", objectFit: "cover", flexShrink: 0, border: "1px solid #e2e8f0" },
+    avatarFallback: { width: 34, height: 34, borderRadius: "50%", backgroundColor: "#e2e8f0", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, color: "#94a3b8" },
+    memberName: { fontWeight: 600, color: "#0f172a", fontSize: 13 },
+    memberPhone: { display: "flex", alignItems: "center", gap: 4, fontSize: 11, color: "#94a3b8", marginTop: 2 },
+    planName: { color: "#334155" },
+    orderCodeTag: { fontSize: 11, color: "#94a3b8", marginTop: 2 },
+    branchTag: { display: "inline-flex", alignItems: "center", gap: 5, fontSize: 12, color: "#64748b" },
+    dateRange: { color: "#64748b", whiteSpace: "nowrap" },
+    amountMain: { fontWeight: 600, color: "#0f172a" },
 
     badge: (bg, color) => ({ display: "inline-flex", alignItems: "center", gap: 6, borderRadius: 9999, padding: "4px 10px", fontSize: 11, fontWeight: 600, backgroundColor: bg, color }),
 
     emptyState: { display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8, padding: "64px 24px", textAlign: "center" },
-    emptyTitle: { fontSize: 13, fontWeight: 500, color: "#cbd5e1" },
-    emptyDesc: { fontSize: 11, color: "#64748b" },
+    emptyTitle: { fontSize: 13, fontWeight: 500, color: "#334155" },
+    emptyDesc: { fontSize: 11, color: "#94a3b8" },
 
     loadingState: { display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10, padding: "64px 24px", textAlign: "center" },
     errorState: { display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8, padding: "64px 24px", textAlign: "center" },
-    retryBtn: { marginTop: 8, borderRadius: 8, border: "1px solid #1e293b", backgroundColor: "#0b1220", padding: "8px 16px", fontSize: 13, fontWeight: 500, color: "#94a3b8", cursor: "pointer" },
+    retryBtn: { marginTop: 8, borderRadius: 8, border: "1px solid #e2e8f0", backgroundColor: "#ffffff", padding: "8px 16px", fontSize: 13, fontWeight: 500, color: "#64748b", cursor: "pointer" },
 
     scrollArea: { flex: 1, minHeight: 0, overflowY: "auto" },
-    stickyHead: { position: "sticky", top: 0, zIndex: 1 },
+    stickyHead: { position: "sticky", top: 0, zIndex: 1, background: "linear-gradient(135deg, #059669, #0e7490)" },
+
+    pagination: { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 18px", borderTop: "1px solid #a7f3d0", backgroundColor: "#f0fdf4", flexWrap: "wrap", gap: 8, flexShrink: 0 },
+    pageInfo: { fontSize: 12, color: "#64748b" },
+    pageBtns: { display: "flex", gap: 5 },
+    pageBtn: (active) => ({
+        padding: "5px 10px", borderRadius: 6, border: `1px solid ${active ? "#059669" : "#e2e8f0"}`,
+        backgroundColor: active ? "#059669" : "#ffffff", fontSize: 12.5, fontWeight: 600,
+        color: active ? "#ffffff" : "#0f172a", cursor: "pointer",
+    }),
+    pageBtnDisabled: { opacity: 0.4, cursor: "default" },
+    pageEllipsis: { padding: "0 3px", color: "#94a3b8", lineHeight: "28px", fontSize: 12.5 },
 };
 
 function StatusBadge({ status }) {
@@ -145,7 +169,7 @@ function ChannelBadge({ channel }) {
     );
 }
 
-function Avatar({ src, alt, size = 36 }) {
+function Avatar({ src, alt, size = 34 }) {
     const [errored, setErrored] = useState(false);
     if (!src || errored) {
         return (
@@ -200,7 +224,7 @@ function CustomSelect({ value, onChange, options, placeholder = "Chọn...", dis
             {open && (
                 <div style={S.customSelectMenu} className="scroll-dark custom-select-menu">
                     {options.length === 0 ? (
-                        <div style={{ padding: "10px 10px", fontSize: 12.5, color: "#475569" }}>Không có dữ liệu</div>
+                        <div style={{ padding: "10px 10px", fontSize: 12.5, color: "#94a3b8" }}>Không có dữ liệu</div>
                     ) : (
                         options.map((opt) => {
                             const isActive = String(opt.value) === String(value);
@@ -228,6 +252,7 @@ export default function LichSuDangKyGoiTapOfManager() {
     const [history, setHistory] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
+    const [page, setPage] = useState(1);
 
     const [searchTerm, setSearchTerm] = useState("");
     const [debouncedSearch, setDebouncedSearch] = useState("");
@@ -269,6 +294,9 @@ export default function LichSuDangKyGoiTapOfManager() {
         branchId: branchFilter !== "all" ? branchFilter : undefined,
     }), [debouncedSearch, statusFilter, channelFilter, branchFilter]);
 
+    // Đổi bộ lọc thì quay về trang 1
+    useEffect(() => setPage(1), [formData]);
+
     // Danh sách gói tập đã đăng ký (MemberPackage), lấy từ /api/member-packages/history.
     async function fetchHistory() {
         setLoading(true);
@@ -294,29 +322,38 @@ export default function LichSuDangKyGoiTapOfManager() {
         setSearchTerm(""); setDebouncedSearch(""); setStatusFilter("all"); setChannelFilter("all"); setBranchFilter("all");
     }
 
+    // Phân trang phía client trên danh sách đã lọc
+    const totalCount = history.length;
+    const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
+    const pagedHistory = useMemo(
+        () => history.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE),
+        [history, page]
+    );
+
     return (
         <>
             <style>{`
         * { box-sizing: border-box; }
         body { margin: 0; }
         a { text-decoration: none; }
-        input:focus { border-color: #0d9488 !important; background: #0b1220 !important; box-shadow: 0 0 0 3px rgba(13,148,136,0.18) !important; }
-        tr:hover td { background-color: rgba(30,41,59,0.55) !important; }
+        input:focus { border-color: #059669 !important; background: #ffffff !important; box-shadow: 0 0 0 3px rgba(5,150,105,0.15) !important; }
+        tr:hover td { background-color: rgba(241,245,249,0.9) !important; }
         .table-wrap { display: block; overflow-x: auto; }
         .mobile-cards { display: none; }
         .spin { animation: spin 0.8s linear infinite; }
-        .reset-btn:hover { background-color: #1e293b !important; }
-        .branch-chip:hover { border-color: #0d9488 !important; }
-        .custom-select-btn:not(:disabled):hover { border-color: #334155 !important; }
-        .custom-select-option:hover { background-color: #1e293b !important; }
+        .reset-btn:hover { background-color: #f1f5f9 !important; }
+        .branch-chip:hover { border-color: #059669 !important; }
+        .custom-select-btn:not(:disabled):hover { border-color: #cbd5e1 !important; }
+        .custom-select-option:hover { background-color: #f1f5f9 !important; }
         .custom-select-menu { animation: dropdown-in 0.12s ease-out; }
+        .page-btn:hover:not(:disabled) { border-color: #059669 !important; color: #059669 !important; }
         @keyframes dropdown-in { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
         @keyframes spin { to { transform: rotate(360deg); } }
         .scroll-dark::-webkit-scrollbar { width: 8px; height: 8px; }
         .scroll-dark::-webkit-scrollbar-track { background: transparent; }
-        .scroll-dark::-webkit-scrollbar-thumb { background-color: #1e293b; border-radius: 8px; }
-        .scroll-dark::-webkit-scrollbar-thumb:hover { background-color: #334155; }
-        .scroll-dark { scrollbar-width: thin; scrollbar-color: #1e293b transparent; }
+        .scroll-dark::-webkit-scrollbar-thumb { background-color: #cbd5e1; border-radius: 8px; }
+        .scroll-dark::-webkit-scrollbar-thumb:hover { background-color: #94a3b8; }
+        .scroll-dark { scrollbar-width: thin; scrollbar-color: #cbd5e1 transparent; }
         .app-root { height: 100vh; height: 100dvh; }
         @media (max-width: 1024px) {
           .filter-grid { grid-template-columns: 1fr 1fr !important; }
@@ -346,7 +383,7 @@ export default function LichSuDangKyGoiTapOfManager() {
                 <main className="main-pad" style={S.main}>
                     <div className="page-title" style={S.pageTitle}>
                         <div className="page-title-icon" style={S.pageTitleIcon}>
-                            <History size={20} color="#fff" />
+                            <History size={18} color="#fff" />
                         </div>
                         <div>
                             <h1 className="page-title-h1" style={S.h1}>Lịch sử đăng ký gói tập</h1>
@@ -361,7 +398,7 @@ export default function LichSuDangKyGoiTapOfManager() {
                                 style={S.branchChip(branchFilter === "all")}
                                 onClick={() => setBranchFilter("all")}
                             >
-                                <span style={S.branchChipIcon(branchFilter === "all")}><Building2 size={14} /></span>
+                                <span style={S.branchChipIcon(branchFilter === "all")}><Building2 size={13} /></span>
                                 Tất cả chi nhánh
                             </button>
                             {branches.map((b) => (
@@ -371,7 +408,7 @@ export default function LichSuDangKyGoiTapOfManager() {
                                     style={S.branchChip(String(branchFilter) === String(b.branchId))}
                                     onClick={() => setBranchFilter(b.branchId)}
                                 >
-                                    <span style={S.branchChipIcon(String(branchFilter) === String(b.branchId))}><MapPin size={14} /></span>
+                                    <span style={S.branchChipIcon(String(branchFilter) === String(b.branchId))}><MapPin size={13} /></span>
                                     {b.branchName}
                                 </button>
                             ))}
@@ -381,7 +418,7 @@ export default function LichSuDangKyGoiTapOfManager() {
                     <div className="filter-panel" style={S.filterPanel}>
                         <div className="filter-grid" style={S.filterGrid}>
                             <div style={S.searchWrap}>
-                                <span style={S.searchIcon}><Search size={16} /></span>
+                                <span style={S.searchIcon}><Search size={15} /></span>
                                 <input
                                     style={S.searchInput}
                                     value={searchTerm}
@@ -433,14 +470,6 @@ export default function LichSuDangKyGoiTapOfManager() {
                     </div>
 
                     <div style={S.card}>
-                        <div style={S.cardHeader}>
-                            <p style={S.countText}>
-                                {loading ? "Đang tải..." : (
-                                    <>Tìm thấy <span style={S.countBold}>{history.length}</span> gói tập đã đăng ký</>
-                                )}
-                            </p>
-                        </div>
-
                         {loading ? (
                             <div style={S.loadingState}>
                                 <Loader2 className="spin" size={28} color="#94a3b8" />
@@ -448,13 +477,13 @@ export default function LichSuDangKyGoiTapOfManager() {
                             </div>
                         ) : error ? (
                             <div style={S.errorState}>
-                                <XCircle size={28} color="#f43f5e" />
+                                <XCircle size={28} color="#e11d48" />
                                 <p style={S.emptyTitle}>{error}</p>
                                 <button style={S.retryBtn} onClick={fetchHistory}>Thử lại</button>
                             </div>
-                        ) : history.length === 0 ? (
+                        ) : totalCount === 0 ? (
                             <div style={S.emptyState}>
-                                <Search size={28} color="#334155" />
+                                <Search size={28} color="#cbd5e1" />
                                 <p style={S.emptyTitle}>Không tìm thấy gói tập phù hợp</p>
                                 <p style={S.emptyDesc}>Thử đổi từ khóa hoặc xóa bộ lọc đang áp dụng</p>
                             </div>
@@ -475,7 +504,7 @@ export default function LichSuDangKyGoiTapOfManager() {
                                             </tr>
                                         </thead>
                                         <tbody>
-                                            {history.map((item, idx) => {
+                                            {pagedHistory.map((item, idx) => {
                                                 const rowKey = item.memberPackageId ?? `${item.memberPhone}-${item.planName}-${item.startDate}-${idx}`;
                                                 return (
                                                     <tr key={rowKey}>
@@ -499,7 +528,7 @@ export default function LichSuDangKyGoiTapOfManager() {
 
                                                         </td>
                                                         <td><span style={S.branchTag}>
-                                                            <MapPin size={12} color="#475569" />
+                                                            <MapPin size={12} color="#94a3b8" />
                                                             {item.branchName || "—"}
                                                         </span></td>
                                                         <td style={S.td}><ChannelBadge channel={item.channel} /></td>
@@ -516,10 +545,10 @@ export default function LichSuDangKyGoiTapOfManager() {
                                 </div>
 
                                 <div className="mobile-cards scroll-dark" style={S.scrollArea}>
-                                    {history.map((item, idx) => {
+                                    {pagedHistory.map((item, idx) => {
                                         const rowKey = item.memberPackageId ?? `${item.memberPhone}-${item.planName}-${item.startDate}-${idx}`;
                                         return (
-                                            <div key={rowKey} style={{ borderRadius: 12, border: "1px solid #1e293b", padding: 16, backgroundColor: "#0b1220" }}>
+                                            <div key={rowKey} style={{ borderRadius: 12, border: "1px solid #e2e8f0", padding: 16, backgroundColor: "#f8fafc" }}>
                                                 <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
                                                     <div style={S.memberRow}>
                                                         <Avatar src={item.memberAvatarUrl} alt={item.memberFullName} />
@@ -531,20 +560,52 @@ export default function LichSuDangKyGoiTapOfManager() {
                                                     <StatusBadge status={item.packageStatus} />
                                                 </div>
                                                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 12, fontSize: 13 }}>
-                                                    <span style={{ color: "#cbd5e1" }}>{item.planName}</span>
+                                                    <span style={{ color: "#334155" }}>{item.planName}</span>
                                                     <ChannelBadge channel={item.channel} />
                                                 </div>
                                                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 8 }}>
-                                                    <span style={S.branchTag}><MapPin size={12} color="#475569" />{item.branchName || "—"}</span>
+                                                    <span style={S.branchTag}><MapPin size={12} color="#94a3b8" />{item.branchName || "—"}</span>
                                                 </div>
-                                                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 8, fontSize: 11, color: "#64748b" }}>
+                                                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 8, fontSize: 11, color: "#94a3b8" }}>
                                                     <span>{formatDate(item.startDate)} → {formatDate(item.expiryDate)}</span>
-                                                    <span style={{ fontSize: 13, fontWeight: 600, color: "#f1f5f9" }}>{formatCurrency(item.amount)}</span>
+                                                    <span style={{ fontSize: 13, fontWeight: 600, color: "#0f172a" }}>{formatCurrency(item.amount)}</span>
                                                 </div>
                                             </div>
                                         );
                                     })}
                                 </div>
+
+                                {totalCount > PAGE_SIZE && (
+                                    <div style={S.pagination}>
+                                        <p style={S.pageInfo}>Trang {page} / {totalPages} · {totalCount} kết quả</p>
+                                        <div style={S.pageBtns}>
+                                            <button
+                                                className="page-btn"
+                                                style={{ ...S.pageBtn(false), ...(page === 1 ? S.pageBtnDisabled : {}) }}
+                                                disabled={page === 1}
+                                                onClick={() => setPage((p) => p - 1)}
+                                            >← Trước</button>
+                                            {getPageNumbers(page, totalPages).map((p, i) =>
+                                                p === "..." ? (
+                                                    <span key={`e${i}`} style={S.pageEllipsis}>…</span>
+                                                ) : (
+                                                    <button
+                                                        key={p}
+                                                        className="page-btn"
+                                                        style={S.pageBtn(page === p)}
+                                                        onClick={() => setPage(p)}
+                                                    >{p}</button>
+                                                )
+                                            )}
+                                            <button
+                                                className="page-btn"
+                                                style={{ ...S.pageBtn(false), ...(page === totalPages ? S.pageBtnDisabled : {}) }}
+                                                disabled={page === totalPages}
+                                                onClick={() => setPage((p) => p + 1)}
+                                            >Sau →</button>
+                                        </div>
+                                    </div>
+                                )}
                             </>
                         )}
                     </div>

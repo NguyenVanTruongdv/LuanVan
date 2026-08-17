@@ -2,75 +2,76 @@ import {
     Activity,
     ArrowLeft, ArrowRight, Award,
     Camera, Check, Clock,
-    Eye, FileText, MapPin, Pencil, Phone, RotateCcw, Search,
-    TrendingUp,
+    Eye, FileText, KeyRound, Lock, MapPin, Pencil, Phone, RotateCcw, Search,
+    ShieldAlert, TrendingUp, Unlock,
     User, Users,
     Video,
     X
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-// Đường dẫn từ src/pages/cashier/member/ListMember.jsx tới src/api/cashierApi.js
-import managerApi from "../../../api/managerApi";
-
-/* ── DESIGN TOKENS – nền tối (dark navy), tông teal trầm/xanh lá dịu mắt,
-      đồng bộ với layout Cashier Portal trong ảnh mẫu. Màu nút được hạ độ
-      bão hoà so với bản cyan sáng trước đây để đỡ chói. ── */
-const C = {
-    bg: "#0B1220",
-    surface: "#111827",
-    card: "#111827",
-    cardAlt: "#0F1830",
-    border: "#223049",
-    borderDark: "#32405C",
-    ink: "#E7ECF3",
-    inkSoft: "#C7D0DE",
-    inkMuted: "#8B96A8",
-    accent: "#2C8FA8",
-    accentDark: "#5EC8E0",
-    accentRGB: "44,143,168",
-    accentSoft: "rgba(44,143,168,0.16)",
-    accentGradient: "linear-gradient(135deg, #1F6E82 0%, #2C8FA8 55%, #4FA9C4 100%)",
-    accentRing: "rgba(63,180,206,0.30)",
-    // ── Xanh lá trầm, dùng riêng cho các hành động liên quan FaceID ──
-    faceGreen: "#3FBE8E",
-    faceGreenRGB: "63,190,142",
-    faceGreenGradient: "linear-gradient(135deg, #1F7A5B 0%, #2F9E76 55%, #4FBE95 100%)",
-    faceGreenSoft: "rgba(63,190,142,0.14)",
-    faceGreenRing: "rgba(63,190,142,0.28)",
-    green: "#3FBE8E",
-    greenBg: "rgba(63,190,142,0.12)",
-    greenBorder: "rgba(63,190,142,0.35)",
-    amber: "#D9A441",
-    amberBg: "rgba(217,164,65,0.12)",
-    amberBorder: "rgba(217,164,65,0.35)",
-    red: "#F1685E",
-    redBg: "rgba(241,104,94,0.12)",
-    redBorder: "rgba(241,104,94,0.35)",
-    shadow: "0 1px 3px rgba(0,0,0,0.35), 0 4px 14px rgba(0,0,0,0.28)",
-    shadowMd: "0 2px 8px rgba(0,0,0,0.40), 0 10px 30px rgba(0,0,0,0.35)",
-};
-
-// Danh sách chi nhánh mặc định — chỉ dùng khi chưa tải được dữ liệu hội viên nào.
-// Khi đã có members, danh sách chi nhánh thật sự lấy trực tiếp từ BranchName trả về bởi BE.
-const CHI_NHANH_FALLBACK = ["Quận 1", "Quận 3", "Bình Thạnh", "Thủ Đức"];
-
-const FACEID_REASONS = ["Nhận diện kém", "Khác"];
+// Đường dẫn từ src/pages/admin/Member/ListMember.jsx tới src/api/adminApi.js
+import adminApi from "../../../api/adminApi";
 
 /* ══════════════════════════════════════════════════════════
-   MAP DỮ LIỆU API (tiếng Anh) <-> UI (tiếng Việt)
-   Khớp với BE: BE.Dtos.Member (MemberListItem / MemberResponse)
+   GHI CHÚ CHO NGƯỜI MỚI ĐỌC CODE
+   File này gồm 3 phần chính:
+   1) MÀU SẮC + CÁC HÀM TIỆN ÍCH NHỎ (dùng lại nhiều nơi)
+   2) CÁC Ô GIAO DIỆN NHỎ (Badge, Avatar, Field...)
+   3) 3 TRANG CHÍNH: Danh sách -> Chi tiết -> App gốc
    ══════════════════════════════════════════════════════════ */
+
+/* ── 1. MÀU SẮC DÙNG CHUNG ── */
+const C = {
+    bg: "#F5F7FA",
+    surface: "#FFFFFF",
+    card: "#FFFFFF",
+    cardAlt: "#F6F8FB",
+    border: "#E4E9F0",
+    borderDark: "#CBD5E1",
+    fieldBg: "#EDF1F7",
+    fieldBorder: "#B8C4D6",
+    ink: "#182233",
+    inkSoft: "#4A5568",
+    inkMuted: "#8A95A5",
+    accent: "#1F7A5B",
+    accentDark: "#155E45",
+    accentRGB: "31,122,91",
+    accentSoft: "rgba(31,122,91,0.10)",
+    accentGradient: "linear-gradient(135deg, #155E45 0%, #1F7A5B 55%, #2FA47C 100%)",
+    accentRing: "rgba(31,122,91,0.22)",
+    faceGreen: "#2C7BE5",
+    faceGreenRGB: "44,123,229",
+    faceGreenGradient: "linear-gradient(135deg, #1D5FC4 0%, #2C7BE5 55%, #5B9BF0 100%)",
+    faceGreenSoft: "rgba(44,123,229,0.10)",
+    faceGreenRing: "rgba(44,123,229,0.24)",
+    green: "#15803D",
+    greenBg: "rgba(21,128,61,0.10)",
+    greenBorder: "rgba(21,128,61,0.30)",
+    amber: "#B45309",
+    amberBg: "rgba(180,83,9,0.10)",
+    amberBorder: "rgba(180,83,9,0.30)",
+    red: "#DC2626",
+    redBg: "rgba(220,38,38,0.09)",
+    redBorder: "rgba(220,38,38,0.28)",
+    shadow: "0 1px 2px rgba(15,23,42,0.05), 0 4px 12px rgba(15,23,42,0.05)",
+    shadowMd: "0 2px 6px rgba(15,23,42,0.06), 0 14px 30px rgba(15,23,42,0.09)",
+};
+
+// Danh sách chi nhánh mặc định — chỉ dùng khi chưa có dữ liệu hội viên nào
+const CHI_NHANH_FALLBACK = ["Quận 1", "Quận 3", "Bình Thạnh", "Thủ Đức"];
+const FACEID_REASONS = ["Nhận diện kém", "Khác"];
+const PAGE_SIZE = 10; // ➕ số hội viên hiển thị mỗi trang
+
+/* ── MAP DỮ LIỆU: API (tiếng Anh) <-> UI (tiếng Việt) ── */
 const STATUS_MAP = {
     PendingActivation: "Chờ hoạt động",
     Active: "Đang hoạt động",
     Suspended: "Tạm ngưng",
-    Expired: "Hết hạn",
 };
 const GENDER_MAP = { Male: "Nam", Female: "Nữ", Other: "Khác" };
 const GENDER_MAP_REVERSE = { Nam: "Male", Nữ: "Female", Khác: "Other" };
 
-// Khớp với FieldName ghi trong MemberUpdateLog (BE: MemberService.UpdateMemberInfoAsync)
 const FIELD_LABELS = {
     full_name: "Họ và tên",
     phone: "Số điện thoại",
@@ -79,22 +80,28 @@ const FIELD_LABELS = {
     CREATE_MEMBER: "Tạo hội viên",
 };
 
+/* ══════════════════════════════════════════════════════════
+   HÀM CHUYỂN ĐỔI DỮ LIỆU (giữ nguyên logic cũ, viết rõ ràng hơn)
+   ══════════════════════════════════════════════════════════ */
+
+// Dữ liệu 1 dòng trong bảng danh sách
 function normalizeListItem(m) {
-    const pkg = m.currentPackages?.[0];
+    const goiHienTai = m.currentPackages?.[0];
     return {
         id: m.memberId,
-        hoTen: m.fullName,
-        sdt: m.phone,
-        chiNhanh: m.branchName,
-        goiTap: pkg?.planName || "Chưa có gói",
+        hoTen: m.fullName || "",
+        sdt: m.phone || "",
+        chiNhanh: m.branchName || "",
+        goiTap: goiHienTai?.planName || "Chưa có gói",
         trangThai: STATUS_MAP[m.status] || m.status,
         gioiTinh: "",
         ghiChu: "",
         avatar: m.profileImage || "",
-        ngayDangKy: pkg?.startDate || "",
+        ngayDangKy: goiHienTai?.startDate || "",
     };
 }
 
+// Dữ liệu đầy đủ khi xem trang chi tiết
 function normalizeDetail(m) {
     return {
         id: m.memberId,
@@ -110,9 +117,7 @@ function normalizeDetail(m) {
     };
 }
 
-// UI -> payload PUT /api/members/{id}
-// Đã confirm theo MemberService.UpdateMemberInfoAsync: backend CHỈ đọc 4 field này,
-// không có branchId, không có status.
+// Dữ liệu UI -> payload để PUT lên BE (chỉ 4 field BE cần)
 function toUpdatePayload(draft) {
     return {
         fullName: draft.hoTen,
@@ -127,8 +132,7 @@ function initials(name) {
 }
 function formatDate(iso) {
     if (!iso) return "—";
-    const datePart = iso.split("T")[0];
-    const [y, m, d] = datePart.split("-");
+    const [y, m, d] = iso.split("T")[0].split("-");
     if (!y || !m || !d) return "—";
     return `${d}/${m}/${y}`;
 }
@@ -141,7 +145,7 @@ function formatDateTime(iso) {
     return `${d}/${m}/${y}${hm ? " " + hm : ""}`;
 }
 
-// Chuyển dataURL (ảnh chụp/upload) thành Blob để gửi multipart/form-data
+// Chuyển ảnh dataURL (chụp/upload) thành Blob để gửi multipart/form-data
 async function dataUrlToBlob(dataUrl) {
     const res = await fetch(dataUrl);
     return res.blob();
@@ -158,10 +162,10 @@ function avatarPalette(id) {
 }
 
 const GOI_STYLE = {
-    "Basic": { bg: "rgba(148,163,184,0.14)", fg: "#CBD5E1", border: "rgba(148,163,184,0.35)" },
-    "Silver": { bg: "rgba(148,163,184,0.14)", fg: "#E2E8F0", border: "rgba(148,163,184,0.4)" },
-    "Gold": { bg: "rgba(245,158,11,0.14)", fg: "#FCD34D", border: "rgba(245,158,11,0.4)" },
-    "Platinum": { bg: "rgba(34,211,238,0.14)", fg: "#67E8F9", border: "rgba(34,211,238,0.4)" },
+    "Basic": { bg: "#F1F5F9", fg: "#475569", border: "#E2E8F0" },
+    "Silver": { bg: "#F1F5F9", fg: "#334155", border: "#E2E8F0" },
+    "Gold": { bg: "#FEF3C7", fg: "#92400E", border: "#FDE68A" },
+    "Platinum": { bg: "#E0F2FE", fg: "#075985", border: "#BAE6FD" },
 };
 const DEFAULT_GOI_STYLE = { bg: C.accentSoft, fg: C.accentDark, border: C.accentRing };
 
@@ -169,14 +173,16 @@ const STATUS_STYLE = {
     "Đang hoạt động": { bg: C.greenBg, fg: C.green, border: C.greenBorder, dot: C.green },
     "Chờ hoạt động": { bg: C.amberBg, fg: C.amber, border: C.amberBorder, dot: C.amber },
     "Tạm ngưng": { bg: C.redBg, fg: C.red, border: C.redBorder, dot: C.red },
-    "Hết hạn": { bg: C.redBg, fg: C.red, border: C.redBorder, dot: C.red },
 };
 
-// ── Badge phân biệt loại phiên trong lịch sử cập nhật: INFO (thông tin) vs FACEID (khuôn mặt) ──
 const SESSION_TYPE_STYLE = {
-    INFO: { label: "Cập nhật thông tin", bg: C.accentSoft, fg: C.accentDark, border: "rgba(63,180,206,0.3)", icon: Pencil },
+    INFO: { label: "Cập nhật thông tin", bg: C.accentSoft, fg: C.accentDark, border: "rgba(31,122,91,0.24)", icon: Pencil },
     FACEID: { label: "Cập nhật FaceID", bg: C.faceGreenSoft, fg: C.faceGreen, border: C.faceGreenRing, icon: Camera },
 };
+
+/* ══════════════════════════════════════════════════════════
+   2. CÁC Ô GIAO DIỆN NHỎ (component tái sử dụng)
+   ══════════════════════════════════════════════════════════ */
 
 function StatusBadge({ value }) {
     const s = STATUS_STYLE[value] || STATUS_STYLE["Đang hoạt động"];
@@ -190,6 +196,7 @@ function StatusBadge({ value }) {
         </span>
     );
 }
+
 function GoiBadge({ value }) {
     const s = GOI_STYLE[value] || DEFAULT_GOI_STYLE;
     return (
@@ -201,6 +208,7 @@ function GoiBadge({ value }) {
         </span>
     );
 }
+
 function Avatar({ name, src, id, size = 40 }) {
     const [c1, c2] = avatarPalette(id || name);
     return (
@@ -218,18 +226,17 @@ function Avatar({ name, src, id, size = 40 }) {
 }
 
 const inp = {
-    fontSize: 14.5, padding: "10px 13px", borderRadius: 10,
-    border: `1.5px solid ${C.border}`, outline: "none", color: C.ink,
-    background: C.bg, fontFamily: "inherit", width: "100%", boxSizing: "border-box",
-    transition: "border-color .15s",
+    fontSize: 13.5, padding: "9px 12px", borderRadius: 12,
+    border: `1.5px solid ${C.fieldBorder}`, outline: "none", color: C.ink,
+    background: C.fieldBg, fontFamily: "inherit", width: "100%", boxSizing: "border-box",
+    boxShadow: "inset 0 1px 3px rgba(15,23,42,0.08), 0 1px 0 rgba(255,255,255,0.6)",
+    transition: "border-color .15s, box-shadow .15s",
 };
-const btnAccent = { display: "inline-flex", alignItems: "center", gap: 7, fontSize: 13.5, fontWeight: 700, padding: "10px 18px", borderRadius: 10, cursor: "pointer", fontFamily: "inherit", border: "none", background: C.accentGradient, color: "#fff", boxShadow: `0 3px 12px rgba(${C.accentRGB},0.28)` };
-// ── Nút xanh lá trầm, dùng cho các hành động liên quan FaceID ──
-const btnGreen = { display: "inline-flex", alignItems: "center", gap: 7, fontSize: 13.5, fontWeight: 700, padding: "10px 18px", borderRadius: 10, cursor: "pointer", fontFamily: "inherit", border: "none", background: C.faceGreenGradient, color: "#fff", boxShadow: `0 3px 12px rgba(${C.faceGreenRGB},0.28)` };
-const btnOutline = { display: "inline-flex", alignItems: "center", gap: 7, fontSize: 13.5, fontWeight: 700, padding: "10px 16px", borderRadius: 10, cursor: "pointer", fontFamily: "inherit", background: C.surface, color: C.inkSoft, border: `1.5px solid ${C.border}` };
-const btnDanger = { display: "inline-flex", alignItems: "center", gap: 7, fontSize: 13.5, fontWeight: 700, padding: "10px 16px", borderRadius: 10, cursor: "pointer", fontFamily: "inherit", background: C.redBg, color: C.red, border: `1.5px solid ${C.redBorder}` };
-// ── Nút "Hủy" tông trung tính nhạt, dùng khi đứng cạnh nút Lưu để không lấn át hành động chính ──
-const btnCancelSoft = { display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 700, padding: "10px 14px", borderRadius: 10, cursor: "pointer", fontFamily: "inherit", background: C.surface, color: C.inkMuted, border: `1.5px solid ${C.border}` };
+const btnAccent = { display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 700, padding: "9px 16px", borderRadius: 12, cursor: "pointer", fontFamily: "inherit", border: "none", background: C.accentGradient, color: "#fff", boxShadow: `0 3px 10px rgba(${C.accentRGB},0.26)` };
+const btnGreen = { display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 700, padding: "9px 16px", borderRadius: 12, cursor: "pointer", fontFamily: "inherit", border: "none", background: C.faceGreenGradient, color: "#fff", boxShadow: `0 3px 10px rgba(${C.faceGreenRGB},0.26)` };
+const btnOutline = { display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 700, padding: "9px 14px", borderRadius: 12, cursor: "pointer", fontFamily: "inherit", background: C.surface, color: C.inkSoft, border: `1.5px solid ${C.border}` };
+const btnDanger = { display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 700, padding: "9px 14px", borderRadius: 12, cursor: "pointer", fontFamily: "inherit", background: C.redBg, color: C.red, border: `1.5px solid ${C.redBorder}` };
+const btnCancelSoft = { display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12.5, fontWeight: 700, padding: "9px 13px", borderRadius: 12, cursor: "pointer", fontFamily: "inherit", background: C.surface, color: C.inkMuted, border: `1.5px solid ${C.border}` };
 
 function GlobalStyles() {
     return (
@@ -238,28 +245,12 @@ function GlobalStyles() {
             .gw-input:hover { border-color: ${C.borderDark}; }
             .gw-input-green:focus { border-color: ${C.faceGreen} !important; box-shadow: 0 0 0 3px ${C.faceGreenRing}; }
             .gw-input-green:hover { border-color: ${C.faceGreen}; }
-            .gw-photo-col { width: 320px; }
+            .gw-photo-col { width: 260px; }
             .gw-grid-2 { display: grid; grid-template-columns: 1fr 1fr; }
-            .gw-table-scroll {
-                max-height: 480px;
-                overflow-y: auto;
-                overflow-x: auto;
-            }
-            .gw-table-scroll thead th {
-                position: sticky;
-                top: 0;
-                z-index: 2;
-                background: #16213A;
-            }
-            .gw-modal-backdrop {
-                position: fixed; inset: 0; background: rgba(0,0,0,0.6);
-                display: flex; align-items: center; justify-content: center;
-                z-index: 50; padding: 20px;
-            }
-            .gw-modal {
-                background: ${C.surface}; border-radius: 16px; border: 1px solid ${C.border};
-                box-shadow: ${C.shadowMd}; width: 100%; max-width: 420px; padding: 22px;
-            }
+            .gw-table-scroll { max-height: 480px; overflow-y: auto; overflow-x: auto; }
+            .gw-table-scroll thead th { position: sticky; top: 0; z-index: 2; background: ${C.cardAlt}; }
+            .gw-modal-backdrop { position: fixed; inset: 0; background: rgba(15,23,42,0.45); display: flex; align-items: center; justify-content: center; z-index: 50; padding: 20px; }
+            .gw-modal { background: ${C.surface}; border-radius: 18px; border: 1px solid ${C.border}; box-shadow: ${C.shadowMd}; width: 100%; max-width: 400px; padding: 20px; }
             @media (max-width: 760px) {
                 .gw-photo-col { width: 100% !important; border-right: none !important; border-bottom: 1px solid ${C.border}; }
                 .gw-grid-2 { grid-template-columns: 1fr !important; }
@@ -287,7 +278,7 @@ function Eyebrow({ icon: Icon, children, color = C.accent, bg = C.accentSoft }) 
     );
 }
 
-/* ── FaceIdCapture ── */
+/* ── Khối chụp / tải ảnh FaceID ── */
 function FaceIdCapture({ onSave, onCancel, aspect = "4/5", saving = false }) {
     const videoRef = useRef(null);
     const streamRef = useRef(null);
@@ -298,17 +289,24 @@ function FaceIdCapture({ onSave, onCancel, aspect = "4/5", saving = false }) {
     const [reason, setReason] = useState("");
     const [reasonOther, setReasonOther] = useState("");
 
-    const stop = useCallback(() => {
+    const stopCamera = useCallback(() => {
         streamRef.current?.getTracks().forEach(t => t.stop());
-        streamRef.current = null; setReady(false);
+        streamRef.current = null;
+        setReady(false);
     }, []);
 
-    const startCam = useCallback(async () => {
+    const startCamera = useCallback(async () => {
         setErr("");
         try {
-            const s = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user", width: 720, height: 720 }, audio: false });
-            streamRef.current = s;
-            if (videoRef.current) { videoRef.current.srcObject = s; await videoRef.current.play(); }
+            const stream = await navigator.mediaDevices.getUserMedia({
+                video: { facingMode: "user", width: 720, height: 720 },
+                audio: false,
+            });
+            streamRef.current = stream;
+            if (videoRef.current) {
+                videoRef.current.srcObject = stream;
+                await videoRef.current.play();
+            }
             setReady(true);
         } catch {
             setErr("Không truy cập được camera. Vui lòng cấp quyền.");
@@ -316,38 +314,51 @@ function FaceIdCapture({ onSave, onCancel, aspect = "4/5", saving = false }) {
     }, []);
 
     useEffect(() => {
-        startCam();
-        return () => stop();
+        startCamera();
+        return () => stopCamera();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    const shoot = () => {
-        const v = videoRef.current; if (!v) return;
-        const sz = Math.min(v.videoWidth, v.videoHeight);
-        const cvs = document.createElement("canvas"); cvs.width = 600; cvs.height = 600;
-        const ctx = cvs.getContext("2d");
-        ctx.translate(600, 0); ctx.scale(-1, 1);
-        ctx.drawImage(v, (v.videoWidth - sz) / 2, (v.videoHeight - sz) / 2, sz, sz, 0, 0, 600, 600);
-        stop();
-        setCaptured(cvs.toDataURL("image/jpeg", 0.92));
+    const chupAnh = () => {
+        const video = videoRef.current;
+        if (!video) return;
+        const size = Math.min(video.videoWidth, video.videoHeight);
+        const canvas = document.createElement("canvas");
+        canvas.width = 600;
+        canvas.height = 600;
+        const ctx = canvas.getContext("2d");
+        ctx.translate(600, 0);
+        ctx.scale(-1, 1);
+        ctx.drawImage(video, (video.videoWidth - size) / 2, (video.videoHeight - size) / 2, size, size, 0, 0, 600, 600);
+        stopCamera();
+        setCaptured(canvas.toDataURL("image/jpeg", 0.92));
     };
 
-    const retake = () => { setCaptured(null); setReason(""); setReasonOther(""); startCam(); };
+    const chupLai = () => {
+        setCaptured(null);
+        setReason("");
+        setReasonOther("");
+        startCamera();
+    };
 
-    const pickFile = e => {
-        const f = e.target.files[0]; if (!f) return;
-        stop();
-        const r = new FileReader();
-        r.onload = ev => setCaptured(ev.target.result);
-        r.readAsDataURL(f);
+    const chonFile = e => {
+        const file = e.target.files[0];
+        if (!file) return;
+        stopCamera();
+        const reader = new FileReader();
+        reader.onload = ev => setCaptured(ev.target.result);
+        reader.readAsDataURL(file);
         e.target.value = "";
     };
 
-    const cancel = () => { stop(); onCancel(); };
+    const huy = () => {
+        stopCamera();
+        onCancel();
+    };
 
-    const finalReason = reason === "Khác" ? reasonOther.trim() : reason;
-    const canSave = !!captured && !!finalReason;
-
-    const save = () => { if (canSave) onSave(captured, finalReason); };
+    const lyDoCuoiCung = reason === "Khác" ? reasonOther.trim() : reason;
+    const coTheLuu = !!captured && !!lyDoCuoiCung;
+    const luu = () => { if (coTheLuu) onSave(captured, lyDoCuoiCung); };
 
     return (
         <div style={{ display: "flex", flexDirection: "column", gap: 13 }}>
@@ -375,7 +386,7 @@ function FaceIdCapture({ onSave, onCancel, aspect = "4/5", saving = false }) {
                             </div>
                         )}
                         {ready && (
-                            <div style={{ position: "absolute", bottom: 14, left: 0, right: 0, textAlign: "center", color: "#6EE7B7", fontSize: 12, fontWeight: 600 }}>
+                            <div style={{ position: "absolute", bottom: 14, left: 0, right: 0, textAlign: "center", color: "#93C5FD", fontSize: 12, fontWeight: 600 }}>
                                 Canh mặt vào khung bầu dục
                             </div>
                         )}
@@ -383,8 +394,8 @@ function FaceIdCapture({ onSave, onCancel, aspect = "4/5", saving = false }) {
                 )}
                 {captured && (
                     <div style={{ position: "absolute", top: 12, left: 12, display: "flex", alignItems: "center", gap: 6, background: "rgba(0,0,0,0.5)", borderRadius: 999, padding: "5px 11px" }}>
-                        <Check size={12} color="#6EE7B7" />
-                        <span style={{ color: "#D1FAE5", fontSize: 11.5, fontWeight: 700 }}>Ảnh đã chụp</span>
+                        <Check size={12} color="#93C5FD" />
+                        <span style={{ color: "#DBEAFE", fontSize: 11.5, fontWeight: 700 }}>Ảnh đã chụp</span>
                     </div>
                 )}
                 {err && (
@@ -394,7 +405,7 @@ function FaceIdCapture({ onSave, onCancel, aspect = "4/5", saving = false }) {
                 )}
             </div>
 
-            <input ref={fileRef} type="file" accept="image/*" style={{ display: "none" }} onChange={pickFile} />
+            <input ref={fileRef} type="file" accept="image/*" style={{ display: "none" }} onChange={chonFile} />
 
             {captured && (
                 <div style={{ display: "flex", flexDirection: "column", gap: 10, padding: "13px 14px", borderRadius: 12, border: `1.5px solid ${C.border}`, background: C.cardAlt }}>
@@ -425,27 +436,27 @@ function FaceIdCapture({ onSave, onCancel, aspect = "4/5", saving = false }) {
             {!captured ? (
                 <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                     <div style={{ display: "flex", gap: 8 }}>
-                        <button onClick={shoot} disabled={!ready} style={{ ...btnGreen, flex: 1, justifyContent: "center", opacity: ready ? 1 : 0.4 }}>
+                        <button onClick={chupAnh} disabled={!ready} style={{ ...btnGreen, flex: 1, justifyContent: "center", opacity: ready ? 1 : 0.4 }}>
                             <Camera size={15} /> Chụp ảnh
                         </button>
                         <button onClick={() => fileRef.current?.click()} style={{ ...btnOutline, flex: 1, justifyContent: "center" }}>
                             <Pencil size={13} /> Tải ảnh lên
                         </button>
                     </div>
-                    <button onClick={cancel} style={{ ...btnCancelSoft, width: "100%", justifyContent: "center" }}>
+                    <button onClick={huy} style={{ ...btnCancelSoft, width: "100%", justifyContent: "center" }}>
                         <X size={14} /> Hủy
                     </button>
                 </div>
             ) : (
                 <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                    <button onClick={retake} disabled={saving} style={{ ...btnOutline, width: "100%", justifyContent: "center" }}>
+                    <button onClick={chupLai} disabled={saving} style={{ ...btnOutline, width: "100%", justifyContent: "center" }}>
                         <RotateCcw size={13} /> Chụp lại
                     </button>
                     <div style={{ display: "flex", gap: 8 }}>
-                        <button onClick={save} disabled={saving || !canSave} style={{ ...btnGreen, flex: 1, justifyContent: "center", opacity: (saving || !canSave) ? 0.5 : 1 }}>
+                        <button onClick={luu} disabled={saving || !coTheLuu} style={{ ...btnGreen, flex: 1, justifyContent: "center", opacity: (saving || !coTheLuu) ? 0.5 : 1 }}>
                             <Check size={15} /> {saving ? "Đang lưu…" : "Lưu"}
                         </button>
-                        <button onClick={cancel} disabled={saving} style={{ ...btnCancelSoft, flex: "0 0 96px", justifyContent: "center" }}>
+                        <button onClick={huy} disabled={saving} style={{ ...btnCancelSoft, flex: "0 0 96px", justifyContent: "center" }}>
                             <X size={14} /> Hủy
                         </button>
                     </div>
@@ -455,10 +466,48 @@ function FaceIdCapture({ onSave, onCancel, aspect = "4/5", saving = false }) {
     );
 }
 
+/* ── Khối đổi mật khẩu ── */
+function PasswordEditor({ onSave, onCancel, saving = false }) {
+    const [pwd1, setPwd1] = useState("");
+    const [pwd2, setPwd2] = useState("");
+    const [touched, setTouched] = useState(false);
+
+    const quaNgan = pwd1.length > 0 && pwd1.length < 6;
+    const khongKhop = touched && pwd2.length > 0 && pwd1 !== pwd2;
+    const coTheLuu = pwd1.length >= 6 && pwd1 === pwd2;
+
+    const luu = () => { if (coTheLuu) onSave(pwd1); };
+
+    return (
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            <Field label="Mật khẩu mới" required icon={KeyRound}>
+                <input className="gw-input" type="password" style={inp} value={pwd1}
+                    placeholder="Tối thiểu 6 ký tự" onChange={e => setPwd1(e.target.value)} />
+            </Field>
+            <Field label="Xác nhận mật khẩu mới" required icon={KeyRound}>
+                <input className="gw-input" type="password" style={inp} value={pwd2}
+                    placeholder="Nhập lại mật khẩu mới"
+                    onChange={e => setPwd2(e.target.value)}
+                    onBlur={() => setTouched(true)} />
+            </Field>
+            {quaNgan && <span style={{ fontSize: 12.5, color: C.amber, fontWeight: 700 }}>Mật khẩu cần tối thiểu 6 ký tự.</span>}
+            {khongKhop && <span style={{ fontSize: 12.5, color: C.red, fontWeight: 700 }}>Hai mật khẩu chưa khớp nhau.</span>}
+            <div style={{ display: "flex", gap: 8 }}>
+                <button onClick={luu} disabled={saving || !coTheLuu} style={{ ...btnAccent, flex: 1, justifyContent: "center", opacity: (saving || !coTheLuu) ? 0.5 : 1 }}>
+                    <Check size={15} /> {saving ? "Đang lưu…" : "Lưu mật khẩu"}
+                </button>
+                <button onClick={onCancel} disabled={saving} style={{ ...btnCancelSoft, flex: "0 0 96px", justifyContent: "center" }}>
+                    <X size={14} /> Hủy
+                </button>
+            </div>
+        </div>
+    );
+}
+
 function Field({ label, required, full, icon: Icon, children }) {
     return (
-        <div style={{ gridColumn: full ? "1 / -1" : "span 1", display: "flex", flexDirection: "column", gap: 6 }}>
-            <label style={{ fontSize: 13, fontWeight: 700, color: C.ink, display: "flex", alignItems: "center", gap: 6 }}>
+        <div style={{ gridColumn: full ? "1 / -1" : "span 1", display: "flex", flexDirection: "column", gap: 5 }}>
+            <label style={{ fontSize: 12.5, fontWeight: 700, color: C.ink, display: "flex", alignItems: "center", gap: 6 }}>
                 {Icon && <Icon size={13} color={C.accent} style={{ flexShrink: 0 }} />}
                 {label}{required && <span style={{ color: C.red }}> *</span>}
             </label>
@@ -469,15 +518,16 @@ function Field({ label, required, full, icon: Icon, children }) {
 
 function ReadField({ label, value, icon: Icon, full }) {
     return (
-        <div style={{ gridColumn: full ? "1 / -1" : "span 1", display: "flex", flexDirection: "column", gap: 6 }}>
-            <span style={{ fontSize: 11.5, fontWeight: 800, color: C.inkSoft, letterSpacing: 0.3, display: "flex", alignItems: "center", gap: 6 }}>
+        <div style={{ gridColumn: full ? "1 / -1" : "span 1", display: "flex", flexDirection: "column", gap: 5 }}>
+            <span style={{ fontSize: 11, fontWeight: 800, color: C.inkSoft, letterSpacing: 0.3, display: "flex", alignItems: "center", gap: 6 }}>
                 {Icon && <Icon size={12} color={C.accent} style={{ flexShrink: 0 }} />}
                 {label}
             </span>
             <div style={{
-                fontSize: 14.5, padding: "10px 13px", borderRadius: 10, border: `1.5px solid ${C.border}`,
-                background: C.cardAlt, color: C.ink, fontWeight: 700, minHeight: 21,
-                display: "flex", alignItems: "center", lineHeight: 1.5
+                fontSize: 13.5, padding: "9px 12px", borderRadius: 12, border: `1.5px solid ${C.fieldBorder}`,
+                background: C.fieldBg, color: C.ink, fontWeight: 700, minHeight: 19,
+                boxShadow: "inset 0 1px 3px rgba(15,23,42,0.08), 0 1px 0 rgba(255,255,255,0.6)",
+                display: "flex", alignItems: "center", lineHeight: 1.4
             }}>
                 {value || "—"}
             </div>
@@ -488,21 +538,23 @@ function ReadField({ label, value, icon: Icon, full }) {
 function StatCard({ icon: Icon, label, value, color, bgColor }) {
     return (
         <div style={{
-            background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: "16px 20px",
-            display: "flex", alignItems: "center", gap: 14, flex: "1 1 160px", boxShadow: C.shadow
+            position: "relative", overflow: "hidden",
+            background: C.card, border: `1.5px solid ${color}30`, borderRadius: 16, padding: "12px 16px 12px 20px",
+            display: "flex", alignItems: "center", gap: 12, flex: "1 1 150px",
+            boxShadow: `0 6px 16px ${color}26, ${C.shadow}`
         }}>
-            <div style={{ width: 44, height: 44, borderRadius: 13, background: bgColor, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                <Icon size={21} color={color} />
+            <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: 5, background: color }} />
+            <div style={{ width: 38, height: 38, borderRadius: 12, background: bgColor, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                <Icon size={18} color={color} />
             </div>
             <div>
-                <div style={{ fontSize: 24, fontWeight: 900, color: C.ink, letterSpacing: -0.6 }}>{value}</div>
-                <div style={{ fontSize: 12.5, color: C.inkMuted, marginTop: 1, fontWeight: 600 }}>{label}</div>
+                <div style={{ fontSize: 20, fontWeight: 900, color: C.ink, letterSpacing: -0.5 }}>{value}</div>
+                <div style={{ fontSize: 12, color: C.inkMuted, marginTop: 1, fontWeight: 600 }}>{label}</div>
             </div>
         </div>
     );
 }
 
-// Thumbnail ảnh khuôn mặt trong lịch sử (trước/sau) — placeholder khi chưa có ảnh
 function FaceHistoryThumb({ src, label }) {
     return (
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6, flex: 1 }}>
@@ -521,10 +573,7 @@ function FaceHistoryThumb({ src, label }) {
     );
 }
 
-// Panel lịch sử cập nhật — khớp với GET /api/members/{id}/update-history
-// (MemberService.GetUpdateHistoryAsync). Mỗi phiên có sessionType: "INFO" | "FACEID".
-// - INFO: đổi trực tiếp field (fullName, phone, gender, internal_notes, hoặc CREATE_MEMBER)
-// - FACEID: đổi ảnh khuôn mặt, có oldImageUrl/newImageUrl + reason, changes luôn rỗng
+// Modal lịch sử cập nhật — khớp GET /api/members/{id}/update-history
 function HistoryModal({ sessions, loading, onClose }) {
     return (
         <div className="gw-modal-backdrop" onClick={onClose}>
@@ -539,17 +588,17 @@ function HistoryModal({ sessions, loading, onClose }) {
                         <div style={{ color: C.inkMuted, textAlign: "center", padding: 24 }}>Chưa có lịch sử cập nhật.</div>
                     )}
                     {!loading && sessions.map(s => {
-                        const typeStyle = SESSION_TYPE_STYLE[s.sessionType] || SESSION_TYPE_STYLE.INFO;
-                        const TypeIcon = typeStyle.icon;
-                        const isFaceId = s.sessionType === "FACEID";
+                        const kieuHienThi = SESSION_TYPE_STYLE[s.sessionType] || SESSION_TYPE_STYLE.INFO;
+                        const IconKieu = kieuHienThi.icon;
+                        const laFaceId = s.sessionType === "FACEID";
                         return (
                             <div key={s.sessionId} style={{ border: `1px solid ${C.border}`, borderRadius: 12, padding: "12px 14px", background: C.cardAlt }}>
                                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10, gap: 8, flexWrap: "wrap" }}>
                                     <span style={{
                                         display: "inline-flex", alignItems: "center", gap: 6, padding: "3px 10px", borderRadius: 999,
-                                        background: typeStyle.bg, color: typeStyle.fg, fontSize: 11.5, fontWeight: 800, border: `1px solid ${typeStyle.border}`
+                                        background: kieuHienThi.bg, color: kieuHienThi.fg, fontSize: 11.5, fontWeight: 800, border: `1px solid ${kieuHienThi.border}`
                                     }}>
-                                        <TypeIcon size={11} /> {typeStyle.label}
+                                        <IconKieu size={11} /> {kieuHienThi.label}
                                     </span>
                                     <span style={{ fontSize: 12, color: C.inkMuted, fontWeight: 700 }}>{formatDateTime(s.updatedAt)}</span>
                                 </div>
@@ -558,7 +607,7 @@ function HistoryModal({ sessions, loading, onClose }) {
                                     {s.employeeName || "Hội viên tự cập nhật"}
                                 </div>
 
-                                {!isFaceId ? (
+                                {!laFaceId ? (
                                     <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                                         {s.changes.map((c, i) => (
                                             <div key={i} style={{ fontSize: 13.5, color: C.inkSoft }}>
@@ -595,146 +644,262 @@ function HistoryModal({ sessions, loading, onClose }) {
     );
 }
 
-/* ── LIST PAGE ── */
-function ListPage({ members, onView, onEdit, loading = false }) {
-    const [fName, setFName] = useState("");
-    const [fPhone, setFPhone] = useState("");
-    const [fBranch, setFBranch] = useState("Tất cả");
-
-    // Chi nhánh lấy trực tiếp từ dữ liệu BE trả về (BranchName), tránh lệch với danh sách chi nhánh thật.
-    const branchOptions = useMemo(() => {
-        const fromData = Array.from(new Set(members.map(m => m.chiNhanh).filter(Boolean)));
-        return fromData.length > 0 ? fromData : CHI_NHANH_FALLBACK;
-    }, [members]);
-
-    const filtered = useMemo(() => members.filter(m =>
-        m.hoTen.toLowerCase().includes(fName.trim().toLowerCase())
-        && m.sdt.includes(fPhone.trim())
-        && (fBranch === "Tất cả" || m.chiNhanh === fBranch)
-    ), [members, fName, fPhone, fBranch]);
-
-    const active = members.filter(m => m.trangThai === "Đang hoạt động").length;
-    const pending = members.filter(m => m.trangThai === "Chờ hoạt động").length;
-    const expired = members.filter(m => m.trangThai === "Hết hạn").length;
+// Modal xác nhận khóa / mở khóa hội viên
+function LockConfirmModal({ locking, isLocked, onConfirm, onClose }) {
+    const [reason, setReason] = useState("");
+    const coTheXacNhan = isLocked || reason.trim().length > 0;
 
     return (
-        <div>
-            <div style={{ marginBottom: 24 }}>
-                <div style={{ fontSize: 26, fontWeight: 900, color: C.ink, letterSpacing: -0.5 }}>Danh sách hội viên</div>
-                <div style={{ fontSize: 13.5, color: C.inkMuted, marginTop: 4, fontWeight: 600 }}>
-                    {loading ? "Đang tải danh sách hội viên…" : `${filtered.length} / ${members.length} hội viên được hiển thị`}
+        <div className="gw-modal-backdrop" onClick={onClose}>
+            <div className="gw-modal" style={{ maxWidth: 400 }} onClick={e => e.stopPropagation()}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+                    <div style={{ width: 36, height: 36, borderRadius: 10, background: C.redBg, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                        <ShieldAlert size={18} color={C.red} />
+                    </div>
+                    <span style={{ fontSize: 16, fontWeight: 800, color: C.ink }}>
+                        {isLocked ? "Mở khóa hội viên?" : "Khóa hội viên?"}
+                    </span>
                 </div>
-            </div>
+                <p style={{ fontSize: 13.5, color: C.inkSoft, lineHeight: 1.6, marginBottom: isLocked ? 20 : 12 }}>
+                    {isLocked
+                        ? "Hội viên sẽ được mở khóa và có thể sử dụng dịch vụ trở lại."
+                        : "Hội viên sẽ tạm thời không thể check-in hoặc sử dụng dịch vụ cho đến khi được mở khóa."}
+                </p>
 
-            <div style={{ display: "flex", gap: 14, marginBottom: 22, flexWrap: "wrap" }}>
-                <StatCard icon={Users} label="Tổng hội viên" value={members.length} color={C.accentDark} bgColor={C.accentSoft} />
-                <StatCard icon={Activity} label="Đang hoạt động" value={active} color={C.green} bgColor={C.greenBg} />
-                <StatCard icon={TrendingUp} label="Chờ hoạt động" value={pending} color={C.amber} bgColor={C.amberBg} />
-                <StatCard icon={TrendingUp} label="Hết hạn" value={expired} color={C.red} bgColor={C.redBg} />
-            </div>
+                <div style={{ marginBottom: 20 }}>
+                    <label style={{ fontSize: 12.5, fontWeight: 700, color: C.ink, display: "block", marginBottom: 5 }}>
+                        {isLocked ? "Ghi chú mở khóa" : "Lý do khóa"} {!isLocked && <span style={{ color: C.red }}>*</span>}
+                        {isLocked && <span style={{ color: C.inkMuted, fontWeight: 600 }}> (không bắt buộc)</span>}
+                    </label>
+                    <textarea
+                        className="gw-input"
+                        rows={2}
+                        style={{ ...inp, resize: "vertical" }}
+                        placeholder={isLocked ? "VD: Hội viên đã đóng phí đầy đủ…" : "VD: Vi phạm nội quy, nợ phí…"}
+                        value={reason}
+                        onChange={e => setReason(e.target.value)}
+                        autoFocus
+                    />
+                </div>
 
-            <div className="gw-filter-bar" style={{ display: "flex", flexWrap: "wrap", gap: 10, background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: "14px 16px", marginBottom: 18, boxShadow: C.shadow }}>
-                <div style={{ position: "relative", flex: "1 1 200px" }}>
-                    <Search size={14} style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: C.inkMuted }} />
-                    <input className="gw-input" placeholder="Tìm theo tên…" value={fName} onChange={e => setFName(e.target.value)} style={{ ...inp, paddingLeft: 35, fontSize: 14 }} />
-                </div>
-                <div style={{ position: "relative", flex: "1 1 180px" }}>
-                    <Phone size={14} style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: C.inkMuted }} />
-                    <input className="gw-input" placeholder="Số điện thoại…" value={fPhone} onChange={e => setFPhone(e.target.value)} style={{ ...inp, paddingLeft: 35, fontSize: 14 }} />
-                </div>
-                <div style={{ position: "relative", flex: "1 1 160px" }}>
-                    <MapPin size={14} style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: C.inkMuted, zIndex: 1 }} />
-                    <select className="gw-input" value={fBranch} onChange={e => setFBranch(e.target.value)} style={{ ...inp, paddingLeft: 35, fontSize: 14, appearance: "none" }}>
-                        <option>Tất cả</option>
-                        {branchOptions.map(c => <option key={c}>{c}</option>)}
-                    </select>
-                </div>
-                <button onClick={() => { setFName(""); setFPhone(""); setFBranch("Tất cả"); }} style={{ ...btnOutline, padding: "10px 14px" }}>
-                    <RotateCcw size={13} /> Xóa lọc
-                </button>
-            </div>
-
-            <div style={{ border: `1px solid ${C.border}`, borderRadius: 16, overflow: "hidden", background: C.card, boxShadow: C.shadow }}>
-                <div className="gw-table-scroll">
-                    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
-                        <thead>
-                            <tr>
-                                {["Hội viên", "Số điện thoại", "Chi nhánh", "Gói tập", "Trạng thái", ""].map((h, i) => (
-                                    <th key={i} style={{
-                                        padding: "12px 16px", fontSize: 11, fontWeight: 800, color: C.inkSoft, letterSpacing: 0.7,
-                                        textTransform: "uppercase", borderBottom: `1px solid ${C.border}`, textAlign: i === 5 ? "right" : "left", whiteSpace: "nowrap"
-                                    }}>{h}</th>
-                                ))}
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {filtered.map(m => (
-                                <tr key={m.id} style={{ borderBottom: `1px solid ${C.border}`, transition: "background .1s" }}
-                                    onMouseEnter={e => e.currentTarget.style.background = "rgba(44,143,168,0.07)"}
-                                    onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
-                                    <td style={{ padding: "13px 16px" }}>
-                                        <div style={{ display: "flex", alignItems: "center", gap: 11 }}>
-                                            <Avatar name={m.hoTen} src={m.avatar} id={m.id} size={38} />
-                                            <div>
-                                                <div style={{ fontWeight: 800, color: C.ink }}>{m.hoTen}</div>
-                                                <div style={{ fontSize: 11.5, color: C.inkMuted, marginTop: 1, fontWeight: 600 }}>HV{String(m.id).padStart(4, "0")}</div>
-                                            </div>
-                                        </div>
-                                    </td>
-                                    <td style={{ padding: "13px 16px", color: C.inkSoft, fontWeight: 700 }}>{m.sdt}</td>
-                                    <td style={{ padding: "13px 16px", color: C.inkSoft, fontWeight: 700 }}>{m.chiNhanh}</td>
-                                    <td style={{ padding: "13px 16px" }}><GoiBadge value={m.goiTap} /></td>
-                                    <td style={{ padding: "13px 16px" }}><StatusBadge value={m.trangThai} /></td>
-                                    <td style={{ padding: "13px 16px" }}>
-                                        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-                                            <button onClick={() => onView(m)} style={{ ...btnOutline, padding: "7px 12px", fontSize: 13 }}><Eye size={13} /> Xem</button>
-                                            <button onClick={() => onEdit(m)} style={{ ...btnAccent, padding: "7px 12px", fontSize: 13 }}><Pencil size={13} /> Cập nhật</button>
-                                        </div>
-                                    </td>
-                                </tr>
-                            ))}
-                            {filtered.length === 0 && (
-                                <tr><td colSpan={6} style={{ padding: "52px 16px", textAlign: "center", color: C.inkMuted }}>
-                                    <div style={{ fontSize: 28, marginBottom: 10 }}>🔍</div>
-                                    Không tìm thấy hội viên phù hợp.
-                                </td></tr>
-                            )}
-                        </tbody>
-                    </table>
+                <div style={{ display: "flex", gap: 8 }}>
+                    <button
+                        onClick={() => onConfirm(reason.trim())} disabled={locking || !coTheXacNhan}
+                        style={{ ...(isLocked ? btnAccent : btnDanger), flex: 1, justifyContent: "center", opacity: (locking || !coTheXacNhan) ? 0.6 : 1 }}
+                    >
+                        {isLocked ? <Unlock size={15} /> : <Lock size={15} />} {locking ? "Đang xử lý…" : isLocked ? "Mở khóa" : "Khóa hội viên"}
+                    </button>
+                    <button onClick={onClose} disabled={locking} style={{ ...btnCancelSoft, flex: "0 0 96px", justifyContent: "center" }}>
+                        <X size={14} /> Hủy
+                    </button>
                 </div>
             </div>
         </div>
     );
 }
 
-/* ── DETAIL PAGE ── */
+/* ➕ Thanh phân trang đơn giản: Trước - "Trang x / y" - Sau */
+function Pagination({ page, totalPages, onChange }) {
+    if (totalPages <= 1) return null;
+
+    const luiTrang = () => { if (page > 1) onChange(page - 1); };
+    const toiTrang = () => { if (page < totalPages) onChange(page + 1); };
+
+    return (
+        <div style={{
+            display: "flex", alignItems: "center", justifyContent: "center", gap: 10,
+            padding: "12px 0", borderTop: `1px solid ${C.border}`
+        }}>
+            <button onClick={luiTrang} disabled={page === 1}
+                style={{ ...btnOutline, padding: "6px 11px", opacity: page === 1 ? 0.4 : 1 }}>
+                <ArrowLeft size={13} /> Trước
+            </button>
+            <span style={{ fontSize: 12.5, fontWeight: 700, color: C.inkSoft, minWidth: 90, textAlign: "center" }}>
+                Trang {page} / {totalPages}
+            </span>
+            <button onClick={toiTrang} disabled={page === totalPages}
+                style={{ ...btnOutline, padding: "6px 11px", opacity: page === totalPages ? 0.4 : 1 }}>
+                Sau <ArrowRight size={13} />
+            </button>
+        </div>
+    );
+}
+
+/* ══════════════════════════════════════════════════════════
+   3A. TRANG DANH SÁCH HỘI VIÊN
+   ══════════════════════════════════════════════════════════ */
+function ListPage({ members, onView, onEdit, loading = false }) {
+    // Bộ lọc
+    const [fName, setFName] = useState("");
+    const [fPhone, setFPhone] = useState("");
+    const [fBranch, setFBranch] = useState("Tất cả");
+
+    // ➕ Trang hiện tại (phân trang 10 hội viên / trang)
+    const [page, setPage] = useState(1);
+
+    // Chi nhánh lấy từ dữ liệu thật, nếu chưa có thì dùng danh sách mặc định
+    const branchOptions = useMemo(() => {
+        const fromData = Array.from(new Set(members.map(m => m.chiNhanh).filter(Boolean)));
+        return fromData.length > 0 ? fromData : CHI_NHANH_FALLBACK;
+    }, [members]);
+
+    // Lọc theo tên / SĐT / chi nhánh
+    const filtered = useMemo(() => members.filter(m =>
+        (m.hoTen || "").toLowerCase().includes(fName.trim().toLowerCase())
+        && (m.sdt || "").includes(fPhone.trim())
+        && (fBranch === "Tất cả" || m.chiNhanh === fBranch)
+    ), [members, fName, fPhone, fBranch]);
+
+    // ➕ Mỗi khi bộ lọc thay đổi -> quay lại trang 1 cho khỏi lệch dữ liệu
+    useEffect(() => {
+        setPage(1);
+    }, [fName, fPhone, fBranch]);
+
+    // ➕ Tính tổng số trang và cắt ra danh sách của trang hiện tại
+    const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+    const pageItems = useMemo(() => {
+        const start = (page - 1) * PAGE_SIZE;
+        return filtered.slice(start, start + PAGE_SIZE);
+    }, [filtered, page]);
+
+    const xoaLoc = () => {
+        setFName("");
+        setFPhone("");
+        setFBranch("Tất cả");
+    };
+
+    const active = members.filter(m => m.trangThai === "Đang hoạt động").length;
+    const pending = members.filter(m => m.trangThai === "Chờ hoạt động").length;
+    const expired = members.filter(m => m.trangThai === "Tạm ngưng").length;
+
+    return (
+        <div>
+            <div style={{ marginBottom: 16 }}>
+                <div style={{ fontSize: 21, fontWeight: 900, color: C.ink, letterSpacing: -0.5 }}>Danh sách hội viên</div>
+                <div style={{ fontSize: 12.5, color: C.inkMuted, marginTop: 3, fontWeight: 600 }}>
+                    {loading ? "Đang tải danh sách hội viên…" : `${filtered.length} hội viên phù hợp bộ lọc`}
+                </div>
+            </div>
+
+            <div style={{ display: "flex", gap: 10, marginBottom: 14, flexWrap: "wrap" }}>
+                <StatCard icon={Users} label="Tổng hội viên" value={members.length} color={C.accentDark} bgColor={C.accentSoft} />
+                <StatCard icon={Activity} label="Đang hoạt động" value={active} color={C.green} bgColor={C.greenBg} />
+                <StatCard icon={TrendingUp} label="Chờ hoạt động" value={pending} color={C.amber} bgColor={C.amberBg} />
+                <StatCard icon={TrendingUp} label="Tạm ngưng" value={expired} color={C.red} bgColor={C.redBg} />
+            </div>
+
+            <div className="gw-filter-bar" style={{ display: "flex", flexWrap: "wrap", gap: 8, background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: "10px 12px", marginBottom: 14, boxShadow: C.shadow }}>
+                <div style={{ position: "relative", flex: "1 1 0" }}>
+                    <Search size={14} style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: C.inkMuted }} />
+                    <input className="gw-input" placeholder="Tìm theo tên…" value={fName} onChange={e => setFName(e.target.value)} style={{ ...inp, paddingLeft: 35, fontSize: 14 }} />
+                </div>
+                <div style={{ position: "relative", flex: "1 1 0" }}>
+                    <Phone size={14} style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: C.inkMuted }} />
+                    <input className="gw-input" placeholder="Số điện thoại…" value={fPhone} onChange={e => setFPhone(e.target.value)} style={{ ...inp, paddingLeft: 35, fontSize: 14 }} />
+                </div>
+                <div style={{ position: "relative", flex: "1 1 0" }}>
+                    <MapPin size={14} style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: C.inkMuted, zIndex: 1 }} />
+                    <select className="gw-input" value={fBranch} onChange={e => setFBranch(e.target.value)} style={{ ...inp, paddingLeft: 35, fontSize: 14, appearance: "none" }}>
+                        <option>Tất cả</option>
+                        {branchOptions.map(c => <option key={c}>{c}</option>)}
+                    </select>
+                </div>
+                <button onClick={xoaLoc} style={{ ...btnOutline, padding: "10px 14px", flex: "0 0 auto" }}>
+                    <RotateCcw size={13} /> Xóa lọc
+                </button>
+            </div>
+
+            <div style={{ border: `1px solid ${C.border}`, borderRadius: 18, overflow: "hidden", background: C.card, boxShadow: C.shadow }}>
+                <div className="gw-table-scroll">
+                    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13.5 }}>
+                        <thead>
+                            <tr>
+                                {["Hội viên", "Số điện thoại", "Chi nhánh", "Gói tập", "Trạng thái", ""].map((h, i) => (
+                                    <th key={i} style={{
+                                        padding: "10px 14px", fontSize: 10.5, fontWeight: 800, color: C.inkSoft, letterSpacing: 0.7,
+                                        textTransform: "uppercase", borderBottom: `1px solid ${C.border}`, textAlign: i === 5 ? "right" : "left", whiteSpace: "nowrap"
+                                    }}>{h}</th>
+                                ))}
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {pageItems.map(m => (
+                                <tr key={m.id} style={{ borderBottom: `1px solid ${C.border}`, transition: "background .1s" }}
+                                    onMouseEnter={e => e.currentTarget.style.background = `rgba(${C.accentRGB},0.06)`}
+                                    onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+                                    <td style={{ padding: "9px 14px" }}>
+                                        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                                            <Avatar name={m.hoTen} src={m.avatar} id={m.id} size={34} />
+                                            <div>
+                                                <div style={{ fontWeight: 800, color: C.ink }}>{m.hoTen}</div>
+                                                <div style={{ fontSize: 11, color: C.inkMuted, marginTop: 1, fontWeight: 600 }}>HV{String(m.id).padStart(4, "0")}</div>
+                                            </div>
+                                        </div>
+                                    </td>
+                                    <td style={{ padding: "9px 14px", color: C.inkSoft, fontWeight: 700 }}>{m.sdt}</td>
+                                    <td style={{ padding: "9px 14px", color: C.inkSoft, fontWeight: 700 }}>{m.chiNhanh}</td>
+                                    <td style={{ padding: "9px 14px" }}><GoiBadge value={m.goiTap} /></td>
+                                    <td style={{ padding: "9px 14px" }}><StatusBadge value={m.trangThai} /></td>
+                                    <td style={{ padding: "9px 14px" }}>
+                                        <div style={{ display: "flex", gap: 7, justifyContent: "flex-end" }}>
+                                            <button onClick={() => onView(m)} style={{ ...btnOutline, padding: "6px 11px", fontSize: 12.5 }}><Eye size={12.5} /> Xem</button>
+                                            <button onClick={() => onEdit(m)} style={{ ...btnAccent, padding: "6px 11px", fontSize: 12.5 }}><Pencil size={12.5} /> Cập nhật</button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            ))}
+                            {filtered.length === 0 && (
+                                <tr><td colSpan={6} style={{ padding: "44px 16px", textAlign: "center", color: C.inkMuted }}>
+                                    <div style={{ fontSize: 26, marginBottom: 8 }}>🔍</div>
+                                    Không tìm thấy hội viên phù hợp.
+                                </td></tr>
+                            )}
+                        </tbody>
+                    </table>
+                </div>
+
+                {/* ➕ Thanh phân trang nằm dưới bảng */}
+                <Pagination page={page} totalPages={totalPages} onChange={setPage} />
+            </div>
+        </div>
+    );
+}
+
+/* ══════════════════════════════════════════════════════════
+   3B. TRANG CHI TIẾT HỘI VIÊN
+   ══════════════════════════════════════════════════════════ */
 function DetailPage({ memberId, listSnapshot, onBack, onSave, initialEditingInfo = false }) {
     const [member, setMember] = useState(listSnapshot);
     const [draft, setDraft] = useState(listSnapshot);
     const [loadingDetail, setLoadingDetail] = useState(true);
     const [editingPhoto, setEditingPhoto] = useState(false);
     const [editingInfo, setEditingInfo] = useState(initialEditingInfo);
+    const [editingPassword, setEditingPassword] = useState(false);
     const [flash, setFlash] = useState("");
     const [error, setError] = useState("");
     const [savingPhoto, setSavingPhoto] = useState(false);
     const [savingInfo, setSavingInfo] = useState(false);
+    const [savingPassword, setSavingPassword] = useState(false);
 
-    // Lịch sử cập nhật — khớp GET /api/members/{id}/update-history
+    const [showLockConfirm, setShowLockConfirm] = useState(false);
+    const [locking, setLocking] = useState(false);
+
     const [showHistory, setShowHistory] = useState(false);
     const [historyLoading, setHistoryLoading] = useState(false);
     const [historySessions, setHistorySessions] = useState([]);
 
+    // Gọi API lấy chi tiết hội viên — GET /api/members/{id}
     const fetchDetail = useCallback(() => {
         setLoadingDetail(true);
         setError("");
-        return managerApi.getMemberDetail(memberId)
+        return adminApi.getMemberDetail(memberId)
             .then(res => {
                 const detail = normalizeDetail(res);
                 setMember(detail);
                 setDraft(detail);
                 return detail;
             })
-            .catch(() => { setError("Không tải được thông tin chi tiết hội viên."); })
+            .catch(() => setError("Không tải được thông tin chi tiết hội viên."))
             .finally(() => setLoadingDetail(false));
     }, [memberId]);
 
@@ -742,13 +907,25 @@ function DetailPage({ memberId, listSnapshot, onBack, onSave, initialEditingInfo
         fetchDetail();
         setEditingPhoto(false);
         setEditingInfo(initialEditingInfo);
+        setEditingPassword(false);
     }, [memberId, fetchDetail, initialEditingInfo]);
 
     const set = k => e => setDraft(d => ({ ...d, [k]: typeof e === "string" ? e : e.target.value }));
-
     const showFlash = msg => { setFlash(msg); setTimeout(() => setFlash(""), 2200); };
 
-    // dataUrl: ảnh chụp/upload (base64) | reason: lý do cập nhật FaceID (bắt buộc)
+    // Chỉ 1 khối (Ảnh / Thông tin / Mật khẩu) được mở chỉnh sửa tại 1 thời điểm
+    const closeAllEdits = () => {
+        setEditingPhoto(false);
+        setEditingInfo(false);
+        setEditingPassword(false);
+        setDraft(member);
+        setError("");
+    };
+    const startEditPhoto = () => { closeAllEdits(); setEditingPhoto(true); };
+    const startEditInfo = () => { closeAllEdits(); setDraft(member); setEditingInfo(true); };
+    const startEditPassword = () => { closeAllEdits(); setEditingPassword(true); };
+
+    // Gọi API cập nhật ảnh FaceID — PUT/POST /api/members/{id}/faceid (multipart/form-data)
     const handleCapture = async (dataUrl, reason) => {
         setError(""); setSavingPhoto(true);
         try {
@@ -756,27 +933,28 @@ function DetailPage({ memberId, listSnapshot, onBack, onSave, initialEditingInfo
             const formData = new FormData();
             formData.append("ProfileImage", blob, "faceid.jpg");
             formData.append("Reason", reason);
-            await managerApi.updateFaceId(memberId, formData);
+            await adminApi.updateFaceId(memberId, formData);
             const updated = await fetchDetail();
             if (updated) onSave(updated);
             setEditingPhoto(false);
             showFlash("Đã cập nhật ảnh FaceID!");
-        } catch (e) {
+        } catch {
             setError("Tải ảnh lên thất bại. Vui lòng thử lại.");
         } finally {
             setSavingPhoto(false);
         }
     };
 
+    // Gọi API cập nhật thông tin — PUT /api/members/{id}
     const handleSaveInfo = async () => {
         setError(""); setSavingInfo(true);
         try {
-            await managerApi.updateMember(memberId, toUpdatePayload(draft));
+            await adminApi.updateMember(memberId, toUpdatePayload(draft));
             setMember(draft);
             onSave(draft);
             setEditingInfo(false);
             showFlash("Đã lưu thông tin hội viên!");
-        } catch (e) {
+        } catch {
             setError("Lưu thông tin thất bại. Vui lòng thử lại.");
         } finally {
             setSavingInfo(false);
@@ -789,13 +967,49 @@ function DetailPage({ memberId, listSnapshot, onBack, onSave, initialEditingInfo
         setError("");
     };
 
+    // Gọi API đổi mật khẩu hội viên — PUT /api/members/{id}/password/reset
+    const handleSavePassword = async (newPassword) => {
+        setError(""); setSavingPassword(true);
+        try {
+            await adminApi.changeMemberPassword(memberId, { newPassword });
+            setEditingPassword(false);
+            showFlash("Đã đổi mật khẩu hội viên!");
+        } catch {
+            setError("Đổi mật khẩu thất bại. Vui lòng thử lại.");
+        } finally {
+            setSavingPassword(false);
+        }
+    };
+
+    // Gọi API khóa / mở khóa — PUT /api/members/{id}/lock hoặc /unlock
+    const isLocked = member?.trangThai === "Tạm ngưng";
+    const handleToggleLock = async (reason) => {
+        setLocking(true); setError("");
+        try {
+            if (isLocked) {
+                await adminApi.unlockMember(memberId, reason);
+            } else {
+                await adminApi.lockMember(memberId, reason);
+            }
+            const updated = await fetchDetail();
+            if (updated) onSave(updated);
+            showFlash(isLocked ? "Đã mở khóa hội viên!" : "Đã khóa hội viên!");
+        } catch {
+            setError("Thao tác khóa/mở khóa thất bại. Vui lòng thử lại.");
+        } finally {
+            setLocking(false);
+            setShowLockConfirm(false);
+        }
+    };
+
+    // Gọi API lấy lịch sử cập nhật — GET /api/members/{id}/update-history
     const openHistory = async () => {
         setShowHistory(true);
         setHistoryLoading(true);
         try {
-            const data = await managerApi.getUpdateHistory(memberId);
+            const data = await adminApi.getUpdateHistory(memberId);
             setHistorySessions(data || []);
-        } catch (e) {
+        } catch {
             setHistorySessions([]);
         } finally {
             setHistoryLoading(false);
@@ -814,39 +1028,39 @@ function DetailPage({ memberId, listSnapshot, onBack, onSave, initialEditingInfo
 
     return (
         <div>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 22, flexWrap: "wrap" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                    <button onClick={onBack} style={{ ...btnOutline, padding: "9px 11px" }}><ArrowLeft size={16} /></button>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 14, flexWrap: "wrap" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <button onClick={onBack} style={{ ...btnOutline, padding: "8px 10px" }}><ArrowLeft size={15} /></button>
                     <div>
-                        <div style={{ fontSize: 22, fontWeight: 800, color: C.ink, letterSpacing: -0.4 }}>Chi tiết hội viên</div>
-                        <div style={{ fontSize: 13, color: C.inkMuted, marginTop: 3, fontWeight: 600 }}>Mã: HV{String(memberId).padStart(4, "0")}</div>
+                        <div style={{ fontSize: 18.5, fontWeight: 800, color: C.ink, letterSpacing: -0.3 }}>Chi tiết hội viên</div>
+                        <div style={{ fontSize: 12, color: C.inkMuted, marginTop: 2, fontWeight: 600 }}>Mã: HV{String(memberId).padStart(4, "0")}</div>
                     </div>
                 </div>
-                <button onClick={openHistory} style={{ ...btnOutline, padding: "9px 14px" }}>
-                    <Clock size={14} /> Lịch sử cập nhật
+                <button onClick={openHistory} style={{ ...btnOutline, padding: "8px 13px" }}>
+                    <Clock size={13} /> Lịch sử cập nhật
                 </button>
             </div>
 
             {flash && (
-                <div style={{ marginBottom: 18, padding: "12px 18px", borderRadius: 12, background: C.greenBg, color: C.green, fontSize: 14, fontWeight: 800, display: "flex", alignItems: "center", gap: 9, border: `1px solid ${C.greenBorder}` }}>
-                    <Check size={16} /> {flash}
+                <div style={{ marginBottom: 12, padding: "10px 15px", borderRadius: 12, background: C.greenBg, color: C.green, fontSize: 13, fontWeight: 800, display: "flex", alignItems: "center", gap: 8, border: `1px solid ${C.greenBorder}` }}>
+                    <Check size={15} /> {flash}
                 </div>
             )}
             {error && (
-                <div style={{ marginBottom: 18, padding: "12px 18px", borderRadius: 12, background: C.redBg, color: C.red, fontSize: 14, fontWeight: 800, display: "flex", alignItems: "center", gap: 9, border: `1px solid ${C.redBorder}` }}>
-                    <X size={16} /> {error}
+                <div style={{ marginBottom: 12, padding: "10px 15px", borderRadius: 12, background: C.redBg, color: C.red, fontSize: 13, fontWeight: 800, display: "flex", alignItems: "center", gap: 8, border: `1px solid ${C.redBorder}` }}>
+                    <X size={15} /> {error}
                 </div>
             )}
 
-            <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 20, overflow: "hidden", boxShadow: C.shadowMd }}>
+            <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 22, overflow: "hidden", boxShadow: C.shadowMd }}>
                 <div style={{ display: "flex", flexWrap: "wrap" }}>
 
-                    {/* ── PHOTO COLUMN ── */}
+                    {/* ── CỘT ẢNH ── */}
                     <div className="gw-photo-col" style={{
-                        flexShrink: 0, padding: "28px 26px", borderRight: `1px solid ${C.border}`,
+                        flexShrink: 0, padding: "18px 18px", borderRight: `1px solid ${C.border}`,
                         background: C.cardAlt, display: "flex", flexDirection: "column"
                     }}>
-                        <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 13 }}>
+                        <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 10 }}>
                             {editingPhoto ? (
                                 <>
                                     <Eyebrow icon={Camera} color={C.faceGreen} bg={C.faceGreenSoft}>Chụp FaceID mới</Eyebrow>
@@ -876,30 +1090,30 @@ function DetailPage({ memberId, listSnapshot, onBack, onSave, initialEditingInfo
                         </div>
 
                         {!editingPhoto && (
-                            <div style={{ marginTop: 18, paddingTop: 18, borderTop: `1px solid ${C.border}`, display: "flex", flexDirection: "column", gap: 10 }}>
-                                <button onClick={() => setEditingPhoto(true)} style={{ ...btnGreen, width: "100%", justifyContent: "center" }}>
-                                    <Camera size={15} /> Cập nhật FaceID
+                            <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${C.border}`, display: "flex", flexDirection: "column", gap: 8 }}>
+                                <button onClick={startEditPhoto} style={{ ...btnGreen, width: "100%", justifyContent: "center" }}>
+                                    <Camera size={14} /> Cập nhật FaceID
                                 </button>
                             </div>
                         )}
                     </div>
 
-                    {/* ── INFO COLUMN ── */}
-                    <div style={{ flex: "1 1 440px", minWidth: 0, padding: "28px 28px 24px", display: "flex", flexDirection: "column" }}>
+                    {/* ── CỘT THÔNG TIN ── */}
+                    <div style={{ flex: "1 1 440px", minWidth: 0, padding: "18px 20px 16px", display: "flex", flexDirection: "column" }}>
                         <div style={{ flex: 1, display: "flex", flexDirection: "column" }}>
                             <div style={{
                                 display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10,
-                                paddingBottom: 14, marginBottom: 18, borderBottom: `1px solid ${C.border}`
+                                paddingBottom: 10, marginBottom: 12, borderBottom: `1px solid ${C.border}`
                             }}>
-                                <div style={{ display: "flex", alignItems: "center", gap: 11, flexWrap: "wrap" }}>
-                                    <span style={{ fontSize: 17, fontWeight: 800, color: C.ink }}>{draft.hoTen}</span>
+                                <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                                    <span style={{ fontSize: 15.5, fontWeight: 800, color: C.ink }}>{draft.hoTen}</span>
                                     <StatusBadge value={draft.trangThai} />
                                     <GoiBadge value={draft.goiTap} />
                                 </div>
                             </div>
 
                             {!editingInfo ? (
-                                <div className="gw-grid-2" style={{ gap: "16px 20px" }}>
+                                <div className="gw-grid-2" style={{ gap: "10px 14px" }}>
                                     <ReadField icon={User} label="Họ và tên" value={draft.hoTen} full />
                                     <ReadField icon={Phone} label="Số điện thoại" value={draft.sdt} />
                                     <ReadField label="Giới tính" value={draft.gioiTinh} />
@@ -909,7 +1123,7 @@ function DetailPage({ memberId, listSnapshot, onBack, onSave, initialEditingInfo
                                     <ReadField icon={FileText} label="Ghi chú nội bộ" value={draft.ghiChu} full />
                                 </div>
                             ) : (
-                                <div className="gw-grid-2" style={{ gap: "18px 20px" }}>
+                                <div className="gw-grid-2" style={{ gap: "12px 14px" }}>
                                     <Field label="Họ và tên" required full icon={User}>
                                         <input className="gw-input" style={inp} value={draft.hoTen} onChange={set("hoTen")} placeholder="Nguyễn Văn A" />
                                     </Field>
@@ -937,22 +1151,47 @@ function DetailPage({ memberId, listSnapshot, onBack, onSave, initialEditingInfo
                             )}
                         </div>
 
-                        <div className="gw-actions-mobile" style={{ marginTop: 18, paddingTop: 18, borderTop: `1px solid ${C.border}`, display: "flex", gap: 10 }}>
-                            {!editingInfo ? (
-                                <button onClick={() => { setDraft(member); setEditingInfo(true); }} style={{ ...btnAccent, fontSize: 14.5, padding: "11px 26px" }}>
-                                    <Pencil size={15} /> Cập nhật thông tin
-                                </button>
-                            ) : (
+                        <div className="gw-actions-mobile" style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${C.border}`, display: "flex", gap: 8 }}>
+                            {editingInfo ? (
                                 <>
-                                    <button onClick={handleSaveInfo} disabled={savingInfo} style={{ ...btnAccent, fontSize: 14.5, padding: "11px 26px", opacity: savingInfo ? 0.7 : 1 }}>
-                                        <Check size={16} /> {savingInfo ? "Đang lưu…" : "Lưu thay đổi"}
+                                    <button onClick={handleSaveInfo} disabled={savingInfo} style={{ ...btnAccent, fontSize: 13.5, padding: "9px 20px", opacity: savingInfo ? 0.7 : 1 }}>
+                                        <Check size={15} /> {savingInfo ? "Đang lưu…" : "Lưu thay đổi"}
                                     </button>
-                                    <button onClick={handleCancelInfo} disabled={savingInfo} style={{ ...btnCancelSoft, fontSize: 14, padding: "11px 18px" }}>
-                                        <X size={14} /> Hủy
+                                    <button onClick={handleCancelInfo} disabled={savingInfo} style={{ ...btnCancelSoft, fontSize: 13, padding: "9px 16px" }}>
+                                        <X size={13} /> Hủy
                                     </button>
                                 </>
+                            ) : !editingPassword ? (
+                                <>
+                                    <button onClick={startEditInfo} style={{ ...btnAccent, fontSize: 13.5, padding: "9px 20px" }}>
+                                        <Pencil size={14} /> Cập nhật thông tin
+                                    </button>
+                                    <button
+                                        onClick={() => setShowLockConfirm(true)}
+                                        style={{ ...(isLocked ? btnAccent : btnDanger), fontSize: 13.5, padding: "9px 16px" }}
+                                    >
+                                        {isLocked ? <Unlock size={14} /> : <Lock size={14} />} {isLocked ? "Mở khóa" : "Khóa hội viên"}
+                                    </button>
+                                    <button onClick={startEditPassword} style={{ ...btnOutline, fontSize: 13.5, padding: "9px 16px" }}>
+                                        <KeyRound size={14} /> Đổi mật khẩu
+                                    </button>
+                                </>
+                            ) : (
+                                <span style={{ fontSize: 13, fontWeight: 700, color: C.inkMuted, display: "flex", alignItems: "center", gap: 7, padding: "9px 0" }}>
+                                    <KeyRound size={14} color={C.accent} /> Đổi mật khẩu hội viên
+                                </span>
                             )}
                         </div>
+
+                        {editingPassword && (
+                            <div style={{ marginTop: 4, paddingTop: 12, borderTop: `1px solid ${C.border}`, maxWidth: 360 }}>
+                                <PasswordEditor
+                                    onSave={handleSavePassword}
+                                    onCancel={() => setEditingPassword(false)}
+                                    saving={savingPassword}
+                                />
+                            </div>
+                        )}
                     </div>
                 </div>
             </div>
@@ -964,21 +1203,33 @@ function DetailPage({ memberId, listSnapshot, onBack, onSave, initialEditingInfo
                     onClose={() => setShowHistory(false)}
                 />
             )}
+
+            {showLockConfirm && (
+                <LockConfirmModal
+                    locking={locking}
+                    isLocked={isLocked}
+                    onConfirm={handleToggleLock}
+                    onClose={() => !locking && setShowLockConfirm(false)}
+                />
+            )}
         </div>
     );
 }
 
-/* ── APP SHELL ── */
-export default function ListMemberOfManager() {
+/* ══════════════════════════════════════════════════════════
+   3C. APP GỐC — nơi giữ danh sách hội viên + điều hướng trang
+   ══════════════════════════════════════════════════════════ */
+export default function ListMemberOfMana() {
     const [members, setMembers] = useState([]);
     const [loadingList, setLoadingList] = useState(false);
     const [listError, setListError] = useState("");
     const [route, setRoute] = useState({ page: "list" });
 
+    // Gọi API lấy toàn bộ danh sách hội viên — GET /api/members
     const fetchList = useCallback(() => {
         setLoadingList(true);
         setListError("");
-        return managerApi.getListMembers({})
+        return adminApi.getListMembers({})
             .then(data => setMembers((data || []).map(normalizeListItem)))
             .catch(() => setListError("Không tải được danh sách hội viên."))
             .finally(() => setLoadingList(false));
@@ -1000,12 +1251,13 @@ export default function ListMemberOfManager() {
     const goDetail = m => setRoute({ page: "detail", id: m.id, editMode: false });
     const goEdit = m => setRoute({ page: "detail", id: m.id, editMode: true });
 
+    // Cập nhật lại 1 dòng trong danh sách sau khi lưu ở trang chi tiết
     const handleInlineSave = updated => {
         setMembers(prev => prev.map(m => m.id === updated.id ? { ...m, ...updated } : m));
     };
 
     return (
-        <div style={{ minHeight: "100%", background: "transparent", fontFamily: "'Inter',-apple-system,BlinkMacSystemFont,sans-serif", color: C.ink }}>
+        <div style={{ minHeight: "100%", background: C.bg, fontFamily: "'Inter',-apple-system,BlinkMacSystemFont,sans-serif", color: C.ink }}>
             <GlobalStyles />
             <div style={{ maxWidth: 1180, margin: "0 auto" }}>
                 {route.page === "list" && (

@@ -10,7 +10,6 @@ public class BranchService
     private readonly GymManagementContext _context;
     private readonly BranchImageService _branchImageService;
 
-    private const int ManagerRoleId = 2;
 
     public BranchService(GymManagementContext context, BranchImageService branchImageService)
     {
@@ -24,7 +23,7 @@ public class BranchService
     {
         return await GetListInternalAsync(filter, includeInactive: false);
     }
-
+    
     // ===================== LẤY DANH SÁCH CHI NHÁNH CHO ADMIN (BAO GỒM CẢ TẠM NGƯNG) =====================
     public async Task<BranchListResultDto> GetListForAdminAsync(BranchFilterDto filter)
     {
@@ -115,7 +114,7 @@ public class BranchService
             Address = dto.Address,
             Phone = dto.Phone,
             Status = "Active",
-            CreatedAt = DateTime.UtcNow
+            CreatedAt = DateTime.Now
         };
 
         _context.Branches.Add(branch);
@@ -303,7 +302,7 @@ public class BranchService
         {
             bool laQuanLy = employee.Account != null
                          && employee.Account.Role != null
-                         && employee.Account.Role.RoleId == ManagerRoleId;
+                         && employee.Account.Role.RoleId == 2;
 
             if (laQuanLy)
             {
@@ -341,7 +340,7 @@ public class BranchService
             .Include(e => e.Account)
                 .ThenInclude(a => a!.Role)
             .Where(e => e.Account != null
-                     && e.Account.Role.RoleId == ManagerRoleId
+                     && e.Account.Role.RoleId == 2
                      && e.Status == "Active")
             .Select(e => new ManagerLookupDto
             {

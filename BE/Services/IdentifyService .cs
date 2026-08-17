@@ -21,6 +21,9 @@ public class IdentifyService
     private const string MemberStatusPendingActivation = "PendingActivation";
     private const string PackageStatusActive = "Active";
 
+    private const string PersonTypeMember = "member";
+    private const string PersonTypeEmployee = "employee";
+
     public IdentifyService(
         GymManagementContext context,
         RekognitionFaceService faceService,
@@ -453,6 +456,7 @@ public class IdentifyService
 
     // ===================== LỊCH SỬ CHECK-IN =====================
 
+    // Trả về toàn bộ danh sách theo bộ lọc (không phân trang, FE tự xử lý phân trang/hiển thị).
     public async Task<CheckInHistoryResponseDto> GetCheckInHistoryByStaffAsync(long staffId, CheckInHistoryQueryDto query)
     {
         Employee? nhanVien = await _context.Employees
@@ -470,11 +474,12 @@ public class IdentifyService
         bool isManager = nhanVien.Account.Role.RoleName == RoleManager;
         List<int> dsChiNhanhDuocGan = nhanVien.Branches.Select(b => b.BranchId).ToList();
 
+        // Lấy cả check-in của hội viên lẫn nhân viên.
         IQueryable<Models.CheckIn> truyVan = _context.CheckIns
             .AsNoTracking()
-            .Where(c => c.MemberId != null)
-            .Include(c => c.Member).ThenInclude(m => m.FaceDatum)
-            .Include(c => c.Member).ThenInclude(m => m.Account)
+            .Include(c => c.Member).ThenInclude(m => m!.FaceDatum)
+            .Include(c => c.Member).ThenInclude(m => m!.Account)
+            .Include(c => c.Employee)
             .Include(c => c.Branch)
             .Include(c => c.Staff)
             .Include(c => c.CheckOutStaff);
@@ -502,31 +507,43 @@ public class IdentifyService
             truyVan = truyVan.Where(c => c.CheckInTime < denNgay);
         }
 
+        // Lọc theo loại người: hội viên / nhân viên / tất cả (nếu không truyền hoặc giá trị khác).
+        string? loaiNguoi = query.PersonType?.Trim().ToLower();
+        if (loaiNguoi == PersonTypeMember)
+        {
+            truyVan = truyVan.Where(c => c.MemberId != null);
+        }
+        else if (loaiNguoi == PersonTypeEmployee)
+        {
+            truyVan = truyVan.Where(c => c.EmployeeId != null);
+        }
+
         if (!string.IsNullOrWhiteSpace(query.Keyword))
         {
             string tuKhoa = query.Keyword.Trim();
             truyVan = truyVan.Where(c =>
-                c.Member!.FullName.Contains(tuKhoa) ||
-                (c.Member!.Account != null && c.Member.Phone != null && c.Member.Phone.Contains(tuKhoa)));
+                (c.Member != null && (c.Member.FullName.Contains(tuKhoa)
+                    || (c.Member.Phone != null && c.Member.Phone.Contains(tuKhoa))))
+                || (c.Employee != null && c.Employee.FullName.Contains(tuKhoa)));
         }
-
-        int totalCount = await truyVan.CountAsync();
-        int page = query.Page < 1 ? 1 : query.Page;
-        int pageSize = query.PageSize < 1 ? 20 : query.PageSize;
 
         List<Models.CheckIn> danhSach = await truyVan
             .OrderByDescending(c => c.CheckInTime)
-            .Skip((page - 1) * pageSize)
-            .Take(pageSize)
             .ToListAsync();
 
         List<CheckInHistoryItemDto> items = danhSach.Select(c => new CheckInHistoryItemDto
         {
             CheckInId = c.CheckInId,
-            MemberId = c.MemberId!.Value,
-            MemberName = c.Member!.FullName,
-            MemberPhone = c.Member.Phone,
-            MemberAvatar = c.Member.FaceDatum?.ProfileImage,
+            IsEmployee = c.EmployeeId != null,
+
+            MemberId = c.MemberId,
+            MemberName = c.Member?.FullName,
+            MemberPhone = c.Member?.Phone,
+            MemberAvatar = c.Member?.FaceDatum?.ProfileImage,
+
+            EmployeeId = c.EmployeeId,
+            EmployeeName = c.Employee?.FullName,
+
             BranchId = c.BranchId,
             BranchName = c.Branch?.BranchName,
             CheckInTime = c.CheckInTime,
@@ -540,9 +557,7 @@ public class IdentifyService
         return new CheckInHistoryResponseDto
         {
             Items = items,
-            TotalCount = totalCount,
-            Page = page,
-            PageSize = pageSize
+            TotalCount = items.Count
         };
     }
 

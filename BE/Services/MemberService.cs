@@ -62,8 +62,7 @@ namespace BE.Services
             return nhanVien?.FullName;
         }
 
-        // Phone nằm trên bảng members (không phải accounts). Account chỉ giữ thông tin đăng nhập
-        // (Username/PasswordHash/Status/SuspendReason) dùng chung cho cả member lẫn employee.
+
         // Hàm này dùng khi cần AccountId để đổi mật khẩu, khóa/mở khóa, hoặc đọc SuspendReason.
         private async Task<Account> GetAccountByMemberIdAsync(long memberId)
         {
@@ -148,8 +147,6 @@ namespace BE.Services
                 FaceIdAws = hoiVien.FaceDatum?.FaceIdAws,
                 ProfileImage = hoiVien.FaceDatum?.ProfileImage,
 
-                // NOTE: field này tên là "...PackageId" nhưng đang gán PlanName (string).
-                // Giữ nguyên như code gốc để không phá vỡ DTO/FE đang dùng - cần xác nhận lại ý đồ ban đầu.
                 CurrentMemberPackageId = goiHienTai?.Plan?.PlanName,
                 PackageExpiryDate = goiHienTai?.ExpiryDate,
                 PackageStatus = goiHienTai?.PackageStatus,
@@ -378,38 +375,38 @@ namespace BE.Services
         // Tìm hội viên theo tên HOẶC số điện thoại — cả hai cột đều nằm trên Member nên gộp
         // được thành một query duy nhất (không cần query Account rồi map ngược lại).
         public async Task<List<MemberSearchItem>> SearchMembersForRenewAsync(string query)
-{
-    if (string.IsNullOrWhiteSpace(query))
-        return new List<MemberSearchItem>();
-
-    string tuKhoa = query.Trim();
-
-    List<Member> danhSachHoiVien = await _context.Members
-        .Include(m => m.FaceDatum)
-        .Include(m => m.MemberPackages).ThenInclude(p => p.Plan)
-        .Where(m => m.FullName.Contains(tuKhoa) 
-                 || (m.Phone != null && m.Phone.Contains(tuKhoa)))
-        .OrderByDescending(m => m.CreatedAt)
-        .Take(20)
-        .ToListAsync();
-
-    return danhSachHoiVien.Select(hoiVien =>
-    {
-        MemberPackage? goi = hoiVien.MemberPackages.OrderByDescending(p => p.ExpiryDate).FirstOrDefault();
-        return new MemberSearchItem
         {
-            MemberId = hoiVien.MemberId,
-            FullName = hoiVien.FullName,
-            Phone = hoiVien.Phone,
-            Status = hoiVien.Status,
-            ProfileImage = hoiVien.FaceDatum?.ProfileImage,
-            CurrentPlanName = goi?.Plan?.PlanName,
-            CurrentStartDate = goi?.StartDate,
-            CurrentExpiryDate = goi?.ExpiryDate,
-            CurrentPackageStatus = goi?.PackageStatus
-        };
-    }).ToList();
-}
+            if (string.IsNullOrWhiteSpace(query))
+                return new List<MemberSearchItem>();
+
+            string tuKhoa = query.Trim();
+
+            List<Member> danhSachHoiVien = await _context.Members
+                .Include(m => m.FaceDatum)
+                .Include(m => m.MemberPackages).ThenInclude(p => p.Plan)
+                .Where(m => m.FullName.Contains(tuKhoa)
+                         || (m.Phone != null && m.Phone.Contains(tuKhoa)))
+                .OrderByDescending(m => m.CreatedAt)
+                .Take(20)
+                .ToListAsync();
+
+            return danhSachHoiVien.Select(hoiVien =>
+            {
+                MemberPackage? goi = hoiVien.MemberPackages.OrderByDescending(p => p.ExpiryDate).FirstOrDefault();
+                return new MemberSearchItem
+                {
+                    MemberId = hoiVien.MemberId,
+                    FullName = hoiVien.FullName,
+                    Phone = hoiVien.Phone,
+                    Status = hoiVien.Status,
+                    ProfileImage = hoiVien.FaceDatum?.ProfileImage,
+                    CurrentPlanName = goi?.Plan?.PlanName,
+                    CurrentStartDate = goi?.StartDate,
+                    CurrentExpiryDate = goi?.ExpiryDate,
+                    CurrentPackageStatus = goi?.PackageStatus
+                };
+            }).ToList();
+        }
 
         // =========================================================================
         // NHÓM 3: [THU NGÂN] TẠO HỘI VIÊN MỚI
@@ -428,7 +425,7 @@ namespace BE.Services
             if (usernameDaTonTai)
                 throw new InvalidOperationException($"Tên đăng nhập '{request.Phone}' đã được sử dụng.");
 
-            DateTime now = DateTime.UtcNow;
+            DateTime now = DateTime.Now;
             string matKhauTaoMoi = GenerateRandomPassword();
 
             int branchId = await GetEmployeeBranchIdAsync(performedBy);
@@ -479,14 +476,14 @@ namespace BE.Services
                         // FIX (bug chính gây crash "Column 'username' cannot be null"):
                         // trước đây thiếu gán Username. Dùng số điện thoại làm username cho hội viên.
                         Username = request.Phone,
-                        RoleId=4,
+                        RoleId = 4,
                         PasswordHash = PasswordHelper.HashPassword(matKhauTaoMoi),
                         Status = "Active",
                         CreatedAt = now,
                         UpdatedAt = now
                     };
                     _context.Accounts.Add(taiKhoan);
-                      await _context.SaveChangesAsync();
+                    await _context.SaveChangesAsync();
 
                     // Nếu upload ảnh lỗi -> throw -> rollback member + account vừa Add.
                     await _faceIdService.RegisterFirstFaceAsync(
@@ -572,7 +569,7 @@ namespace BE.Services
             if (hoiVien == null)
                 throw new KeyNotFoundException("Không tìm thấy hội viên.");
 
-            DateTime now = DateTime.UtcNow;
+            DateTime now = DateTime.Now;
             Guid sessionId = Guid.NewGuid();
             var danhSachLog = new List<MemberUpdateLog>();
 
@@ -633,7 +630,7 @@ namespace BE.Services
             Account taiKhoan = await _accountService.GetByMemberIdAsync(memberId)
                 ?? throw new KeyNotFoundException("Không tìm thấy tài khoản của hội viên.");
 
-            DateTime now = DateTime.UtcNow;
+            DateTime now = DateTime.Now;
 
             await _accountService.ResetPasswordAsync(taiKhoan.AccountId, newPassword);
 
@@ -665,7 +662,7 @@ namespace BE.Services
             await _faceIdService.UpdateFaceAsync(memberId, employeeId: null, request.ProfileImage, request.Reason, performedBy);
 
             Member hoiVien = await _context.Members.FirstAsync(m => m.MemberId == memberId);
-            hoiVien.UpdatedAt = DateTime.UtcNow;
+            hoiVien.UpdatedAt = DateTime.Now;
             await _context.SaveChangesAsync();
 
             return await BuildMemberResponse(memberId);
@@ -681,7 +678,7 @@ namespace BE.Services
             if (hoiVien.Status == "Suspended")
                 throw new InvalidOperationException("Tài khoản đang bị khóa, không thể tự cập nhật thông tin.");
 
-            DateTime now = DateTime.UtcNow;
+            DateTime now = DateTime.Now;
             Guid sessionId = Guid.NewGuid();
             var danhSachLog = new List<MemberUpdateLog>();
             bool taiKhoanCoThayDoi = false;
@@ -789,7 +786,7 @@ namespace BE.Services
             // Chỉ dùng để xác nhận hội viên đã có tài khoản (ném lỗi nếu chưa) — không cần dùng tiếp.
             await GetAccountByMemberIdAsync(memberId);
 
-            DateTime now = DateTime.UtcNow;
+            DateTime now = DateTime.Now;
             Promotion? khuyenMai = await ValidateAndGetPromotionAsync(request.PromotionId, request.PlanId, now);
             short soNgayTangThucTe = _packageService.CalculateBonusDays(khuyenMai, goiTap);
 
@@ -890,7 +887,7 @@ namespace BE.Services
             if (hoiVien == null)
                 throw new KeyNotFoundException("Không tìm thấy hội viên.");
 
-            DateTime now = DateTime.UtcNow;
+            DateTime now = DateTime.Now;
             DateOnly homNay = DateOnly.FromDateTime(now);
             string? tenNhanVien = await GetEmployeeNameAsync(performedBy);
 
@@ -990,7 +987,7 @@ namespace BE.Services
                 ?? throw new KeyNotFoundException("Không tìm thấy tài khoản của hội viên.");
 
             string trangThaiCu = hoiVien.Status;
-            DateTime now = DateTime.UtcNow;
+            DateTime now = DateTime.Now;
 
             var strategy = _context.Database.CreateExecutionStrategy();
             await strategy.ExecuteAsync(async () =>
@@ -999,7 +996,7 @@ namespace BE.Services
                 try
                 {
                     // AccountService: validate reason, đổi Account.Status + SuspendReason, thu hồi refresh token.
-                    await _accountService.LockAccountAsync(taiKhoan.AccountId, reason, performedBy);
+                    await _accountService.LockAccountAsync(taiKhoan.AccountId,  performedBy);
 
                     hoiVien.Status = "Suspended";
                     hoiVien.UpdatedAt = now;
@@ -1035,7 +1032,7 @@ namespace BE.Services
                 ?? throw new KeyNotFoundException("Không tìm thấy tài khoản của hội viên.");
 
             string trangThaiCu = hoiVien.Status;
-            DateTime now = DateTime.UtcNow;
+            DateTime now = DateTime.Now;
 
             var strategy = _context.Database.CreateExecutionStrategy();
             await strategy.ExecuteAsync(async () =>
@@ -1132,7 +1129,7 @@ namespace BE.Services
 
             int branchId = await GetEmployeeBranchIdAsync(performedBy);
 
-            DateOnly homNay = DateOnly.FromDateTime(DateTime.UtcNow);
+            DateOnly homNay = DateOnly.FromDateTime(DateTime.Now);
 
             MemberPackage? goiGanNhat = await _packageService.GetLatestPackageAsync(memberId);
             (DateOnly startDate, bool isExtending) = _packageService.DetermineStartDate(goiGanNhat, homNay);
@@ -1176,7 +1173,7 @@ namespace BE.Services
                     if (khuyenMaiApDung != null)
                         _transactionService.RecordPromotionUsage(khuyenMaiApDung, memberId, goiTapMoi.MemberPackageId, goiTap.PlanId, bonusDays, discountAmt);
 
-                    DateTime now = DateTime.UtcNow;
+                    DateTime now = DateTime.Now;
 
                     // Gói mới đã Active -> nếu hội viên đang ở trạng thái "Expired" (do gói cũ hết hạn
                     // và chưa gia hạn kịp) thì đưa về "Active" trở lại.
@@ -1294,6 +1291,14 @@ namespace BE.Services
                     mp.MemberId == memberId &&
                     mp.StartDate <= homNay &&
                     mp.ExpiryDate >= homNay);
+        var history = await _context.FaceUpdateHistories
+    .Include(x => x.PerformedByNavigation)
+        .ThenInclude(x => x.Branches)
+    .Where(x => x.MemberId == memberId)
+    .FirstOrDefaultAsync();
+
+    var branches = history?.PerformedByNavigation?.Branches.FirstOrDefault();
+    var branchname=branches.BranchName;
 
             return new MemberProfileDto
             {
@@ -1304,7 +1309,7 @@ namespace BE.Services
                 Phone = hoiVien.Phone,
                 Gender = hoiVien.Gender,
                 JoinedAt = hoiVien.CreatedAt,
-
+                BranchName=branchname,
                 Update = capNhatGanNhat?.UpdatedAt.ToString("dd/MM/yyyy HH:mm"),
                 EmployeeName = capNhatGanNhat?.EmployeeName,
 

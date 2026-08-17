@@ -18,8 +18,8 @@ namespace BE.Services
             _context = context;
         }
 
-        // Tạo tài khoản mới cho member hoặc employee
-        // roleId: BẮT BUỘC vì accounts.role_id giờ là NOT NULL (FK -> role.role_id).
+        //Tạo tài khoản mới cho member hoặc employee
+        
         //         Với tài khoản hội viên, roleId phải là role_id của role 'Member'.
         //         Với tài khoản nhân viên, roleId là role_id tương ứng (Staff/Technician/Manager/Admin).
         public async Task<Account> CreateAccountAsync(long? memberId, long? employeeId, long roleId, string? phone, string? email, string password)
@@ -58,7 +58,7 @@ namespace BE.Services
             await CheckUsernameAsync(username, null);
             await CheckRoleExistsAsync(roleId);
 
-            DateTime now = DateTime.UtcNow;
+            DateTime now = DateTime.Now;
 
             Account newAccount = new Account();
             newAccount.MemberId = memberId;
@@ -119,7 +119,7 @@ namespace BE.Services
                 }
             }
 
-            account.UpdatedAt = DateTime.UtcNow;
+            account.UpdatedAt = DateTime.Now;
             await _context.SaveChangesAsync();
 
             return account;
@@ -133,7 +133,7 @@ namespace BE.Services
             await CheckRoleExistsAsync(newRoleId);
 
             account.RoleId = newRoleId;
-            account.UpdatedAt = DateTime.UtcNow;
+            account.UpdatedAt = DateTime.Now;
             await _context.SaveChangesAsync();
 
             return account;
@@ -151,7 +151,7 @@ namespace BE.Services
             }
 
             account.PasswordHash = PasswordHelper.HashPassword(newPassword);
-            account.UpdatedAt = DateTime.UtcNow;
+            account.UpdatedAt = DateTime.Now;
             await _context.SaveChangesAsync();
         }
 
@@ -161,7 +161,7 @@ namespace BE.Services
             Account account = await FindAccountAsync(accountId);
 
             account.PasswordHash = PasswordHelper.HashPassword(newPassword);
-            account.UpdatedAt = DateTime.UtcNow;
+            account.UpdatedAt = DateTime.Now;
 
             await RevokeAllTokensAsync(accountId);
             await _context.SaveChangesAsync();
@@ -172,13 +172,9 @@ namespace BE.Services
         // KHÔNG còn được lưu vào bảng accounts. Nếu cần lưu lý do khóa, hãy ghi
         // vào member_update_logs (hội viên) hoặc employee_update_logs (nhân viên)
         // ở tầng gọi service này — reason vẫn bắt buộc nhập để phục vụ việc đó.
-        public async Task<Account> LockAccountAsync(long accountId, string reason, long performedBy)
+        public async Task<Account> LockAccountAsync(long accountId, long performedBy)
         {
-            if (string.IsNullOrWhiteSpace(reason))
-            {
-                throw new ArgumentException("Phải cung cấp lý do khi khóa tài khoản.", nameof(reason));
-            }
-
+          
             Account account = await FindAccountAsync(accountId);
 
             if (account.Status == STATUS_SUSPENDED)
@@ -187,7 +183,7 @@ namespace BE.Services
             }
 
             account.Status = STATUS_SUSPENDED;
-            account.UpdatedAt = DateTime.UtcNow;
+            account.UpdatedAt = DateTime.Now;
 
             await RevokeAllTokensAsync(accountId);
             await _context.SaveChangesAsync();
@@ -206,7 +202,7 @@ namespace BE.Services
             }
 
             account.Status = STATUS_ACTIVE;
-            account.UpdatedAt = DateTime.UtcNow;
+            account.UpdatedAt = DateTime.Now;
 
             await _context.SaveChangesAsync();
 
@@ -261,10 +257,10 @@ namespace BE.Services
         }
 
         // Tìm tài khoản theo id, nếu không có thì ném lỗi
-        private async Task<Account> FindAccountAsync(long accountId)
+        public async Task<Account> FindAccountAsync(long accountId)
         {
-            Account? account = await _context.Accounts.FirstOrDefaultAsync(a => a.AccountId == accountId);
-
+            var account = await _context.Accounts.FirstOrDefaultAsync(a => a.AccountId == accountId);
+            
             if (account == null)
             {
                 throw new KeyNotFoundException($"Không tìm thấy tài khoản có Id = {accountId}.");
@@ -304,7 +300,7 @@ namespace BE.Services
         // Thu hồi tất cả refresh token còn hiệu lực của tài khoản
         private async Task RevokeAllTokensAsync(long accountId)
         {
-            DateTime now = DateTime.UtcNow;
+            DateTime now = DateTime.Now;
 
             List<RefreshToken> tokenList = await _context.RefreshTokens
                 .Where(t => t.AccountId == accountId && t.RevokedAt == null)

@@ -8,7 +8,7 @@ import {
     Users,
     Wallet
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
     Area,
     AreaChart,
@@ -21,68 +21,44 @@ import {
     XAxis,
     YAxis,
 } from "recharts";
+import adminApi from "../../api/adminApi"; // TODO: chỉnh lại đường dẫn cho khớp cấu trúc thư mục thật của bạn
 
 /**
  * DashboardOverview
  * ------------------------------------------------------------------
  * Nội dung trang "Tổng quan" — dùng làm children của <AdminLayout>.
- * Bản chỉnh sửa: KHÔNG dùng Tailwind, toàn bộ style chuyển sang CSS
- * thuần (nhúng trong thẻ <style> bên dưới, dùng class name riêng).
+ * Bản chỉnh sửa: gọi API thật GET /api/dashboard/admin-overview thay
+ * cho dữ liệu cứng, KHÔNG dùng Tailwind, style thuần CSS nhúng trong
+ * thẻ <style> bên dưới.
  * ------------------------------------------------------------------
  */
 
-const STATS = [
-    {
-        label: "Tổng hội viên",
-        value: "12,458",
-        change: "+12.5% so với tháng trước",
-        trend: "up",
-        icon: Users,
-        color: "indigo",
-    },
-    {
-        label: "Doanh thu tháng",
-        value: "1,248,000,000 đ",
-        change: "+18.7% so với tháng trước",
-        trend: "up",
-        icon: Wallet,
-        color: "emerald",
-    },
+// Bảng màu để gán vòng tròn cho donut theo chi nhánh (BE không trả màu)
+const BRANCH_COLORS = ["#6366f1", "#22c55e", "#f59e0b", "#a855f7", "#f43f5e", "#0ea5e9", "#eab308", "#14b8a6"];
 
-    {
-        label: "Chi nhánh",
-        value: "5",
-        change: "Không đổi",
-        trend: "flat",
-        icon: Building2,
-        color: "sky",
-    },
-    {
-        label: "Nhân viên",
-        value: "48",
-        change: "+2.1% so với tháng trước",
-        trend: "up",
-        icon: UserCog,
-        color: "purple",
-    },
+const MONTHS_OPTIONS = [
+    { label: "6 tháng", value: 6 },
+    { label: "3 tháng", value: 3 },
+    { label: "12 tháng", value: 12 },
 ];
 
-const REVENUE_DATA = [
-    { month: "Tháng 1", value: 820 },
-    { month: "Tháng 2", value: 1120 },
-    { month: "Tháng 3", value: 760 },
-    { month: "Tháng 4", value: 1180 },
-    { month: "Tháng 5", value: 1040 },
-    { month: "Tháng 6", value: 1350 },
-];
+function formatCurrencyVnd(value) {
+    const n = Number(value) || 0;
+    return `${n.toLocaleString("vi-VN")} đ`;
+}
 
-const BRANCH_DATA = [
-    { name: "GymFit Quận 1", value: 2845, pct: "22.8%", color: "#6366f1" },
-    { name: "GymFit Quận 7", value: 2562, pct: "20.6%", color: "#22c55e" },
-    { name: "GymFit Gò Vấp", value: 2341, pct: "18.8%", color: "#f59e0b" },
-    { name: "GymFit Bình Thạnh", value: 2527, pct: "20.3%", color: "#a855f7" },
-    { name: "GymFit Thủ Đức", value: 2183, pct: "17.5%", color: "#f43f5e" },
-];
+function formatChangeText(percent) {
+    if (percent === null || percent === undefined) return "Không đổi";
+    const rounded = Math.round(Math.abs(percent) * 10) / 10;
+    if (rounded === 0) return "Không đổi";
+    const sign = percent > 0 ? "+" : "-";
+    return `${sign}${rounded}% so với tháng trước`;
+}
+
+function trendFromPercent(percent) {
+    if (!percent) return "flat";
+    return percent > 0 ? "up" : "down";
+}
 
 function TrendBadge({ trend, children }) {
     const Icon = trend === "up" ? TrendingUp : trend === "down" ? TrendingDown : Minus;
@@ -114,21 +90,22 @@ function StatCard({ stat }) {
     );
 }
 
-function RevenueChart() {
-    const [range, setRange] = useState("6 tháng");
+function RevenueChart({ data, months, onMonthsChange }) {
     return (
         <div className="panel panel-revenue">
             <div className="panel-head">
-                <h3 className="panel-title">Doanh thu 6 tháng gần nhất</h3>
+                <h3 className="panel-title">Doanh thu {months} tháng gần nhất</h3>
                 <div className="select-wrap">
                     <select
-                        value={range}
-                        onChange={(e) => setRange(e.target.value)}
+                        value={months}
+                        onChange={(e) => onMonthsChange(Number(e.target.value))}
                         className="select"
                     >
-                        <option>6 tháng</option>
-                        <option>3 tháng</option>
-                        <option>12 tháng</option>
+                        {MONTHS_OPTIONS.map((opt) => (
+                            <option key={opt.value} value={opt.value}>
+                                {opt.label}
+                            </option>
+                        ))}
                     </select>
                     <ChevronDown size={13} className="select-chevron" />
                 </div>
@@ -136,7 +113,7 @@ function RevenueChart() {
 
             <div className="chart-box">
                 <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart data={REVENUE_DATA} margin={{ top: 10, right: 8, left: -18, bottom: 0 }}>
+                    <AreaChart data={data} margin={{ top: 10, right: 8, left: -18, bottom: 0 }}>
                         <defs>
                             <linearGradient id="revenueFill" x1="0" y1="0" x2="0" y2="1">
                                 <stop offset="0%" stopColor="#6366f1" stopOpacity={0.25} />
@@ -180,8 +157,8 @@ function RevenueChart() {
     );
 }
 
-function BranchDonut() {
-    const total = BRANCH_DATA.reduce((s, b) => s + b.value, 0);
+function BranchDonut({ data }) {
+    const total = data.reduce((s, b) => s + b.value, 0);
     return (
         <div className="panel panel-branch">
             <h3 className="panel-title">Hội viên theo chi nhánh</h3>
@@ -191,7 +168,7 @@ function BranchDonut() {
                     <ResponsiveContainer width="100%" height="100%">
                         <PieChart>
                             <Pie
-                                data={BRANCH_DATA}
+                                data={data}
                                 dataKey="value"
                                 nameKey="name"
                                 innerRadius={55}
@@ -199,7 +176,7 @@ function BranchDonut() {
                                 paddingAngle={2}
                                 stroke="none"
                             >
-                                {BRANCH_DATA.map((b, i) => (
+                                {data.map((b, i) => (
                                     <Cell key={i} fill={b.color} />
                                 ))}
                             </Pie>
@@ -212,7 +189,10 @@ function BranchDonut() {
                 </div>
 
                 <div className="legend">
-                    {BRANCH_DATA.map((b) => (
+                    {data.length === 0 && (
+                        <p className="legend-empty">Chưa có dữ liệu hội viên theo chi nhánh</p>
+                    )}
+                    {data.map((b) => (
                         <div key={b.name} className="legend-row">
                             <span className="legend-dot" style={{ backgroundColor: b.color }} />
                             <span className="legend-name">{b.name}</span>
@@ -228,6 +208,89 @@ function BranchDonut() {
 }
 
 export default function DashboardOverview() {
+    const [months, setMonths] = useState(6);
+    const [overview, setOverview] = useState(null);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
+
+    useEffect(() => {
+        let ignore = false;
+
+        async function fetchOverview() {
+            setLoading(true);
+            setError(null);
+            try {
+                const res = await adminApi.getAdminOverview({ months });
+                // authApi có thể trả thẳng data hoặc bọc trong { data }, tuỳ config —
+                // fallback cả 2 trường hợp cho an toàn.
+                const payload = res?.data ?? res;
+                if (!ignore) setOverview(payload);
+            } catch (err) {
+                console.error("Lỗi khi tải dashboard tổng quan:", err);
+                if (!ignore) setError("Không thể tải dữ liệu tổng quan. Vui lòng thử lại.");
+            } finally {
+                if (!ignore) setLoading(false);
+            }
+        }
+
+        fetchOverview();
+        return () => {
+            ignore = true;
+        };
+    }, [months]);
+
+    // ---- Map dữ liệu BE -> format hiển thị cho STATS ----
+    const stats = overview?.stats;
+
+    const STATS = [
+        {
+            label: "Tổng hội viên",
+            value: stats ? stats.totalMembers.toLocaleString("vi-VN") : "—",
+            change: formatChangeText(stats?.totalMembersChangePercent),
+            trend: trendFromPercent(stats?.totalMembersChangePercent),
+            icon: Users,
+            color: "indigo",
+        },
+        {
+            label: "Doanh thu tháng",
+            value: stats ? formatCurrencyVnd(stats.monthlyRevenue) : "—",
+            change: formatChangeText(stats?.monthlyRevenueChangePercent),
+            trend: trendFromPercent(stats?.monthlyRevenueChangePercent),
+            icon: Wallet,
+            color: "emerald",
+        },
+        {
+            label: "Chi nhánh",
+            value: stats ? String(stats.branchCount) : "—",
+            change: "Tổng số chi nhánh hiện tại",
+            trend: "flat",
+            icon: Building2,
+            color: "sky",
+        },
+        {
+            label: "Nhân viên",
+            value: stats ? stats.employeeCount.toLocaleString("vi-VN") : "—",
+            change: formatChangeText(stats?.employeeChangePercent),
+            trend: trendFromPercent(stats?.employeeChangePercent),
+            icon: UserCog,
+            color: "purple",
+        },
+    ];
+
+    // ---- Map dữ liệu doanh thu theo tháng -> đơn vị triệu (M) cho chart ----
+    const REVENUE_DATA = (overview?.revenueByMonth ?? []).map((r) => ({
+        month: r.monthLabel,
+        value: Math.round((Number(r.revenue) || 0) / 1_000_000),
+    }));
+
+    // ---- Map dữ liệu hội viên theo chi nhánh, tự gán màu ----
+    const BRANCH_DATA = (overview?.memberByBranch ?? []).map((b, i) => ({
+        name: b.branchName,
+        value: b.memberCount,
+        pct: `${b.percent}%`,
+        color: BRANCH_COLORS[i % BRANCH_COLORS.length],
+    }));
+
     return (
         <div className="dashboard">
             <style>{`
@@ -260,6 +323,16 @@ export default function DashboardOverview() {
           margin: 4px 0 0;
           font-size: 14px;
           color: #64748b;
+          font-weight: 500;
+        }
+
+        .error-banner {
+          border-radius: 10px;
+          border: 1px solid #fecaca;
+          background: #fef2f2;
+          color: #b91c1c;
+          padding: 10px 14px;
+          font-size: 13px;
           font-weight: 500;
         }
 
@@ -444,6 +517,11 @@ export default function DashboardOverview() {
           flex-direction: column;
           gap: 10px;
         }
+        .legend-empty {
+          font-size: 13px;
+          color: #94a3b8;
+          margin: 0;
+        }
         .legend-row {
           display: flex;
           align-items: center;
@@ -478,6 +556,8 @@ export default function DashboardOverview() {
                 </p>
             </div>
 
+            {error && <div className="error-banner">{error}</div>}
+
             {/* stat cards */}
             <div className="stat-grid">
                 {STATS.map((s) => (
@@ -487,9 +567,15 @@ export default function DashboardOverview() {
 
             {/* charts */}
             <div className="charts-row">
-                <RevenueChart />
-                <BranchDonut />
+                <RevenueChart data={REVENUE_DATA} months={months} onMonthsChange={setMonths} />
+                <BranchDonut data={BRANCH_DATA} />
             </div>
+
+            {loading && !overview && (
+                <p className="welcome-sub" style={{ textAlign: "center" }}>
+                    Đang tải dữ liệu...
+                </p>
+            )}
         </div>
     );
 }

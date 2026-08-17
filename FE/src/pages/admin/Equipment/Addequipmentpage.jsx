@@ -5,7 +5,7 @@
 // - Manager: chỉ được chọn trong các chi nhánh mình quản lý (managedBranches).
 // - Staff/Guest: không có quyền, nên chặn truy cập trang này ở phía route (không xử lý ở đây).
 //
-// FIX LẦN NÀY: "TypeError: branches.map is not a function"
+// FIX: "TypeError: branches.map is not a function"
 // managerApi.getEquipmentCategories() / managerApi.getBranches() không trả
 // thẳng về MẢNG mà trả về OBJECT dạng { items: [...] } (giống hệt bug đã
 // gặp ở EquipmentListPage.jsx). Code cũ gán thẳng response vào state
@@ -16,6 +16,9 @@
 // FIX: file này thực tế nằm ở src/pages/manager/Equiment/AddEquipmentPage.jsx
 // (có thêm cấp "manager/"), nên phải lùi ĐÚNG 3 cấp tới src/ rồi vào api/managerApi:
 // "../../../api/managerApi".
+//
+// STYLE: đồng bộ giao diện với NewsCreateOfAdmin.jsx — khung viền emerald bo tròn,
+// tiêu đề Source Serif 4, form card trắng, input nền xám nhạt bo tròn.
 
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
@@ -37,130 +40,6 @@ function unwrapList(res) {
     if (res && Array.isArray(res.results)) return res.results;
     return [];
 }
-
-// CSS dùng chung layout/màu với EquipmentListPage (tông navy + cyan giống sidebar).
-// Viết thẳng trong file, nhúng qua thẻ <style> bên dưới — không tách file .css riêng.
-const EQUIPMENT_STYLES = `
-:root {
-    /* Đồng bộ hẳn với nền/tông của sidebar (navy đậm), không chỉ mượn màu nhấn */
-    --eqm-navy-900: #0b1120;
-    --eqm-navy-800: #1e293b;
-    --eqm-navy-700: #24304a;
-    --eqm-cyan-500: #06b6d4;
-    --eqm-cyan-600: #0891b2;
-    --eqm-cyan-100: rgba(6, 182, 212, 0.16);
-
-    --eqm-bg: var(--eqm-navy-900);
-    --eqm-surface: var(--eqm-navy-800);
-    --eqm-surface-muted: var(--eqm-navy-700);
-    --eqm-surface-hover: #2b3a54;
-    --eqm-border: #334155;
-
-    --eqm-text-900: #f1f5f9;
-    --eqm-text-600: #94a3b8;
-    --eqm-text-400: #64748b;
-
-    --eqm-danger: #f87171;
-    --eqm-danger-bg: rgba(248, 113, 113, 0.14);
-    --eqm-success: #34d399;
-    --eqm-success-bg: rgba(52, 211, 153, 0.14);
-
-    --eqm-radius: 14px;
-    --eqm-radius-sm: 10px;
-    --eqm-shadow: 0 1px 0 rgba(255, 255, 255, 0.03), 0 14px 28px -16px rgba(0, 0, 0, 0.7);
-}
-
-.eqm-page {
-    min-height: 100%;
-    background: var(--eqm-bg);
-    padding: 28px 24px 60px;
-    color: var(--eqm-text-900);
-    font-family: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
-}
-
-.eqm-container { max-width: 1180px; margin: 0 auto; }
-
-.eqm-back-link {
-    background: none; border: none; color: var(--eqm-cyan-500);
-    font-size: 14px; font-weight: 600; cursor: pointer; padding: 0; margin-bottom: 16px;
-}
-.eqm-back-link:hover { text-decoration: underline; filter: brightness(1.1); }
-
-.eqm-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 20px; flex-wrap: wrap; }
-.eqm-header-titles { display: flex; align-items: center; gap: 14px; }
-.eqm-header-icon {
-    display: flex; align-items: center; justify-content: center;
-    width: 44px; height: 44px; border-radius: 12px; font-size: 20px;
-    background: linear-gradient(135deg, rgba(6, 182, 212, 0.3), rgba(6, 182, 212, 0.08));
-    box-shadow: inset 0 0 0 1px rgba(6, 182, 212, 0.4);
-}
-.eqm-header-titles h1 { margin: 0; font-size: 22px; font-weight: 700; color: var(--eqm-text-900); }
-.eqm-header-titles p { margin: 2px 0 0; font-size: 13.5px; color: var(--eqm-text-400); }
-
-.eqm-btn {
-    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
-    border: none; border-radius: var(--eqm-radius-sm); padding: 10px 18px;
-    font-size: 14px; font-weight: 600; cursor: pointer;
-    transition: transform 0.05s ease, filter 0.15s ease, background 0.15s ease;
-}
-.eqm-btn:disabled { opacity: 0.6; cursor: not-allowed; }
-.eqm-btn:active:not(:disabled) { transform: translateY(1px); }
-.eqm-btn-primary { background: linear-gradient(135deg, var(--eqm-cyan-500), var(--eqm-cyan-600)); color: #fff; }
-.eqm-btn-primary:hover:not(:disabled) { filter: brightness(1.08); }
-.eqm-btn-secondary { background: var(--eqm-surface-muted); color: var(--eqm-text-600); box-shadow: inset 0 0 0 1px var(--eqm-border); }
-.eqm-btn-secondary:hover:not(:disabled) { background: var(--eqm-surface-hover); }
-.eqm-btn-danger { background: var(--eqm-danger-bg); color: var(--eqm-danger); }
-.eqm-btn-danger:hover:not(:disabled) { filter: brightness(0.97); }
-
-.eqm-banner { border-radius: var(--eqm-radius-sm); padding: 12px 16px; font-size: 13.5px; font-weight: 500; margin-bottom: 18px; }
-.eqm-banner-error { background: var(--eqm-danger-bg); color: var(--eqm-danger); }
-.eqm-banner-success { background: var(--eqm-success-bg); color: var(--eqm-success); }
-.eqm-banner-actions { margin-top: 8px; display: flex; gap: 8px; }
-.eqm-banner-link { background: none; border: none; padding: 0; font: inherit; font-weight: 700; text-decoration: underline; cursor: pointer; color: inherit; }
-
-.eqm-form-card { background: var(--eqm-surface); border: 1px solid var(--eqm-border); border-radius: var(--eqm-radius); box-shadow: var(--eqm-shadow); padding: 26px; }
-.eqm-form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px 20px; }
-.eqm-field-full { grid-column: 1 / -1; }
-.eqm-field { display: flex; flex-direction: column; gap: 6px; }
-.eqm-field label { font-size: 12.5px; font-weight: 700; letter-spacing: 0.03em; text-transform: uppercase; color: var(--eqm-text-600); }
-.eqm-required { color: var(--eqm-danger); }
-
-.eqm-input, .eqm-select, .eqm-textarea {
-    border: 1px solid var(--eqm-border); border-radius: var(--eqm-radius-sm); padding: 10px 12px;
-    font-size: 14px; color: var(--eqm-text-900); background: var(--eqm-surface); outline: none;
-    transition: border-color 0.15s ease, box-shadow 0.15s ease; font-family: inherit;
-}
-.eqm-input:focus, .eqm-select:focus, .eqm-textarea:focus { border-color: var(--eqm-cyan-500); box-shadow: 0 0 0 3px var(--eqm-cyan-100); }
-.eqm-input:disabled, .eqm-select:disabled { background: var(--eqm-surface-muted); color: var(--eqm-text-400); cursor: not-allowed; }
-.eqm-textarea { min-height: 96px; resize: vertical; }
-.eqm-input::placeholder, .eqm-textarea::placeholder { color: var(--eqm-text-400); }
-.eqm-error-text { font-size: 12px; color: var(--eqm-danger); }
-.eqm-hint-text { font-size: 12px; color: var(--eqm-text-400); }
-
-.eqm-dropzone {
-    display: flex; align-items: center; gap: 14px; border: 1.5px dashed var(--eqm-border);
-    border-radius: var(--eqm-radius-sm); padding: 16px; cursor: pointer; background: var(--eqm-surface-muted);
-    transition: border-color 0.15s ease, background 0.15s ease;
-}
-.eqm-dropzone:hover { border-color: var(--eqm-cyan-500); }
-.eqm-dropzone-active { border-color: var(--eqm-cyan-500); background: var(--eqm-cyan-100); }
-.eqm-dropzone-preview {
-    display: flex; align-items: center; justify-content: center; width: 56px; height: 56px;
-    border-radius: 10px; overflow: hidden; background: var(--eqm-surface);
-    box-shadow: inset 0 0 0 1px var(--eqm-border); flex-shrink: 0;
-}
-.eqm-dropzone-preview img { width: 100%; height: 100%; object-fit: cover; }
-.eqm-dropzone-text { display: flex; flex-direction: column; gap: 2px; font-size: 13px; }
-.eqm-dropzone-text strong { color: var(--eqm-text-900); font-size: 14px; }
-.eqm-dropzone-text span { color: var(--eqm-text-400); }
-
-.eqm-form-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 24px; padding-top: 18px; border-top: 1px solid var(--eqm-border); }
-
-@media (max-width: 720px) {
-    .eqm-form-grid { grid-template-columns: 1fr; }
-    .eqm-page { padding: 18px 14px 48px; }
-}
-`;
 
 const MAX_IMAGE_MB = 5;
 
@@ -297,32 +176,296 @@ export default function AddEquipmentPageOfAdmin() {
 
     return (
         <div className="eqm-page">
-            <style>{EQUIPMENT_STYLES}</style>
-            <div className="eqm-container">
+            <style>{`
+                @import url('https://fonts.googleapis.com/css2?family=Source+Serif+4:wght@600;700&family=Inter:wght@400;500;600;700;800&display=swap');
+
+                .eqm-page {
+                    /* ---- palette : white page, bold framed border, editorial emerald ---- */
+                    --eqm-page-bg: #ffffff;
+                    --eqm-frame-border: #0f766e;
+                    --eqm-bg-card: #ffffff;
+                    --eqm-bg-input: #f7faf9;
+                    --eqm-border-soft: #dceee7;
+                    --eqm-border-input: #dbe4e0;
+                    --eqm-text-primary: #101815;
+                    --eqm-text-secondary: #6b756f;
+
+                    --eqm-accent-1: #047857;
+                    --eqm-accent-2: #10b981;
+                    --eqm-accent-soft: #d7f3e3;
+                    --eqm-red: #e11d48;
+                    --eqm-red-soft: rgba(225, 29, 72, 0.08);
+                    --eqm-green-soft: rgba(5, 150, 105, 0.08);
+
+                    --eqm-radius-lg: 20px;
+                    --eqm-radius-md: 12px;
+
+                    --eqm-shadow-card:
+                        0 1px 2px rgba(15, 23, 42, 0.04),
+                        0 14px 30px -14px rgba(4, 120, 87, 0.22),
+                        0 30px 60px -30px rgba(15, 23, 42, 0.16);
+
+                    min-height: 100%;
+                    margin: 0 auto;
+                    padding: 16px;
+                    background: var(--eqm-page-bg);
+                    color: var(--eqm-text-primary);
+                    font-family: "Inter", "Segoe UI", system-ui, sans-serif;
+                    box-sizing: border-box;
+                }
+
+                .eqm-inner {
+                    max-width: 760px;
+                    margin: 0 auto;
+                    padding: 18px;
+                    border: 2px solid var(--eqm-frame-border);
+                    border-radius: 20px;
+                    background:
+                        radial-gradient(600px 260px at 100% 0%, rgba(16, 185, 129, 0.07), transparent 70%),
+                        #ffffff;
+                    box-shadow:
+                        0 0 0 6px rgba(16, 185, 129, 0.08),
+                        0 30px 60px -30px rgba(4, 120, 87, 0.35);
+                }
+
+                .eqm-back-link {
+                    background: none;
+                    border: none;
+                    color: var(--eqm-accent-1);
+                    font-size: 13px;
+                    font-weight: 700;
+                    cursor: pointer;
+                    padding: 0;
+                    margin-bottom: 14px;
+                }
+                .eqm-back-link:hover { text-decoration: underline; filter: brightness(1.1); }
+
+                .eqm-eyebrow {
+                    display: inline-flex;
+                    align-items: center;
+                    gap: 6px;
+                    margin-bottom: 8px;
+                    padding: 3px 9px;
+                    border-radius: 999px;
+                    background: var(--eqm-accent-soft);
+                    border: 1px solid rgba(16, 185, 129, 0.35);
+                    color: var(--eqm-accent-1);
+                    font-size: 10px;
+                    font-weight: 800;
+                    letter-spacing: 0.08em;
+                    text-transform: uppercase;
+                }
+
+                .eqm-header { margin-bottom: 14px; }
+
+                .eqm-title {
+                    margin: 0 0 4px;
+                    font-family: "Source Serif 4", Georgia, serif;
+                    font-size: 24px;
+                    font-weight: 700;
+                    letter-spacing: -0.01em;
+                    color: var(--eqm-text-primary);
+                }
+
+                .eqm-subtitle {
+                    margin: 0;
+                    font-size: 12.5px;
+                    color: var(--eqm-text-secondary);
+                }
+
+                .eqm-banner {
+                    display: flex;
+                    align-items: center;
+                    gap: 8px;
+                    border-radius: var(--eqm-radius-md);
+                    padding: 11px 14px;
+                    font-size: 13px;
+                    font-weight: 600;
+                    margin-bottom: 14px;
+                }
+                .eqm-banner-error {
+                    background: var(--eqm-red-soft);
+                    border: 1px solid rgba(225, 29, 72, 0.22);
+                    color: var(--eqm-red);
+                }
+                .eqm-banner-success {
+                    background: var(--eqm-green-soft);
+                    border: 1px solid rgba(5, 150, 105, 0.22);
+                    color: var(--eqm-accent-1);
+                }
+                .eqm-banner-actions { margin-top: 8px; display: flex; gap: 8px; }
+                .eqm-banner-link {
+                    background: none; border: none; padding: 0; font: inherit;
+                    font-weight: 700; text-decoration: underline; cursor: pointer; color: inherit;
+                }
+
+                .eqm-form-card {
+                    position: relative;
+                    background: var(--eqm-bg-card);
+                    border: 1.5px solid var(--eqm-border-soft);
+                    border-radius: var(--eqm-radius-lg);
+                    box-shadow: var(--eqm-shadow-card);
+                    padding: 18px 20px;
+                    overflow: hidden;
+                }
+                .eqm-form-card::before {
+                    content: "";
+                    position: absolute;
+                    top: 0; left: 0; right: 0;
+                    height: 4px;
+                    background: linear-gradient(90deg, var(--eqm-accent-1), var(--eqm-accent-2) 60%, #6ee7b7);
+                }
+
+                .eqm-form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 16px; }
+                .eqm-field-full { grid-column: 1 / -1; }
+                .eqm-field { display: flex; flex-direction: column; gap: 6px; }
+                .eqm-field label {
+                    font-size: 12.5px;
+                    font-weight: 700;
+                    color: var(--eqm-text-primary);
+                }
+                .eqm-required { color: var(--eqm-red); }
+
+                .eqm-input, .eqm-select, .eqm-textarea {
+                    width: 100%;
+                    padding: 9px 12px;
+                    border-radius: var(--eqm-radius-md);
+                    border: 1.5px solid var(--eqm-border-input);
+                    background: var(--eqm-bg-input);
+                    color: var(--eqm-text-primary);
+                    font-size: 13px;
+                    font-family: inherit;
+                    outline: none;
+                    box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.04);
+                    transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+                    box-sizing: border-box;
+                }
+                .eqm-input:hover, .eqm-select:hover, .eqm-textarea:hover { border-color: #b9c4d6; }
+                .eqm-input::placeholder, .eqm-textarea::placeholder { color: #a7afc0; }
+                .eqm-input:focus, .eqm-select:focus, .eqm-textarea:focus {
+                    border-color: var(--eqm-accent-1);
+                    background: #ffffff;
+                    box-shadow: 0 0 0 4px var(--eqm-accent-soft);
+                }
+                .eqm-input:disabled, .eqm-select:disabled {
+                    background: var(--eqm-border-soft);
+                    color: var(--eqm-text-secondary);
+                    cursor: not-allowed;
+                }
+                .eqm-textarea { resize: vertical; min-height: 90px; line-height: 1.55; }
+
+                .eqm-select {
+                    cursor: pointer;
+                    appearance: none;
+                    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%237c869c' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+                    background-repeat: no-repeat;
+                    background-position: right 12px center;
+                    padding-right: 34px;
+                }
+
+                .eqm-error-text { font-size: 12px; color: var(--eqm-red); }
+                .eqm-hint-text { font-size: 12px; color: var(--eqm-text-secondary); }
+
+                .eqm-dropzone {
+                    display: flex;
+                    align-items: center;
+                    gap: 14px;
+                    border: 1.5px dashed var(--eqm-border-soft);
+                    border-radius: var(--eqm-radius-md);
+                    padding: 14px;
+                    cursor: pointer;
+                    background: var(--eqm-bg-input);
+                    transition: border-color 0.15s ease, background 0.15s ease;
+                }
+                .eqm-dropzone:hover { border-color: var(--eqm-accent-1); }
+                .eqm-dropzone-active { border-color: var(--eqm-accent-1); background: var(--eqm-accent-soft); }
+                .eqm-dropzone-preview {
+                    display: flex; align-items: center; justify-content: center;
+                    width: 52px; height: 52px; border-radius: 10px; overflow: hidden;
+                    background: #ffffff; box-shadow: inset 0 0 0 1px var(--eqm-border-input); flex-shrink: 0;
+                }
+                .eqm-dropzone-preview img { width: 100%; height: 100%; object-fit: cover; }
+                .eqm-dropzone-text { display: flex; flex-direction: column; gap: 2px; font-size: 13px; }
+                .eqm-dropzone-text strong { color: var(--eqm-text-primary); font-size: 13.5px; }
+                .eqm-dropzone-text span { color: var(--eqm-text-secondary); font-size: 12px; }
+
+                .eqm-form-actions {
+                    display: flex;
+                    justify-content: flex-end;
+                    gap: 8px;
+                    margin-top: 4px;
+                    padding-top: 12px;
+                    border-top: 1px solid var(--eqm-border-soft);
+                }
+
+                .eqm-btn {
+                    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+                    border: none; border-radius: var(--eqm-radius-md); padding: 9px 18px;
+                    font-size: 13px; font-weight: 700; cursor: pointer;
+                    transition: transform 0.05s ease, filter 0.15s ease, box-shadow 0.15s ease;
+                }
+                .eqm-btn:disabled { opacity: 0.65; cursor: not-allowed; box-shadow: none; }
+                .eqm-btn:active:not(:disabled) { transform: translateY(0); }
+                .eqm-btn-primary {
+                    background: linear-gradient(135deg, var(--eqm-accent-2), var(--eqm-accent-1));
+                    color: #ffffff;
+                    box-shadow: 0 14px 26px -12px rgba(5, 150, 105, 0.55);
+                }
+                .eqm-btn-primary:hover:not(:disabled) {
+                    filter: brightness(1.05);
+                    transform: translateY(-1px);
+                    box-shadow: 0 18px 30px -12px rgba(5, 150, 105, 0.6);
+                }
+                .eqm-btn-secondary {
+                    background: #ffffff;
+                    color: var(--eqm-text-secondary);
+                    border: 1.5px solid var(--eqm-border-input);
+                }
+                .eqm-btn-secondary:hover:not(:disabled) {
+                    border-color: #b9c4d6;
+                    color: var(--eqm-text-primary);
+                    box-shadow: 0 6px 16px -8px rgba(15, 23, 42, 0.18);
+                }
+
+                .eqm-input:focus-visible, .eqm-select:focus-visible, .eqm-textarea:focus-visible,
+                .eqm-btn:focus-visible {
+                    outline: 2px solid var(--eqm-accent-2);
+                    outline-offset: 2px;
+                }
+
+                @media (max-width: 640px) {
+                    .eqm-page { padding: 20px 16px 28px; }
+                    .eqm-title { font-size: 22px; }
+                    .eqm-form-grid { grid-template-columns: 1fr; }
+                    .eqm-form-card { padding: 18px 16px; border-radius: 18px; }
+                    .eqm-form-actions { flex-direction: column-reverse; }
+                    .eqm-btn { width: 100%; text-align: center; }
+                }
+            `}</style>
+
+            <div className="eqm-inner">
                 <button className="eqm-back-link" onClick={() => navigate("/manager/equipment")}>
                     ← Quay lại danh sách
                 </button>
 
                 <div className="eqm-header">
-                    <div className="eqm-header-titles">
-                        <span className="eqm-header-icon" aria-hidden="true">➕</span>
-                        <div>
-                            <h1>Thêm thiết bị mới</h1>
-                            <p>Điền thông tin thiết bị và tải ảnh minh hoạ (nếu có)</p>
-                        </div>
-                    </div>
+                    <span className="eqm-eyebrow">Thiết bị mới</span>
+                    <h1 className="eqm-title">Thêm thiết bị</h1>
+                    <p className="eqm-subtitle">Điền thông tin thiết bị và tải ảnh minh hoạ (nếu có)</p>
                 </div>
 
                 {banner && (
                     <div className={`eqm-banner eqm-banner-${banner.type}`}>
-                        {banner.message}
-                        {loadError && banner.type === "error" && (
-                            <div className="eqm-banner-actions">
-                                <button className="eqm-banner-link" onClick={loadOptions}>
-                                    Thử lại
-                                </button>
-                            </div>
-                        )}
+                        <div>
+                            {banner.message}
+                            {loadError && banner.type === "error" && (
+                                <div className="eqm-banner-actions">
+                                    <button className="eqm-banner-link" onClick={loadOptions}>
+                                        Thử lại
+                                    </button>
+                                </div>
+                            )}
+                        </div>
                     </div>
                 )}
 
@@ -416,7 +559,7 @@ export default function AddEquipmentPageOfAdmin() {
                                     {imagePreview ? (
                                         <img src={imagePreview} alt="Xem trước" />
                                     ) : (
-                                        <span style={{ fontSize: 22 }}>📷</span>
+                                        <span style={{ fontSize: 20 }}>📷</span>
                                     )}
                                 </div>
                                 <div className="eqm-dropzone-text">

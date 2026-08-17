@@ -95,8 +95,8 @@ public class IncidentService
             ReportedByMemberId = memberId,
             ReportedByEmployeeId = employeeId,
             Status = "PendingApproval",
-            CreatedAt = DateTime.UtcNow,
-            UpdatedAt = DateTime.UtcNow
+            CreatedAt = DateTime.Now,
+            UpdatedAt = DateTime.Now
         };
 
         _db.Incidents.Add(incident);
@@ -115,7 +115,7 @@ public class IncidentService
                     IncidentId = incident.IncidentId,
                     MediaType = "Image",
                     MediaUrl = url,
-                    CreatedAt = DateTime.UtcNow
+                    CreatedAt = DateTime.Now
                 });
 
                 hasMedia = true;
@@ -131,7 +131,7 @@ public class IncidentService
                 IncidentId = incident.IncidentId,
                 MediaType = "Video",
                 MediaUrl = url,
-                CreatedAt = DateTime.UtcNow
+                CreatedAt = DateTime.Now
             });
 
             hasMedia = true;
@@ -417,7 +417,7 @@ public class IncidentService
 
         incident.Title = dto.Title;
         incident.Description = dto.Description;
-        incident.UpdatedAt = DateTime.UtcNow;
+        incident.UpdatedAt = DateTime.Now;
 
         await _db.SaveChangesAsync();
     }
@@ -448,7 +448,7 @@ public class IncidentService
 
         incident.Status = dto.Status;
         incident.RejectReason = dto.Status == "Cancelled" ? dto.RejectReason : null;
-        incident.UpdatedAt = DateTime.UtcNow;
+        incident.UpdatedAt = DateTime.Now;
 
         await _db.SaveChangesAsync();
     }

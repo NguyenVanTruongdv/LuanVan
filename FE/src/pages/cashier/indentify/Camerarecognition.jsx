@@ -15,48 +15,6 @@ import {
 import { useCallback, useEffect, useRef, useState } from "react";
 import cashierApi from "../../../api/cashierApi";
 
-/* =========================================================================
- * TRANG GỘP CHECK-IN + CHECK-OUT
- * - Camera CHỈ quét khuôn mặt theo từng đợt lấy mẫu (poll) mỗi
- *   CK_POLL_INTERVAL_MS (mặc định 300ms), KHÔNG quét liên tục theo từng
- *   khung hình. Ưu tiên dùng Shape Detection API (`window.FaceDetector`)
- *   có sẵn trong trình duyệt (hiếm khi có, nằm sau cờ thử nghiệm); nếu
- *   không có thì dùng MediaPipe Tasks Vision (model BlazeFace của Google)
- *   làm phương án dự phòng chính — chạy hoàn toàn cục bộ bằng WASM/GPU,
- *   độ chính xác cao hơn nhiều so với các thư viện kiểu cũ (tracking.js).
- * - Chỉ khi phát hiện ĐÚNG 1 khuôn mặt và khuôn mặt đó đứng yên (tâm +
- *   kích thước không đổi nhiều) liên tục tối thiểu CK_STABLE_HOLD_MS
- *   (mặc định 500ms) thì mới chụp khung hình đầy đủ & gửi lên BE để
- *   nhận diện.
- * - Sau khi gọi BE xong (dù thành công/lỗi/không nhận diện được), trang
- *   giữ kết quả hiển thị trên khung camera trong CK_PAUSE_AFTER_CALL_MS
- *   (mặc định 1.2s) rồi mới dọn overlay & quét tiếp — áp dụng GIỐNG HỆT
- *   nhau cho cả Check-in lẫn Check-out.
- * - LOG: chỉ ghi console.log ở các mốc quan trọng (phát hiện đủ điều kiện
- *   gửi BE, gọi API, nhận kết quả) — KHÔNG log ở mỗi vòng poll (300ms/lần)
- *   để tránh console phình to khi camera chạy 24/7.
- * - QUAN TRỌNG — khớp với BE (bảng `check_ins` + `RekognitionFaceService`):
- *   Check-in và Check-out CÙNG dùng 1 bảng `check_ins`: 1 dòng = 1 lượt
- *   "vào tập" (check_in_time bắt buộc) và có thể được CẬP NHẬT thêm
- *   check_out_time khi hội viên ra về (chứ KHÔNG tạo dòng mới). Vì vậy BE
- *   chỉ cần 1 endpoint DUY NHẤT cho cả 2 trạm camera:
- *     POST /api/identify   { image, action: "checkin"|"checkout", branchId }
- *   BE tự làm hết trong 1 request: nhận diện khuôn mặt qua AWS Rekognition
- *   (SearchFacesByImage trên RekognitionFaceService — KHÔNG gửi FaceId từ
- *   FE, FE chỉ gửi ẢNH) -> map ra memberId (hoặc employeeId nếu khuôn mặt
- *   là của nhân viên) -> kiểm tra điều kiện -> nếu action=checkin thì
- *   INSERT dòng check_ins mới; nếu action=checkout thì tìm dòng check_ins
- *   đang mở (check_out_time IS NULL) của hội viên đó và UPDATE
- *   check_out_time/check_out_method.
- *   BE có thể trả về `isEmployee: true` kèm object `employee` (thay vì
- *   `member`) khi khuôn mặt nhận diện được là của NHÂN VIÊN chứ không
- *   phải hội viên — trường hợp này KHÔNG tạo/khớp bản ghi check_ins nào
- *   cả (nhân viên không cần check-in/check-out tập luyện), FE chỉ hiển
- *   thị thông tin nhận diện được cho nhân viên đứng gác biết.
- * - Toàn bộ lời gọi dữ liệu dùng chung `cashierApi` (import từ ./cashierApi,
- *   vốn đã bọc authApi để tự đính kèm Authorization header).
- * ======================================================================= */
-
 const MANUAL_REASON_OPTIONS = [
     { value: "no_recognition", label: "Không nhận diện được khuôn mặt" },
     { value: "renewed", label: "Khách vừa gia hạn" },
@@ -76,36 +34,14 @@ const ACCOUNT_STATUS_MAP = {
     Suspended: { label: "Đã bị khoá", cls: "badge-danger" },
 };
 
-/* Khuôn mặt phải đứng yên liên tục tối thiểu bằng này thì mới chụp khung
- * hình đầy đủ & gửi lên BE để nhận diện (dùng chung cho cả check-in &
- * check-out) */
 const CK_STABLE_HOLD_MS = 500;
-/* Sai khác tối đa (tỉ lệ theo cạnh video, 0-1) giữa tâm/kích thước khuôn
- * mặt ở 2 lần lấy mẫu liên tiếp để còn coi là "đứng yên" */
 const CK_BOX_MOVE_THRESHOLD = 0.02;
-/* Chu kỳ lấy mẫu để dò khuôn mặt (ms). Đây là điểm mấu chốt để KHÔNG chạy
- * liên tục: giữa 2 lần lấy mẫu, trang hoàn toàn không làm gì (không dùng
- * camera, không tính toán) — chỉ "thức dậy" mỗi CK_POLL_INTERVAL_MS để
- * kiểm tra 1 lần rồi nghỉ tiếp. */
 const CK_POLL_INTERVAL_MS = 300;
-/* Sau khi đã gọi BE xong (bất kể kết quả gì), tạm dừng quét trong khoảng
- * thời gian này rồi mới quét tiếp cho lượt kế tiếp. Cũng là thời gian giữ
- * hiển thị kết quả (thành công/lỗi) trên camera. Dùng chung cho CẢ
- * Check-in lẫn Check-out. */
 const CK_PAUSE_AFTER_CALL_MS = 1200;
 
-/* MediaPipe Tasks Vision — FaceDetector (model BlazeFace) của Google.
- * Đây là phương án dự phòng khi trình duyệt không có Shape Detection API
- * native (`window.FaceDetector`, vốn luôn bị tắt mặc định trừ khi người
- * dùng tự bật cờ thử nghiệm chrome://flags). Tải qua ESM CDN bằng dynamic
- * import(), không cần thẻ <script> UMD. */
 const MEDIAPIPE_VISION_URL = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs";
 const MEDIAPIPE_WASM_BASE = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm";
 const MEDIAPIPE_FACE_MODEL_URL = "https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite";
-
-/* Chi nhánh nơi đặt 2 camera này (check_ins.branch_id là cột bắt buộc,
- * không nullable). TODO: thay bằng branchId lấy từ thông tin đăng nhập
- * của nhân viên / context chi nhánh thực tế thay vì hằng số cứng. */
 
 function StatusBadge({ status }) {
     const s = PACKAGE_STATUS_MAP[status] || PACKAGE_STATUS_MAP.active;
@@ -159,42 +95,21 @@ function getIneligibleReason(member) {
     if (member.packageStatus === "expired") return "Gói tập đã hết hạn. Vui lòng gia hạn trước khi check-in.";
     return "";
 }
-/* Lưu ý: điều kiện được phép check-out (vd. tài khoản bị khoá/hết hạn vẫn
- * cho check-out vì đang có mặt trong gym, chỉ chặn tài khoản chưa kích
- * hoạt) do BE tự kiểm tra trong endpoint cashierApi.identifyAttendance và
- * trả về status "ineligible"/"no_open_session" kèm `reason` — FE không
- * cần hàm canCheckout/getCheckoutIneligibleReason phía client. */
 
-/* =========================================================================
- * Hàm dùng chung cho cả 2 camera (check-in & check-out) để khởi tạo cơ chế
- * nhận diện khuôn mặt (native FaceDetector hoặc MediaPipe dự phòng) và để
- * dò khuôn mặt one-shot trên 1 khung video. Tách ra ngoài component để 2
- * camera có thể tự khởi tạo model riêng của mình (chạy độc lập, không
- * tranh chấp timestamp khi gọi detectForVideo).
- * ======================================================================= */
 async function setupFaceDetector(isCancelled) {
-    // 1) Ưu tiên Shape Detection API native của trình duyệt — nhẹ, không
-    // cần tải thêm dữ liệu qua mạng. Hiện vẫn nằm sau cờ thử nghiệm nên
-    // hầu hết trình duyệt sẽ KHÔNG có sẵn.
     if (typeof window !== "undefined" && "FaceDetector" in window) {
         try {
             const detector = new window.FaceDetector({ fastMode: true, maxDetectedFaces: 2 });
             return { mode: "native", detector };
         } catch (_) {
-            // rơi xuống phương án dự phòng bên dưới nếu khởi tạo lỗi
         }
     }
-    // 2) Phương án dự phòng: MediaPipe FaceDetector (model BlazeFace),
-    // dò one-shot theo từng đợt lấy mẫu, không chạy requestAnimationFrame
-    // liên tục.
     const { FaceDetector, FilesetResolver } = await import(/* webpackIgnore: true */ MEDIAPIPE_VISION_URL);
     if (isCancelled()) return null;
 
     const filesetResolver = await FilesetResolver.forVisionTasks(MEDIAPIPE_WASM_BASE);
     if (isCancelled()) return null;
 
-    // Ưu tiên chạy bằng GPU (nhanh hơn); nếu thiết bị/driver không hỗ trợ
-    // WebGL phù hợp, rơi xuống CPU để vẫn chạy được.
     try {
         const detector = await FaceDetector.createFromOptions(filesetResolver, {
             baseOptions: { modelAssetPath: MEDIAPIPE_FACE_MODEL_URL, delegate: "GPU" },
@@ -228,8 +143,6 @@ async function detectFacesWith(mode, detector, video) {
     }
     if (mode === "mediapipe") {
         try {
-            // detectForVideo yêu cầu timestamp tăng dần đơn điệu —
-            // performance.now() đáp ứng đúng yêu cầu này.
             const result = detector.detectForVideo(video, performance.now());
             return (result?.detections || []).map(d => ({
                 x: d.boundingBox.originX,
@@ -249,7 +162,6 @@ export default function CameraRecognition() {
         document.title = "Nhận diện Camera — Check-in / Check-out";
     }, []);
 
-    /* ============================ DÙNG CHUNG ============================ */
     const [devices, setDevices] = useState([]);
     const [toast, setToast] = useState(null);
     const showToast = (type, text) => {
@@ -282,7 +194,6 @@ export default function CameraRecognition() {
         return () => navigator.mediaDevices.removeEventListener?.("devicechange", loadDevices);
     }, []);
 
-    /* ============================ CHECK-IN CAMERA ============================ */
     const ckVideoRef = useRef(null);
     const ckCanvasRef = useRef(null);
     const ckStreamRef = useRef(null);
@@ -291,17 +202,10 @@ export default function CameraRecognition() {
     const [ckSelectedDevId, setCkSelectedDevId] = useState("");
     const [ckActiveDevId, setCkActiveDevId] = useState(null);
 
-    /* Trạng thái sẵn sàng của cơ chế nhận diện khuôn mặt:
-     * "loading" | "ready" | "error"
-     * - Nếu trình duyệt có sẵn `window.FaceDetector` (Shape Detection API),
-     *   dùng luôn API native này -> "ready" ngay, KHÔNG tải thêm gì cả.
-     * - Nếu không có (trường hợp phổ biến nhất), tải MediaPipe FaceDetector
-     *   (model BlazeFace) làm phương án dự phòng. */
     const [ckLibStatus, setCkLibStatus] = useState("loading");
-    /* "native" (FaceDetector API) | "mediapipe" (MediaPipe Tasks Vision) */
     const ckDetectModeRef = useRef(null);
-    const ckFaceDetectorRef = useRef(null); // instance window.FaceDetector HOẶC MediaPipe FaceDetector
-    const ckLastBoxRef = useRef(null);      // { cx, cy, size } của khuôn mặt ở lần xử lý trước
+    const ckFaceDetectorRef = useRef(null);
+    const ckLastBoxRef = useRef(null);
 
     useEffect(() => {
         let cancelled = false;
@@ -320,12 +224,10 @@ export default function CameraRecognition() {
         setup();
         return () => {
             cancelled = true;
-            // Giải phóng model khi unmount (nếu đã tải xong)
             try { ckFaceDetectorRef.current?.close?.(); } catch (_) { }
         };
     }, []);
 
-    /* ============================ CHECK-OUT CAMERA ============================ */
     const coVideoRef = useRef(null);
     const coCanvasRef = useRef(null);
     const coStreamRef = useRef(null);
@@ -334,10 +236,6 @@ export default function CameraRecognition() {
     const [coSelectedDevId, setCoSelectedDevId] = useState("");
     const [coActiveDevId, setCoActiveDevId] = useState(null);
 
-    /* Giống hệt cơ chế bên Check-in: dò khuôn mặt theo từng đợt lấy mẫu
-     * (poll), chỉ chụp & gửi BE khi có đúng 1 khuôn mặt và khuôn mặt đó
-     * đứng yên đủ CK_STABLE_HOLD_MS. Camera check-out có model riêng
-     * (không dùng chung instance với check-in) để 2 camera chạy độc lập. */
     const [coLibStatus, setCoLibStatus] = useState("loading");
     const coDetectModeRef = useRef(null);
     const coFaceDetectorRef = useRef(null);
@@ -476,54 +374,30 @@ export default function CameraRecognition() {
         return canvas.toDataURL("image/jpeg", 0.8);
     };
 
-    /* ============================ CHECK-IN: logic nghiệp vụ ============================ */
-    const [lastCheckin, setLastCheckin] = useState(null); // { member, source, result, reason, at }
+    const [lastCheckin, setLastCheckin] = useState(null);
     const recordCheckin = (member, source, result, reason) => {
         setPhoneLookupResult(null);
         setLastCheckin({ member, source, result, reason, at: new Date() });
     };
 
     const [ckRecognizeResult, setCkRecognizeResult] = useState(null);
-    const [ckRecognizeStatus, setCkRecognizeStatus] = useState(null); // "loading" | "success" | "error" | "employee"
-    const [ckRecognizeReason, setCkRecognizeReason] = useState(""); // lý do không check-in được, hiển thị ngay trên khung camera
+    const [ckRecognizeStatus, setCkRecognizeStatus] = useState(null);
+    const [ckRecognizeReason, setCkRecognizeReason] = useState("");
 
-    /* Cờ điều khiển vòng lặp quét tự động của camera check-in (giống hệt
-     * check-out):
-     * - ckProcessingRef: đang có 1 request nhận diện đang bay, tránh gửi
-     *   chồng
-     * - ckPausedRef: đang tạm dừng quét trong CK_PAUSE_AFTER_CALL_MS sau
-     *   khi vừa gọi BE xong, để giữ hiển thị kết quả (thành công/lỗi) đủ
-     *   lâu cho nhân viên nhìn thấy trước khi quét tiếp
-     * - ckLastBoxRef / ckStableStartRef: theo dõi vị trí khuôn mặt (phát
-     *   hiện THẬT bằng FaceDetector/MediaPipe, không phải suy đoán qua độ
-     *   lệch pixel) qua các lần lấy mẫu để chỉ gửi ảnh lên BE khi khuôn
-     *   mặt đứng yên đủ CK_STABLE_HOLD_MS
-     */
     const ckProcessingRef = useRef(false);
     const ckPausedRef = useRef(false);
     const ckStableStartRef = useRef(null);
 
-    /* Chạy dò khuôn mặt 1 lần (one-shot) bằng cơ chế đang có sẵn (native
-     * FaceDetector hoặc MediaPipe), trả về mảng { x, y, width, height }
-     * theo toạ độ khung hình gốc của video. */
     const detectFacesOnce = useCallback(async (video) => {
         return detectFacesWith(ckDetectModeRef.current, ckFaceDetectorRef.current, video);
     }, []);
 
-    /* Xử lý kết quả của 1 lần lấy mẫu (poll) — được gọi mỗi CK_POLL_INTERVAL_MS,
-     * KHÔNG chạy theo requestAnimationFrame, nên khi không có khuôn mặt thì
-     * giữa 2 lần gọi trang hoàn toàn không tốn thêm tài nguyên nào.
-     * LƯU Ý VỀ LOG: cố tình KHÔNG log ở đây khi chưa có gì đáng chú ý (mỗi
-     * vòng poll chạy 300ms/lần, log ở đây sẽ làm phình console khi camera
-     * chạy 24/7). Chỉ log tại đúng 2 mốc: (1) xác nhận đứng yên đủ lâu và
-     * chuẩn bị gửi BE, (2) nhận được kết quả từ BE. */
     const handleCkPoll = useCallback(async (video) => {
         if (ckProcessingRef.current || ckPausedRef.current) return;
 
         const faces = await detectFacesOnce(video);
 
         if (faces.length !== 1 || !video?.videoWidth) {
-            // Không có khuôn mặt nào trong khung (hoặc nhiều hơn 1 người) -> chưa gửi BE
             ckStableStartRef.current = null;
             ckLastBoxRef.current = null;
             return;
@@ -549,7 +423,6 @@ export default function CameraRecognition() {
             Math.abs(size - last.size) > CK_BOX_MOVE_THRESHOLD;
 
         if (moved) {
-            // Khuôn mặt còn đang di chuyển (mới bước vào / đổi tư thế) -> tính lại từ đầu
             ckStableStartRef.current = now;
             return;
         }
@@ -559,18 +432,14 @@ export default function CameraRecognition() {
 
         const stableFor = now - ckStableStartRef.current;
         if (stableFor < CK_STABLE_HOLD_MS) {
-            return; // chưa đứng yên đủ lâu -> chưa gửi BE
+            return;
         }
 
-        // Đã xác nhận có khuôn mặt & đứng yên đủ lâu -> chụp khung hình đầy đủ & gửi BE
         const frame = ckCaptureFrame();
         if (!frame) return;
 
         console.log("[CheckIn] Phát hiện khuôn mặt đứng yên — gửi ảnh lên BE để nhận diện...");
 
-        // Khoá vòng poll ngay lập tức để tránh gửi chồng request, và tạm
-        // dừng quét — dù kết quả là gì, hàm finally bên dưới sẽ mở khoá lại
-        // sau đúng CK_PAUSE_AFTER_CALL_MS.
         ckProcessingRef.current = true;
         ckPausedRef.current = true;
         setCkRecognizeStatus("loading");
@@ -578,27 +447,23 @@ export default function CameraRecognition() {
         setCkRecognizeReason("");
 
         try {
-            // 1 lệnh gọi DUY NHẤT: BE tự nhận diện khuôn mặt (Rekognition) +
-            // kiểm tra điều kiện + ghi nhận check-in, không cần FE tự lấy
-            // memberId rồi gọi thêm getMemberById/checkinByCamera nữa.
             const result = await cashierApi.identifyAttendance(frame, "checkin");
             console.log("[CheckIn] BE trả về:", result.status);
 
-            // Khuôn mặt nhận diện được là NHÂN VIÊN chứ không phải hội viên
-            // -> không có bản ghi check_ins nào liên quan, chỉ hiển thị
-            // thông tin nhận diện cho nhân viên đứng camera biết, không
-            // ghi vào lịch sử "check-in gần nhất".
+            // Khuôn mặt nhận diện được là NHÂN VIÊN. Nhân viên chỉ cần hiển
+            // thị badge "Nhân viên" — việc ghi nhận lịch sử ra/vào của nhân
+            // viên (kể cả trường hợp không đủ điều kiện) đã được BE xử lý
+            // trong identifyAttendance, nên UI không cần phân biệt thêm
+            // trạng thái "bị chặn" cho nhân viên nữa.
             if (result.isEmployee) {
                 setCkRecognizeResult(result.employee);
                 setCkRecognizeStatus("employee");
                 showToast("info", `Nhân viên — ${result.employee?.fullName || ""}`);
-                console.log("[CheckIn] Nhận diện là nhân viên (bỏ qua check-in):", result.employee?.fullName);
+                console.log("[CheckIn] Nhận diện là nhân viên:", result.employee?.fullName);
                 return;
             }
 
             if (result.status === "no_face" || result.status === "not_recognized") {
-                // Không có khuôn mặt rõ ràng, hoặc có mặt nhưng không khớp hội
-                // viên nào -> im lặng bỏ qua.
                 setCkRecognizeStatus(null);
                 return;
             }
@@ -613,7 +478,6 @@ export default function CameraRecognition() {
                 return;
             }
 
-            // status === "success"
             setCkRecognizeResult(result.member);
             setCkRecognizeStatus("success");
             showToast("success", `Check-in thành công — ${result.member.fullName}`);
@@ -624,8 +488,6 @@ export default function CameraRecognition() {
             setCkRecognizeStatus(null);
         } finally {
             ckProcessingRef.current = false;
-            // Giữ overlay kết quả trên camera trong CK_PAUSE_AFTER_CALL_MS
-            // rồi mới dọn dẹp & cho phép quét lượt kế tiếp.
             setTimeout(() => {
                 setCkRecognizeStatus(null);
                 setCkRecognizeResult(null);
@@ -637,13 +499,6 @@ export default function CameraRecognition() {
         }
     }, []);
 
-    // Bật/tắt vòng lấy mẫu (poll) theo trạng thái camera check-in và trạng
-    // thái sẵn sàng của cơ chế dò khuôn mặt. Đây là một `setInterval` đơn
-    // giản, KHÔNG phải vòng lặp requestAnimationFrame liên tục — giữa 2 lần
-    // gọi (CK_POLL_INTERVAL_MS), trang hoàn toàn rảnh, không tốn CPU/dữ liệu.
-    // Nếu đang xử lý 1 lượt nhận diện (ckProcessingRef) hoặc đang trong thời
-    // gian tạm dừng sau khi gọi BE (ckPausedRef), lượt poll đó bị bỏ qua
-    // ngay từ đầu hàm handleCkPoll.
     useEffect(() => {
         if (!ckCameraOn || ckLibStatus !== "ready") return;
         const video = ckVideoRef.current;
@@ -667,11 +522,10 @@ export default function CameraRecognition() {
         };
     }, [ckCameraOn, ckLibStatus, handleCkPoll]);
 
-    /* Tra cứu theo SĐT */
     const [phoneInput, setPhoneInput] = useState("");
     const [phoneError, setPhoneError] = useState("");
     const [lookupLoading, setLookupLoading] = useState(false);
-    const [phoneLookupResult, setPhoneLookupResult] = useState(null); // { member }
+    const [phoneLookupResult, setPhoneLookupResult] = useState(null);
 
     const handlePhoneLookup = async () => {
         const phone = phoneInput.trim();
@@ -700,11 +554,10 @@ export default function CameraRecognition() {
         setPhoneError("");
     };
 
-    /* Modal check-in thủ công (chọn lý do) */
     const [reasonModalOpen, setReasonModalOpen] = useState(false);
     const [reasonType, setReasonType] = useState("");
     const [customReason, setCustomReason] = useState("");
-    const [manualCheckinState, setManualCheckinState] = useState(null); // "loading" | "success"
+    const [manualCheckinState, setManualCheckinState] = useState(null);
 
     const openReasonModal = () => {
         if (!phoneLookupResult || !canCheckin(phoneLookupResult.member)) return;
@@ -748,21 +601,10 @@ export default function CameraRecognition() {
     const ckInfoMember = phoneLookupResult ? phoneLookupResult.member : lastCheckin?.member;
     const ckInfoIsLookup = !!phoneLookupResult;
 
-    /* ============================ CHECK-OUT: logic nghiệp vụ ============================
-     * Giống hệt Check-in: camera tự động quét theo poll, chỉ gửi ảnh lên
-     * BE khi phát hiện đúng 1 khuôn mặt đứng yên đủ lâu, rồi tạm dừng
-     * CK_PAUSE_AFTER_CALL_MS trước khi quét tiếp. Khác biệt DUY NHẤT so
-     * với Check-in là gọi cashierApi.identifyAttendance(frame, "checkout",
-     * ...) thay vì "checkin" — BE tự xét điều kiện (đủ điều kiện hay
-     * không, có phiên check-in nào đang mở để đóng lại hay không) và trả
-     * về qua các status "ineligible" / "no_open_session" kèm `reason`.
-     * Cũng như Check-in, nếu khuôn mặt là của NHÂN VIÊN (result.isEmployee)
-     * thì chỉ hiển thị thông tin nhận diện, không xử lý check-out.
-     */
-    const [lastCheckout, setLastCheckout] = useState(null); // { member, result, at }
+    const [lastCheckout, setLastCheckout] = useState(null);
     const [coRecognizeResult, setCoRecognizeResult] = useState(null);
-    const [coRecognizeStatus, setCoRecognizeStatus] = useState(null); // "loading" | "success" | "error" | "employee"
-    const [coRecognizeReason, setCoRecognizeReason] = useState(""); // lý do không check-out được, hiển thị ngay trên khung camera
+    const [coRecognizeStatus, setCoRecognizeStatus] = useState(null);
+    const [coRecognizeReason, setCoRecognizeReason] = useState("");
 
     const coProcessingRef = useRef(false);
     const coPausedRef = useRef(false);
@@ -827,19 +669,18 @@ export default function CameraRecognition() {
         setCoRecognizeReason("");
 
         try {
-            // Cùng 1 endpoint với check-in, chỉ khác action="checkout" — BE
-            // sẽ tìm dòng check_ins đang mở (check_out_time NULL) của hội
-            // viên này và cập nhật check_out_time, không tạo dòng mới.
             const result = await cashierApi.identifyAttendance(frame, "checkout");
             console.log("[CheckOut] BE trả về:", result.status);
 
-            // Khuôn mặt là của NHÂN VIÊN -> không có phiên check_ins nào để
-            // đóng lại, chỉ hiển thị thông tin nhận diện.
+            // Xem ghi chú tương tự ở handleCkPoll: nhân viên chỉ cần hiển thị
+            // badge "Nhân viên" — BE đã tự ghi nhận lịch sử ra/vào của nhân
+            // viên, kể cả khi không đủ điều kiện, nên UI không cần trạng
+            // thái "bị chặn" riêng cho nhân viên nữa.
             if (result.isEmployee) {
                 setCoRecognizeResult(result.employee);
                 setCoRecognizeStatus("employee");
                 showToast("info", `Nhân viên — ${result.employee?.fullName || ""}`);
-                console.log("[CheckOut] Nhận diện là nhân viên (bỏ qua check-out):", result.employee?.fullName);
+                console.log("[CheckOut] Nhận diện là nhân viên:", result.employee?.fullName);
                 return;
             }
 
@@ -868,7 +709,6 @@ export default function CameraRecognition() {
                 return;
             }
 
-            // status === "success"
             setCoRecognizeResult(result.member);
             setCoRecognizeStatus("success");
             showToast("success", `Check-out thành công — ${result.member.fullName}`);
@@ -914,7 +754,6 @@ export default function CameraRecognition() {
 
     const coInfoMember = lastCheckout?.member;
 
-    /* ============================ RENDER ============================ */
     return (
         <div className="rec-wrap">
             <style>{`
@@ -1019,8 +858,24 @@ export default function CameraRecognition() {
         .rec-select-wrap .rec-chevron { position: absolute; right: 9px; top: 50%; transform: translateY(-50%); pointer-events: none; color: var(--text-muted); }
 
         .rec-viewport-wrap {
-          flex: 1 1 auto; min-height: 0; display: flex;
-          align-items: center; justify-content: center; overflow: hidden;
+          flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column;
+          align-items: center; justify-content: center; overflow: hidden; gap: 6px;
+        }
+        .rec-viewport-hint {
+          position: absolute; top: 10px; left: 50%; transform: translateX(-50%);
+          z-index: 5; display: flex; align-items: center; gap: 6px;
+          background: rgba(15,23,42,.72); color: #fff; font-size: 11.5px; font-weight: 700;
+          text-align: center; margin: 0; padding: 7px 14px; border-radius: 999px;
+          white-space: nowrap; max-width: calc(100% - 20px); overflow: hidden; text-overflow: ellipsis;
+          box-shadow: 0 4px 14px rgba(0,0,0,.25); backdrop-filter: blur(2px);
+          animation: rec-hint-pulse 1.8s ease-in-out infinite;
+        }
+        .rec-viewport-hint svg { flex-shrink: 0; }
+        .rec-viewport.checkin .rec-viewport-hint  { border: 1px solid rgba(8,145,178,.65); }
+        .rec-viewport.checkout .rec-viewport-hint { border: 1px solid rgba(220,38,38,.65); }
+        @keyframes rec-hint-pulse {
+          0%, 100% { box-shadow: 0 4px 14px rgba(0,0,0,.25); }
+          50% { box-shadow: 0 4px 18px rgba(8,145,178,.45); }
         }
         .rec-viewport {
           position: relative; aspect-ratio: 1 / 1;
@@ -1082,8 +937,6 @@ export default function CameraRecognition() {
         .rec-overlay-note.employee .rec-overlay-note-text,
         .rec-overlay-note.employee .rec-overlay-note-label { color: var(--indigo-dark); }
 
-        /* Đẩy nội dung overlay (icon + tên) xuống sát mép dưới của khung
-         * camera thay vì canh giữa — dùng cho overlay kết quả check-in */
         .rec-viewport-overlay.bottom-align {
           justify-content: flex-end;
           padding-bottom: 22px;
@@ -1382,6 +1235,11 @@ export default function CameraRecognition() {
                         <div className="rec-viewport-wrap">
                             <div className={`rec-viewport checkin ${ckCameraOn ? "on" : ""}`}>
                                 <video ref={ckVideoRef} autoPlay playsInline muted className="rec-video" style={{ display: ckCameraOn ? "block" : "none" }} />
+                                {ckCameraOn && (
+                                    <p className="rec-viewport-hint">
+                                        <UserRound size={13} /> Vui lòng đưa và giữ nguyên khuôn mặt trong khung hình
+                                    </p>
+                                )}
                                 {!ckCameraOn && (
                                     <div className="rec-placeholder">
                                         <CameraOff size={28} />
@@ -1425,7 +1283,7 @@ export default function CameraRecognition() {
                                             <ShieldAlert size={18} />
                                             <div className="rec-overlay-note-text">
                                                 <span className="rec-overlay-note-label">Nhận diện nhân viên</span>
-                                                {ckRecognizeResult.fullName} — không cần check-in
+                                                {ckRecognizeResult.fullName}
                                             </div>
                                         </div>
                                     </div>
@@ -1485,7 +1343,7 @@ export default function CameraRecognition() {
                         </div>
 
                         <div className="rec-info-area">
-                            {!ckInfoMember ? (
+                            {!ckInfoMember && !(ckRecognizeResult && ckRecognizeStatus === "employee") ? (
                                 <div className="rec-lastcheckin-empty">
                                     <UserRound size={22} />
                                     <p>Chưa có thông tin hội viên</p>
@@ -1541,7 +1399,7 @@ export default function CameraRecognition() {
                                             <>
                                                 <p className="rec-lc-name">{ckRecognizeResult.fullName}</p>
                                                 <div className="rec-lc-result-line employee">
-                                                    <ShieldAlert size={13} /> Nhân viên — không cần check-in
+                                                    <ShieldAlert size={13} /> Nhân viên
                                                 </div>
                                                 <div className="rec-lc-badges">
                                                     <span className="rec-badge badge-indigo">{ckRecognizeResult.status || "Active"}</span>
@@ -1554,7 +1412,7 @@ export default function CameraRecognition() {
                                         <div className="rec-lc-employee-note">
                                             <ShieldAlert size={15} />
                                             <div className="rec-lc-employee-note-text">
-                                                Khuôn mặt nhận diện được là của nhân viên, không phải hội viên nên hệ thống không tạo lượt check-in.
+                                                Khuôn mặt nhận diện được là của nhân viên. Lượt ra/vào đã được hệ thống ghi nhận vào lịch sử.
                                             </div>
                                         </div>
                                     </div>
@@ -1667,6 +1525,11 @@ export default function CameraRecognition() {
                         <div className="rec-viewport-wrap">
                             <div className={`rec-viewport checkout ${coCameraOn ? "on" : ""}`}>
                                 <video ref={coVideoRef} autoPlay playsInline muted className="rec-video" style={{ display: coCameraOn ? "block" : "none" }} />
+                                {coCameraOn && (
+                                    <p className="rec-viewport-hint">
+                                        <UserRound size={13} /> Vui lòng đưa và giữ nguyên khuôn mặt trong khung hình
+                                    </p>
+                                )}
                                 {!coCameraOn && (
                                     <div className="rec-placeholder">
                                         <CameraOff size={28} />
@@ -1738,7 +1601,7 @@ export default function CameraRecognition() {
                                             <>
                                                 <p className="rec-lc-name">{coRecognizeResult.fullName}</p>
                                                 <div className="rec-lc-result-line employee">
-                                                    <ShieldAlert size={13} /> Nhân viên — không cần check-out
+                                                    <ShieldAlert size={13} /> Nhân viên
                                                 </div>
                                                 <div className="rec-lc-badges">
                                                     <span className="rec-badge badge-indigo">{coRecognizeResult.status || "Active"}</span>
@@ -1751,7 +1614,7 @@ export default function CameraRecognition() {
                                         <div className="rec-lc-employee-note">
                                             <ShieldAlert size={15} />
                                             <div className="rec-lc-employee-note-text">
-                                                Khuôn mặt nhận diện được là của nhân viên, không phải hội viên nên hệ thống không tìm/đóng phiên check-out.
+                                                Khuôn mặt nhận diện được là của nhân viên. Lượt ra/vào đã được hệ thống ghi nhận vào lịch sử.
                                             </div>
                                         </div>
                                     </div>

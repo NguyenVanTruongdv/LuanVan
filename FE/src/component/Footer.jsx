@@ -1,21 +1,5 @@
 import logo from "../assets/logo.png";
 
-const BRANCHES = [
-    { id: "q1", name: "VTGym Quận 1", address: "123 Nguyễn Huệ, Q.1, TP.HCM", href: "/chi-nhanh/q1" },
-    { id: "q7", name: "VTGym Quận 7", address: "456 Nguyễn Thị Thập, Q.7, TP.HCM", href: "/chi-nhanh/q7" },
-    { id: "bth", name: "VTGym Bình Thạnh", address: "78 Xô Viết Nghệ Tĩnh, Q.BT, TP.HCM", href: "/chi-nhanh/binh-thanh" },
-    { id: "td", name: "VTGym Thủ Đức", address: "321 Võ Văn Ngân, TP.Thủ Đức", href: "/chi-nhanh/thu-duc" },
-];
-
-function LocationIcon() {
-    return (
-        <svg viewBox="0 0 24 24" fill="none" width="14" height="14" style={{ flexShrink: 0 }}>
-            <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z" stroke="currentColor" strokeWidth="1.6" />
-            <circle cx="12" cy="9" r="2.5" stroke="currentColor" strokeWidth="1.6" />
-        </svg>
-    );
-}
-
 export default function Footer() {
     return (
         <>
@@ -29,7 +13,7 @@ export default function Footer() {
                 .vt-footer__inner { max-width: 1280px; margin: 0 auto; }
                 .vt-footer__top {
                     display: grid;
-                    grid-template-columns: 1.4fr 1fr 1fr 1.2fr;
+                    grid-template-columns: 1.4fr 1fr 1.2fr;
                     gap: 40px;
                     margin-bottom: 48px;
                 }
@@ -115,17 +99,6 @@ export default function Footer() {
                             <a href="/equipment" className="vt-footer__link">Danh mục máy tập</a>
                             <a href="/thong-ke" className="vt-footer__link">Thống kê cá nhân</a>
                             <a href="/lich-su" className="vt-footer__link">Lịch sử tập</a>
-                        </div>
-
-                        {/* Branches col */}
-                        <div className="vt-footer__col">
-                            <p className="vt-footer__col-title">Chi nhánh</p>
-                            {BRANCHES.map(b => (
-                                <a key={b.id} href={b.href} className="vt-footer__link">
-                                    <LocationIcon />{b.name}
-                                </a>
-                            ))}
-                            <a href="/chi-nhanh" className="vt-footer__link vt-footer__link--accent">Xem tất cả →</a>
                         </div>
 
                         {/* Contact col */}

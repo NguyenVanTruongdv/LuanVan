@@ -7,7 +7,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace BE.Services.Reports;
 
-public class ReportService 
+public class ReportService
 {
     private readonly GymManagementContext _context;
 
@@ -18,10 +18,14 @@ public class ReportService
         _context = context;
     }
 
+    // Nếu FE truyền From/To cụ thể (đã kèm giờ:phút:giây) thì dùng đúng giá trị
+    // đó, KHÔNG được cắt về .Date — nếu không mọi bộ lọc theo giờ (ca làm việc)
+    // sẽ bị "nuốt" mất và trả về nguyên cả ngày.
+    // Chỉ khi FE không truyền (null) mới áp dụng mặc định theo ngày trọn vẹn.
     private (DateTime from, DateTime to) ResolveRange(ReportFilter filter)
     {
-        var to = (filter.ToDate ?? DateTime.Now).Date.AddDays(1).AddTicks(-1);
-        var from = (filter.FromDate ?? to.AddDays(-DefaultRangeDays)).Date;
+        DateTime to = filter.ToDate ?? DateTime.Now.Date.AddDays(1).AddTicks(-1);
+        DateTime from = filter.FromDate ?? to.Date.AddDays(-DefaultRangeDays);
         return (from, to);
     }
 
@@ -233,18 +237,18 @@ public class ReportService
         var inactive = await query.CountAsync(e => e.Status == "Inactive");
         var newInRange = await query.CountAsync(e => e.CreatedAt >= from && e.CreatedAt <= to);
 
-            var byRole = await query
-            .Where(e => e.Account != null && e.Account.Role != null) // tránh NULL Account/Role gây lỗi materialize
-            .Include(e => e.Account).ThenInclude(a => a.Role)
-            .GroupBy(e => new { e.Account!.Role!.RoleId, e.Account.Role.RoleName })
-            .Select(g => new RoleCountDto
-            {
-                RoleId = g.Key.RoleId,
-                RoleName = g.Key.RoleName ?? "",
-                Count = g.Count()
-            })
-            .OrderByDescending(x => x.Count)
-            .ToListAsync();
+        var byRole = await query
+        .Where(e => e.Account != null && e.Account.Role != null) // tránh NULL Account/Role gây lỗi materialize
+        .Include(e => e.Account).ThenInclude(a => a.Role)
+        .GroupBy(e => new { e.Account!.Role!.RoleId, e.Account.Role.RoleName })
+        .Select(g => new RoleCountDto
+        {
+            RoleId = g.Key.RoleId,
+            RoleName = g.Key.RoleName ?? "",
+            Count = g.Count()
+        })
+        .OrderByDescending(x => x.Count)
+        .ToListAsync();
 
         // Đếm riêng số nhân viên chưa gắn Account hoặc chưa gắn Role,
         // để không "mất" số liệu khi so với TotalEmployees

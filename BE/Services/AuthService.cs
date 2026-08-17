@@ -130,7 +130,7 @@ public class AuthService
             .OrderByDescending(x => x.CreatedAt)
             .FirstOrDefaultAsync();
 
-        if (lastOtp != null && lastOtp.CreatedAt > DateTime.UtcNow.AddSeconds(-60))
+        if (lastOtp != null && lastOtp.CreatedAt > DateTime.Now.AddSeconds(-60))
         {
             throw new BadRequestException("Vui lòng thử lại sau 60 giây");
         }
@@ -139,10 +139,10 @@ public class AuthService
         otp.Phone = phone;
         otp.OtpCode = Random.Shared.Next(100000, 999999).ToString();
         otp.Purpose = Auth.DangKy.ToString();
-        otp.ExpiresAt = DateTime.UtcNow.AddMinutes(5);
+        otp.ExpiresAt = DateTime.Now.AddMinutes(5);
         otp.FailedAttempts = 0;
         otp.IsUsed = false;
-        otp.CreatedAt = DateTime.UtcNow;
+        otp.CreatedAt = DateTime.Now;
 
         _db.Otps.Add(otp);
         await _db.SaveChangesAsync();
@@ -170,7 +170,7 @@ public class AuthService
             throw new BadRequestException("Mã OTP không tồn tại hoặc đã được sử dụng");
         }
 
-        if (otp.ExpiresAt < DateTime.UtcNow)
+        if (otp.ExpiresAt < DateTime.Now)
         {
             throw new BadRequestException("Mã OTP đã hết hạn");
         }
@@ -243,7 +243,7 @@ public class AuthService
             .OrderByDescending(x => x.CreatedAt)
             .FirstOrDefaultAsync();
 
-        if (lastOtp != null && lastOtp.CreatedAt > DateTime.UtcNow.AddSeconds(-60))
+        if (lastOtp != null && lastOtp.CreatedAt > DateTime.Now.AddSeconds(-60))
         {
             throw new BadRequestException("Vui lòng thử lại sau 60 giây");
         }
@@ -254,10 +254,10 @@ public class AuthService
         otp.Phone = phone;
         otp.OtpCode = otpCode;
         otp.Purpose = Auth.QuenMatKhau.ToString();
-        otp.ExpiresAt = DateTime.UtcNow.AddMinutes(5);
+        otp.ExpiresAt = DateTime.Now.AddMinutes(5);
         otp.FailedAttempts = 0;
         otp.IsUsed = false;
-        otp.CreatedAt = DateTime.UtcNow;
+        otp.CreatedAt = DateTime.Now;
 
         _db.Otps.Add(otp);
         await _db.SaveChangesAsync();
@@ -287,7 +287,7 @@ public class AuthService
             throw new BadRequestException("OTP không hợp lệ");
         }
 
-        if (otp.ExpiresAt < DateTime.UtcNow)
+        if (otp.ExpiresAt < DateTime.Now)
         {
             throw new BadRequestException("OTP đã hết hạn");
         }
@@ -324,7 +324,7 @@ public class AuthService
 
         foreach (var token in tokens)
         {
-            token.RevokedAt = DateTime.UtcNow;
+            token.RevokedAt = DateTime.Now;
         }
 
         await _db.SaveChangesAsync();
@@ -368,7 +368,7 @@ public class AuthService
 
         foreach (var token in tokens)
         {
-            token.RevokedAt = DateTime.UtcNow;
+            token.RevokedAt = DateTime.Now;
         }
 
         await _db.SaveChangesAsync();
@@ -386,12 +386,12 @@ public class AuthService
             throw new UnauthorizedAccessException("Token không hợp lệ");
         }
 
-        if (stored.RevokedAt != null || stored.ExpiresAt < DateTime.UtcNow)
+        if (stored.RevokedAt != null || stored.ExpiresAt < DateTime.Now)
         {
             throw new UnauthorizedAccessException("Phiên đã hết hạn, vui lòng đăng nhập lại");
         }
 
-        stored.RevokedAt = DateTime.UtcNow;
+        stored.RevokedAt = DateTime.Now;
         await _db.SaveChangesAsync();
 
         Account? account = await _db.Accounts
@@ -467,7 +467,7 @@ public class AuthService
 
         if (stored != null && stored.RevokedAt == null)
         {
-            stored.RevokedAt = DateTime.UtcNow;
+            stored.RevokedAt = DateTime.Now;
             await _db.SaveChangesAsync();
         }
     }
@@ -492,7 +492,7 @@ public class AuthService
         newToken.AccountId = accountId;
         newToken.Role = role;
         newToken.TokenHash = hash;
-        newToken.ExpiresAt = DateTime.UtcNow.AddDays(ttlDays);
+        newToken.ExpiresAt = DateTime.Now.AddDays(ttlDays);
 
         _db.RefreshTokens.Add(newToken);
         await _db.SaveChangesAsync();

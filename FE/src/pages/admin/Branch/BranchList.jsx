@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import adminApi from "../../../api/adminApi";
 
 function Icon({ name }) {
@@ -51,7 +52,7 @@ function Icon({ name }) {
             );
         case "plus":
             return (
-                <svg {...common} width="16" height="16" stroke="#0F172A">
+                <svg {...common} width="16" height="16" stroke="#FFFFFF">
                     <line x1="12" y1="5" x2="12" y2="19" />
                     <line x1="5" y1="12" x2="19" y2="12" />
                 </svg>
@@ -103,6 +104,27 @@ function Icon({ name }) {
                     <polyline points="6 9 12 15 18 9" />
                 </svg>
             );
+        case "eye":
+            return (
+                <svg {...common} width="15" height="15">
+                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                    <circle cx="12" cy="12" r="3" />
+                </svg>
+            );
+        case "lock":
+            return (
+                <svg {...common} width="15" height="15">
+                    <rect x="3" y="11" width="18" height="11" rx="2" />
+                    <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                </svg>
+            );
+        case "unlock":
+            return (
+                <svg {...common} width="15" height="15">
+                    <rect x="3" y="11" width="18" height="11" rx="2" />
+                    <path d="M7 11V7a5 5 0 0 1 9.9-1" />
+                </svg>
+            );
         default:
             return null;
     }
@@ -121,7 +143,15 @@ function initials(name) {
     return name.trim().charAt(0).toUpperCase();
 }
 
-export default function BranchListAdmin() {
+const STATUS_OPTIONS = [
+    { value: "", label: "Tất cả" },
+    { value: "Active", label: "Đang hoạt động" },
+    { value: "Inactive", label: "Tạm ngừng" },
+    { value: "Deleted", label: "Đã xóa" },
+];
+
+export default function BranchListAdmin({ onView } = {}) {
+    const navigate = useNavigate();
     const [branches, setBranches] = useState([]);
     const [totalItems, setTotalItems] = useState(0);
     const [totalPages, setTotalPages] = useState(1);
@@ -138,6 +168,28 @@ export default function BranchListAdmin() {
 
     const debounceRef = useRef(null);
 
+    // --- Dropdown "Trạng thái" tự dựng (thay cho <select> gốc để custom được style) ---
+    const [statusOpen, setStatusOpen] = useState(false);
+    const statusRef = useRef(null);
+
+    // --- Menu thao tác (nút 3 chấm) ---
+    const [openActionId, setOpenActionId] = useState(null);
+    const actionMenuRef = useRef(null);
+
+    // Đóng dropdown/menu khi click ra ngoài
+    useEffect(() => {
+        function handleClickOutside(e) {
+            if (statusRef.current && !statusRef.current.contains(e.target)) {
+                setStatusOpen(false);
+            }
+            if (actionMenuRef.current && !actionMenuRef.current.contains(e.target)) {
+                setOpenActionId(null);
+            }
+        }
+        document.addEventListener("mousedown", handleClickOutside);
+        return () => document.removeEventListener("mousedown", handleClickOutside);
+    }, []);
+
     // Debounce search input -> name (triggers fetch), reset về trang 1 mỗi lần đổi filter
     useEffect(() => {
         if (debounceRef.current) clearTimeout(debounceRef.current);
@@ -152,7 +204,7 @@ export default function BranchListAdmin() {
         setLoading(true);
         setError(null);
         try {
-            const res = await adminApi.getBranches({
+            const res = await adminApi.getBranchesForAdmin({
                 Name: name || undefined,
                 Status: status || undefined,
                 Page: page,
@@ -188,6 +240,50 @@ export default function BranchListAdmin() {
         setPage(1);
     };
 
+    const handleSelectStatus = (value) => {
+        setStatus(value);
+        setPage(1);
+        setStatusOpen(false);
+    };
+
+    const handleView = (branch) => {
+        setOpenActionId(null);
+        if (typeof onView === "function") {
+            onView(branch);
+        } else {
+            navigate(`/admin/branches/${branch.branchId}`);
+        }
+    };
+
+    const handleToggleLock = async (branch) => {
+        const isLocking = branch.status === "Active";
+        const nextStatus = isLocking ? "Inactive" : "Active";
+        const confirmMsg = isLocking
+            ? `Khóa chi nhánh "${branch.branchName}"?`
+            : `Mở khóa chi nhánh "${branch.branchName}"?`;
+        if (!window.confirm(confirmMsg)) {
+            setOpenActionId(null);
+            return;
+        }
+
+        setOpenActionId(null);
+        try {
+            if (isLocking) {
+                await adminApi.lockBranch(branch.branchId);
+            } else {
+                await adminApi.unlockBranch(branch.branchId);
+            }
+            setBranches((prev) =>
+                prev.map((b) =>
+                    b.branchId === branch.branchId ? { ...b, status: nextStatus } : b
+                )
+            );
+        } catch (err) {
+            console.error(err);
+            alert("Cập nhật trạng thái chi nhánh thất bại. Vui lòng thử lại.");
+        }
+    };
+
     // Thống kê tạm tính theo dữ liệu đang tải (best-effort).
     // Nếu backend có endpoint riêng trả về số liệu tổng hợp toàn hệ thống, nên thay bằng gọi API đó.
     const activeCount = branches.filter((b) => b.status === "Active").length;
@@ -206,26 +302,32 @@ export default function BranchListAdmin() {
     const from = totalItems === 0 ? 0 : (page - 1) * pageSize + 1;
     const to = Math.min(page * pageSize, totalItems);
 
+    const currentStatusLabel =
+        STATUS_OPTIONS.find((o) => o.value === status)?.label ?? "Tất cả";
+
     return (
         <div className="bl-root">
             <style>{`
         .bl-root {
-          --cyan: #06B6D4;
-          --cyan-dark: #0891B2;
-          --bg: #0B1120;
-          --card: #1E293B;
-          --card-soft: #0F172A;
-          --line: #334155;
-          --ink: #F1F5F9;
-          --muted: #94A3B8;
-          --muted-2: #64748B;
-          --green: #22C55E;
-          --green-bg: rgba(34, 197, 94, 0.14);
-          --orange: #F59E0B;
-          --orange-bg: rgba(245, 158, 11, 0.14);
-          --teal-bg: rgba(6, 182, 212, 0.14);
-          --rose: #FB7185;
-          --rose-bg: rgba(251, 113, 133, 0.14);
+          --cyan: #0EA5E9;
+          --cyan-dark: #0284C7;
+          --bg: #F0F7FF;
+          --card: #FFFFFF;
+          --card-soft: #F5FAFF;
+          --line: #BFE0FA;
+          --line-strong: #93C9F2;
+          --ink: #0F2942;
+          --muted: #5B7A94;
+          --muted-2: #8FACC4;
+          --green: #16A34A;
+          --green-bg: #DCFCE7;
+          --orange: #D97706;
+          --orange-bg: #FEF3C7;
+          --teal-bg: #E0F2FE;
+          --rose: #E11D48;
+          --rose-bg: #FFE4E6;
+          --hover-soft: #E6F4FF;
+          --hover-strong: #D6ECFF;
           font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
           background: var(--bg);
           min-height: 100vh;
@@ -244,7 +346,7 @@ export default function BranchListAdmin() {
           margin-bottom: 24px;
         }
         .bl-title { font-size: 26px; font-weight: 700; margin: 0 0 6px; color: var(--ink); letter-spacing: -0.01em; }
-        .bl-subtitle { font-size: 14px; color: var(--muted-2); margin: 0; }
+        .bl-subtitle { font-size: 14px; color: var(--muted); margin: 0; }
 
         .bl-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
         .bl-btn {
@@ -256,18 +358,18 @@ export default function BranchListAdmin() {
           font-size: 14px;
           font-weight: 500;
           cursor: pointer;
-          border: 1px solid var(--line);
+          border: 1px solid var(--line-strong);
           background: var(--card);
           color: var(--ink);
           white-space: nowrap;
         }
-        .bl-btn:hover { background: #253248; }
+        .bl-btn:hover { background: var(--hover-soft); }
         .bl-btn-primary {
           background: var(--cyan);
           border-color: var(--cyan);
-          color: #0F172A;
+          color: #FFFFFF;
           font-weight: 700;
-          box-shadow: 0 8px 20px -8px rgba(6, 182, 212, 0.5);
+          box-shadow: 0 8px 20px -8px rgba(14, 165, 233, 0.45);
         }
         .bl-btn-primary:hover { background: var(--cyan-dark); border-color: var(--cyan-dark); }
 
@@ -279,19 +381,19 @@ export default function BranchListAdmin() {
         }
         .bl-stat-card {
           background: var(--card);
-          border: 1px solid var(--line);
+          border: 1px solid var(--line-strong);
           border-radius: 18px;
           padding: 18px 20px;
           display: flex;
           align-items: center;
           gap: 14px;
-          box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+          box-shadow: 0 1px 2px rgba(15, 41, 66, 0.06);
           transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
         }
         .bl-stat-card:hover {
           transform: translateY(-3px);
-          border-color: #475569;
-          box-shadow: 0 14px 28px -12px rgba(0, 0, 0, 0.5);
+          border-color: var(--cyan);
+          box-shadow: 0 14px 28px -12px rgba(14, 165, 233, 0.25);
         }
 
         .bl-stat-icon {
@@ -313,7 +415,7 @@ export default function BranchListAdmin() {
 
         .bl-filter-card {
           background: var(--card);
-          border: 1px solid var(--line);
+          border: 1px solid var(--line-strong);
           border-radius: 18px;
           padding: 14px;
           display: flex;
@@ -321,6 +423,7 @@ export default function BranchListAdmin() {
           gap: 12px;
           flex-wrap: wrap;
           margin-bottom: 20px;
+          position: relative;
         }
         .bl-filter-input {
           flex: 1 1 200px;
@@ -333,10 +436,11 @@ export default function BranchListAdmin() {
           padding: 12px 16px;
           color: var(--muted);
           transition: border-color 0.15s, box-shadow 0.15s;
+          position: relative;
         }
         .bl-filter-input:focus-within {
           border-color: var(--cyan);
-          box-shadow: 0 0 0 3px rgba(6, 182, 212, 0.14);
+          box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.14);
         }
         .bl-filter-input input,
         .bl-filter-input select {
@@ -352,7 +456,40 @@ export default function BranchListAdmin() {
         .bl-filter-input input::placeholder { color: var(--muted-2); }
         .bl-filter-input input { cursor: text; }
         .bl-filter-input svg { flex-shrink: 0; color: var(--muted-2); }
-        .bl-filter-input .chev { margin-left: auto; }
+        .bl-filter-input .chev { margin-left: auto; transition: transform 0.15s; }
+        .bl-filter-input.open .chev { transform: rotate(180deg); }
+
+        .bl-select-trigger {
+          background: transparent;
+          border: none;
+          outline: none;
+          color: var(--ink);
+          font-size: 14px;
+          cursor: pointer;
+          text-align: left;
+          width: 100%;
+          padding: 0;
+        }
+        .bl-select-menu {
+          position: absolute;
+          top: calc(100% + 8px);
+          left: 0;
+          right: 0;
+          background: var(--card);
+          border: 1px solid var(--line-strong);
+          border-radius: 12px;
+          box-shadow: 0 16px 32px -12px rgba(15, 41, 66, 0.18);
+          overflow: hidden;
+          z-index: 30;
+        }
+        .bl-select-option {
+          padding: 10px 16px;
+          font-size: 14px;
+          color: var(--ink);
+          cursor: pointer;
+        }
+        .bl-select-option:hover { background: var(--hover-soft); }
+        .bl-select-option.selected { background: var(--teal-bg); color: var(--cyan-dark); font-weight: 600; }
 
         .bl-clear-btn {
           flex-shrink: 0;
@@ -369,12 +506,12 @@ export default function BranchListAdmin() {
           cursor: pointer;
           white-space: nowrap;
         }
-        .bl-clear-btn:hover { background: #182338; border-color: #475569; }
+        .bl-clear-btn:hover { background: var(--hover-strong); border-color: var(--line-strong); }
         .bl-clear-btn svg { color: var(--muted); }
 
         .bl-table-card {
           background: var(--card);
-          border: 1px solid var(--line);
+          border: 1px solid var(--line-strong);
           border-radius: 18px;
           overflow: hidden;
         }
@@ -386,14 +523,14 @@ export default function BranchListAdmin() {
           color: var(--ink);
         }
 
-        .bl-table-scroll { overflow-x: auto; }
+        .bl-table-scroll { overflow-x: auto; overflow-y: visible; }
         table.bl-table { width: 100%; border-collapse: collapse; min-width: 760px; }
         table.bl-table th {
           text-align: left;
           font-size: 12px;
           text-transform: uppercase;
           letter-spacing: 0.02em;
-          color: var(--muted-2);
+          color: var(--muted);
           font-weight: 600;
           padding: 12px 22px;
           background: var(--card-soft);
@@ -407,7 +544,7 @@ export default function BranchListAdmin() {
           color: var(--ink);
         }
         table.bl-table tr:last-child td { border-bottom: none; }
-        table.bl-table tr:hover td { background: #202c42; }
+        table.bl-table tr:hover td { background: var(--hover-soft); }
 
         .bl-branch-cell { display: flex; align-items: center; gap: 12px; }
         .bl-branch-thumb {
@@ -416,7 +553,7 @@ export default function BranchListAdmin() {
           border-radius: 10px;
           object-fit: cover;
           flex-shrink: 0;
-          background: #334155;
+          background: var(--line);
         }
         .bl-branch-thumb-fallback {
           width: 44px;
@@ -424,7 +561,7 @@ export default function BranchListAdmin() {
           border-radius: 10px;
           flex-shrink: 0;
           background: var(--teal-bg);
-          color: var(--cyan);
+          color: var(--cyan-dark);
           display: flex;
           align-items: center;
           justify-content: center;
@@ -459,7 +596,7 @@ export default function BranchListAdmin() {
           height: 30px;
           border-radius: 50%;
           background: var(--teal-bg);
-          color: var(--cyan);
+          color: var(--cyan-dark);
           display: flex;
           align-items: center;
           justify-content: center;
@@ -467,11 +604,12 @@ export default function BranchListAdmin() {
         }
         .bl-avatar svg { width: 15px; height: 15px; }
         .bl-manager-name { font-weight: 500; font-size: 14px; color: var(--ink); }
-        .bl-manager-role { font-size: 12px; color: var(--muted-2); }
+        .bl-manager-role { font-size: 12px; color: var(--muted); }
         .bl-no-manager { color: var(--muted-2); font-size: 13px; }
 
         .bl-date { color: var(--muted); white-space: nowrap; }
 
+        .bl-action-cell { position: relative; }
         .bl-dots-btn {
           border: none;
           background: transparent;
@@ -480,7 +618,35 @@ export default function BranchListAdmin() {
           padding: 4px;
           border-radius: 6px;
         }
-        .bl-dots-btn:hover { background: var(--card-soft); color: var(--ink); }
+        .bl-dots-btn:hover { background: var(--hover-soft); color: var(--ink); }
+
+        .bl-action-menu {
+          position: absolute;
+          top: calc(100% + 4px);
+          right: 0;
+          min-width: 180px;
+          background: var(--card);
+          border: 1px solid var(--line-strong);
+          border-radius: 12px;
+          box-shadow: 0 16px 32px -12px rgba(15, 41, 66, 0.2);
+          overflow: hidden;
+          z-index: 30;
+        }
+        .bl-action-item {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          padding: 10px 14px;
+          font-size: 14px;
+          color: var(--ink);
+          cursor: pointer;
+          white-space: nowrap;
+        }
+        .bl-action-item:hover { background: var(--hover-soft); }
+        .bl-action-item.danger { color: var(--rose); }
+        .bl-action-item.danger svg { color: var(--rose); }
+        .bl-action-item.success { color: var(--green); }
+        .bl-action-item.success svg { color: var(--green); }
 
         .bl-footer {
           display: flex;
@@ -516,9 +682,9 @@ export default function BranchListAdmin() {
         .bl-page-btn.active {
           background: var(--cyan);
           border-color: var(--cyan);
-          color: #0F172A;
+          color: #FFFFFF;
         }
-        .bl-page-btn:hover:not(.active):not(:disabled) { background: #253248; color: var(--ink); }
+        .bl-page-btn:hover:not(.active):not(:disabled) { background: var(--hover-soft); color: var(--ink); border-color: var(--line-strong); }
 
         .bl-empty, .bl-loading, .bl-error {
           padding: 40px 22px;
@@ -530,7 +696,7 @@ export default function BranchListAdmin() {
         .bl-retry-btn {
           margin-top: 10px;
           display: inline-flex;
-          border: 1px solid var(--line);
+          border: 1px solid var(--line-strong);
           background: var(--card-soft);
           color: var(--ink);
           border-radius: 8px;
@@ -591,22 +757,34 @@ export default function BranchListAdmin() {
                         onChange={(e) => setNameInput(e.target.value)}
                     />
                 </div>
-                <div className="bl-filter-input">
+
+                {/* Dropdown trạng thái tự dựng (thay cho <select> gốc) để có thể style theo theme trắng-xanh */}
+                <div className={`bl-filter-input ${statusOpen ? "open" : ""}`} ref={statusRef}>
                     <Icon name="pin" />
-                    <select
-                        value={status}
-                        onChange={(e) => {
-                            setStatus(e.target.value);
-                            setPage(1);
-                        }}
+                    <button
+                        type="button"
+                        className="bl-select-trigger"
+                        onClick={() => setStatusOpen((o) => !o)}
                     >
-                        <option value="">Tất cả</option>
-                        <option value="Active">Đang hoạt động</option>
-                        <option value="Inactive">Tạm ngừng</option>
-                        <option value="Deleted">Đã xóa</option>
-                    </select>
+                        {currentStatusLabel}
+                    </button>
                     <span className="chev"><Icon name="chevronDown" /></span>
+
+                    {statusOpen && (
+                        <div className="bl-select-menu">
+                            {STATUS_OPTIONS.map((opt) => (
+                                <div
+                                    key={opt.value || "all"}
+                                    className={`bl-select-option ${status === opt.value ? "selected" : ""}`}
+                                    onClick={() => handleSelectStatus(opt.value)}
+                                >
+                                    {opt.label}
+                                </div>
+                            ))}
+                        </div>
+                    )}
                 </div>
+
                 <button className="bl-clear-btn" onClick={handleClearFilters}>
                     <Icon name="refresh" />
                     Xóa lọc
@@ -669,6 +847,7 @@ export default function BranchListAdmin() {
                                             : b.status === "Inactive"
                                                 ? "Tạm ngừng"
                                                 : b.status;
+                                    const isMenuOpen = openActionId === b.branchId;
                                     return (
                                         <tr key={b.branchId}>
                                             <td>{from + idx}</td>
@@ -713,10 +892,31 @@ export default function BranchListAdmin() {
                                                 )}
                                             </td>
                                             <td className="bl-date">{formatDate(b.createdAt)}</td>
-                                            <td>
-                                                <button className="bl-dots-btn">
+                                            <td className="bl-action-cell">
+                                                <button
+                                                    className="bl-dots-btn"
+                                                    onClick={() =>
+                                                        setOpenActionId((id) => (id === b.branchId ? null : b.branchId))
+                                                    }
+                                                >
                                                     <Icon name="dots" />
                                                 </button>
+
+                                                {isMenuOpen && (
+                                                    <div className="bl-action-menu" ref={actionMenuRef}>
+                                                        <div className="bl-action-item" onClick={() => handleView(b)}>
+                                                            <Icon name="eye" />
+                                                            Xem chi tiết
+                                                        </div>
+                                                        <div
+                                                            className={`bl-action-item ${b.status === "Active" ? "danger" : "success"}`}
+                                                            onClick={() => handleToggleLock(b)}
+                                                        >
+                                                            <Icon name={b.status === "Active" ? "lock" : "unlock"} />
+                                                            {b.status === "Active" ? "Khóa chi nhánh" : "Mở khóa chi nhánh"}
+                                                        </div>
+                                                    </div>
+                                                )}
                                             </td>
                                         </tr>
                                     );

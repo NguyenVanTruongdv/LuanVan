@@ -72,27 +72,34 @@ public class CheckInHistoryQueryDto
 
     public int? branchId { get; set; }
 
-    /// <summary>Tìm theo tên hoặc SĐT hội viên (không bắt buộc)</summary>
+    /// <summary>Tìm theo tên hoặc SĐT hội viên, hoặc tên nhân viên (không bắt buộc)</summary>
     public string? Keyword { get; set; }
 
-    public int Page { get; set; } = 1;
-    public int PageSize { get; set; } = 20;
+    /// <summary>
+    /// Lọc theo loại người check-in: "member", "employee", hoặc null/để trống = lấy tất cả.
+    /// </summary>
+    public string? PersonType { get; set; }
 }
 
 public class CheckInHistoryItemDto
 {
     public long CheckInId { get; set; }
 
-    public long MemberId { get; set; }
-    public string MemberName { get; set; } = null!;
+    public bool IsEmployee { get; set; }
+
+    public long? MemberId { get; set; }
+    public string? MemberName { get; set; }
     public string? MemberPhone { get; set; }
-    public string? MemberAvatar { get; set; }   // <-- thêm
+    public string? MemberAvatar { get; set; }
+
+    public long? EmployeeId { get; set; }
+    public string? EmployeeName { get; set; }
 
     public int BranchId { get; set; }
     public string? BranchName { get; set; }
 
     public DateTime CheckInTime { get; set; }
-    public string CheckInMethod { get; set; } = null!;
+    public string? CheckInMethod { get; set; }
     public string? CheckInStaffName { get; set; }
 
     public DateTime? CheckOutTime { get; set; }
@@ -104,6 +111,4 @@ public class CheckInHistoryResponseDto
 {
     public List<CheckInHistoryItemDto> Items { get; set; } = new();
     public int TotalCount { get; set; }
-    public int Page { get; set; }
-    public int PageSize { get; set; }
 }

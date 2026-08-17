@@ -69,9 +69,7 @@ function PlanCard({ plan, onBuy, loading }) {
 
             <h3 className="mp-plan__name">{plan.planName}</h3>
 
-            <div className={`mp-plan__status${onSale ? "" : " mp-plan__status--off"}`}>
-                <i /> {onSale ? "Đang bán" : "Ngừng bán"}
-            </div>
+
 
             <div className="mp-plan__price">
                 <span className="mp-plan__amt">{formatVnd(plan.price)}</span>
@@ -404,14 +402,7 @@ export default function MembershipPlansPage() {
                 {!loading && !error && (
                     <div className="mp-controls">
                         <div className="mp-count">{onSaleCount} gói đang bán</div>
-                        <div className="mp-legend">
-                            <span>
-                                <i style={{ background: "var(--steel, #5bb8cc)" }} /> Đang bán
-                            </span>
-                            <span>
-                                <i style={{ background: "#5a5a5e" }} /> Ngừng bán
-                            </span>
-                        </div>
+
                     </div>
                 )}
 

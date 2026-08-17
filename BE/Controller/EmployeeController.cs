@@ -232,30 +232,7 @@ namespace BE.Controllers
         // TÀI KHOẢN ĐĂNG NHẬP
         // ====================================================================
 
-        // Thêm tài khoản đăng nhập cho nhân viên đã có info nhưng chưa có tài khoản.
-        [HttpPost("{id:long}/account")]
-        [Authorize(Roles = "Admin,Manager")]
-        public async Task<IActionResult> AddAccount(long id, [FromBody] AddEmployeeAccountDto dto)
-        {
-            var currentEmployeeId = GetCurrentEmployeeId();
-            if (currentEmployeeId == null)
-                return Unauthorized();
-
-            try
-            {
-                var result = await _employeeService.AddAccountAsync(id, dto, currentEmployeeId.Value);
-                return Ok(result);
-            }
-            catch (UnauthorizedAccessException ex)
-            {
-                return StatusCode(StatusCodes.Status403Forbidden, new { message = ex.Message });
-            }
-            catch (InvalidOperationException ex)
-            {
-                return BadRequest(new { message = ex.Message });
-            }
-        }
-
+      
         // Sửa tài khoản đăng nhập đã có của nhân viên (email đăng nhập, mật khẩu...).
         [HttpPut("{id:long}/account")]
         [Authorize(Roles = "Admin,Manager")]
@@ -281,60 +258,7 @@ namespace BE.Controllers
         }
 
         // Khóa CHỈ tài khoản đăng nhập (không đụng Employee.Status / FaceID).
-        [HttpPatch("{id:long}/account/lock")]
-        [Authorize(Roles = "Admin,Manager")]
-        public async Task<IActionResult> LockAccountOnly(long id, [FromBody] LockAccountOnlyDto dto)
-        {
-            var currentEmployeeId = GetCurrentEmployeeId();
-            if (currentEmployeeId == null)
-                return Unauthorized();
-
-            if (string.IsNullOrWhiteSpace(dto.Reason))
-                return BadRequest(new { message = "Vui lòng nhập lý do khóa tài khoản." });
-
-            try
-            {
-                await _employeeService.LockAccountOnlyAsync(id, dto.Reason, currentEmployeeId.Value);
-                return NoContent();
-            }
-            catch (UnauthorizedAccessException ex)
-            {
-                return StatusCode(StatusCodes.Status403Forbidden, new { message = ex.Message });
-            }
-            catch (InvalidOperationException ex)
-            {
-                return BadRequest(new { message = ex.Message });
-            }
-            catch (ArgumentException ex)
-            {
-                return BadRequest(new { message = ex.Message });
-            }
-        }
-
-        // Mở khóa CHỈ tài khoản đăng nhập.
-        [HttpPatch("{id:long}/account/unlock")]
-        [Authorize(Roles = "Admin,Manager")]
-        public async Task<IActionResult> UnlockAccountOnly(long id)
-        {
-            var currentEmployeeId = GetCurrentEmployeeId();
-            if (currentEmployeeId == null)
-                return Unauthorized();
-
-            try
-            {
-                await _employeeService.UnlockAccountOnlyAsync(id, currentEmployeeId.Value);
-                return NoContent();
-            }
-            catch (UnauthorizedAccessException ex)
-            {
-                return StatusCode(StatusCodes.Status403Forbidden, new { message = ex.Message });
-            }
-            catch (InvalidOperationException ex)
-            {
-                return BadRequest(new { message = ex.Message });
-            }
-        }
-
+      
         // ====================================================================
         // FACEID
         // ====================================================================
@@ -391,18 +315,17 @@ namespace BE.Controllers
         // Khóa toàn diện nhân viên (Employee.Status + Account nếu có) — bắt buộc nhập lý do.
         [HttpPatch("{id:long}/hide")]
         [Authorize(Roles = "Admin,Manager")]
-        public async Task<IActionResult> Hide(long id, [FromBody] HideEmployeeDto dto)
+        public async Task<IActionResult> Hide(long id)
         {
             var currentEmployeeId = GetCurrentEmployeeId();
             if (currentEmployeeId == null)
                 return Unauthorized();
 
-            if (string.IsNullOrWhiteSpace(dto.Reason))
-                return BadRequest(new { message = "Vui lòng nhập lý do khóa tài khoản." });
+            
 
             try
             {
-                await _employeeService.LockEmployeeAsync(id, dto.Reason, currentEmployeeId.Value);
+                await _employeeService.LockEmployeeAsync(id, currentEmployeeId.Value);
                 return NoContent();
             }
             catch (KeyNotFoundException)

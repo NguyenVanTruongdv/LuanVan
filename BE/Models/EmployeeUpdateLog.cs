@@ -12,9 +12,9 @@ public partial class EmployeeUpdateLog
 
     public Guid UpdateSessionId { get; set; }
 
-    /// <summary>
+    
     /// Nhân viên bị thay đổi thông tin — FK tới employees.employee_id
-    /// </summary>
+  
     public long EmployeeId { get; set; }
 
     public string FieldName { get; set; } = null!;

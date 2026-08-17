@@ -24,8 +24,8 @@ public class NewsService
         news.CreatedBy = currentUserId;
         news.BranchId = news.BranchId ?? currentUserBranchId;
         news.Status = StatusActive;
-        news.CreatedAt = DateTime.UtcNow;
-        news.UpdatedAt = DateTime.UtcNow;
+        news.CreatedAt = DateTime.Now;
+        news.UpdatedAt = DateTime.Now;
 
         _db.Add(news);
         await _db.SaveChangesAsync();
@@ -47,7 +47,7 @@ public class NewsService
         existing.Content = input.Content;
         if (isAdmin && input.BranchId.HasValue)
             existing.BranchId = input.BranchId;
-        existing.UpdatedAt = DateTime.UtcNow;
+        existing.UpdatedAt = DateTime.Now;
 
         await _db.SaveChangesAsync();
         return (true, null);
@@ -64,7 +64,7 @@ public class NewsService
             return (false, "Forbidden");
 
         existing.Status = StatusHidden;
-        existing.UpdatedAt = DateTime.UtcNow;
+        existing.UpdatedAt = DateTime.Now;
 
         await _db.SaveChangesAsync();
         return (true, null);
@@ -146,7 +146,7 @@ public class NewsService
             return (false, "Forbidden");
 
         existing.Status = StatusActive;
-        existing.UpdatedAt = DateTime.UtcNow;
+        existing.UpdatedAt = DateTime.Now;
 
         await _db.SaveChangesAsync();
         return (true, null);

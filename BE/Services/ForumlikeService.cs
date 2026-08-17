@@ -49,7 +49,7 @@ public class ForumLikeService
             {
                 PostId = postId,
                 MemberId = memberId,
-                CreatedAt = DateTime.UtcNow
+                CreatedAt = DateTime.Now
             };
             _context.ForumLikes.Add(likeMoi);
             baiViet.LikeCount = baiViet.LikeCount + 1;

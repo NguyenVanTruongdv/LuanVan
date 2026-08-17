@@ -70,7 +70,7 @@ public class ForumCategoryService
             Icon = dto.Icon,
             DisplayOrder = dto.DisplayOrder,
             Status = "Active",
-            CreatedAt = DateTime.UtcNow
+            CreatedAt = DateTime.Now
         };
 
         _context.ForumCategories.Add(danhMucMoi);

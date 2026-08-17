@@ -95,7 +95,7 @@ namespace BE.Services
                 SortOrder = request.SortOrder,
                 Status = "Active",
                 UploadedBy = uploadedBy,
-                UploadedAt = DateTime.UtcNow
+                UploadedAt = DateTime.Now
             };
 
             _context.HomeImages.Add(entity);

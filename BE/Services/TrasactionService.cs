@@ -39,7 +39,7 @@ namespace BE.Services
         }
 
         public static string GenerateOrderCode()
-            => $"HD{DateTime.UtcNow:yyyyMMddHHmmss}{Random.Shared.Next(1000, 9999)}";
+            => $"HD{DateTime.Now:yyyyMMddHHmmssfff}{Random.Shared.Next(10, 99)}";
 
         // ===================== LỊCH SỬ ĐĂNG KÝ GÓI (dùng cho nhân viên) =====================
         public async Task<List<HistoryRegisPacReponse>> GetHistoryRegisPac(
@@ -193,7 +193,7 @@ namespace BE.Services
             if (promotion.PlanId != planId)
                 throw new InvalidOperationException("Khuyến mãi không áp dụng cho gói tập này.");
 
-            var now = asOf ?? DateTime.UtcNow;
+            var now = asOf ?? DateTime.Now;
 
             if (promotion.TrangThai != "HoatDong")
                 throw new InvalidOperationException("Khuyến mãi hiện không hoạt động.");
@@ -259,7 +259,7 @@ namespace BE.Services
 
         public async Task<Transaction> CreateTransactionAsync(CreateTransactionRequest request)
         {
-            var now = DateTime.UtcNow;
+            var now = DateTime.Now;
 
             var transaction = new Transaction
             {
@@ -393,7 +393,7 @@ namespace BE.Services
             transaction.PromotionId = effect.Promo?.PromotionId;
             transaction.GiaGoc = effect.GiaGoc;
             transaction.Amount = effect.Amount;
-            transaction.UpdatedAt = DateTime.UtcNow;
+            transaction.UpdatedAt = DateTime.Now;
 
             memberPackage.PlanId = newPlanId;
             memberPackage.PromotionId = effect.Promo?.PromotionId;
@@ -403,13 +403,13 @@ namespace BE.Services
             // StartDate KHÔNG đổi khi điều chỉnh — chỉ đổi gói/KM/ExpiryDate.
             memberPackage.ExpiryDate = CalculateNewExpiryDate(
                 memberPackage.StartDate!.Value, newPlan.DurationDays, effect.BonusDays);
-            memberPackage.UpdatedAt = DateTime.UtcNow;
+            memberPackage.UpdatedAt = DateTime.Now;
 
             if (effect.Promo != null)
                 RecordPromotionUsage(effect.Promo, transaction.MemberId, memberPackage.MemberPackageId,
                     newPlanId, effect.BonusDays, effect.DiscountAmount);
 
-            var adjustedAt = DateTime.UtcNow;
+            var adjustedAt = DateTime.Now;
             _context.TransactionAdjustmentLogs.Add(new TransactionAdjustmentLog
             {
                 TransactionId = transaction.TransactionId,
@@ -555,7 +555,7 @@ namespace BE.Services
                 PlanId = planId,
                 SoNgayDuocTang = bonusDays,
                 SoTienDaGiam = discountAmount,
-                ApDungLuc = DateTime.UtcNow
+                ApDungLuc = DateTime.Now
             });
             promotion.SoLuotDaDung += 1;
         }

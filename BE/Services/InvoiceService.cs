@@ -23,16 +23,7 @@ namespace BE.Services
         public string? EmployeeName { get; set; }
         public string? PromotionName { get; set; }
 
-        // [MỚI] Thông tin chi nhánh đã BÁN gói tập này — in lên hóa đơn thay vì hardcode
-        // "VT GYM, 241 Nguyễn Gia Trí..." như trước. Luôn nên có giá trị vì
-        // Transaction.BranchId / MemberPackage.BranchId giờ là bắt buộc, nhưng vẫn có
-        // fallback ở InvoiceService phòng trường hợp thiếu dữ liệu.
-        //
-        // [LƯU Ý] Khi hóa đơn được LẬP LẠI sau điều chỉnh giao dịch (IsAdjustmentReissue = true),
-        // 3 field BranchName/BranchAddress/BranchPhone PHẢI được TransactionService truyền vào
-        // từ đúng transaction.Branch GỐC (chi nhánh khách đã thực hiện giao dịch ban đầu) —
-        // điều chỉnh chỉ đổi gói tập/khuyến mãi, KHÔNG đổi chi nhánh, nên hóa đơn mới vẫn phải
-        // in địa chỉ/số điện thoại của đúng chi nhánh đó, không được đổi sang chi nhánh khác.
+        
         public string? BranchName { get; set; }
         public string? BranchAddress { get; set; }
         public string? BranchPhone { get; set; }

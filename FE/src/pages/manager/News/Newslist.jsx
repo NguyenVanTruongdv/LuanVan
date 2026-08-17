@@ -140,11 +140,25 @@ export default function NewsList() {
         console.log("[NewsList] handleEdit fired for item:", item);
         setEditingId(item.newsId);
         setEditError(null);
+
+        // Chi nhánh của bài viết có thể không còn nằm trong danh sách chi nhánh
+        // mà Manager hiện tại được quản lý (vd bài cũ gán cho chi nhánh khác, hoặc
+        // branchId null / "áp dụng tất cả"). Nếu vậy, dropdown chỉ hiển thị được
+        // các chi nhánh hợp lệ nên PHẢI đồng bộ lại state theo đúng option đang
+        // hiển thị — nếu không, state vẫn giữ giá trị cũ không khớp option nào,
+        // và khi Lưu sẽ gửi đi branchId sai dù trên UI trông như đã chọn đúng.
+        const isValidBranch = branches.some(
+            (b) => String(b.branchId) === String(item.branchId)
+        );
+        const resolvedBranchId = isValidBranch
+            ? item.branchId
+            : branches[0]?.branchId ?? "";
+
         setEditForm({
             title: item.title ?? "",
             summary: item.summary ?? "",
             content: item.content ?? "",
-            branchId: item.branchId ?? "",
+            branchId: resolvedBranchId,
         });
         setView("edit");
     };
@@ -203,18 +217,28 @@ export default function NewsList() {
         <div className="news-list">
             <style>{`
                 .news-list {
-                    --nl-bg-panel: #141a29;
-                    --nl-bg-card: #1a2233;
-                    --nl-bg-card-hover: #1e2739;
-                    --nl-border: #262f45;
-                    --nl-text-primary: #e7ecf5;
-                    --nl-text-secondary: #8b95ab;
-                    --nl-teal: #2dd4bf;
-                    --nl-cyan: #22d3ee;
-                    --nl-red: #f87171;
-                    --nl-radius: 14px;
+                    --nl-bg-page: #f4f6fb;
+                    --nl-bg-card: #ffffff;
+                    --nl-bg-card-hover: #fbfcfe;
+                    --nl-bg-input: #f7f9fc;
+                    --nl-border: #e8ecf3;
+                    --nl-text-primary: #1b2233;
+                    --nl-text-secondary: #8a93a6;
+                    --nl-teal: #16a34a;
+                    --nl-cyan: #4ade80;
+                    --nl-green-tint: #bbf7d0;
+                    --nl-green-tint-soft: rgba(34, 197, 94, 0.16);
+                    --nl-red: #ef4444;
+                    --nl-green: #16a34a;
+                    --nl-radius: 20px;
+                    --nl-shadow: 0 20px 40px -16px rgba(15, 23, 42, 0.16), 0 4px 12px rgba(15, 23, 42, 0.05);
+                    --nl-shadow-hover: 0 24px 48px -16px rgba(15, 23, 42, 0.2), 0 6px 16px rgba(15, 23, 42, 0.06);
 
                     padding: 28px;
+                    max-width: 960px;
+                    min-height: 100%;
+                    margin: 0 auto;
+                    background: var(--nl-bg-page);
                     color: var(--nl-text-primary);
                     font-family: "Inter", "Segoe UI", system-ui, sans-serif;
                 }
@@ -230,9 +254,10 @@ export default function NewsList() {
 
                 .news-list__title {
                     margin: 0 0 4px;
-                    font-size: 22px;
-                    font-weight: 700;
+                    font-size: 24px;
+                    font-weight: 800;
                     letter-spacing: -0.01em;
+                    color: var(--nl-text-primary);
                 }
 
                 .news-list__subtitle {
@@ -246,19 +271,21 @@ export default function NewsList() {
                     align-items: center;
                     gap: 8px;
                     padding: 10px 18px;
-                    border-radius: 10px;
+                    border-radius: 12px;
                     background: linear-gradient(135deg, var(--nl-cyan), var(--nl-teal));
-                    color: #04211d;
-                    font-weight: 600;
+                    color: #ffffff;
+                    font-weight: 700;
                     font-size: 14px;
                     text-decoration: none;
                     white-space: nowrap;
-                    transition: filter 0.15s ease, transform 0.15s ease;
+                    box-shadow: 0 12px 24px -10px rgba(34, 197, 94, 0.55);
+                    transition: filter 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
                 }
 
                 .news-list__create-btn:hover {
-                    filter: brightness(1.08);
+                    filter: brightness(1.05);
                     transform: translateY(-1px);
+                    box-shadow: 0 16px 28px -10px rgba(34, 197, 94, 0.6);
                 }
 
                 .news-list__create-icon {
@@ -283,37 +310,50 @@ export default function NewsList() {
                     flex: 1 1 260px;
                     min-width: 200px;
                     padding: 10px 14px;
-                    border-radius: 10px;
-                    border: 1px solid var(--nl-border);
-                    background: var(--nl-bg-panel);
+                    border-radius: 12px;
+                    border: 1.5px solid var(--nl-green-tint);
+                    background: var(--nl-bg-card);
                     color: var(--nl-text-primary);
                     font-size: 13.5px;
                     outline: none;
-                    transition: border-color 0.15s ease;
+                    box-shadow: 0 10px 24px -14px rgba(22, 163, 74, 0.28), 0 2px 6px rgba(15, 23, 42, 0.04);
+                    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+                }
+
+                .news-list__search:hover {
+                    border-color: #86efac;
                 }
 
                 .news-list__search::placeholder {
-                    color: #5b6478;
+                    color: #a7afc0;
                 }
 
                 .news-list__search:focus {
                     border-color: var(--nl-teal);
+                    box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.16);
                 }
 
                 .news-list__select {
                     padding: 10px 14px;
-                    border-radius: 10px;
-                    border: 1px solid var(--nl-border);
-                    background: var(--nl-bg-panel);
+                    border-radius: 12px;
+                    border: 1.5px solid var(--nl-green-tint);
+                    background: var(--nl-bg-card);
                     color: var(--nl-text-primary);
                     font-size: 13.5px;
                     min-width: 180px;
                     outline: none;
                     cursor: pointer;
+                    box-shadow: 0 10px 24px -14px rgba(22, 163, 74, 0.28), 0 2px 6px rgba(15, 23, 42, 0.04);
+                    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+                }
+
+                .news-list__select:hover {
+                    border-color: #86efac;
                 }
 
                 .news-list__select:focus {
                     border-color: var(--nl-teal);
+                    box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.16);
                 }
 
                 .news-list__filter-status {
@@ -324,11 +364,12 @@ export default function NewsList() {
 
                 .news-list__reset-btn {
                     padding: 10px 16px;
-                    border-radius: 10px;
-                    border: 1px solid transparent;
+                    border-radius: 12px;
+                    border: 1.5px solid transparent;
                     background: transparent;
                     color: var(--nl-text-secondary);
                     font-size: 13.5px;
+                    font-weight: 600;
                     cursor: pointer;
                 }
 
@@ -339,14 +380,14 @@ export default function NewsList() {
                 .news-list__body {
                     display: flex;
                     flex-direction: column;
-                    gap: 12px;
+                    gap: 14px;
                 }
 
                 .news-list__state {
                     padding: 32px 16px;
                     text-align: center;
                     color: var(--nl-text-secondary);
-                    background: var(--nl-bg-panel);
+                    background: var(--nl-bg-card);
                     border: 1px dashed var(--nl-border);
                     border-radius: var(--nl-radius);
                     font-size: 13.5px;
@@ -354,7 +395,7 @@ export default function NewsList() {
 
                 .news-list__state--error {
                     color: var(--nl-red);
-                    border-color: rgba(248, 113, 113, 0.35);
+                    border-color: rgba(239, 68, 68, 0.3);
                 }
 
                 .news-card {
@@ -362,16 +403,19 @@ export default function NewsList() {
                     align-items: flex-start;
                     justify-content: space-between;
                     gap: 20px;
-                    padding: 18px 20px;
+                    padding: 20px 22px;
                     border-radius: var(--nl-radius);
                     background: var(--nl-bg-card);
                     border: 1px solid var(--nl-border);
-                    transition: background 0.15s ease, border-color 0.15s ease;
+                    box-shadow: var(--nl-shadow);
+                    transition: background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
                 }
 
                 .news-card:hover {
                     background: var(--nl-bg-card-hover);
-                    border-color: #2f3a54;
+                    border-color: #d7deec;
+                    box-shadow: var(--nl-shadow-hover);
+                    transform: translateY(-2px);
                 }
 
                 .news-card__main {
@@ -414,7 +458,7 @@ export default function NewsList() {
                 }
 
                 .news-card__dot {
-                    color: #3a4460;
+                    color: #c7cede;
                 }
 
                 .news-card__status {
@@ -424,17 +468,17 @@ export default function NewsList() {
                     padding: 4px 12px;
                     border-radius: 999px;
                     font-size: 12px;
-                    font-weight: 600;
+                    font-weight: 700;
                     white-space: nowrap;
                 }
 
                 .news-card__status--active {
-                    background: rgba(45, 212, 191, 0.14);
+                    background: rgba(34, 197, 94, 0.12);
                     color: var(--nl-teal);
                 }
 
                 .news-card__status--hidden {
-                    background: rgba(139, 149, 171, 0.14);
+                    background: rgba(138, 147, 166, 0.12);
                     color: var(--nl-text-secondary);
                 }
 
@@ -453,36 +497,38 @@ export default function NewsList() {
 
                 .news-card__edit-btn {
                     padding: 8px 16px;
-                    border-radius: 8px;
-                    border: 1px solid rgba(34, 211, 238, 0.4);
-                    background: rgba(34, 211, 238, 0.08);
-                    color: var(--nl-cyan);
+                    border-radius: 10px;
+                    border: 1.5px solid rgba(59, 130, 246, 0.35);
+                    background: rgba(59, 130, 246, 0.08);
+                    color: #3b82f6;
                     font-size: 13px;
-                    font-weight: 600;
+                    font-weight: 700;
                     cursor: pointer;
-                    transition: background 0.15s ease;
+                    transition: background 0.15s ease, box-shadow 0.15s ease;
                     white-space: nowrap;
                 }
 
                 .news-card__edit-btn:hover {
-                    background: rgba(34, 211, 238, 0.18);
+                    background: rgba(59, 130, 246, 0.16);
+                    box-shadow: 0 8px 18px -10px rgba(59, 130, 246, 0.5);
                 }
 
                 .news-card__hide-btn {
                     padding: 8px 16px;
-                    border-radius: 8px;
-                    border: 1px solid rgba(248, 113, 113, 0.4);
-                    background: rgba(248, 113, 113, 0.08);
+                    border-radius: 10px;
+                    border: 1.5px solid rgba(239, 68, 68, 0.35);
+                    background: rgba(239, 68, 68, 0.08);
                     color: var(--nl-red);
                     font-size: 13px;
-                    font-weight: 600;
+                    font-weight: 700;
                     cursor: pointer;
-                    transition: background 0.15s ease;
+                    transition: background 0.15s ease, box-shadow 0.15s ease;
                     white-space: nowrap;
                 }
 
                 .news-card__hide-btn:hover:not(:disabled) {
-                    background: rgba(248, 113, 113, 0.18);
+                    background: rgba(239, 68, 68, 0.16);
+                    box-shadow: 0 8px 18px -10px rgba(239, 68, 68, 0.5);
                 }
 
                 .news-card__hide-btn:disabled {
@@ -492,19 +538,20 @@ export default function NewsList() {
 
                 .news-card__activate-btn {
                     padding: 8px 16px;
-                    border-radius: 8px;
-                    border: 1px solid rgba(45, 212, 191, 0.4);
-                    background: rgba(45, 212, 191, 0.08);
+                    border-radius: 10px;
+                    border: 1.5px solid rgba(34, 197, 94, 0.35);
+                    background: rgba(34, 197, 94, 0.08);
                     color: var(--nl-teal);
                     font-size: 13px;
-                    font-weight: 600;
+                    font-weight: 700;
                     cursor: pointer;
-                    transition: background 0.15s ease;
+                    transition: background 0.15s ease, box-shadow 0.15s ease;
                     white-space: nowrap;
                 }
 
                 .news-card__activate-btn:hover:not(:disabled) {
-                    background: rgba(45, 212, 191, 0.18);
+                    background: rgba(34, 197, 94, 0.16);
+                    box-shadow: 0 8px 18px -10px rgba(34, 197, 94, 0.5);
                 }
 
                 .news-card__activate-btn:disabled {
@@ -524,15 +571,17 @@ export default function NewsList() {
                     display: inline-flex;
                     align-items: center;
                     justify-content: center;
-                    width: 34px;
-                    height: 34px;
-                    border-radius: 9px;
-                    border: 1px solid var(--nl-border);
+                    width: 36px;
+                    height: 36px;
+                    border-radius: 11px;
+                    border: 1.5px solid var(--nl-border);
                     background: var(--nl-bg-card);
                     color: var(--nl-text-primary);
                     font-size: 16px;
                     cursor: pointer;
                     flex-shrink: 0;
+                    box-shadow: 0 8px 20px -14px rgba(15, 23, 42, 0.3);
+                    transition: border-color 0.15s ease, color 0.15s ease;
                 }
 
                 .news-detail__back:hover {
@@ -542,16 +591,17 @@ export default function NewsList() {
 
                 .news-detail__title {
                     margin: 0;
-                    font-size: 20px;
-                    font-weight: 700;
+                    font-size: 21px;
+                    font-weight: 800;
                 }
 
                 .news-detail__card {
                     max-width: 720px;
-                    padding: 24px;
+                    padding: 26px;
                     border-radius: var(--nl-radius);
                     background: var(--nl-bg-card);
                     border: 1px solid var(--nl-border);
+                    box-shadow: var(--nl-shadow);
                     display: flex;
                     flex-direction: column;
                     gap: 18px;
@@ -565,7 +615,7 @@ export default function NewsList() {
 
                 .news-detail__label {
                     font-size: 13px;
-                    font-weight: 600;
+                    font-weight: 700;
                     color: var(--nl-text-secondary);
                 }
 
@@ -574,20 +624,30 @@ export default function NewsList() {
                 .news-detail__select {
                     width: 100%;
                     padding: 11px 14px;
-                    border-radius: 10px;
-                    border: 1px solid var(--nl-border);
-                    background: var(--nl-bg-panel);
+                    border-radius: 12px;
+                    border: 1.5px solid var(--nl-green-tint);
+                    background: #ffffff;
                     color: var(--nl-text-primary);
                     font-size: 14px;
                     font-family: inherit;
                     outline: none;
                     box-sizing: border-box;
+                    box-shadow: 0 8px 18px -14px rgba(22, 163, 74, 0.3), inset 0 1px 2px rgba(15, 23, 42, 0.04);
+                    transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+                }
+
+                .news-detail__input:hover,
+                .news-detail__textarea:hover,
+                .news-detail__select:hover {
+                    border-color: #86efac;
                 }
 
                 .news-detail__input:focus,
                 .news-detail__textarea:focus,
                 .news-detail__select:focus {
-                    border-color: var(--nl-cyan);
+                    border-color: var(--nl-teal);
+                    box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.16);
+                    background: #ffffff;
                 }
 
                 .news-detail__textarea {
@@ -598,6 +658,7 @@ export default function NewsList() {
 
                 .news-detail__error {
                     font-size: 13px;
+                    font-weight: 600;
                     color: var(--nl-red);
                 }
 
@@ -612,30 +673,32 @@ export default function NewsList() {
 
                 .news-detail__cancel-btn {
                     padding: 10px 20px;
-                    border-radius: 10px;
-                    border: 1px solid var(--nl-border);
-                    background: transparent;
+                    border-radius: 12px;
+                    border: 1.5px solid var(--nl-border);
+                    background: #ffffff;
                     color: var(--nl-text-secondary);
                     font-size: 14px;
-                    font-weight: 600;
+                    font-weight: 700;
                     cursor: pointer;
                 }
 
                 .news-detail__save-btn {
                     padding: 10px 22px;
-                    border-radius: 10px;
+                    border-radius: 12px;
                     border: none;
                     background: linear-gradient(135deg, var(--nl-cyan), var(--nl-teal));
-                    color: #04211d;
+                    color: #ffffff;
                     font-size: 14px;
                     font-weight: 700;
                     cursor: pointer;
+                    box-shadow: 0 12px 24px -10px rgba(34, 197, 94, 0.55);
                 }
 
                 .news-detail__save-btn:disabled,
                 .news-detail__cancel-btn:disabled {
                     opacity: 0.6;
                     cursor: not-allowed;
+                    box-shadow: none;
                 }
 
                 @media (max-width: 720px) {
@@ -647,6 +710,7 @@ export default function NewsList() {
 
                 @media (max-width: 720px) {
                     .news-list {
+                        max-width: none;
                         padding: 18px;
                     }
 
@@ -735,7 +799,6 @@ export default function NewsList() {
                                 value={editForm.branchId}
                                 onChange={handleEditFieldChange("branchId")}
                             >
-                                <option value="">Tất cả chi nhánh</option>
                                 {branches.map((b) => (
                                     <option key={b.branchId} value={b.branchId}>
                                         {b.branchName}

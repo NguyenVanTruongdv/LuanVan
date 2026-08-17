@@ -1,5 +1,6 @@
-﻿using System;
-using System.Collections.Generic;
+﻿
+
+using System.ComponentModel.DataAnnotations;
 
 namespace BE.Models;
 
@@ -10,12 +11,14 @@ public partial class Equipment
 {
     public int EquipmentId { get; set; }
 
+    [Required(ErrorMessage = "Tên thiết bị không được để trống.")]
     public string EquipmentName { get; set; } = null!;
 
+    [Required(ErrorMessage = "Vui lòng chọn danh mục thiết bị.")]
     public int CategoryId { get; set; }
 
-    public int BranchId { get; set; }
-
+    [Required(ErrorMessage = "Vui lòng chọn chi nhánh.")]
+public int BranchId { get; set; }
     public string Status { get; set; } = null!;
 
     public string? Description { get; set; }

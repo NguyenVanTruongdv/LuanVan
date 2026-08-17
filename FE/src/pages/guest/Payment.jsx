@@ -870,21 +870,40 @@ export default function Payment() {
                                             </div>
                                         )}
 
-                                        {/* Khuyến mãi được tự động áp dụng cho gói đang chọn (khách không cần tự chọn -
-                                            hệ thống tự tìm khuyến mãi có giá trị quy đổi cao nhất trong danh sách áp dụng được) */}
-                                        <div style={{ marginTop: 18 }}>
-                                            <div className="co-card-title" style={{ marginBottom: 10 }}>
-                                                <span className="co-bar" />Khuyến mãi
-                                            </div>
+                                        <div className="co-spacer" />
+                                    </div>
+                                </div>
 
-                                            {loadingPromotions && <div className="co-fine">Đang tải khuyến mãi...</div>}
+                                <div className="co-right">
+
+
+                                    <div className="co-card co-grow">
+                                        <div className="co-card-title"><span className="co-bar" />Thanh toán</div>
+
+                                        <div className="co-price-list" style={{ marginTop: 0, borderTop: "none", paddingTop: 0 }}>
+                                            <div className="co-price-row"><span>Giá {selectedPlan.planName}</span><span>{formatVnd(selectedPlan.price)}</span></div>
+                                            {discountAmount > 0 && (
+                                                <div className="co-price-row discount">
+                                                    <span>Khuyến mãi ({selectedPromotion?.tenKhuyenMai})</span>
+                                                    <span>-{formatVnd(discountAmount)}</span>
+                                                </div>
+                                            )}
+                                            <div className="co-price-row total"><span>Thành tiền</span><span className="val co-disp">{formatVnd(finalPrice)}</span></div>
+                                        </div>
+
+                                        {/* Khuyến mãi được tự động áp dụng cho gói đang chọn (khách không cần tự chọn -
+                                            hệ thống tự tìm khuyến mãi có giá trị quy đổi cao nhất trong danh sách áp dụng được).
+                                            Đặt ở cột phải, ngay dưới tổng tiền, để cân đối chiều cao 2 cột và vì đây là
+                                            thông tin trực tiếp ảnh hưởng tới số tiền thanh toán. */}
+                                        <div style={{ marginTop: 16 }}>
+                                            {loadingPromotions && <div className="co-fine" style={{ marginTop: 0 }}>Đang tải khuyến mãi...</div>}
 
                                             {!loadingPromotions && promotionError && (
-                                                <div className="co-fine" style={{ color: "var(--accent-2)" }}>{promotionError}</div>
+                                                <div className="co-fine" style={{ marginTop: 0, color: "var(--accent-2)" }}>{promotionError}</div>
                                             )}
 
                                             {!loadingPromotions && !promotionError && promotions.length === 0 && (
-                                                <div className="co-fine">Gói này hiện chưa có khuyến mãi áp dụng.</div>
+                                                <div className="co-fine" style={{ marginTop: 0 }}>Gói này hiện chưa có khuyến mãi áp dụng.</div>
                                             )}
 
                                             {!loadingPromotions && !promotionError && selectedPromotion && (() => {
@@ -924,52 +943,6 @@ export default function Payment() {
                                                     </div>
                                                 );
                                             })()}
-                                        </div>
-
-                                        <div className="co-spacer" />
-
-                                        <div className="co-price-list">
-                                            <div className="co-price-row"><span>Giá {selectedPlan.planName}</span><span>{formatVnd(selectedPlan.price)}</span></div>
-                                            {discountAmount > 0 && (
-                                                <div className="co-price-row discount">
-                                                    <span>Khuyến mãi ({selectedPromotion?.tenKhuyenMai})</span>
-                                                    <span>-{formatVnd(discountAmount)}</span>
-                                                </div>
-                                            )}
-                                            <div className="co-price-row total"><span>Thành tiền</span><span className="val co-disp">{formatVnd(finalPrice)}</span></div>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <div className="co-right">
-                                    {/* Thông tin cá nhân */}
-                                    <div className="co-card">
-                                        <div className="co-card-title"><span className="co-bar" />Thông tin cá nhân</div>
-                                        <div className="co-user">
-                                            <div className="co-avatar co-disp">{getInitials(myInfo?.fullName)}</div>
-                                            <div>
-                                                <div className="co-user-name">{myInfo?.fullName || "—"}</div>
-                                                <div className="co-user-sub">{myInfo?.phone || "—"}</div>
-                                            </div>
-                                        </div>
-
-                                        <div style={{ marginTop: 14 }}>
-                                            <div className="co-info-line">
-                                                <span>Số điện thoại</span>
-                                                <span>{myInfo?.phone || "—"}</span>
-                                            </div>
-                                            <div className="co-info-line">
-                                                <span>Chi nhánh đăng ký ban đầu</span>
-                                                <span>{myInfo?.initialBranchName || "—"}</span>
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    <div className="co-card co-grow">
-                                        <div className="co-card-title"><span className="co-bar" />Thanh toán</div>
-                                        <div className="co-info-line">
-                                            <span>Tổng cộng</span>
-                                            <span className="co-disp" style={{ fontSize: 17, color: "#ff8a50" }}>{formatVnd(finalPrice)}</span>
                                         </div>
 
                                         {/* Chọn chi nhánh thanh toán / kích hoạt gói -> gửi kèm branchId khi tạo đơn */}
@@ -1065,57 +1038,26 @@ export default function Payment() {
                                     </button>
                                 </div>
 
-                                {/* Cột thông tin: đơn hàng + cá nhân, để khách xem đầy đủ trước khi quyết định thanh toán */}
-                                <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
-                                    <div className="co-card">
-                                        <div className="co-card-title"><span className="co-bar" />Thông tin đơn hàng</div>
-                                        <div className="co-info-line"><span>Mã đơn hàng</span><span>#{order.orderId}</span></div>
-                                        <div className="co-info-line"><span>Gói tập</span><span>{selectedPlan.planName}</span></div>
-                                        <div className="co-info-line"><span>Thời hạn</span><span>{selectedPlan.durationDays} ngày{bonusDays > 0 && ` + ${bonusDays} ngày tặng`}</span></div>
-                                        {order.promotion && (
-                                            <div className="co-info-line"><span>Khuyến mãi</span><span>{order.promotion.tenKhuyenMai}</span></div>
-                                        )}
-                                        {order.bankName && <div className="co-info-line"><span>Ngân hàng</span><span>{order.bankName}</span></div>}
-                                        {order.accountName && <div className="co-info-line"><span>Chủ tài khoản</span><span>{order.accountName}</span></div>}
-                                        {order.accountNumber && <div className="co-info-line"><span>Số tài khoản</span><span>{order.accountNumber}</span></div>}
-                                        <div className="co-info-line"><span>Nội dung CK</span><span>{order.transferContent}</span></div>
-                                        <div className="co-info-line"><span>Số tiền</span><span style={{ color: "var(--accent-2)", fontWeight: 700 }}>{formatVnd(order.amount)}</span></div>
+                                {/* Cột thông tin đơn hàng, để khách xem đầy đủ trước khi quyết định thanh toán */}
+                                <div className="co-card co-grow">
+                                    <div className="co-card-title"><span className="co-bar" />Thông tin đơn hàng</div>
+                                    <div className="co-info-line"><span>Mã đơn hàng</span><span>#{order.orderId}</span></div>
+                                    <div className="co-info-line"><span>Gói tập</span><span>{selectedPlan.planName}</span></div>
+                                    <div className="co-info-line"><span>Thời hạn</span><span>{selectedPlan.durationDays} ngày{bonusDays > 0 && ` + ${bonusDays} ngày tặng`}</span></div>
+                                    {order.promotion && (
+                                        <div className="co-info-line"><span>Khuyến mãi</span><span>{order.promotion.tenKhuyenMai}</span></div>
+                                    )}
+                                    {order.bankName && <div className="co-info-line"><span>Ngân hàng</span><span>{order.bankName}</span></div>}
+                                    {order.accountName && <div className="co-info-line"><span>Chủ tài khoản</span><span>{order.accountName}</span></div>}
+                                    {order.accountNumber && <div className="co-info-line"><span>Số tài khoản</span><span>{order.accountNumber}</span></div>}
+                                    <div className="co-info-line"><span>Nội dung CK</span><span>{order.transferContent}</span></div>
+                                    <div className="co-info-line"><span>Số tiền</span><span style={{ color: "var(--accent-2)", fontWeight: 700 }}>{formatVnd(order.amount)}</span></div>
 
-                                        {orderError && (
-                                            <div className="co-fine" style={{ color: "var(--accent-2)", marginTop: 10 }}>{orderError}</div>
-                                        )}
-                                    </div>
+                                    {orderError && (
+                                        <div className="co-fine" style={{ color: "var(--accent-2)", marginTop: 10 }}>{orderError}</div>
+                                    )}
 
-                                    <div className="co-card">
-                                        <div className="co-card-title"><span className="co-bar" />Thông tin cá nhân</div>
-                                        <div className="co-user">
-                                            <div className="co-avatar co-disp">{getInitials(myInfo?.fullName)}</div>
-                                            <div>
-                                                <div className="co-user-name">{myInfo?.fullName || "—"}</div>
-                                                <div className="co-user-sub">{myInfo?.phone || "—"}</div>
-                                            </div>
-                                        </div>
-                                        <div style={{ marginTop: 14 }}>
-                                            <div className="co-info-line">
-                                                <span>Số điện thoại</span>
-                                                <span>{myInfo?.phone || "—"}</span>
-                                            </div>
-                                            <div className="co-info-line">
-                                                <span>Chi nhánh</span>
-                                                <span>
-                                                    {branches.find((b) => String(b.branchId) === String(selectedBranchId))?.branchName
-                                                        || myInfo?.initialBranchName
-                                                        || "—"}
-                                                </span>
-                                            </div>
-                                            {currentPackage && (
-                                                <div className="co-info-line">
-                                                    <span>Gói hiện tại</span>
-                                                    <span>{currentPackage.planName} (hết hạn {formatDate(currentPackage.expiryDate)})</span>
-                                                </div>
-                                            )}
-                                        </div>
-                                    </div>
+                                    <div className="co-spacer" />
                                 </div>
                             </div>
                         </div>

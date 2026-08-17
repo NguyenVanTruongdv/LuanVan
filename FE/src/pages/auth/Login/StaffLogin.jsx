@@ -2,10 +2,6 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import authApi from "../../../api/authApi";
 
-// Map role trả về từ BE -> route tương ứng sau khi đăng nhập.
-// ⚠️ Kiểm tra lại đúng giá trị chuỗi role mà BE trả (vd: "Manager", "MANAGER",
-// "manager"...) rồi chỉnh key cho khớp. Có thể để so sánh không phân biệt hoa/thường
-// bằng cách .toLowerCase() như bên dưới cho an toàn.
 const ROLE_HOME_ROUTES = {
   manager: "/manager",
   admin: "/admin",
@@ -37,13 +33,7 @@ export default function StaffLogin() {
 
     setLoading(true);
     try {
-      // ⚠️ Kiểm tra lại tên field backend yêu cầu (email) khớp với
-      // LoginEmployeeRequestDto bên BE.
-      const data = await authApi.loginEmployee({
-        email,
-        password,
-      });
-
+      const data = await authApi.loginEmployee({ email, password });
       navigate(getHomeRouteByRole(data?.role));
     } catch (err) {
       setError(err.message || "Đăng nhập thất bại");
@@ -53,89 +43,241 @@ export default function StaffLogin() {
   };
 
   return (
-    <div style={styles.root}>
-      {/* Decorative background shapes */}
-      <div style={styles.bgCircle1} />
-      <div style={styles.bgCircle2} />
+    <div className="sl-root">
+      {/* CSS responsive - đặt 1 lần, dùng className thay vì object style cho phần layout */}
+      <style>{`
+        .sl-root {
+          min-height: 100vh;
+          background: linear-gradient(135deg, #0F172A 0%, #1E293B 100%);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-family: 'Inter', 'Segoe UI', sans-serif;
+          position: relative;
+          overflow: hidden;
+          padding: 16px;
+          box-sizing: border-box;
+        }
+        .sl-bg-circle-1 {
+          position: absolute; top: -200px; left: -200px;
+          width: 600px; height: 600px; border-radius: 50%;
+          background: radial-gradient(circle, rgba(6,182,212,0.07) 0%, transparent 70%);
+          pointer-events: none;
+        }
+        .sl-bg-circle-2 {
+          position: absolute; bottom: -150px; right: -150px;
+          width: 500px; height: 500px; border-radius: 50%;
+          background: radial-gradient(circle, rgba(99,102,241,0.08) 0%, transparent 70%);
+          pointer-events: none;
+        }
+        .sl-container {
+          position: relative;
+          z-index: 1;
+          display: flex;
+          width: 860px;
+          max-width: 100%;
+          background: #1E293B;
+          border-radius: 24px;
+          overflow: hidden;
+          box-shadow: 0 32px 80px rgba(0,0,0,0.5), 0 0 0 1px rgba(51,65,85,0.8);
+        }
+        .sl-side-panel {
+          width: 320px;
+          flex-shrink: 0;
+          background: linear-gradient(160deg, #0F172A 0%, #1a2744 100%);
+          border-right: 1px solid rgba(51,65,85,0.6);
+          position: relative;
+          overflow: hidden;
+          display: flex;
+          align-items: center;
+        }
+        .sl-side-panel-inner {
+          padding: 48px 36px;
+          position: relative;
+          z-index: 1;
+          width: 100%;
+        }
+        .sl-brand-mark { margin-bottom: 24px; }
+        .sl-side-title {
+          font-size: 24px; font-weight: 700; color: #F1F5F9;
+          margin: 0 0 12px; letter-spacing: -0.5px;
+        }
+        .sl-side-desc {
+          font-size: 14px; color: #64748B; line-height: 1.7; margin: 0 0 36px;
+        }
+        .sl-side-stats {
+          display: flex; align-items: center; gap: 20px;
+          background: rgba(6,182,212,0.06);
+          border: 1px solid rgba(6,182,212,0.15);
+          border-radius: 12px; padding: 16px 20px; margin-bottom: auto;
+        }
+        .sl-stat-item { display: flex; flex-direction: column; gap: 2px; }
+        .sl-stat-num { font-size: 22px; font-weight: 700; color: #06B6D4; }
+        .sl-stat-label { font-size: 11px; color: #64748B; letter-spacing: 0.5px; }
+        .sl-stat-divider { width: 1px; height: 36px; background: rgba(51,65,85,0.8); }
+        .sl-side-footer-tag { margin-top: 40px; font-size: 11px; color: #334155; letter-spacing: 0.3px; }
 
-      <div style={styles.container}>
+        .sl-form-panel { flex: 1; display: flex; align-items: center; justify-content: center; min-width: 0; }
+        .sl-form-inner { width: 100%; max-width: 380px; padding: 48px 40px; box-sizing: border-box; }
+        .sl-form-header { margin-bottom: 28px; }
+        .sl-form-title { font-size: 26px; font-weight: 700; color: #F1F5F9; margin: 0 0 6px; letter-spacing: -0.5px; }
+        .sl-form-subtitle { font-size: 14px; color: #64748B; margin: 0; }
+
+        .sl-form-group { margin-bottom: 18px; }
+        .sl-label {
+          display: block; font-size: 12px; font-weight: 600; color: #94A3B8;
+          letter-spacing: 0.8px; text-transform: uppercase; margin-bottom: 8px;
+        }
+        .sl-input-wrapper { position: relative; display: flex; align-items: center; }
+        .sl-input-icon { position: absolute; left: 14px; pointer-events: none; }
+        .sl-input {
+          width: 100%; background: #0F172A; border: 1px solid #334155;
+          border-radius: 10px; padding: 13px 14px 13px 42px; font-size: 15px;
+          color: #F1F5F9; outline: none; transition: border-color 0.2s, box-shadow 0.2s;
+          box-sizing: border-box;
+        }
+        .sl-input:focus {
+          border-color: #06B6D4;
+          box-shadow: 0 0 0 3px rgba(6,182,212,0.12);
+        }
+        .sl-eye-btn {
+          position: absolute; right: 14px; background: none; border: none;
+          cursor: pointer; padding: 4px; display: flex; align-items: center;
+        }
+
+        .sl-login-btn {
+          width: 100%; padding: 14px; background: #06B6D4; border: none;
+          border-radius: 10px; color: #0F172A; font-size: 15px; font-weight: 700;
+          cursor: pointer; transition: all 0.2s;
+          box-shadow: 0 4px 16px rgba(6,182,212,0.2);
+          letter-spacing: 0.3px; margin-bottom: 16px; font-family: inherit;
+        }
+        .sl-login-btn:hover:not(:disabled) {
+          background: #0891B2; transform: translateY(-1px);
+          box-shadow: 0 8px 24px rgba(6,182,212,0.35);
+        }
+        .sl-login-btn:disabled { opacity: 0.7; cursor: not-allowed; }
+
+        .sl-security-note {
+          display: flex; align-items: center; gap: 6px; font-size: 12px;
+          color: #475569; margin-bottom: 20px;
+        }
+        .sl-forgot-row { text-align: center; }
+        .sl-forgot-btn {
+          background: none; border: none; color: #64748B; font-size: 13px;
+          cursor: pointer; transition: color 0.2s; font-family: inherit;
+          text-decoration: underline; text-decoration-color: transparent;
+        }
+        .sl-forgot-btn:hover { color: #06B6D4; }
+
+        .sl-error { color: #F87171; font-size: 13px; margin-bottom: 16px; }
+
+        /* ===== Responsive ===== */
+        @media (max-width: 900px) {
+          .sl-side-panel { width: 240px; }
+          .sl-side-panel-inner { padding: 36px 24px; }
+          .sl-form-inner { padding: 40px 32px; }
+        }
+
+        @media (max-width: 640px) {
+          .sl-root { padding: 12px; }
+          .sl-container {
+            flex-direction: column;
+            width: 100%;
+            border-radius: 18px;
+          }
+          .sl-side-panel {
+            display: none; /* ẩn panel giới thiệu trên mobile để tập trung vào form */
+          }
+          .sl-form-inner {
+            max-width: 100%;
+            padding: 32px 20px;
+          }
+          .sl-form-title { font-size: 22px; }
+        }
+
+        @media (max-width: 380px) {
+          .sl-form-inner { padding: 24px 16px; }
+        }
+      `}</style>
+
+      <div className="sl-bg-circle-1" />
+      <div className="sl-bg-circle-2" />
+
+      <div className="sl-container">
         {/* Left accent panel */}
-        <div style={styles.sidePanel}>
-          <div style={styles.sidePanelInner}>
-            <div style={styles.brandMark}>
+        <div className="sl-side-panel">
+          <div className="sl-side-panel-inner">
+            <div className="sl-brand-mark">
               <svg width="44" height="44" viewBox="0 0 44 44" fill="none">
                 <rect width="44" height="44" rx="12" fill="rgba(6,182,212,0.15)" />
                 <path d="M8 22h6M30 22h6M14 14v16M30 14v16M14 18h16M14 26h16" stroke="#06B6D4" strokeWidth="2.5" strokeLinecap="round" />
               </svg>
             </div>
-            <h2 style={styles.sideTitle}>Staff Portal</h2>
-            <p style={styles.sideDesc}>Quản lý phòng gym chuyên nghiệp dành cho đội ngũ nội bộ</p>
+            <h2 className="sl-side-title">Staff Portal</h2>
+            <p className="sl-side-desc">Quản lý phòng gym chuyên nghiệp dành cho đội ngũ nội bộ</p>
 
-            <div style={styles.sideStats}>
-              <div style={styles.statItem}>
-                <span style={styles.statNum}>248</span>
-                <span style={styles.statLabel}>Members Active</span>
+            <div className="sl-side-stats">
+              <div className="sl-stat-item">
+                <span className="sl-stat-num">248</span>
+                <span className="sl-stat-label">Members Active</span>
               </div>
-              <div style={styles.statDivider} />
-              <div style={styles.statItem}>
-                <span style={styles.statNum}>12</span>
-                <span style={styles.statLabel}>Sessions Today</span>
+              <div className="sl-stat-divider" />
+              <div className="sl-stat-item">
+                <span className="sl-stat-num">12</span>
+                <span className="sl-stat-label">Sessions Today</span>
               </div>
             </div>
 
-            <div style={styles.sideFooterTag}>VT Gym Management System v2.1</div>
+            <div className="sl-side-footer-tag">VT Gym Management System v2.1</div>
           </div>
         </div>
 
         {/* Right login form */}
-        <div style={styles.formPanel}>
-          <div style={styles.formInner}>
-            <div style={styles.formHeader}>
-              <h1 style={styles.formTitle}>Đăng nhập</h1>
-              <p style={styles.formSubtitle}>Chào mừng trở lại, vui lòng xác thực để tiếp tục</p>
+        <div className="sl-form-panel">
+          <div className="sl-form-inner">
+            <div className="sl-form-header">
+              <h1 className="sl-form-title">Đăng nhập</h1>
+              <p className="sl-form-subtitle">Chào mừng trở lại, vui lòng xác thực để tiếp tục</p>
             </div>
 
             {/* Email */}
-            <div style={styles.formGroup}>
-              <label style={styles.label}>Email Nhân Viên</label>
-              <div style={styles.inputWrapper}>
-                <svg style={styles.inputIcon} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" strokeWidth="2">
+            <div className="sl-form-group">
+              <label className="sl-label">Email Nhân Viên</label>
+              <div className="sl-input-wrapper">
+                <svg className="sl-input-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" strokeWidth="2">
                   <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" />
                   <polyline points="22,6 12,13 2,6" />
                 </svg>
                 <input
-                  style={styles.input}
+                  className="sl-input"
                   type="email"
                   placeholder="nhanvien@vtgym.com"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  onFocus={e => { e.target.style.borderColor = "#06B6D4"; e.target.style.boxShadow = "0 0 0 3px rgba(6,182,212,0.12)"; }}
-                  onBlur={e => { e.target.style.borderColor = "#334155"; e.target.style.boxShadow = "none"; }}
                 />
               </div>
             </div>
 
             {/* Password */}
-            <div style={styles.formGroup}>
-              <label style={styles.label}>Mật khẩu</label>
-              <div style={styles.inputWrapper}>
-                <svg style={styles.inputIcon} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" strokeWidth="2">
+            <div className="sl-form-group">
+              <label className="sl-label">Mật khẩu</label>
+              <div className="sl-input-wrapper">
+                <svg className="sl-input-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" strokeWidth="2">
                   <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
                   <path d="M7 11V7a5 5 0 0 1 10 0v4" />
                 </svg>
                 <input
-                  style={styles.input}
+                  className="sl-input"
                   type={showPassword ? "text" : "password"}
                   placeholder="••••••••"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   onKeyDown={(e) => { if (e.key === "Enter") handleLogin(); }}
-                  onFocus={e => { e.target.style.borderColor = "#06B6D4"; e.target.style.boxShadow = "0 0 0 3px rgba(6,182,212,0.12)"; }}
-                  onBlur={e => { e.target.style.borderColor = "#334155"; e.target.style.boxShadow = "none"; }}
                 />
                 <button
                   type="button"
-                  style={styles.eyeBtn}
+                  className="sl-eye-btn"
                   onClick={() => setShowPassword(!showPassword)}
                 >
                   {showPassword ? (
@@ -155,25 +297,19 @@ export default function StaffLogin() {
             </div>
 
             {/* Error message */}
-            {error && (
-              <div style={{ color: "#F87171", fontSize: "13px", marginBottom: "16px" }}>
-                {error}
-              </div>
-            )}
+            {error && <div className="sl-error">{error}</div>}
 
             {/* Login button */}
             <button
-              style={{ ...styles.loginBtn, opacity: loading ? 0.7 : 1, cursor: loading ? "not-allowed" : "pointer" }}
+              className="sl-login-btn"
               onClick={handleLogin}
               disabled={loading}
-              onMouseEnter={e => { if (!loading) { e.target.style.background = "#0891B2"; e.target.style.transform = "translateY(-1px)"; e.target.style.boxShadow = "0 8px 24px rgba(6,182,212,0.35)"; } }}
-              onMouseLeave={e => { e.target.style.background = "#06B6D4"; e.target.style.transform = "translateY(0)"; e.target.style.boxShadow = "0 4px 16px rgba(6,182,212,0.2)"; }}
             >
               {loading ? "Đang đăng nhập..." : "Đăng nhập hệ thống"}
             </button>
 
             {/* Security notice */}
-            <div style={styles.securityNote}>
+            <div className="sl-security-note">
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#475569" strokeWidth="2">
                 <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
               </svg>
@@ -181,12 +317,8 @@ export default function StaffLogin() {
             </div>
 
             {/* Forgot */}
-            <div style={styles.forgotRow}>
-              <button
-                style={styles.forgotBtn}
-                onMouseEnter={e => { e.target.style.color = "#06B6D4"; }}
-                onMouseLeave={e => { e.target.style.color = "#64748B"; }}
-              >
+            <div className="sl-forgot-row">
+              <button className="sl-forgot-btn">
                 Quên mật khẩu? Liên hệ Admin
               </button>
             </div>
@@ -196,267 +328,3 @@ export default function StaffLogin() {
     </div>
   );
 }
-
-  const styles = {
-    root: {
-      minHeight: "100vh",
-      background: "linear-gradient(135deg, #0F172A 0%, #1E293B 100%)",
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      fontFamily: "'Inter', 'Segoe UI', sans-serif",
-      position: "relative",
-      overflow: "hidden",
-    },
-    bgCircle1: {
-      position: "absolute",
-      top: "-200px",
-      left: "-200px",
-      width: "600px",
-      height: "600px",
-      borderRadius: "50%",
-      background: "radial-gradient(circle, rgba(6,182,212,0.07) 0%, transparent 70%)",
-      pointerEvents: "none",
-    },
-    bgCircle2: {
-      position: "absolute",
-      bottom: "-150px",
-      right: "-150px",
-      width: "500px",
-      height: "500px",
-      borderRadius: "50%",
-      background: "radial-gradient(circle, rgba(99,102,241,0.08) 0%, transparent 70%)",
-      pointerEvents: "none",
-    },
-    container: {
-      position: "relative",
-      zIndex: 1,
-      display: "flex",
-      width: "860px",
-      background: "#1E293B",
-      borderRadius: "24px",
-      overflow: "hidden",
-      boxShadow: "0 32px 80px rgba(0,0,0,0.5), 0 0 0 1px rgba(51,65,85,0.8)",
-    },
-    sidePanel: {
-      width: "320px",
-      flexShrink: 0,
-      background: "linear-gradient(160deg, #0F172A 0%, #1a2744 100%)",
-      borderRight: "1px solid rgba(51,65,85,0.6)",
-      position: "relative",
-      overflow: "hidden",
-      display: "flex",
-      alignItems: "center",
-    },
-    sidePanelInner: {
-      padding: "48px 36px",
-      position: "relative",
-      zIndex: 1,
-      width: "100%",
-    },
-    brandMark: {
-      marginBottom: "24px",
-    },
-    sideTitle: {
-      fontSize: "24px",
-      fontWeight: 700,
-      color: "#F1F5F9",
-      margin: "0 0 12px",
-      letterSpacing: "-0.5px",
-    },
-    sideDesc: {
-      fontSize: "14px",
-      color: "#64748B",
-      lineHeight: "1.7",
-      margin: "0 0 36px",
-    },
-    sideStats: {
-      display: "flex",
-      alignItems: "center",
-      gap: "20px",
-      background: "rgba(6,182,212,0.06)",
-      border: "1px solid rgba(6,182,212,0.15)",
-      borderRadius: "12px",
-      padding: "16px 20px",
-      marginBottom: "auto",
-    },
-    statItem: {
-      display: "flex",
-      flexDirection: "column",
-      gap: "2px",
-    },
-    statNum: {
-      fontSize: "22px",
-      fontWeight: 700,
-      color: "#06B6D4",
-    },
-    statLabel: {
-      fontSize: "11px",
-      color: "#64748B",
-      letterSpacing: "0.5px",
-    },
-    statDivider: {
-      width: "1px",
-      height: "36px",
-      background: "rgba(51,65,85,0.8)",
-    },
-    sideFooterTag: {
-      marginTop: "40px",
-      fontSize: "11px",
-      color: "#334155",
-      letterSpacing: "0.3px",
-    },
-    formPanel: {
-      flex: 1,
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-    },
-    formInner: {
-      width: "100%",
-      maxWidth: "380px",
-      padding: "48px 40px",
-    },
-    formHeader: {
-      marginBottom: "28px",
-    },
-    formTitle: {
-      fontSize: "26px",
-      fontWeight: 700,
-      color: "#F1F5F9",
-      margin: "0 0 6px",
-      letterSpacing: "-0.5px",
-    },
-    formSubtitle: {
-      fontSize: "14px",
-      color: "#64748B",
-      margin: 0,
-    },
-    roleSelector: {
-      display: "flex",
-      gap: "8px",
-      marginBottom: "28px",
-      background: "#0F172A",
-      borderRadius: "10px",
-      padding: "4px",
-    },
-    roleBtn: {
-      flex: 1,
-      padding: "8px",
-      background: "transparent",
-      border: "none",
-      borderRadius: "7px",
-      color: "#64748B",
-      fontSize: "13px",
-      fontWeight: 500,
-      cursor: "pointer",
-      transition: "all 0.2s",
-      fontFamily: "inherit",
-    },
-    roleBtnActive: {
-      background: "#1E293B",
-      color: "#06B6D4",
-      fontWeight: 600,
-      boxShadow: "0 1px 4px rgba(0,0,0,0.3)",
-    },
-    formGroup: {
-      marginBottom: "18px",
-    },
-    label: {
-      display: "block",
-      fontSize: "12px",
-      fontWeight: 600,
-      color: "#94A3B8",
-      letterSpacing: "0.8px",
-      textTransform: "uppercase",
-      marginBottom: "8px",
-    },
-    inputWrapper: {
-      position: "relative",
-      display: "flex",
-      alignItems: "center",
-    },
-    inputIcon: {
-      position: "absolute",
-      left: "14px",
-      pointerEvents: "none",
-    },
-    input: {
-      width: "100%",
-      background: "#0F172A",
-      border: "1px solid #334155",
-      borderRadius: "10px",
-      padding: "13px 14px 13px 42px",
-      fontSize: "15px",
-      color: "#F1F5F9",
-      outline: "none",
-      transition: "border-color 0.2s, box-shadow 0.2s",
-      boxSizing: "border-box",
-    },
-    eyeBtn: {
-      position: "absolute",
-      right: "14px",
-      background: "none",
-      border: "none",
-      cursor: "pointer",
-      padding: "4px",
-      display: "flex",
-      alignItems: "center",
-    },
-    rememberRow: {
-      marginBottom: "20px",
-    },
-    checkLabel: {
-      display: "flex",
-      alignItems: "center",
-      gap: "8px",
-      cursor: "pointer",
-    },
-    checkbox: {
-      accentColor: "#06B6D4",
-      width: "15px",
-      height: "15px",
-    },
-    checkText: {
-      fontSize: "14px",
-      color: "#64748B",
-    },
-    loginBtn: {
-      width: "100%",
-      padding: "14px",
-      background: "#06B6D4",
-      border: "none",
-      borderRadius: "10px",
-      color: "#0F172A",
-      fontSize: "15px",
-      fontWeight: 700,
-      cursor: "pointer",
-      transition: "all 0.2s",
-      boxShadow: "0 4px 16px rgba(6,182,212,0.2)",
-      letterSpacing: "0.3px",
-      marginBottom: "16px",
-      fontFamily: "inherit",
-    },
-    securityNote: {
-      display: "flex",
-      alignItems: "center",
-      gap: "6px",
-      fontSize: "12px",
-      color: "#475569",
-      marginBottom: "20px",
-    },
-    forgotRow: {
-      textAlign: "center",
-    },
-    forgotBtn: {
-      background: "none",
-      border: "none",
-      color: "#64748B",
-      fontSize: "13px",
-      cursor: "pointer",
-      transition: "color 0.2s",
-      fontFamily: "inherit",
-      textDecoration: "underline",
-      textDecorationColor: "transparent",
-    },
-  };

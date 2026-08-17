@@ -47,10 +47,7 @@ namespace BE.Controllers
             public string NewPassword { get; set; } = string.Empty;
         }
 
-        public class LockAccountRequest
-        {
-            public string Reason { get; set; } = string.Empty;
-        }
+        
 
        [HttpPost]
         public async Task<ActionResult<Account>> CreateAccount([FromBody] CreateAccountRequest request)
@@ -148,12 +145,12 @@ namespace BE.Controllers
         // PUT: api/account/{accountId}/lock
         [HttpPut("{accountId:long}/lock")]
         [Authorize] // TODO: giới hạn quyền nhân viên/admin phù hợp
-        public async Task<ActionResult<Account>> LockAccount(long accountId, [FromBody] LockAccountRequest request)
+        public async Task<ActionResult<Account>> LockAccount(long accountId)
         {
             try
             {
                 var performedBy = GetCurrentEmployeeId();
-                var account = await _accountService.LockAccountAsync(accountId, request.Reason, performedBy);
+                var account = await _accountService.LockAccountAsync(accountId,  performedBy);
                 return Ok(account);
             }
             catch (KeyNotFoundException ex)

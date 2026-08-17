@@ -2,7 +2,26 @@
 //
 // Trang danh sách thiết bị — khớp với EquipmentService.GetListAsync / SetStatusAsync.
 //
-// CẬP NHẬT LẦN NÀY:
+// CẬP NHẬT LẦN NÀY (so với bản trước):
+// - FIX LỖI "không hiện ảnh thiết bị": component cũ đọc
+//   `equipment.imageUrls?.[0]` (mảng, số nhiều) nhưng API thực tế trả field
+//   `imageUrl` (chuỗi, số ít) — xem payload mẫu bạn gửi:
+//     { ..., "imageUrl": "https://gym-face-recognition.s3.amazonaws.com/..." }
+//   => đọc sai key nên luôn ra `undefined` -> luôn hiện icon placeholder 🏋️
+//      thay vì ảnh thật, dù ảnh vẫn có trên S3.
+//   => Thêm hàm getEquipmentImage() hiểu cả 2 dạng: `imageUrls: [...]` (mảng,
+//      dùng trong form) LẪN `imageUrl: "..."` (chuỗi, dùng trong list) để
+//      không bị vỡ dù BE đổi field sau này. Áp dụng cho cả:
+//        - EquipmentListRow (ảnh thumbnail trong danh sách)
+//        - EquipmentForm khi load chi tiết để Sửa (ảnh preview)
+// - THÊM CỘT "Ngày thêm" (field `addedAt` từ API) vào danh sách:
+//   + Thêm cột mới trong header + mỗi hàng (desktop: cột riêng, mobile: gộp
+//     vào phần meta phía dưới tên thiết bị).
+//   + grid-template-columns đổi từ 6 cột -> 7 cột để chứa cột mới.
+//   + Thêm hàm formatAddedAt() format ISO date -> dd/mm/yyyy (vi-VN).
+//
+// (Các ghi chú cũ bên dưới vẫn giữ nguyên vì vẫn còn liên quan.)
+//
 // - FIX LỖI "branches.map is not a function": các API như getBranches(),
 //   getEquipmentCategories(), getListEquipments() không trả thẳng về MẢNG mà
 //   trả về OBJECT dạng { items: [...] } (xem Network tab: response của
@@ -18,8 +37,8 @@
 //   (thay cho gradient tím-indigo cũ), chữ tiêu đề #F1F5F9, chữ phụ
 //   #94A3B8 / #64748B.
 // - Đổi bố cục hiển thị thiết bị từ dạng LƯỚI THẺ (grid card) sang DẠNG LIST
-//   (bảng hàng ngang: ảnh nhỏ | tên + mô tả | danh mục | chi nhánh | trạng thái
-//   | hành động), có header cột trên desktop.
+//   (bảng hàng ngang: ảnh nhỏ | tên + mô tả | danh mục | chi nhánh | ngày thêm
+//   | trạng thái | hành động), có header cột trên desktop.
 // - Responsive cho điện thoại: mỗi hàng list tự bọc lại thành dạng "card dọc",
 //   ẩn header cột, hiện nhãn (label) trước từng giá trị, nút hành động full-width.
 // - Thay <select> gốc của trình duyệt bằng CustomSelect (tự vẽ dropdown) cho
@@ -56,33 +75,64 @@ function unwrapList(res) {
     return [];
 }
 
+// ---------------------------------------------------------------------------
+// getEquipmentImage: lấy URL ảnh đại diện của 1 thiết bị, bất kể BE trả field
+// số ít `imageUrl` (chuỗi — đúng như payload thực tế trả về) hay field số
+// nhiều `imageUrls` (mảng — dùng ở một số API khác như getEquipmentDetail).
+// Trả về null nếu không có ảnh nào để component tự hiện placeholder.
+// ---------------------------------------------------------------------------
+function getEquipmentImage(equipment) {
+    if (!equipment) return null;
+    if (Array.isArray(equipment.imageUrls) && equipment.imageUrls.length > 0) {
+        return equipment.imageUrls[0];
+    }
+    if (typeof equipment.imageUrl === "string" && equipment.imageUrl.trim() !== "") {
+        return equipment.imageUrl;
+    }
+    return null;
+}
+
+// ---------------------------------------------------------------------------
+// formatAddedAt: format chuỗi ISO datetime ("2026-07-26T17:18:45") thành
+// dd/mm/yyyy cho dễ đọc. Trả về "—" nếu thiếu hoặc không parse được.
+// ---------------------------------------------------------------------------
+function formatAddedAt(iso) {
+    if (!iso) return "—";
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return "—";
+    return d.toLocaleDateString("vi-VN", { day: "2-digit", month: "2-digit", year: "numeric" });
+}
+
 const EQUIPMENT_STYLES = `
 :root {
-    --eqm-navy-900: #0b1120;
-    --eqm-navy-800: #1e293b;
-    --eqm-navy-700: #24304a;
-    --eqm-cyan-500: #06b6d4;
-    --eqm-cyan-600: #0891b2;
-    --eqm-cyan-100: rgba(6, 182, 212, 0.16);
+    /* Tông sáng trắng/xám-xanh nhạt, đồng bộ với bảng "Danh sách hội viên":
+       nền trang xám-xanh rất nhạt, card nền trắng, viền có màu (xanh lá nhạt)
+       thay vì viền xám trung tính, shadow đậm/nổi khối hơn bản cũ. */
+    --eqm-navy-900: #eef3f0;
+    --eqm-navy-800: #ffffff;
+    --eqm-navy-700: #f4f8f6;
+    --eqm-cyan-500: #16a34a;
+    --eqm-cyan-600: #15803d;
+    --eqm-cyan-100: rgba(21, 128, 61, 0.14);
 
     --eqm-bg: var(--eqm-navy-900);
     --eqm-surface: var(--eqm-navy-800);
     --eqm-surface-muted: var(--eqm-navy-700);
-    --eqm-surface-hover: #2b3a54;
-    --eqm-border: #334155;
+    --eqm-surface-hover: #e6f4ec;
+    --eqm-border: #dbe6e0;
 
-    --eqm-text-900: #f1f5f9;
-    --eqm-text-600: #94a3b8;
-    --eqm-text-400: #64748b;
+    --eqm-text-900: #0f172a;
+    --eqm-text-600: #475569;
+    --eqm-text-400: #94a3b8;
 
-    --eqm-danger: #f87171;
-    --eqm-danger-bg: rgba(248, 113, 113, 0.14);
-    --eqm-success: #34d399;
-    --eqm-success-bg: rgba(52, 211, 153, 0.14);
+    --eqm-danger: #dc2626;
+    --eqm-danger-bg: rgba(220, 38, 38, 0.10);
+    --eqm-success: #15803d;
+    --eqm-success-bg: rgba(21, 128, 61, 0.12);
 
-    --eqm-radius: 14px;
+    --eqm-radius: 18px;
     --eqm-radius-sm: 10px;
-    --eqm-shadow: 0 1px 0 rgba(255, 255, 255, 0.03), 0 14px 28px -16px rgba(0, 0, 0, 0.7);
+    --eqm-shadow: 0 2px 6px rgba(15, 23, 42, 0.06), 0 28px 46px -18px rgba(15, 23, 42, 0.30);
 }
 
 .eqm-page {
@@ -103,8 +153,8 @@ const EQUIPMENT_STYLES = `
 .eqm-header-icon {
     display: flex; align-items: center; justify-content: center;
     width: 44px; height: 44px; border-radius: 12px; font-size: 20px;
-    background: linear-gradient(135deg, rgba(6, 182, 212, 0.3), rgba(6, 182, 212, 0.08));
-    box-shadow: inset 0 0 0 1px rgba(6, 182, 212, 0.4);
+    background: linear-gradient(135deg, rgba(21, 128, 61, 0.18), rgba(21, 128, 61, 0.06));
+    box-shadow: inset 0 0 0 1px rgba(21, 128, 61, 0.35);
 }
 .eqm-header-titles h1 { margin: 0; font-size: 22px; font-weight: 700; color: var(--eqm-text-900); }
 .eqm-header-titles p { margin: 2px 0 0; font-size: 13.5px; color: var(--eqm-text-400); }
@@ -117,7 +167,7 @@ const EQUIPMENT_STYLES = `
 }
 .eqm-btn:disabled { opacity: 0.6; cursor: not-allowed; }
 .eqm-btn:active:not(:disabled) { transform: translateY(1px); }
-.eqm-btn-primary { background: linear-gradient(135deg, var(--eqm-cyan-500), var(--eqm-cyan-600)); color: #fff; }
+.eqm-btn-primary { background: var(--eqm-cyan-600); color: #fff; box-shadow: 0 10px 20px -8px rgba(21, 128, 61, 0.55); }
 .eqm-btn-primary:hover:not(:disabled) { filter: brightness(1.08); }
 .eqm-btn-secondary { background: var(--eqm-surface-muted); color: var(--eqm-text-600); box-shadow: inset 0 0 0 1px var(--eqm-border); }
 .eqm-btn-secondary:hover:not(:disabled) { background: var(--eqm-surface-hover); }
@@ -140,6 +190,7 @@ const EQUIPMENT_STYLES = `
     background: var(--eqm-surface); border-radius: var(--eqm-radius); box-shadow: var(--eqm-shadow);
     padding: 18px 20px; margin-bottom: 20px;
     border: 1px solid var(--eqm-border);
+    border-top: 4px solid var(--eqm-cyan-500);
 }
 .eqm-filters .eqm-field { min-width: 190px; }
 
@@ -188,13 +239,14 @@ const EQUIPMENT_STYLES = `
     display: flex; flex-direction: column;
     background: var(--eqm-surface); border-radius: var(--eqm-radius);
     box-shadow: var(--eqm-shadow); border: 1px solid var(--eqm-border);
+    border-top: 4px solid var(--eqm-cyan-500);
     overflow: hidden;
 }
 
 .eqm-list-header, .eqm-list-row {
     display: grid;
-    grid-template-columns: 56px minmax(180px, 2.3fr) minmax(110px, 1fr) minmax(110px, 1fr) 108px 190px;
-    align-items: center; gap: 16px; padding: 14px 20px;
+    grid-template-columns: 56px minmax(180px, 2.1fr) minmax(100px, 1fr) minmax(100px, 1fr) 100px 100px 190px;
+    align-items: center; gap: 14px; padding: 14px 20px;
 }
 .eqm-list-header {
     font-size: 11px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase;
@@ -210,7 +262,7 @@ const EQUIPMENT_STYLES = `
     width: 52px; height: 52px; border-radius: 10px; overflow: hidden; flex-shrink: 0;
     background: var(--eqm-surface-muted); display: flex; align-items: center; justify-content: center;
 }
-.eqm-list-thumb img { width: 100%; height: 100%; object-fit: cover; }
+.eqm-list-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .eqm-list-thumb-placeholder { font-size: 17px; opacity: 0.45; }
 
 .eqm-list-main { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
@@ -222,8 +274,8 @@ const EQUIPMENT_STYLES = `
 .eqm-list-cell-label { display: none; }
 
 .eqm-badge { flex-shrink: 0; font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 999px; white-space: nowrap; display: inline-flex; }
-.eqm-badge-active { background: var(--eqm-success-bg); color: var(--eqm-success); }
-.eqm-badge-deleted { background: var(--eqm-danger-bg); color: var(--eqm-danger); }
+.eqm-badge-active { background: var(--eqm-success-bg); color: var(--eqm-success); box-shadow: inset 0 0 0 1px rgba(21, 128, 61, 0.25); }
+.eqm-badge-deleted { background: var(--eqm-danger-bg); color: var(--eqm-danger); box-shadow: inset 0 0 0 1px rgba(220, 38, 38, 0.25); }
 
 .eqm-list-actions { display: flex; gap: 8px; justify-content: flex-end; }
 .eqm-list-actions .eqm-btn { padding: 7px 12px; font-size: 12.5px; }
@@ -241,9 +293,11 @@ const EQUIPMENT_STYLES = `
     display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: 4px;
     background: var(--eqm-surface); border-radius: var(--eqm-radius); box-shadow: var(--eqm-shadow);
     border: 1px solid var(--eqm-border);
+    border-top: 4px solid var(--eqm-cyan-500);
     padding: 48px 20px; color: var(--eqm-text-400);
 }
 .eqm-state strong { color: var(--eqm-text-900); font-size: 15px; }
+.eqm-state-error { border-top-color: var(--eqm-danger); }
 .eqm-state-error strong { color: var(--eqm-danger); }
 
 /* ---------- Toast ---------- */
@@ -257,8 +311,8 @@ const EQUIPMENT_STYLES = `
     font-size: 13.5px; font-weight: 500; color: #fff;
     animation: eqm-toast-in 0.18s ease-out;
 }
-.eqm-toast-success { background: #0f3d33; border: 1px solid rgba(52, 211, 153, 0.4); color: #7be8c6; }
-.eqm-toast-error { background: #3d1414; border: 1px solid rgba(248, 113, 113, 0.4); color: #ffb3b3; }
+.eqm-toast-success { background: #ffffff; border-left: 4px solid var(--eqm-success); color: var(--eqm-text-900); }
+.eqm-toast-error { background: #ffffff; border-left: 4px solid var(--eqm-danger); color: var(--eqm-text-900); }
 @keyframes eqm-toast-in { from { opacity: 0; transform: translateX(16px); } to { opacity: 1; transform: translateX(0); } }
 
 /* ---------- Confirm modal ---------- */
@@ -271,6 +325,7 @@ const EQUIPMENT_STYLES = `
 .eqm-modal {
     background: var(--eqm-surface); border-radius: var(--eqm-radius); box-shadow: var(--eqm-shadow);
     border: 1px solid var(--eqm-border);
+    border-top: 4px solid var(--eqm-cyan-500);
     padding: 22px; max-width: 380px; width: 100%;
 }
 .eqm-modal h3 { margin: 0 0 8px; font-size: 16px; color: var(--eqm-text-900); }
@@ -287,6 +342,7 @@ const EQUIPMENT_STYLES = `
 .eqm-form-card {
     background: var(--eqm-surface); border-radius: var(--eqm-radius); box-shadow: var(--eqm-shadow);
     border: 1px solid var(--eqm-border);
+    border-top: 4px solid var(--eqm-cyan-500);
     padding: 26px 26px 24px;
 }
 .eqm-form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-top: 4px; }
@@ -349,8 +405,8 @@ const EQUIPMENT_STYLES = `
 @media (max-width: 1024px) {
     .eqm-container { max-width: 100%; }
     .eqm-list-header, .eqm-list-row {
-        grid-template-columns: 52px minmax(160px, 2fr) minmax(90px, 1fr) minmax(90px, 1fr) 96px 170px;
-        gap: 12px;
+        grid-template-columns: 52px minmax(150px, 1.8fr) minmax(84px, 1fr) minmax(84px, 1fr) 90px 90px 170px;
+        gap: 10px;
     }
 }
 
@@ -574,7 +630,8 @@ function EquipmentForm({ equipmentId, categories, branches, onSaved, onCancel, p
                     branchId: detail.branchId ?? "",
                     description: detail.description ?? "",
                 });
-                setImagePreview(detail.imageUrls?.[0] ?? null);
+                // Hỗ trợ cả detail.imageUrls (mảng) lẫn detail.imageUrl (chuỗi)
+                setImagePreview(getEquipmentImage(detail));
             })
             .catch((err) => {
                 console.error("Lỗi tải chi tiết thiết bị:", err?.response?.status, err);
@@ -804,7 +861,10 @@ function EquipmentForm({ equipmentId, categories, branches, onSaved, onCancel, p
 // ---------------------------------------------------------------------------
 function EquipmentListRow({ equipment, canManage, busy, onEdit, onToggleStatus }) {
     const isDeleted = equipment.status === STATUS_DELETED;
-    const thumbnail = equipment.imageUrls?.[0];
+    // Dùng getEquipmentImage() thay vì đọc thẳng equipment.imageUrls?.[0]:
+    // API thực tế trả field số ít `imageUrl`, không phải mảng `imageUrls`.
+    const thumbnail = getEquipmentImage(equipment);
+    const addedAtLabel = formatAddedAt(equipment.addedAt);
 
     return (
         <div className={`eqm-list-row ${busy ? "eqm-list-row-busy" : ""}`}>
@@ -822,6 +882,7 @@ function EquipmentListRow({ equipment, canManage, busy, onEdit, onToggleStatus }
                 <div className="eqm-list-meta-mobile">
                     {equipment.categoryName && <span>📦 {equipment.categoryName}</span>}
                     {equipment.branchName && <span>📍 {equipment.branchName}</span>}
+                    <span>🕒 {addedAtLabel}</span>
                     <span className={`eqm-badge ${isDeleted ? "eqm-badge-deleted" : "eqm-badge-active"}`}>
                         {isDeleted ? "Đã ẩn" : "Đang dùng"}
                     </span>
@@ -836,6 +897,11 @@ function EquipmentListRow({ equipment, canManage, busy, onEdit, onToggleStatus }
             <div className="eqm-list-cell">
                 <span className="eqm-list-cell-label">Chi nhánh: </span>
                 {equipment.branchName || "—"}
+            </div>
+
+            <div className="eqm-list-cell">
+                <span className="eqm-list-cell-label">Ngày thêm: </span>
+                {addedAtLabel}
             </div>
 
             <div className="eqm-list-cell">
@@ -1198,6 +1264,7 @@ export default function EquipmentListPageOfAdmin() {
                             <span>Tên thiết bị</span>
                             <span>Danh mục</span>
                             <span>Chi nhánh</span>
+                            <span>Ngày thêm</span>
                             <span>Trạng thái</span>
                             <span></span>
                         </div>

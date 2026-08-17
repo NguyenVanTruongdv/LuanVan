@@ -118,7 +118,7 @@ public class MemberPackageService
         DateOnly startDate, DateOnly expiryDate,
         long transactionId, int branchId, string packageStatus = "Active")
     {
-        DateTime thoiDiemTao = DateTime.UtcNow;
+        DateTime thoiDiemTao = DateTime.Now;
 
         var goiTapMoi = new MemberPackage
         {
@@ -156,7 +156,7 @@ public class MemberPackageService
             throw new InvalidOperationException(
                 "Hội viên đã có một gói tập đang chờ kích hoạt. Vui lòng hoàn tất kích hoạt tại quầy trước khi mua gói khác.");
 
-        DateTime thoiDiemTao = DateTime.UtcNow;
+        DateTime thoiDiemTao = DateTime.Now;
 
         var goiTapMoi = new MemberPackage
         {
@@ -194,7 +194,7 @@ public class MemberPackageService
         pendingPackage.StartDate = activationDate;
         pendingPackage.ExpiryDate = CalculateExpiryDate(activationDate, pendingPackage.Plan!, pendingPackage.SoNgayTangThucTe);
         pendingPackage.PackageStatus = "Active";
-        pendingPackage.UpdatedAt = DateTime.UtcNow;
+        pendingPackage.UpdatedAt = DateTime.Now;
 
         return pendingPackage;
     }
@@ -206,7 +206,7 @@ public class MemberPackageService
         decimal giaGoc, decimal amount, short bonusDays,
         long transactionId, int branchId)
     {
-        DateOnly homNay = DateOnly.FromDateTime(DateTime.UtcNow);
+        DateOnly homNay = DateOnly.FromDateTime(DateTime.Now);
 
         MembershipPlan plan = await _db.MembershipPlans.FindAsync(planId)
             ?? throw new KeyNotFoundException("Không tìm thấy gói tập.");

@@ -119,8 +119,8 @@ public class ForumCommentService
             ReplyToMemberId = replyToMemberId,
             Content = dto.Content,
             Status = "Active",
-            CreatedAt = DateTime.UtcNow,
-            UpdatedAt = DateTime.UtcNow
+            CreatedAt = DateTime.Now,
+            UpdatedAt = DateTime.Now
         };
 
         _context.ForumComments.Add(cmtMoi);
@@ -184,7 +184,7 @@ public class ForumCommentService
             {
                 CommentId = commentId,
                 MemberId = memberId,
-                CreatedAt = DateTime.UtcNow
+                CreatedAt = DateTime.Now
             };
             _context.ForumCommentLikes.Add(likeMoi);
             cmt.LikeCount = cmt.LikeCount + 1;
@@ -220,7 +220,7 @@ public class ForumCommentService
         List<long> dsIdConChau = await GetAllDescendantIdsAsync(commentId);
 
         cmt.Status = "Deleted";
-        cmt.UpdatedAt = DateTime.UtcNow;
+        cmt.UpdatedAt = DateTime.Now;
 
         if (dsIdConChau.Count > 0)
         {
@@ -228,7 +228,7 @@ public class ForumCommentService
                 .Where(c => dsIdConChau.Contains(c.CommentId) && c.Status == "Active")
                 .ExecuteUpdateAsync(s => s
                     .SetProperty(c => c.Status, "Deleted")
-                    .SetProperty(c => c.UpdatedAt, DateTime.UtcNow));
+                    .SetProperty(c => c.UpdatedAt, DateTime.Now));
         }
 
         var baiViet = await _context.ForumPosts.FirstOrDefaultAsync(p => p.PostId == cmt.PostId);

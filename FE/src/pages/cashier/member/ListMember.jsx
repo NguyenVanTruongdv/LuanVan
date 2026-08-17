@@ -20,10 +20,13 @@ import cashierApi from "../../../api/cashierApi";
 const C = {
     bg: "#F5FBF8",
     surface: "#FFFFFF",
-    card: "#FFFFFF",
-    cardAlt: "#EFFBF5",
-    border: "#DCEFE6",
-    borderDark: "#BFE2D3",
+    card: "#FCFFFE",
+    cardAlt: "#CDF0DE",
+    cardBorder: "rgba(12,143,99,0.45)",
+    readBg: "rgba(14,168,117,0.09)",
+    readBorder: "rgba(14,168,117,0.28)",
+    border: "#9FDDBE",
+    borderDark: "#57C08D",
     ink: "#0E2A21",
     inkSoft: "#3E5A50",
     inkMuted: "#84998F",
@@ -48,8 +51,8 @@ const C = {
     red: "#DC4C41",
     redBg: "rgba(220,76,65,0.09)",
     redBorder: "rgba(220,76,65,0.28)",
-    shadow: "0 1px 2px rgba(15,42,33,0.05), 0 6px 18px rgba(15,42,33,0.07)",
-    shadowMd: "0 2px 6px rgba(15,42,33,0.06), 0 18px 42px rgba(15,42,33,0.10)",
+    shadow: "0 2px 4px rgba(12,143,99,0.12), 0 10px 26px rgba(12,143,99,0.18)",
+    shadowMd: "0 4px 10px rgba(12,143,99,0.14), 0 24px 54px rgba(12,143,99,0.22)",
 };
 
 // Danh sách chi nhánh mặc định — chỉ dùng khi chưa tải được dữ liệu hội viên nào.
@@ -263,7 +266,7 @@ function GlobalStyles() {
                 z-index: 50; padding: 20px;
             }
             .gw-modal {
-                background: ${C.surface}; border-radius: 18px; border: 1px solid ${C.border};
+                background: ${C.surface}; border-radius: 18px; border: 2px solid ${C.cardBorder};
                 box-shadow: ${C.shadowMd}; width: 100%; max-width: 420px; padding: 22px;
             }
             @media (max-width: 760px) {
@@ -344,7 +347,7 @@ function FaceIdCapture({ onSave, onCancel, aspect = "4/5", saving = false, membe
             const formData = new FormData();
             // NOTE: tên field "Image" là giả định theo convention IFormFile của BE — nếu
             // backend yêu cầu tên khác (vd. "File", "ProfileImage") thì đổi lại cho khớp.
-            formData.append("Image", blob, "faceid-check.jpg");
+            formData.append("ProfileImage", blob, "faceid-check.jpg");
             if (memberId) formData.append("MemberId", memberId);
             const res = await cashierApi.checkMemberFace(formData);
             setCheckResult(res?.data ?? res);
@@ -556,8 +559,8 @@ function ReadField({ label, value, icon: Icon, full }) {
                 {label}
             </span>
             <div style={{
-                fontSize: 14.5, padding: "10px 13px", borderRadius: 10, border: `1.5px solid ${C.border}`,
-                background: C.cardAlt, color: C.ink, fontWeight: 700, minHeight: 21,
+                fontSize: 14.5, padding: "10px 13px", borderRadius: 10, border: `1.5px solid ${C.readBorder}`,
+                background: C.readBg, color: C.ink, fontWeight: 700, minHeight: 21,
                 display: "flex", alignItems: "center", lineHeight: 1.5
             }}>
                 {value || "—"}
@@ -569,7 +572,7 @@ function ReadField({ label, value, icon: Icon, full }) {
 function StatCard({ icon: Icon, label, value, color, bgColor }) {
     return (
         <div style={{
-            background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: "16px 20px",
+            background: C.cardAlt, border: `2px solid ${C.cardBorder}`, borderRadius: 16, padding: "16px 20px",
             display: "flex", alignItems: "center", gap: 14, flex: "1 1 160px", boxShadow: C.shadow
         }}>
             <div style={{ width: 44, height: 44, borderRadius: 13, background: bgColor, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
@@ -798,7 +801,7 @@ function ListPage({ members, onView, onEdit, loading = false }) {
                 <StatCard icon={TrendingUp} label="Hết hạn" value={expired} color={C.red} bgColor={C.redBg} />
             </div>
 
-            <div className="gw-filter-bar" style={{ display: "flex", flexWrap: "wrap", gap: 10, background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: "14px 16px", marginBottom: 18, boxShadow: C.shadow }}>
+            <div className="gw-filter-bar" style={{ display: "flex", flexWrap: "wrap", gap: 10, background: C.card, border: `2px solid ${C.cardBorder}`, borderRadius: 16, padding: "14px 16px", marginBottom: 18, boxShadow: C.shadow }}>
                 <div style={{ position: "relative", flex: "1 1 200px" }}>
                     <Search size={14} style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: C.inkMuted }} />
                     <input className="gw-input" placeholder="Tìm theo tên…" value={fName} onChange={e => setFName(e.target.value)} style={{ ...inp, paddingLeft: 35, fontSize: 14 }} />
@@ -819,7 +822,7 @@ function ListPage({ members, onView, onEdit, loading = false }) {
                 </button>
             </div>
 
-            <div style={{ border: `1px solid ${C.border}`, borderRadius: 18, overflow: "hidden", background: C.card, boxShadow: C.shadowMd }}>
+            <div style={{ border: `2px solid ${C.cardBorder}`, borderRadius: 18, overflow: "hidden", background: C.card, boxShadow: C.shadowMd }}>
                 <div className="gw-table-scroll">
                     <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
                         <thead>
@@ -1006,7 +1009,7 @@ function DetailPage({ memberId, listSnapshot, onBack, onSave, initialEditingInfo
                 </div>
             )}
 
-            <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 22, overflow: "hidden", boxShadow: C.shadowMd }}>
+            <div style={{ background: C.card, border: `2px solid ${C.cardBorder}`, borderRadius: 22, overflow: "hidden", boxShadow: C.shadowMd }}>
                 <div style={{ display: "flex", flexWrap: "wrap" }}>
 
                     {/* ── PHOTO COLUMN ── */}

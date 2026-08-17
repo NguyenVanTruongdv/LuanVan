@@ -1,9 +1,12 @@
 import {
+    AlertTriangle,
     BarChart3,
     Building2,
+    CheckSquare,
     ChevronDown,
     ChevronRight,
     Dumbbell,
+    History,
     LayoutDashboard,
     ListTree,
     LogOut,
@@ -17,8 +20,9 @@ import {
     Users,
     X
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
+import adminApi from "../api/adminApi"; // ⚠️ sửa lại đường dẫn cho đúng vị trí file adminApi thật của bạn
 import authApi from "../api/authApi"; // ⚠️ sửa lại đường dẫn cho đúng vị trí file authApi thật của bạn
 import logo from "../assets/logo.png";
 
@@ -28,15 +32,17 @@ import logo from "../assets/logo.png";
  * Layout khung cho trang Admin (Sidebar + Header + vùng nội dung).
  * Viết bằng CSS thuần (không dùng Tailwind) — toàn bộ CSS được gộp
  * chung vào file này qua thẻ <style>.
- * - Tông màu đồng bộ với trang đăng nhập nhân viên: nền navy đậm
- *   (#0F172A / #1E293B), viền slate (#334155), điểm nhấn cyan
- *   (#06B6D4), chữ sáng (#F1F5F9 / #94A3B8 / #64748B).
+ * - Tông màu sáng: nền xám nhạt (#F1F5F9), sidebar/header trắng,
+ *   viền slate nhạt (#E2E8F0), điểm nhấn xanh lá (#059669),
+ *   chữ tối (#1E293B / #64748B / #94A3B8).
  * - Responsive: sidebar ẩn thành drawer trên mobile/tablet (< 1024px).
  * - Điều hướng bằng react-router-dom: bấm menu -> navigate(path) ->
  *   <Outlet /> tự render trang con tương ứng (khai báo route ở AppRoute).
  * - Active state tự động theo location.pathname / matchPrefix.
  * - Đăng xuất: gọi authApi.logout() (tự xoá token + gọi BE), rồi
  *   điều hướng về /staff/login.
+ * - Thông tin tài khoản (tên, vai trò, avatar) lấy từ
+ *   adminApi.getEmployeeProfile() thay vì hardcode "Admin".
  * ------------------------------------------------------------------
  */
 
@@ -63,14 +69,17 @@ const NAV_ITEMS = [
 
         ],
     },
+
     {
         id: "staff",
         icon: UserCog,
         label: "Quản lý nhân viên",
         matchPrefix: "/admin/staff",
         children: [
-            { id: "staff/system", icon: ListTree, label: "Danh sách nhân viên", path: "/admin/staffs" },
-            { id: "staff-add", icon: ListTree, label: "Tạo nhân viên", path: "/admin/staff-create" },
+            { id: "staff/system", icon: ListTree, label: "Tài khoản hệ thống", path: "/admin/employees/system" },
+            { id: "staff/employees", icon: ListTree, label: "Hồ sơ nhân viên", path: "/admin/employees" },
+            { id: "staff-add", icon: ListTree, label: "Tạo nhân viên", path: "/admin/employees/create" },
+
         ],
     },
     {
@@ -91,7 +100,17 @@ const NAV_ITEMS = [
         children: [
             { id: "packages-list", icon: ListTree, label: "Danh sách gói tập", path: "/admin/packages" },
             { id: "packages-add", icon: ListTree, label: "Tạo gói tập", path: "/admin/package-create" },
-            { id: "packages-history", icon: ListTree, label: "Lịch sử đăng ký", path: "/admin/package-history" },
+        ],
+    },
+    {
+        id: "history",
+        icon: History,
+        label: "Lịch sử",
+        matchPrefix: "/admin/history",
+        children: [
+            { id: "packages-history", icon: History, label: "Lịch sử đăng ký gói tập", path: "/admin/package-history" },
+            // TODO: bạn tự khai báo route admin tương ứng, path dưới chỉ là gợi ý
+            { id: "members-checkin", icon: CheckSquare, label: "Lịch sử Check-in / Check-out", path: "/admin/checkin-history" },
         ],
     },
     {
@@ -126,6 +145,15 @@ const NAV_ITEMS = [
         ],
     },
     {
+        id: "incidents",
+        icon: AlertTriangle,
+        label: "Quản lý sự cố",
+        matchPrefix: "/admin/incident",
+        children: [
+            { id: "incidents-list", icon: ListTree, label: "Danh sách sự cố", path: "/admin/incidents" },
+        ],
+    },
+    {
         id: "news",
         icon: Newspaper,
         label: "Quản lý tin tức",
@@ -146,8 +174,15 @@ const NAV_ITEMS = [
         ],
     },
     { id: "invoices", icon: Receipt, label: "Hóa đơn", path: "/admin/invoices" },
-    { id: "stats", icon: BarChart3, label: "Thống kê hệ thống", path: "/admin/stats" },
+    { id: "stats", icon: BarChart3, label: "Báo cáo", path: "/admin/reports" },
 ];
+
+// Map role trả về từ BE -> nhãn hiển thị tiếng Việt (tuỳ chỉnh thêm nếu có role khác)
+const ROLE_LABELS = {
+    Manager: "Quản lý",
+    Admin: "Quản trị viên",
+    Staff: "Nhân viên",
+};
 
 function cx(...c) {
     return c.filter(Boolean).join(" ");
@@ -190,11 +225,15 @@ function NavLink({ item, active, expanded, onClick, level = 0 }) {
     );
 }
 
-function Sidebar({ openMenus, toggleMenu, mobileOpen, closeMobile, onLogout, loggingOut }) {
+function Sidebar({ openMenus, toggleMenu, mobileOpen, closeMobile, onLogout, loggingOut, profile, profileLoading }) {
     const location = useLocation();
     const navigate = useNavigate();
 
     const isPathActive = (path) => location.pathname === path;
+
+    const displayName = profileLoading ? "Đang tải..." : profile?.fullName || "Nhân viên";
+    const displayRole = profile?.role ? (ROLE_LABELS[profile.role] || profile.role) : "";
+    const avatarChar = profile?.fullName?.trim()?.charAt(0)?.toUpperCase() || "A";
 
     return (
         <>
@@ -255,10 +294,10 @@ function Sidebar({ openMenus, toggleMenu, mobileOpen, closeMobile, onLogout, log
 
                 <div className="al-sidebar-foot">
                     <button className="al-account-btn">
-                        <div className="al-avatar">A</div>
+                        <div className="al-avatar">{avatarChar}</div>
                         <div className="al-account-text">
-                            <p className="al-account-name">Admin</p>
-                            <p className="al-account-role">Super Admin</p>
+                            <p className="al-account-name">{displayName}</p>
+                            <p className="al-account-role">{displayRole}</p>
                         </div>
                     </button>
 
@@ -276,8 +315,12 @@ function Sidebar({ openMenus, toggleMenu, mobileOpen, closeMobile, onLogout, log
     );
 }
 
-function Header({ onMenuClick, onLogout }) {
+function Header({ onMenuClick, onLogout, profile, profileLoading }) {
     const [menuOpen, setMenuOpen] = useState(false);
+
+    const displayName = profileLoading ? "Đang tải..." : profile?.fullName || "Nhân viên";
+    const displayRole = profile?.role ? (ROLE_LABELS[profile.role] || profile.role) : "";
+    const avatarChar = profile?.fullName?.trim()?.charAt(0)?.toUpperCase() || "A";
 
     return (
         <header className="al-header">
@@ -292,10 +335,10 @@ function Header({ onMenuClick, onLogout }) {
                             className="al-user-btn"
                             onClick={() => setMenuOpen((v) => !v)}
                         >
-                            <div className="al-avatar al-avatar-small">A</div>
+                            <div className="al-avatar al-avatar-small">{avatarChar}</div>
                             <div className="al-user-text">
-                                <p className="al-user-name">Admin</p>
-                                <p className="al-user-role">Super Admin</p>
+                                <p className="al-user-name">{displayName}</p>
+                                <p className="al-user-role">{displayRole}</p>
                             </div>
                             <ChevronDown size={14} className="al-user-chevron" />
                         </button>
@@ -343,6 +386,37 @@ export default function AdminLayout() {
     const [mobileOpen, setMobileOpen] = useState(false);
     const [loggingOut, setLoggingOut] = useState(false);
 
+    // ─────────────────────────────────────────────
+    // Thông tin tài khoản đăng nhập (tên, vai trò, avatar...)
+    // Gọi 1 lần khi layout mount, dùng chung cho Sidebar + Header.
+    // ─────────────────────────────────────────────
+    const [profile, setProfile] = useState(null);
+    const [profileLoading, setProfileLoading] = useState(true);
+
+    useEffect(() => {
+        let mounted = true;
+
+        const fetchProfile = async () => {
+            try {
+                const res = await adminApi.getEmployeeProfile();
+                // authApi.get có thể trả thẳng data (đã unwrap) hoặc trả nguyên response axios (res.data)
+                const data = res?.employeeId !== undefined ? res : res?.data;
+                if (mounted) setProfile(data || null);
+            } catch (err) {
+                console.error("getEmployeeProfile error:", err);
+                // giữ profile = null -> UI tự fallback hiển thị mặc định
+            } finally {
+                if (mounted) setProfileLoading(false);
+            }
+        };
+
+        fetchProfile();
+
+        return () => {
+            mounted = false;
+        };
+    }, []);
+
     const toggleMenu = (id) =>
         setOpenMenus((prev) => (prev.includes(id) ? prev.filter((k) => k !== id) : [...prev, id]));
 
@@ -378,12 +452,16 @@ export default function AdminLayout() {
                 closeMobile={() => setMobileOpen(false)}
                 onLogout={handleLogout}
                 loggingOut={loggingOut}
+                profile={profile}
+                profileLoading={profileLoading}
             />
 
             <div className="al-main-col">
                 <Header
                     onMenuClick={() => setMobileOpen(true)}
                     onLogout={handleLogout}
+                    profile={profile}
+                    profileLoading={profileLoading}
                 />
 
                 <main className="al-content">
@@ -398,9 +476,10 @@ export default function AdminLayout() {
  * CSS thuần, gộp chung vào file này.
  * Prefix "al-" (Admin Layout) để tránh đụng class với phần còn lại
  * của ứng dụng.
- * Tông màu: đồng bộ theo trang StaffLogin — nền navy đậm, viền slate,
- * điểm nhấn cyan (#06B6D4).
- * Sidebar được thu hẹp lại (240px) để vùng nội dung trang con rộng hơn.
+ * Tông màu: nền sáng, sidebar/header trắng, viền slate nhạt,
+ * điểm nhấn xanh lá (#059669) — đồng bộ phong cách "Hotel Booking".
+ * Margin/padding tổng thể được giảm để vùng nội dung (trang con)
+ * rộng rãi hơn.
  * ------------------------------------------------------------------ */
 const CSS = `
 * { box-sizing: border-box; }
@@ -409,30 +488,30 @@ const CSS = `
   display: flex;
   height: 100vh;
   width: 100%;
-  background: #0B1120;
-  color: #F1F5F9;
+  background: #F1F5F9;
+  color: #1E293B;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  gap: 16px;
-  padding: 16px;
+  gap: 10px;
+  padding: 10px;
   overflow: hidden;
 }
 
 /* ---------- Sidebar ---------- */
 .al-sidebar {
   position: fixed;
-  top: 16px;
-  bottom: 16px;
-  left: 16px;
+  top: 10px;
+  bottom: 10px;
+  left: 10px;
   z-index: 40;
-  width: 240px;
+  width: 230px;
   display: flex;
   flex-direction: column;
-  background: #1E293B;
-  border: 1px solid #334155;
-  border-radius: 18px;
-  box-shadow: 0 24px 48px -12px rgba(0, 0, 0, 0.55), 0 8px 16px -6px rgba(0, 0, 0, 0.35);
+  background: #FFFFFF;
+  border: 1.5px solid #A7F3D0;
+  border-radius: 14px;
+  box-shadow: 0 20px 40px -12px rgba(15, 23, 42, 0.28), 0 8px 16px -6px rgba(15, 23, 42, 0.16);
   overflow: hidden;
-  transform: translateX(calc(-100% - 32px));
+  transform: translateX(calc(-100% - 20px));
   transition: transform 0.2s ease;
 }
 
@@ -444,16 +523,16 @@ const CSS = `
   position: fixed;
   inset: 0;
   z-index: 30;
-  background: rgba(2, 6, 23, 0.6);
+  background: rgba(15, 23, 42, 0.35);
 }
 
 .al-sidebar-head {
-  height: 68px;
+  height: 60px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 16px;
-  border-bottom: 1px solid #334155;
+  padding: 0 14px;
+  border-bottom: 1px solid #E2E8F0;
 }
 
 .al-logo {
@@ -464,52 +543,52 @@ const CSS = `
 }
 
 .al-logo-badge {
-  width: 38px;
-  height: 38px;
+  width: 36px;
+  height: 36px;
   flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: center;
   border-radius: 10px;
-  background: linear-gradient(135deg, #0E7490, #0B4A57);
-  box-shadow: 0 0 0 1px rgba(6, 182, 212, 0.25) inset;
+  background: linear-gradient(135deg, #059669, #047857);
+  box-shadow: 0 0 0 1px rgba(5, 150, 105, 0.2) inset;
 }
 
-.al-logo-img { height: 22px; width: 22px; object-fit: contain; }
+.al-logo-img { height: 20px; width: 20px; object-fit: contain; }
 
 .al-logo-text { line-height: 1.2; min-width: 0; }
-.al-logo-title { margin: 0; font-size: 14px; font-weight: 800; color: #F1F5F9; letter-spacing: -0.2px; white-space: nowrap; }
-.al-logo-sub { margin: 0; font-size: 11px; color: #06B6D4; font-weight: 500; white-space: nowrap; }
+.al-logo-title { margin: 0; font-size: 14px; font-weight: 800; color: #1E293B; letter-spacing: -0.2px; white-space: nowrap; }
+.al-logo-sub { margin: 0; font-size: 11px; color: #059669; font-weight: 500; white-space: nowrap; }
 
 .al-close-btn {
   border: none;
   background: none;
   padding: 6px;
   border-radius: 6px;
-  color: #64748B;
+  color: #94A3B8;
   cursor: pointer;
   display: flex;
   flex-shrink: 0;
 }
-.al-close-btn:hover { background: #0F172A; }
+.al-close-btn:hover { background: #F1F5F9; }
 
 .al-nav {
   flex: 1;
   overflow-y: auto;
-  padding: 18px 10px;
+  padding: 14px 8px;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
   scrollbar-width: none; /* Firefox */
   -ms-overflow-style: none; /* IE/Edge legacy */
 }
 .al-nav::-webkit-scrollbar { display: none; width: 0; height: 0; } /* Chrome/Safari */
 
 .al-submenu {
-  margin-top: 4px;
+  margin-top: 3px;
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 2px;
 }
 
 .al-navlink {
@@ -520,48 +599,47 @@ const CSS = `
   border: none;
   background: none;
   cursor: pointer;
-  padding: 10px 12px;
-  border-radius: 10px;
-  font-size: 14px;
+  padding: 9px 10px;
+  border-radius: 8px;
+  font-size: 13.5px;
   font-weight: 500;
-  color: #94A3B8;
+  color: #475569;
   text-align: left;
   transition: background 0.15s, color 0.15s, box-shadow 0.15s, transform 0.15s;
 }
 
-.al-navlink:hover { background: #0F172A; color: #F1F5F9; }
+.al-navlink:hover { background: #F0FDF4; color: #059669; }
 
-.al-navlink-sub { padding-left: 32px; font-size: 13px; }
+.al-navlink-sub { padding-left: 30px; font-size: 12.5px; }
 
 .al-navlink-active {
-  background: #06B6D4;
-  color: #0F172A;
+  background: #ECFDF5;
+  color: #059669;
   font-weight: 700;
-  box-shadow: 0 10px 20px -6px rgba(6, 182, 212, 0.45), 0 2px 6px rgba(6, 182, 212, 0.3);
-  transform: translateY(-1px);
+  box-shadow: inset 0 0 0 1px rgba(5, 150, 105, 0.25);
 }
 
-.al-navlink-active:hover { background: #06B6D4; color: #0F172A; }
+.al-navlink-active:hover { background: #ECFDF5; color: #059669; }
 
-.al-navlink-icon { color: #64748B; flex-shrink: 0; }
-.al-navlink-active .al-navlink-icon { color: #0F172A; }
+.al-navlink-icon { color: #94A3B8; flex-shrink: 0; }
+.al-navlink-active .al-navlink-icon { color: #059669; }
 
 .al-navdot {
   width: 6px;
   height: 6px;
   border-radius: 999px;
-  background: #475569;
+  background: #CBD5E1;
   flex-shrink: 0;
 }
-.al-navdot-active { background: #0F172A; }
+.al-navdot-active { background: #059669; }
 
 .al-navlink-label { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.al-navlink-chevron { color: #64748B; flex-shrink: 0; }
-.al-navlink-active .al-navlink-chevron { color: #0F172A; }
+.al-navlink-chevron { color: #94A3B8; flex-shrink: 0; }
+.al-navlink-active .al-navlink-chevron { color: #059669; }
 
 .al-sidebar-foot {
-  border-top: 1px solid #334155;
-  padding: 12px;
+  border-top: 1px solid #E2E8F0;
+  padding: 10px;
 }
 
 .al-account-btn {
@@ -576,27 +654,28 @@ const CSS = `
   border-radius: 10px;
   text-align: left;
 }
-.al-account-btn:hover { background: #0F172A; }
+.al-account-btn:hover { background: #F1F5F9; }
 
 .al-avatar {
-  width: 36px;
-  height: 36px;
+  width: 34px;
+  height: 34px;
   flex-shrink: 0;
   border-radius: 999px;
-  background: #334155;
-  color: #94A3B8;
+  border: 1.5px solid #A7F3D0;
+  background: #E2E8F0;
+  color: #64748B;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 700;
 }
 
-.al-avatar-small { width: 34px; height: 34px; font-size: 13px; background: rgba(6, 182, 212, 0.15); color: #06B6D4; }
+.al-avatar-small { width: 32px; height: 32px; font-size: 12.5px; background: rgba(5, 150, 105, 0.12); color: #059669; border: 1.5px solid #6EE7B7; }
 
 .al-account-text { min-width: 0; flex: 1; line-height: 1.2; }
-.al-account-name { margin: 0; font-size: 14px; font-weight: 700; color: #F1F5F9; }
-.al-account-role { margin: 0; font-size: 11.5px; color: #64748B; font-weight: 500; }
+.al-account-name { margin: 0; font-size: 13.5px; font-weight: 700; color: #1E293B; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.al-account-role { margin: 0; font-size: 11px; color: #64748B; font-weight: 500; }
 
 /* ---------- Logout button (sidebar) ---------- */
 .al-logout-btn {
@@ -605,18 +684,18 @@ const CSS = `
   align-items: center;
   justify-content: center;
   gap: 8px;
-  border: 1px solid #334155;
-  background: none;
+  border: 1.5px solid #FCA5A5;
+  background: rgba(220, 38, 38, 0.06);
   cursor: pointer;
   margin-top: 8px;
-  padding: 9px 10px;
+  padding: 8px 10px;
   border-radius: 10px;
-  font-size: 13px;
+  font-size: 12.5px;
   font-weight: 600;
-  color: #F87171;
+  color: #DC2626;
   transition: background 0.15s, border-color 0.15s, opacity 0.15s;
 }
-.al-logout-btn:hover { background: rgba(248, 113, 113, 0.1); border-color: rgba(248, 113, 113, 0.4); }
+.al-logout-btn:hover { background: rgba(220, 38, 38, 0.12); border-color: #F87171; }
 .al-logout-btn:disabled { opacity: 0.6; cursor: not-allowed; }
 .al-logout-icon { flex-shrink: 0; }
 
@@ -626,25 +705,25 @@ const CSS = `
   flex-direction: column;
   flex: 1;
   min-width: 0;
-  gap: 16px;
+  gap: 10px;
   overflow: hidden;
 }
 
 /* ---------- Header ---------- */
 .al-header {
   flex-shrink: 0;
-  background: #1E293B;
-  border: 1px solid #334155;
-  border-radius: 18px;
-  box-shadow: 0 20px 40px -14px rgba(0, 0, 0, 0.5), 0 6px 14px -4px rgba(0, 0, 0, 0.25);
+  background: #FFFFFF;
+  border: 1.5px solid #A7F3D0;
+  border-radius: 14px;
+  box-shadow: 0 16px 32px -12px rgba(15, 23, 42, 0.24), 0 6px 14px -4px rgba(15, 23, 42, 0.14);
 }
 
 .al-header-top {
-  height: 68px;
+  height: 60px;
   display: flex;
   align-items: center;
   gap: 14px;
-  padding: 0 16px;
+  padding: 0 14px;
 }
 
 .al-menu-btn {
@@ -652,11 +731,11 @@ const CSS = `
   background: none;
   padding: 8px;
   border-radius: 8px;
-  color: #94A3B8;
+  color: #64748B;
   cursor: pointer;
   display: flex;
 }
-.al-menu-btn:hover { background: #0F172A; }
+.al-menu-btn:hover { background: #F1F5F9; }
 
 .al-header-right {
   margin-left: auto;
@@ -679,12 +758,12 @@ const CSS = `
   padding: 6px 8px 6px 4px;
   border-radius: 8px;
 }
-.al-user-btn:hover { background: #0F172A; }
+.al-user-btn:hover { background: #F1F5F9; }
 
 .al-user-text { display: none; text-align: left; line-height: 1.25; }
-.al-user-name { margin: 0; font-size: 14px; font-weight: 700; color: #F1F5F9; }
-.al-user-role { margin: 0; font-size: 11.5px; color: #64748B; font-weight: 500; }
-.al-user-chevron { display: none; color: #64748B; }
+.al-user-name { margin: 0; font-size: 13.5px; font-weight: 700; color: #1E293B; max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.al-user-role { margin: 0; font-size: 11px; color: #64748B; font-weight: 500; }
+.al-user-chevron { display: none; color: #94A3B8; }
 
 /* ---------- User dropdown menu (Header) ---------- */
 .al-user-menu-overlay {
@@ -700,10 +779,10 @@ const CSS = `
   right: 0;
   z-index: 50;
   min-width: 160px;
-  background: #1E293B;
-  border: 1px solid #334155;
+  background: #FFFFFF;
+  border: none;
   border-radius: 12px;
-  box-shadow: 0 20px 40px -12px rgba(0, 0, 0, 0.55);
+  box-shadow: 0 16px 32px -12px rgba(15, 23, 42, 0.16);
   padding: 6px;
 }
 
@@ -717,18 +796,18 @@ const CSS = `
   cursor: pointer;
   padding: 9px 10px;
   border-radius: 8px;
-  font-size: 13.5px;
+  font-size: 13px;
   font-weight: 600;
-  color: #F87171;
+  color: #DC2626;
   text-align: left;
 }
-.al-user-menu-item:hover { background: rgba(248, 113, 113, 0.1); }
+.al-user-menu-item:hover { background: rgba(220, 38, 38, 0.06); }
 
 /* ---------- Content ---------- */
 .al-content {
   flex: 1;
   overflow-y: auto;
-  padding: 16px;
+  padding: 8px;
   scrollbar-width: none; /* Firefox */
   -ms-overflow-style: none; /* IE/Edge legacy */
 }
@@ -740,10 +819,10 @@ const CSS = `
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 1px dashed #334155;
-  border-radius: 20px;
-  background: #1E293B;
-  box-shadow: 0 20px 40px -16px rgba(0, 0, 0, 0.4);
+  border: 1px dashed #CBD5E1;
+  border-radius: 16px;
+  background: #FFFFFF;
+  box-shadow: 0 8px 20px -12px rgba(15, 23, 42, 0.08);
   color: #64748B;
   font-size: 14px;
 }
@@ -759,7 +838,7 @@ const CSS = `
   .al-overlay { display: none; }
   .al-close-btn { display: none; }
   .al-menu-btn { display: none; }
-  .al-content { padding: 24px; }
-  .al-header-top { padding: 0 24px; }
+  .al-content { padding: 12px; }
+  .al-header-top { padding: 0 18px; }
 }
 `;

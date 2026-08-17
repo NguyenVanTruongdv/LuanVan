@@ -31,24 +31,25 @@ function extractList(res) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// STYLES: đồng bộ theme tối (navy) với trang login — nền navy đậm #0B1120,
-// các khối panel dùng #1E293B, viền slate #334155, điểm nhấn cyan #06B6D4,
-// và bộ 3 màu chữ (tiêu đề / phụ) đúng như trang login.
+// STYLES: đồng bộ theme trắng/xanh lá + viền đậm với các trang còn lại
+// Nền trang: #EFECE4 | Khối: #FFFFFF | Viền: #94A3B8 (đậm) | Điểm nhấn: #16A34A
 // ─────────────────────────────────────────────────────────────────────────────
 const STYLES = `
     .vt-app {
-        --accent: #06B6D4;
-        --accent-dark: #0E7490;
-        --accent-soft: rgba(6,182,212,0.14);
-        --accent-border: rgba(6,182,212,0.38);
-        --bg: #0B1120;
-        --bg-soft: #1E293B;
-        --bg-elevated: #16202E;
-        --line: #334155;
-        --text: #F1F5F9;
-        --text-dim: #94A3B8;
-        --text-dimmer: #64748B;
-        --radius: 16px;
+        --accent: #16A34A;
+        --accent-dark: #15803D;
+        --accent-soft: rgba(22,163,74,0.14);
+        --accent-border: rgba(22,163,74,0.4);
+        --page-bg: #EFECE4;
+        --bg: #EFECE4;
+        --bg-soft: #FFFFFF;
+        --bg-elevated: #F1F5F9;
+        --line: #94A3B8;
+        --line-md: #64748B;
+        --text: #1E293B;
+        --text-dim: #64748B;
+        --text-dimmer: #94A3B8;
+        --radius: 20px;
 
         background: transparent;
         color: var(--text);
@@ -56,22 +57,24 @@ const STYLES = `
     }
     .vt-app *, .vt-app *::before, .vt-app *::after { box-sizing: border-box; margin: 0; }
 
-    .vt-page { padding: 4px; background: var(--bg); }
-
-    .vt-card {
-        background: var(--bg-soft);
-        border: 1px solid var(--line);
-        border-radius: var(--radius);
-        padding: 32px 36px;
+    /* ── Khung ngoài trang — viền đậm, cao 80% màn hình ── */
+    .shell { min-height: 100vh; display: flex; flex-direction: column; background: var(--page-bg); padding: 24px; }
+    .page-frame { flex: 1; display: flex; }
+    .main-card {
+        flex: 1; background: var(--bg-soft); border: 1.5px solid var(--line); border-radius: var(--radius);
+        box-shadow: 0 4px 16px rgba(15,23,42,.12), 0 1px 4px rgba(15,23,42,.08);
+        height: 80vh; display: flex; flex-direction: column; overflow: hidden;
     }
+    .main-card-scroll { flex: 1; overflow-y: auto; padding: 32px 36px; }
+    .main-card-center { display: flex; align-items: center; justify-content: center; }
 
     .vt-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; align-items: start; }
 
     .vt-col-title {
         font-size: 12px; font-weight: 700; letter-spacing: 0.08em;
-        color: var(--accent); text-transform: uppercase;
+        color: var(--accent-dark); text-transform: uppercase;
         margin-bottom: 20px; padding-bottom: 12px;
-        border-bottom: 1px solid var(--line);
+        border-bottom: 1.5px solid var(--line);
         display: flex; align-items: center; gap: 8px;
     }
 
@@ -79,11 +82,11 @@ const STYLES = `
     .vt-section:last-child { margin-bottom: 0; }
 
     .vt-label { display: block; font-size: 12.5px; font-weight: 600; color: var(--text); margin-bottom: 7px; }
-    .vt-required { color: var(--accent); margin-left: 2px; }
+    .vt-required { color: var(--accent-dark); margin-left: 2px; }
     .vt-optional {
         font-size: 10px; font-weight: 700;
         color: var(--text-dim); background: var(--bg-elevated);
-        border: 1px solid var(--line); border-radius: 4px;
+        border: 1.5px solid var(--line); border-radius: 4px;
         padding: 1px 6px; margin-left: 6px; vertical-align: middle;
         text-transform: uppercase;
     }
@@ -100,8 +103,8 @@ const STYLES = `
         border-color: var(--accent);
         box-shadow: 0 0 0 3px var(--accent-soft);
     }
-    .vt-input.has-error, .vt-textarea.has-error { border-color: #F87171; background: rgba(248,113,113,0.08); }
-    .vt-error { font-size: 12px; color: #F87171; margin-top: 6px; font-weight: 600; display: flex; align-items: center; gap: 5px; }
+    .vt-input.has-error, .vt-textarea.has-error { border-color: #DC2626; background: rgba(220,38,38,0.06); }
+    .vt-error { font-size: 12px; color: #DC2626; margin-top: 6px; font-weight: 600; display: flex; align-items: center; gap: 5px; }
     .vt-counter { font-size: 11px; color: var(--text-dimmer); text-align: right; margin-top: 5px; }
     .vt-hint { font-size: 11.5px; color: var(--text-dimmer); margin-top: 6px; }
 
@@ -123,13 +126,13 @@ const STYLES = `
 
     .eq-selected-badge {
         display: inline-flex; align-items: center;
-        background: var(--accent-soft); border: 1px solid var(--accent-border);
-        color: var(--accent); border-radius: 6px; padding: 2px 8px;
+        background: var(--accent-soft); border: 1.5px solid var(--accent-border);
+        color: var(--accent-dark); border-radius: 6px; padding: 2px 8px;
         font-size: 11px; font-weight: 700; flex-shrink: 0;
     }
     .eq-clear {
         width: 18px; height: 18px; border-radius: 50%; border: none; cursor: pointer;
-        background: var(--accent-soft); color: var(--accent);
+        background: var(--accent-soft); color: var(--accent-dark);
         display: flex; align-items: center; justify-content: center;
         transition: opacity .1s; flex-shrink: 0;
     }
@@ -138,11 +141,11 @@ const STYLES = `
     .eq-dropdown {
         position: absolute; top: calc(100% + 6px); left: 0; right: 0; z-index: 200;
         background: var(--bg-soft); border: 1.5px solid var(--accent-border);
-        border-radius: 12px; box-shadow: 0 12px 28px -6px rgba(0,0,0,0.55), 0 0 0 1px rgba(0,0,0,0.15);
+        border-radius: 12px; box-shadow: 0 12px 28px -6px rgba(15,23,42,0.22), 0 0 0 1px rgba(15,23,42,0.05);
         overflow: hidden;
     }
     .eq-search-wrap {
-        padding: 10px; border-bottom: 1px solid var(--line);
+        padding: 10px; border-bottom: 1.5px solid var(--line);
         display: flex; align-items: center; gap: 8px; background: var(--bg-elevated);
     }
     .eq-search { flex: 1; border: none; background: transparent; outline: none; font-size: 13px; color: var(--text); font-family: 'Inter', system-ui, sans-serif; font-weight: 500; }
@@ -155,32 +158,32 @@ const STYLES = `
     .eq-option:hover { background: var(--bg-elevated); }
     .eq-option.is-selected { background: var(--accent-soft); }
     .eq-option-code {
-        font-size: 11px; font-weight: 700; color: var(--accent);
-        background: var(--accent-soft); border: 1px solid var(--accent-border);
+        font-size: 11px; font-weight: 700; color: var(--accent-dark);
+        background: var(--accent-soft); border: 1.5px solid var(--accent-border);
         border-radius: 5px; padding: 2px 6px; flex-shrink: 0;
     }
     .eq-option-info { flex: 1; min-width: 0; }
     .eq-option-name { font-size: 13px; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .eq-option-loc { font-size: 11px; color: var(--text-dimmer); margin-top: 1px; }
-    .eq-option-check { color: var(--accent); flex-shrink: 0; }
+    .eq-option-check { color: var(--accent-dark); flex-shrink: 0; }
     .eq-empty { padding: 18px; text-align: center; font-size: 13px; color: var(--text-dimmer); }
     .eq-none-option {
         display: flex; align-items: center; gap: 10px;
         padding: 9px 10px; border-radius: 8px; cursor: pointer;
         transition: background .1s; color: var(--text-dim); font-size: 13px;
-        border-top: 1px solid var(--line); margin-top: 4px;
+        border-top: 1.5px solid var(--line); margin-top: 4px;
     }
     .eq-none-option:hover { background: var(--bg-elevated); }
 
     /* ── Media ── */
     .vt-media-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
-    .vt-media-count { font-size: 11px; color: var(--text-dim); font-weight: 700; background: var(--bg-elevated); border: 1px solid var(--line); border-radius: 999px; padding: 2px 10px; }
+    .vt-media-count { font-size: 11px; color: var(--text-dim); font-weight: 700; background: var(--bg-elevated); border: 1.5px solid var(--line); border-radius: 999px; padding: 2px 10px; }
     .vt-img-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
     .vt-thumb { position: relative; border-radius: 8px; overflow: hidden; aspect-ratio: 1/1; background: var(--bg-elevated); border: 1.5px solid var(--line); }
     .vt-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
     .vt-thumb-remove {
         position: absolute; top: 5px; right: 5px; width: 20px; height: 20px; border-radius: 50%;
-        background: rgba(0,0,0,0.65); color: #fff;
+        background: rgba(15,23,42,0.65); color: #fff;
         display: flex; align-items: center; justify-content: center;
         border: none; cursor: pointer;
     }
@@ -190,9 +193,9 @@ const STYLES = `
         justify-content: center; gap: 5px; cursor: pointer; transition: border-color .15s, background .15s;
         color: var(--text-dim);
     }
-    .vt-img-slot:hover, .vt-img-slot.drag-active { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
+    .vt-img-slot:hover, .vt-img-slot.drag-active { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-dark); }
     .vt-img-slot span { font-size: 11px; font-weight: 600; }
-    .vt-img-empty { aspect-ratio: 1/1; border: 1.5px dashed var(--line); border-radius: 8px; background: var(--bg-elevated); opacity: .3; }
+    .vt-img-empty { aspect-ratio: 1/1; border: 1.5px dashed var(--line); border-radius: 8px; background: var(--bg-elevated); opacity: .35; }
 
     .vt-video-drop {
         border: 1.5px dashed var(--line); border-radius: 10px; background: var(--bg-elevated);
@@ -202,7 +205,7 @@ const STYLES = `
     }
     .vt-video-drop:hover, .vt-video-drop.drag-active { border-color: var(--accent); background: var(--accent-soft); }
     .vt-video-drop .title { font-size: 13px; font-weight: 600; color: var(--text); }
-    .vt-video-drop .title span { color: var(--accent); }
+    .vt-video-drop .title span { color: var(--accent-dark); }
     .vt-video-drop .sub { font-size: 11.5px; color: var(--text-dimmer); }
     .vt-video-thumb { position: relative; border-radius: 10px; overflow: hidden; aspect-ratio: 16/9; border: 1.5px solid var(--line); background: #000; }
     .vt-video-thumb video { width: 100%; height: 100%; object-fit: contain; display: block; }
@@ -211,13 +214,14 @@ const STYLES = `
     /* ── Submit ── */
     .vt-submit-row { margin-top: 20px; }
     .vt-submit {
-        width: 100%; background: var(--accent);
-        color: #0B1120; font-weight: 700; font-size: 15px; padding: 13px 0;
-        border-radius: 10px; border: none; cursor: pointer;
+        width: 100%; background: linear-gradient(135deg, var(--accent), var(--accent-dark));
+        color: #FFFFFF; font-weight: 700; font-size: 15px; padding: 13px 0;
+        border-radius: 10px; border: 1.5px solid var(--accent-dark); cursor: pointer;
         display: inline-flex; align-items: center; justify-content: center; gap: 8px;
         transition: filter .15s, transform .1s;
+        box-shadow: 0 2px 8px rgba(22,163,74,0.3);
     }
-    .vt-submit:hover { filter: brightness(1.1); }
+    .vt-submit:hover { filter: brightness(1.06); }
     .vt-submit:active { transform: translateY(1px); }
     .vt-submit:disabled { opacity: .65; cursor: not-allowed; }
 
@@ -225,18 +229,19 @@ const STYLES = `
     @keyframes vt-spin { to { transform: rotate(360deg); } }
 
     /* ── Success ── */
-    .vt-success-wrap { min-height: 70vh; display: flex; align-items: center; justify-content: center; padding: 40px 20px; }
     .vt-success-card {
-        background: var(--bg-soft); border: 1px solid var(--line); border-radius: var(--radius);
+        background: var(--bg-soft); border: 1.5px solid var(--line); border-radius: var(--radius);
         padding: 40px; max-width: 440px; width: 100%; text-align: center;
+        box-shadow: 0 4px 16px rgba(15,23,42,.12), 0 1px 4px rgba(15,23,42,.08);
     }
     .vt-success-icon {
         width: 52px; height: 52px; border-radius: 50%;
-        background: var(--accent);
+        background: linear-gradient(135deg, var(--accent), var(--accent-dark));
+        border: 1.5px solid var(--accent-dark);
         display: flex; align-items: center; justify-content: center;
         margin: 0 auto 16px;
     }
-    .vt-summary { background: var(--bg-elevated); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; margin: 16px 0 20px; text-align: left; }
+    .vt-summary { background: var(--bg-elevated); border: 1.5px solid var(--line); border-radius: 10px; padding: 14px 16px; margin: 16px 0 20px; text-align: left; }
     .vt-summary-row { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; }
     .vt-summary-row + .vt-summary-row { margin-top: 9px; }
     .vt-summary-row .key { color: var(--text-dimmer); }
@@ -244,7 +249,9 @@ const STYLES = `
 
     @media (max-width: 900px) {
         .vt-grid { grid-template-columns: 1fr; }
-        .vt-page { padding: 20px 16px 60px; }
+        .main-card { height: 85vh; }
+        .main-card-scroll { padding: 20px 16px 26px; }
+        .shell { padding: 12px; }
     }
 `;
 
@@ -327,21 +334,25 @@ function SuccessScreen({ data, onReset }) {
     return (
         <div className="vt-app">
             <style>{STYLES}</style>
-            <div className="vt-success-wrap">
-                <div className="vt-success-card">
-                    <div className="vt-success-icon"><CheckCircle2 size={24} color="#0B1120" strokeWidth={2.5} /></div>
-                    <h2 style={{ fontFamily: "'Inter', system-ui, sans-serif", fontSize: 20, fontWeight: 700, textTransform: "uppercase", color: "var(--text)" }}>
-                        Báo cáo đã được gửi!
-                    </h2>
-                    <p style={{ fontSize: 13.5, color: "var(--text-dim)", marginTop: 6, lineHeight: 1.6 }}>
-                        Sự cố đã được ghi nhận và sẽ được xử lý sớm.
-                    </p>
-                    <div className="vt-summary">
-                        <div className="vt-summary-row"><span className="key">Tiêu đề</span><span className="val">{data.title}</span></div>
-                        {data.equipmentName && <div className="vt-summary-row"><span className="key">Thiết bị</span><span className="val">{data.equipmentName}</span></div>}
-                        <div className="vt-summary-row"><span className="key">Minh chứng</span><span className="val">{data.imageCount} ảnh{data.hasVideo ? " • 1 video" : ""}</span></div>
+            <div className="shell">
+                <div className="page-frame">
+                    <div className="main-card main-card-center">
+                        <div className="vt-success-card">
+                            <div className="vt-success-icon"><CheckCircle2 size={24} color="#FFFFFF" strokeWidth={2.5} /></div>
+                            <h2 style={{ fontFamily: "'Inter', system-ui, sans-serif", fontSize: 20, fontWeight: 700, textTransform: "uppercase", color: "var(--text)" }}>
+                                Báo cáo đã được gửi!
+                            </h2>
+                            <p style={{ fontSize: 13.5, color: "var(--text-dim)", marginTop: 6, lineHeight: 1.6 }}>
+                                Sự cố đã được ghi nhận và sẽ được xử lý sớm.
+                            </p>
+                            <div className="vt-summary">
+                                <div className="vt-summary-row"><span className="key">Tiêu đề</span><span className="val">{data.title}</span></div>
+                                {data.equipmentName && <div className="vt-summary-row"><span className="key">Thiết bị</span><span className="val">{data.equipmentName}</span></div>}
+                                <div className="vt-summary-row"><span className="key">Minh chứng</span><span className="val">{data.imageCount} ảnh{data.hasVideo ? " • 1 video" : ""}</span></div>
+                            </div>
+                            <button className="vt-submit" onClick={onReset}><RotateCcw size={14} /> Gửi báo cáo khác</button>
+                        </div>
                     </div>
-                    <button className="vt-submit" onClick={onReset}><RotateCcw size={14} /> Gửi báo cáo khác</button>
                 </div>
             </div>
         </div>
@@ -530,123 +541,127 @@ export default function IncidentReportForm() {
     return (
         <div className="vt-app">
             <style>{STYLES}</style>
-            <div className="vt-page">
-                <div className="vt-card">
-                    <form onSubmit={handleSubmit}>
-                        <div className="vt-grid">
+            <div className="shell">
+                <div className="page-frame">
+                    <div className="main-card">
+                        <div className="main-card-scroll">
+                            <form onSubmit={handleSubmit}>
+                                <div className="vt-grid">
 
-                            <div>
-                                <div className="vt-col-title">
-                                    <AlertTriangle size={13} /> Thông tin sự cố
-                                </div>
-
-                                <div className="vt-section">
-                                    <label className="vt-label">Tiêu đề sự cố <span className="vt-required">*</span></label>
-                                    <input
-                                        className={`vt-input ${touched.title && errors.title ? "has-error" : ""}`}
-                                        placeholder="VD: Máy chạy bộ #04 phát tiếng kêu lạ"
-                                        value={title} maxLength={150}
-                                        onChange={(e) => setTitle(e.target.value)}
-                                        onBlur={() => setTouched((t) => ({ ...t, title: true }))}
-                                    />
-                                    {touched.title && errors.title && <p className="vt-error"><AlertTriangle size={12} /> {errors.title}</p>}
-                                </div>
-
-                                <div className="vt-section">
-                                    <label className="vt-label">Mô tả chi tiết <span className="vt-required">*</span></label>
-                                    <textarea
-                                        className={`vt-textarea ${touched.description && errors.description ? "has-error" : ""}`}
-                                        rows={5} maxLength={1000}
-                                        placeholder="Sự cố xảy ra từ khi nào, ảnh hưởng thế nào đến hội viên hoặc nhân viên..."
-                                        value={description}
-                                        onChange={(e) => setDescription(e.target.value)}
-                                        onBlur={() => setTouched((t) => ({ ...t, description: true }))}
-                                    />
-                                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 4 }}>
-                                        {touched.description && errors.description
-                                            ? <p className="vt-error"><AlertTriangle size={12} /> {errors.description}</p>
-                                            : <span />}
-                                        <p className="vt-counter">{description.length}/1000</p>
-                                    </div>
-                                </div>
-
-                                <div className="vt-section">
-                                    <label className="vt-label">
-                                        Thiết bị liên quan
-                                        <span className="vt-optional">Tuỳ chọn</span>
-                                    </label>
-                                    <EquipmentPicker
-                                        value={equipmentId}
-                                        onChange={setEquipmentId}
-                                        equipmentList={equipmentList}
-                                        disabled={equipmentLoading}
-                                        loading={equipmentLoading}
-                                    />
-                                    <p className="vt-hint">Để trống nếu sự cố không liên quan đến thiết bị cụ thể</p>
-                                    {equipmentError && <p className="vt-error" style={{ marginTop: 8 }}><AlertTriangle size={12} /> {equipmentError}</p>}
-                                </div>
-
-                                {submitError && (
-                                    <p className="vt-error" style={{ marginBottom: 12 }}>
-                                        <AlertTriangle size={12} /> {submitError}
-                                    </p>
-                                )}
-
-                                <div className="vt-submit-row">
-                                    <button type="submit" className="vt-submit" disabled={submitting}>
-                                        {submitting
-                                            ? <><Loader2 size={15} className="vt-spin" /> Đang gửi...</>
-                                            : <><CheckCircle2 size={15} /> Gửi báo cáo</>}
-                                    </button>
-                                </div>
-                            </div>
-
-                            <div>
-                                <div className="vt-col-title">
-                                    <ImageIcon size={13} /> Hình ảnh & Video minh chứng
-                                </div>
-
-                                <div className="vt-section">
-                                    <div className="vt-media-header">
-                                        <label className="vt-label" style={{ marginBottom: 0 }}>Hình ảnh minh chứng</label>
-                                        <span className="vt-media-count">{images.length} / {MAX_IMAGES}</span>
-                                    </div>
-                                    <div className="vt-img-grid">{imageSlots}</div>
-                                    <input ref={imageInputRef} type="file" accept="image/*" multiple hidden
-                                        onChange={(e) => { addImages(e.target.files); e.target.value = ""; }} />
-                                    <p className="vt-hint">Tối đa {MAX_IMAGES} ảnh · mỗi ảnh dưới {MAX_IMAGE_SIZE_MB}MB</p>
-                                    {imageError && <p className="vt-error" style={{ marginTop: 8 }}><AlertTriangle size={12} /> {imageError}</p>}
-                                </div>
-
-                                <div className="vt-section" style={{ marginTop: 20 }}>
-                                    <div className="vt-media-header">
-                                        <label className="vt-label" style={{ marginBottom: 0 }}>Video minh chứng</label>
-                                        <span className="vt-media-count">{video ? 1 : 0} / 1</span>
-                                    </div>
-                                    {!video ? (
-                                        <div className={`vt-video-drop ${vidDragActive ? "drag-active" : ""}`}
-                                            onClick={() => videoInputRef.current?.click()}
-                                            onDragOver={(e) => { e.preventDefault(); setVidDragActive(true); }}
-                                            onDragLeave={() => setVidDragActive(false)}
-                                            onDrop={(e) => { e.preventDefault(); setVidDragActive(false); addVideo(e.dataTransfer.files); }}>
-                                            <VideoIcon size={20} style={{ color: "var(--accent)", opacity: .85 }} />
-                                            <p className="title">Kéo thả video vào đây hoặc <span>bấm để chọn</span></p>
-                                            <p className="sub">Tối đa 1 video · dưới {MAX_VIDEO_SIZE_MB}MB</p>
+                                    <div>
+                                        <div className="vt-col-title">
+                                            <AlertTriangle size={13} /> Thông tin sự cố
                                         </div>
-                                    ) : (
-                                        <div className="vt-video-thumb">
-                                            <video src={video.url} controls />
-                                            <button type="button" className="vt-thumb-remove" onClick={removeVideo}><X size={11} strokeWidth={3} /></button>
-                                        </div>
-                                    )}
-                                    <input ref={videoInputRef} type="file" accept="video/*" hidden
-                                        onChange={(e) => { addVideo(e.target.files); e.target.value = ""; }} />
-                                    {videoError && <p className="vt-error" style={{ marginTop: 8 }}><AlertTriangle size={12} /> {videoError}</p>}
-                                </div>
-                            </div>
 
+                                        <div className="vt-section">
+                                            <label className="vt-label">Tiêu đề sự cố <span className="vt-required">*</span></label>
+                                            <input
+                                                className={`vt-input ${touched.title && errors.title ? "has-error" : ""}`}
+                                                placeholder="VD: Máy chạy bộ #04 phát tiếng kêu lạ"
+                                                value={title} maxLength={150}
+                                                onChange={(e) => setTitle(e.target.value)}
+                                                onBlur={() => setTouched((t) => ({ ...t, title: true }))}
+                                            />
+                                            {touched.title && errors.title && <p className="vt-error"><AlertTriangle size={12} /> {errors.title}</p>}
+                                        </div>
+
+                                        <div className="vt-section">
+                                            <label className="vt-label">Mô tả chi tiết <span className="vt-required">*</span></label>
+                                            <textarea
+                                                className={`vt-textarea ${touched.description && errors.description ? "has-error" : ""}`}
+                                                rows={5} maxLength={1000}
+                                                placeholder="Sự cố xảy ra từ khi nào, ảnh hưởng thế nào đến hội viên hoặc nhân viên..."
+                                                value={description}
+                                                onChange={(e) => setDescription(e.target.value)}
+                                                onBlur={() => setTouched((t) => ({ ...t, description: true }))}
+                                            />
+                                            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 4 }}>
+                                                {touched.description && errors.description
+                                                    ? <p className="vt-error"><AlertTriangle size={12} /> {errors.description}</p>
+                                                    : <span />}
+                                                <p className="vt-counter">{description.length}/1000</p>
+                                            </div>
+                                        </div>
+
+                                        <div className="vt-section">
+                                            <label className="vt-label">
+                                                Thiết bị liên quan
+                                                <span className="vt-optional">Tuỳ chọn</span>
+                                            </label>
+                                            <EquipmentPicker
+                                                value={equipmentId}
+                                                onChange={setEquipmentId}
+                                                equipmentList={equipmentList}
+                                                disabled={equipmentLoading}
+                                                loading={equipmentLoading}
+                                            />
+                                            <p className="vt-hint">Để trống nếu sự cố không liên quan đến thiết bị cụ thể</p>
+                                            {equipmentError && <p className="vt-error" style={{ marginTop: 8 }}><AlertTriangle size={12} /> {equipmentError}</p>}
+                                        </div>
+
+                                        {submitError && (
+                                            <p className="vt-error" style={{ marginBottom: 12 }}>
+                                                <AlertTriangle size={12} /> {submitError}
+                                            </p>
+                                        )}
+
+                                        <div className="vt-submit-row">
+                                            <button type="submit" className="vt-submit" disabled={submitting}>
+                                                {submitting
+                                                    ? <><Loader2 size={15} className="vt-spin" /> Đang gửi...</>
+                                                    : <><CheckCircle2 size={15} /> Gửi báo cáo</>}
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    <div>
+                                        <div className="vt-col-title">
+                                            <ImageIcon size={13} /> Hình ảnh & Video minh chứng
+                                        </div>
+
+                                        <div className="vt-section">
+                                            <div className="vt-media-header">
+                                                <label className="vt-label" style={{ marginBottom: 0 }}>Hình ảnh minh chứng</label>
+                                                <span className="vt-media-count">{images.length} / {MAX_IMAGES}</span>
+                                            </div>
+                                            <div className="vt-img-grid">{imageSlots}</div>
+                                            <input ref={imageInputRef} type="file" accept="image/*" multiple hidden
+                                                onChange={(e) => { addImages(e.target.files); e.target.value = ""; }} />
+                                            <p className="vt-hint">Tối đa {MAX_IMAGES} ảnh · mỗi ảnh dưới {MAX_IMAGE_SIZE_MB}MB</p>
+                                            {imageError && <p className="vt-error" style={{ marginTop: 8 }}><AlertTriangle size={12} /> {imageError}</p>}
+                                        </div>
+
+                                        <div className="vt-section" style={{ marginTop: 20 }}>
+                                            <div className="vt-media-header">
+                                                <label className="vt-label" style={{ marginBottom: 0 }}>Video minh chứng</label>
+                                                <span className="vt-media-count">{video ? 1 : 0} / 1</span>
+                                            </div>
+                                            {!video ? (
+                                                <div className={`vt-video-drop ${vidDragActive ? "drag-active" : ""}`}
+                                                    onClick={() => videoInputRef.current?.click()}
+                                                    onDragOver={(e) => { e.preventDefault(); setVidDragActive(true); }}
+                                                    onDragLeave={() => setVidDragActive(false)}
+                                                    onDrop={(e) => { e.preventDefault(); setVidDragActive(false); addVideo(e.dataTransfer.files); }}>
+                                                    <VideoIcon size={20} style={{ color: "var(--accent-dark)", opacity: .85 }} />
+                                                    <p className="title">Kéo thả video vào đây hoặc <span>bấm để chọn</span></p>
+                                                    <p className="sub">Tối đa 1 video · dưới {MAX_VIDEO_SIZE_MB}MB</p>
+                                                </div>
+                                            ) : (
+                                                <div className="vt-video-thumb">
+                                                    <video src={video.url} controls />
+                                                    <button type="button" className="vt-thumb-remove" onClick={removeVideo}><X size={11} strokeWidth={3} /></button>
+                                                </div>
+                                            )}
+                                            <input ref={videoInputRef} type="file" accept="video/*" hidden
+                                                onChange={(e) => { addVideo(e.target.files); e.target.value = ""; }} />
+                                            {videoError && <p className="vt-error" style={{ marginTop: 8 }}><AlertTriangle size={12} /> {videoError}</p>}
+                                        </div>
+                                    </div>
+
+                                </div>
+                            </form>
                         </div>
-                    </form>
+                    </div>
                 </div>
             </div>
         </div>

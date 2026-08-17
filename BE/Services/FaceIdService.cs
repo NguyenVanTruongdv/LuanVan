@@ -33,11 +33,7 @@ namespace BE.Services
         public async Task<FaceCheckResultDto> CheckEmployeeFaceAsync(IFormFile profileImage, long? excludeEmployeeId = null)
             => await CheckFaceInternalAsync(profileImage, FaceOwnerType.Employee, excludeMemberId: null, excludeEmployeeId: excludeEmployeeId);
 
-        private async Task<FaceCheckResultDto> CheckFaceInternalAsync(
-            IFormFile profileImage,
-            FaceOwnerType scope,
-            long? excludeMemberId,
-            long? excludeEmployeeId)
+        private async Task<FaceCheckResultDto> CheckFaceInternalAsync(IFormFile profileImage,FaceOwnerType scope,long? excludeMemberId, long? excludeEmployeeId)
         {
             byte[] mangByteAnh;
             using (var luongDocFileUpload = profileImage.OpenReadStream())
@@ -152,7 +148,7 @@ namespace BE.Services
             // hàm này, thường là trước khi mở transaction DB, để tránh mở transaction
             // rồi phải rollback nếu ảnh đã trùng người khác.
 
-            var thoiDiemHienTai = DateTime.UtcNow;
+            var thoiDiemHienTai = DateTime.Now;
             var maPhienCapNhat = Guid.NewGuid();
 
             // Bước 1: đăng ký khuôn mặt lên AWS Rekognition trước.
@@ -235,7 +231,7 @@ namespace BE.Services
             var duLieuKhuonMat = await _context.FaceData
                 .FirstOrDefaultAsync(f => f.MemberId == memberId && f.EmployeeId == employeeId);
 
-            var thoiDiemHienTai = DateTime.UtcNow;
+            var thoiDiemHienTai = DateTime.Now;
             var maPhienCapNhat = Guid.NewGuid();
             var faceIdCu = duLieuKhuonMat?.FaceIdAws;
             var urlAnhCu = duLieuKhuonMat?.ProfileImage;

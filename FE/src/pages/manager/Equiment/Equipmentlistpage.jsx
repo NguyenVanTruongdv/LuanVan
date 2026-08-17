@@ -3,10 +3,10 @@
 // Trang danh sách thiết bị — khớp với EquipmentService.GetListAsync / SetStatusAsync.
 //
 // CẬP NHẬT LẦN NÀY:
-// - Đổi theme màu sang bộ Navy/Slate/Cyan đồng bộ với trang login:
-//   nền #0B1120, khối/panel #1E293B, viền #334155, điểm nhấn cyan #06B6D4
-//   (thay cho gradient tím-indigo cũ), chữ tiêu đề #F1F5F9, chữ phụ
-//   #94A3B8 / #64748B.
+// - Đổi theme màu sang tông SÁNG đồng bộ với ManagerLayout: nền xám nhạt
+//   #F1F5F9, khối/panel trắng #FFFFFF, viền xanh mint/xám nhạt #E2E8F0,
+//   điểm nhấn xanh lá #059669 (thay cho nền navy tối #0B1120 + cyan #06B6D4
+//   trước đây), chữ tiêu đề #1E293B, chữ phụ #475569 / #94A3B8.
 // - Đổi bố cục hiển thị thiết bị từ dạng LƯỚI THẺ (grid card) sang DẠNG LIST
 //   (bảng hàng ngang: ảnh nhỏ | tên + mô tả | danh mục | chi nhánh | trạng thái
 //   | hành động), có header cột trên desktop.
@@ -18,6 +18,9 @@
 // - BỎ HẲN AddEquipmentPage.jsx. Form "Thêm thiết bị" / "Sửa thiết bị" giờ
 //   được viết thẳng trong file này (component EquipmentForm ở dưới) và render
 //   ngay trong cùng trang (đổi viewMode, không đổi route, không gọi ra file khác).
+// - THÊM PHÂN TRANG: danh sách thiết bị hiển thị 10 thiết bị / trang, có thanh
+//   điều hướng Trước / Sau + số trang ở cuối danh sách, tự về trang 1 khi đổi
+//   bộ lọc.
 // - LƯU Ý QUAN TRỌNG: lỗi "Ẩn/Kích hoạt thiết bị" báo
 //     TypeError: authApi.patch is not a function
 //   không nằm ở file này, mà do authApi.js hiện chưa có method `patch`.
@@ -31,31 +34,31 @@ import managerApi from "../../../api/managerApi";
 
 const EQUIPMENT_STYLES = `
 :root {
-    --eqm-navy-900: #0b1120;
-    --eqm-navy-800: #1e293b;
-    --eqm-navy-700: #24304a;
-    --eqm-cyan-500: #06b6d4;
-    --eqm-cyan-600: #0891b2;
-    --eqm-cyan-100: rgba(6, 182, 212, 0.16);
+    --eqm-navy-900: #f1f5f9;
+    --eqm-navy-800: #ffffff;
+    --eqm-navy-700: #f8fafc;
+    --eqm-cyan-500: #059669;
+    --eqm-cyan-600: #047857;
+    --eqm-cyan-100: rgba(5, 150, 105, 0.12);
 
     --eqm-bg: var(--eqm-navy-900);
     --eqm-surface: var(--eqm-navy-800);
     --eqm-surface-muted: var(--eqm-navy-700);
-    --eqm-surface-hover: #2b3a54;
-    --eqm-border: #334155;
+    --eqm-surface-hover: #ecfdf5;
+    --eqm-border: #e2e8f0;
 
-    --eqm-text-900: #f1f5f9;
-    --eqm-text-600: #94a3b8;
-    --eqm-text-400: #64748b;
+    --eqm-text-900: #1e293b;
+    --eqm-text-600: #475569;
+    --eqm-text-400: #94a3b8;
 
-    --eqm-danger: #f87171;
-    --eqm-danger-bg: rgba(248, 113, 113, 0.14);
-    --eqm-success: #34d399;
-    --eqm-success-bg: rgba(52, 211, 153, 0.14);
+    --eqm-danger: #dc2626;
+    --eqm-danger-bg: rgba(220, 38, 38, 0.1);
+    --eqm-success: #059669;
+    --eqm-success-bg: rgba(5, 150, 105, 0.1);
 
     --eqm-radius: 14px;
     --eqm-radius-sm: 10px;
-    --eqm-shadow: 0 1px 0 rgba(255, 255, 255, 0.03), 0 14px 28px -16px rgba(0, 0, 0, 0.7);
+    --eqm-shadow: 0 1px 3px rgba(15, 23, 42, 0.06), 0 10px 24px -14px rgba(15, 23, 42, 0.16);
 }
 
 .eqm-page {
@@ -76,8 +79,8 @@ const EQUIPMENT_STYLES = `
 .eqm-header-icon {
     display: flex; align-items: center; justify-content: center;
     width: 44px; height: 44px; border-radius: 12px; font-size: 20px;
-    background: linear-gradient(135deg, rgba(6, 182, 212, 0.3), rgba(6, 182, 212, 0.08));
-    box-shadow: inset 0 0 0 1px rgba(6, 182, 212, 0.4);
+    background: linear-gradient(135deg, rgba(5, 150, 105, 0.22), rgba(5, 150, 105, 0.06));
+    box-shadow: inset 0 0 0 1px rgba(5, 150, 105, 0.35);
 }
 .eqm-header-titles h1 { margin: 0; font-size: 22px; font-weight: 700; color: var(--eqm-text-900); }
 .eqm-header-titles p { margin: 2px 0 0; font-size: 13.5px; color: var(--eqm-text-400); }
@@ -90,7 +93,7 @@ const EQUIPMENT_STYLES = `
 }
 .eqm-btn:disabled { opacity: 0.6; cursor: not-allowed; }
 .eqm-btn:active:not(:disabled) { transform: translateY(1px); }
-.eqm-btn-primary { background: linear-gradient(135deg, var(--eqm-cyan-500), var(--eqm-cyan-600)); color: #fff; }
+.eqm-btn-primary { background: linear-gradient(135deg, var(--eqm-cyan-600), var(--eqm-cyan-500)); color: #fff; box-shadow: 0 3px 12px rgba(5, 150, 105, 0.28); }
 .eqm-btn-primary:hover:not(:disabled) { filter: brightness(1.08); }
 .eqm-btn-secondary { background: var(--eqm-surface-muted); color: var(--eqm-text-600); box-shadow: inset 0 0 0 1px var(--eqm-border); }
 .eqm-btn-secondary:hover:not(:disabled) { background: var(--eqm-surface-hover); }
@@ -102,7 +105,7 @@ const EQUIPMENT_STYLES = `
 
 .eqm-input {
     border: 1px solid var(--eqm-border); border-radius: var(--eqm-radius-sm); padding: 10px 12px;
-    font-size: 14px; color: var(--eqm-text-900); background: var(--eqm-surface); outline: none;
+    font-size: 14px; color: var(--eqm-text-900); background: var(--eqm-bg); outline: none;
     transition: border-color 0.15s ease, box-shadow 0.15s ease; font-family: inherit;
 }
 .eqm-input:focus { border-color: var(--eqm-cyan-500); box-shadow: 0 0 0 3px var(--eqm-cyan-100); }
@@ -119,12 +122,14 @@ const EQUIPMENT_STYLES = `
 .eqm-checkbox-field { display: flex; align-items: center; gap: 8px; font-size: 13.5px; color: var(--eqm-text-600); padding-bottom: 10px; }
 .eqm-checkbox-field input { width: 16px; height: 16px; accent-color: var(--eqm-cyan-500); }
 
+.eqm-summary { font-size: 13.5px; color: var(--eqm-text-400); font-weight: 600; margin: -8px 0 14px; }
+
 /* ---------- Custom dropdown (thay cho <select> gốc) ---------- */
 .eqm-dropdown { position: relative; min-width: 190px; }
 .eqm-dropdown-trigger {
     width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 8px;
     border: 1px solid var(--eqm-border); border-radius: var(--eqm-radius-sm);
-    padding: 10px 12px; font-size: 14px; color: var(--eqm-text-900); background: var(--eqm-surface);
+    padding: 10px 12px; font-size: 14px; color: var(--eqm-text-900); background: var(--eqm-bg);
     cursor: pointer; font-family: inherit; text-align: left;
     transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
 }
@@ -138,7 +143,7 @@ const EQUIPMENT_STYLES = `
 
 .eqm-dropdown-menu {
     position: absolute; top: calc(100% + 6px); left: 0; right: 0; z-index: 45;
-    background: var(--eqm-surface-muted); border: 1px solid var(--eqm-border);
+    background: var(--eqm-surface); border: 1px solid var(--eqm-border);
     border-radius: var(--eqm-radius-sm); box-shadow: var(--eqm-shadow);
     max-height: 260px; overflow-y: auto; padding: 6px;
     animation: eqm-dropdown-in 0.12s ease-out;
@@ -151,10 +156,10 @@ const EQUIPMENT_STYLES = `
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .eqm-dropdown-option:hover { background: var(--eqm-cyan-100); color: var(--eqm-text-900); }
-.eqm-dropdown-option-active { background: var(--eqm-cyan-100); color: var(--eqm-cyan-500); font-weight: 600; }
+.eqm-dropdown-option-active { background: var(--eqm-cyan-100); color: var(--eqm-cyan-600); font-weight: 600; }
 
 .eqm-dropdown-menu::-webkit-scrollbar { width: 8px; }
-.eqm-dropdown-menu::-webkit-scrollbar-thumb { background: var(--eqm-surface-hover); border-radius: 8px; }
+.eqm-dropdown-menu::-webkit-scrollbar-thumb { background: var(--eqm-border); border-radius: 8px; }
 
 /* ---------- Danh sách dạng LIST (thay cho lưới thẻ) ---------- */
 .eqm-list {
@@ -182,6 +187,7 @@ const EQUIPMENT_STYLES = `
 .eqm-list-thumb {
     width: 52px; height: 52px; border-radius: 10px; overflow: hidden; flex-shrink: 0;
     background: var(--eqm-surface-muted); display: flex; align-items: center; justify-content: center;
+    border: 1px solid var(--eqm-border);
 }
 .eqm-list-thumb img { width: 100%; height: 100%; object-fit: cover; }
 .eqm-list-thumb-placeholder { font-size: 17px; opacity: 0.45; }
@@ -195,7 +201,7 @@ const EQUIPMENT_STYLES = `
 .eqm-list-cell-label { display: none; }
 
 .eqm-badge { flex-shrink: 0; font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 999px; white-space: nowrap; display: inline-flex; }
-.eqm-badge-active { background: var(--eqm-success-bg); color: var(--eqm-success); }
+.eqm-badge-active { background: var(--eqm-success-bg); color: var(--eqm-cyan-600); }
 .eqm-badge-deleted { background: var(--eqm-danger-bg); color: var(--eqm-danger); }
 
 .eqm-list-actions { display: flex; gap: 8px; justify-content: flex-end; }
@@ -219,6 +225,27 @@ const EQUIPMENT_STYLES = `
 .eqm-state strong { color: var(--eqm-text-900); font-size: 15px; }
 .eqm-state-error strong { color: var(--eqm-danger); }
 
+/* ---------- Phân trang ---------- */
+.eqm-pagination {
+    display: flex; align-items: center; justify-content: center; gap: 6px;
+    margin-top: 18px; flex-wrap: wrap;
+}
+.eqm-page-btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    min-width: 36px; height: 36px; padding: 0 12px; border-radius: 10px;
+    font-size: 13.5px; font-weight: 700; cursor: pointer; font-family: inherit;
+    border: 1.5px solid var(--eqm-border); background: var(--eqm-surface); color: var(--eqm-text-600);
+    transition: background 0.15s ease, border-color 0.15s ease;
+}
+.eqm-page-btn:hover:not(:disabled):not(.eqm-page-btn-active) { background: var(--eqm-surface-hover); border-color: var(--eqm-cyan-500); }
+.eqm-page-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.eqm-page-btn-active {
+    border: none; color: #fff;
+    background: linear-gradient(135deg, var(--eqm-cyan-600), var(--eqm-cyan-500));
+    box-shadow: 0 3px 12px rgba(5, 150, 105, 0.28);
+}
+.eqm-page-dots { padding: 0 4px; color: var(--eqm-text-400); font-weight: 700; font-size: 13px; }
+
 /* ---------- Toast ---------- */
 .eqm-toast-stack {
     position: fixed; top: 20px; right: 20px; z-index: 100;
@@ -227,16 +254,16 @@ const EQUIPMENT_STYLES = `
 .eqm-toast {
     display: flex; align-items: flex-start; gap: 10px;
     padding: 12px 14px; border-radius: var(--eqm-radius-sm); box-shadow: var(--eqm-shadow);
-    font-size: 13.5px; font-weight: 500; color: #fff;
+    font-size: 13.5px; font-weight: 600;
     animation: eqm-toast-in 0.18s ease-out;
 }
-.eqm-toast-success { background: #0f3d33; border: 1px solid rgba(52, 211, 153, 0.4); color: #7be8c6; }
-.eqm-toast-error { background: #3d1414; border: 1px solid rgba(248, 113, 113, 0.4); color: #ffb3b3; }
+.eqm-toast-success { background: #ecfdf5; border: 1px solid rgba(5, 150, 105, 0.35); color: #047857; }
+.eqm-toast-error { background: #fef2f2; border: 1px solid rgba(220, 38, 38, 0.35); color: #b91c1c; }
 @keyframes eqm-toast-in { from { opacity: 0; transform: translateX(16px); } to { opacity: 1; transform: translateX(0); } }
 
 /* ---------- Confirm modal ---------- */
 .eqm-modal-overlay {
-    position: fixed; inset: 0; background: rgba(4, 8, 18, 0.6); z-index: 90;
+    position: fixed; inset: 0; background: rgba(15, 23, 42, 0.45); z-index: 90;
     display: flex; align-items: center; justify-content: center; padding: 20px;
     animation: eqm-fade-in 0.15s ease-out;
 }
@@ -253,7 +280,7 @@ const EQUIPMENT_STYLES = `
 /* ---------- Form Thêm / Sửa thiết bị (inline, không đổi trang) ---------- */
 .eqm-back-link {
     display: inline-flex; align-items: center; gap: 6px; background: none; border: none; padding: 0;
-    color: var(--eqm-cyan-500); font-size: 14px; font-weight: 600; cursor: pointer; margin-bottom: 18px;
+    color: var(--eqm-cyan-600); font-size: 14px; font-weight: 600; cursor: pointer; margin-bottom: 18px;
 }
 .eqm-back-link:hover { filter: brightness(1.1); text-decoration: underline; }
 
@@ -269,7 +296,7 @@ const EQUIPMENT_STYLES = `
 
 .eqm-textarea {
     border: 1px solid var(--eqm-border); border-radius: var(--eqm-radius-sm); padding: 12px;
-    font-size: 14px; color: var(--eqm-text-900); background: var(--eqm-surface); outline: none;
+    font-size: 14px; color: var(--eqm-text-900); background: var(--eqm-bg); outline: none;
     font-family: inherit; resize: vertical; min-height: 96px;
     transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
@@ -301,10 +328,10 @@ const EQUIPMENT_STYLES = `
 .eqm-image-preview img { width: 100%; height: 100%; object-fit: cover; }
 .eqm-image-remove {
     position: absolute; top: 6px; right: 6px; width: 24px; height: 24px; border-radius: 50%;
-    border: none; background: rgba(4, 8, 18, 0.75); color: #fff; font-size: 14px; line-height: 1;
+    border: none; background: rgba(15, 23, 42, 0.65); color: #fff; font-size: 14px; line-height: 1;
     display: flex; align-items: center; justify-content: center; cursor: pointer;
 }
-.eqm-image-remove:hover { background: rgba(4, 8, 18, 0.95); }
+.eqm-image-remove:hover { background: rgba(15, 23, 42, 0.85); }
 
 .eqm-form-actions {
     display: flex; justify-content: flex-end; gap: 10px; margin-top: 24px;
@@ -390,6 +417,7 @@ const EQUIPMENT_STYLES = `
 
 const STATUS_ACTIVE = "Active";
 const STATUS_DELETED = "Deleted";
+const PAGE_SIZE = 10;
 
 // ---------------------------------------------------------------------------
 // CustomSelect: dropdown tự vẽ, thay cho <select> gốc để style được toàn bộ
@@ -501,6 +529,66 @@ function ConfirmModal({ open, title, message, confirmLabel, onConfirm, onCancel 
                     </button>
                 </div>
             </div>
+        </div>
+    );
+}
+
+// ---------------------------------------------------------------------------
+// PaginationBar: thanh phân trang dùng chung cho danh sách thiết bị.
+// ---------------------------------------------------------------------------
+function getPageNumbers(current, total) {
+    const pages = [];
+    const add = (p) => { if (!pages.includes(p)) pages.push(p); };
+    add(1);
+    for (let p = current - 1; p <= current + 1; p++) if (p > 1 && p < total) add(p);
+    add(total);
+    const result = [];
+    let prev = 0;
+    for (const p of pages.sort((a, b) => a - b)) {
+        if (prev && p - prev > 1) result.push("…");
+        result.push(p);
+        prev = p;
+    }
+    return result;
+}
+
+function PaginationBar({ page, totalPages, onChange }) {
+    if (totalPages <= 1) return null;
+    const numbers = getPageNumbers(page, totalPages);
+    return (
+        <div className="eqm-pagination">
+            <button
+                type="button"
+                className="eqm-page-btn"
+                onClick={() => onChange(Math.max(1, page - 1))}
+                disabled={page === 1}
+            >
+                ← Trước
+            </button>
+
+            {numbers.map((n, i) =>
+                n === "…" ? (
+                    <span key={`dots-${i}`} className="eqm-page-dots">…</span>
+                ) : (
+                    <button
+                        type="button"
+                        key={n}
+                        className={`eqm-page-btn ${n === page ? "eqm-page-btn-active" : ""}`}
+                        onClick={() => onChange(n)}
+                    >
+                        {n}
+                    </button>
+                )
+            )}
+
+            <button
+                type="button"
+                className="eqm-page-btn"
+                onClick={() => onChange(Math.min(totalPages, page + 1))}
+                disabled={page === totalPages}
+            >
+                Sau →
+            </button>
         </div>
     );
 }
@@ -620,7 +708,7 @@ function EquipmentForm({ equipmentId, categories, branches, onSaved, onCancel, p
             description: form.description,
             image: imageFile,
         };
-EquipmentListPageOfManager
+
         try {
             if (isEdit) {
                 await managerApi.updateEquipment(equipmentId, payload);
@@ -833,7 +921,7 @@ function EquipmentListRow({ equipment, canManage, busy, onEdit, onToggleStatus }
     );
 }
 
-export default  function EquipmentListPageOfManager () {
+export default function EquipmentListPageOfManager() {
     const [role, setRole] = useState(null);
     const canManage = role === "Admin" || role === "Manager";
 
@@ -856,6 +944,9 @@ export default  function EquipmentListPageOfManager () {
         includeDeleted: false,
     });
     const [nameInput, setNameInput] = useState("");
+
+    // Phân trang danh sách thiết bị — 10 thiết bị / trang
+    const [page, setPage] = useState(1);
 
     const [confirmTarget, setConfirmTarget] = useState(null); // equipment đang chờ xác nhận ẩn/kích hoạt
 
@@ -948,6 +1039,14 @@ export default  function EquipmentListPageOfManager () {
     useEffect(() => {
         if (viewMode === "list") fetchList();
     }, [fetchList, viewMode]);
+
+    // Về trang 1 mỗi khi đổi bộ lọc
+    useEffect(() => { setPage(1); }, [filters]);
+
+    const totalPages = Math.max(1, Math.ceil(equipments.length / PAGE_SIZE));
+    const currentPage = Math.min(page, totalPages);
+    const pageStart = (currentPage - 1) * PAGE_SIZE;
+    const pagedEquipments = equipments.slice(pageStart, pageStart + PAGE_SIZE);
 
     // ---- Ẩn / Kích hoạt: optimistic update + rollback nếu lỗi --------------
     const requestToggleStatus = (equipment) => setConfirmTarget(equipment);
@@ -1130,6 +1229,12 @@ export default  function EquipmentListPageOfManager () {
                     )}
                 </div>
 
+                {!loading && !error && equipments.length > 0 && (
+                    <div className="eqm-summary">
+                        Hiển thị {pageStart + 1}–{Math.min(pageStart + PAGE_SIZE, equipments.length)} / {equipments.length} thiết bị
+                    </div>
+                )}
+
                 {loading && (
                     <div className="eqm-list">
                         {skeletons.map((_, i) => (
@@ -1156,26 +1261,30 @@ export default  function EquipmentListPageOfManager () {
                 )}
 
                 {!loading && !error && equipments.length > 0 && (
-                    <div className="eqm-list">
-                        <div className="eqm-list-header">
-                            <span></span>
-                            <span>Tên thiết bị</span>
-                            <span>Danh mục</span>
-                            <span>Chi nhánh</span>
-                            <span>Trạng thái</span>
-                            <span></span>
+                    <>
+                        <div className="eqm-list">
+                            <div className="eqm-list-header">
+                                <span></span>
+                                <span>Tên thiết bị</span>
+                                <span>Danh mục</span>
+                                <span>Chi nhánh</span>
+                                <span>Trạng thái</span>
+                                <span></span>
+                            </div>
+                            {pagedEquipments.map((eq) => (
+                                <EquipmentListRow
+                                    key={eq.equipmentId}
+                                    equipment={eq}
+                                    canManage={canManage}
+                                    busy={busyId === eq.equipmentId}
+                                    onEdit={() => openEdit(eq)}
+                                    onToggleStatus={() => requestToggleStatus(eq)}
+                                />
+                            ))}
                         </div>
-                        {equipments.map((eq) => (
-                            <EquipmentListRow
-                                key={eq.equipmentId}
-                                equipment={eq}
-                                canManage={canManage}
-                                busy={busyId === eq.equipmentId}
-                                onEdit={() => openEdit(eq)}
-                                onToggleStatus={() => requestToggleStatus(eq)}
-                            />
-                        ))}
-                    </div>
+
+                        <PaginationBar page={currentPage} totalPages={totalPages} onChange={setPage} />
+                    </>
                 )}
             </div>
         </div>

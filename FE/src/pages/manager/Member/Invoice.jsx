@@ -1,14 +1,18 @@
 import {
     AlertTriangle,
-    Building2,
+    ArrowLeft,
+    ArrowRight,
+    Calendar,
     Check,
     CheckCircle2,
     ChevronDown,
     Clock,
+    CreditCard,
     Download,
     FileText,
     Gift,
     Globe,
+    Hash,
     History,
     Hourglass,
     Loader2,
@@ -17,6 +21,7 @@ import {
     PencilLine,
     Phone,
     Printer,
+    Receipt,
     Search,
     Sparkles,
     Store,
@@ -30,14 +35,14 @@ import authApi from "../../../api/authApi";
 import managerApi from "../../../api/managerApi";
 
 const STATUS_CONFIG = {
-    Pending: { label: "Chờ thanh toán", icon: Hourglass, bg: "rgba(180,83,9,0.16)", color: "#fbbf24" },
-    Paid: { label: "Đã thanh toán", icon: CheckCircle2, bg: "rgba(4,120,87,0.16)", color: "#34d399" },
-    Cancelled: { label: "Đã hủy", icon: XCircle, bg: "rgba(190,18,60,0.16)", color: "#fb7185" },
+    Pending: { label: "Chờ thanh toán", icon: Hourglass, bg: "rgba(217,119,6,0.12)", color: "#b45309" },
+    Paid: { label: "Đã thanh toán", icon: CheckCircle2, bg: "rgba(5,150,105,0.12)", color: "#047857" },
+    Cancelled: { label: "Đã hủy", icon: XCircle, bg: "rgba(225,29,72,0.10)", color: "#be123c" },
 };
 
 const CHANNEL_CONFIG = {
-    "Online": { label: "Online", icon: Globe, bg: "rgba(3,105,161,0.16)", color: "#38bdf8" },
-    "Tại quầy": { label: "Tại quầy", icon: Store, bg: "rgba(4,120,87,0.16)", color: "#34d399" },
+    "Online": { label: "Online", icon: Globe, bg: "rgba(2,132,199,0.12)", color: "#0369a1" },
+    "Tại quầy": { label: "Tại quầy", icon: Store, bg: "rgba(5,150,105,0.12)", color: "#047857" },
 };
 
 function describePromotion(p) {
@@ -88,190 +93,299 @@ function formatDateOnly(d) {
     return `${dd}/${mm}/${yyyy}`;
 }
 
+// Bảng màu viền dùng để tô mỗi hàng một màu riêng biệt, giúp phân biệt các hội viên
+// trong danh sách nhanh hơn khi lướt mắt qua bảng. Màu được chọn xoay vòng nhưng
+// LUÔN CỐ ĐỊNH theo cùng một hội viên (hash trên SĐT/tên) để mỗi lần tải lại trang,
+// hội viên đó vẫn giữ đúng màu viền cũ — tránh gây rối mắt vì màu đổi ngẫu nhiên.
+const ROW_ACCENT_PALETTE = [
+    "#059669", // xanh lá
+    "#0891b2", // xanh cyan
+    "#7c3aed", // tím
+    "#ea580c", // cam
+    "#be123c", // đỏ hồng
+    "#0369a1", // xanh dương
+    "#b45309", // hổ phách
+    "#4d7c0f", // xanh oliu
+];
+
+function getRowAccentColor(seed) {
+    const str = String(seed || "x");
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+        hash = (hash * 31 + str.charCodeAt(i)) >>> 0;
+    }
+    return ROW_ACCENT_PALETTE[hash % ROW_ACCENT_PALETTE.length];
+}
+
+// Bảng token màu — theme sáng (trắng nền, xanh lá làm accent) khớp với giao diện
+// Admin Panel chung của hệ thống: nền kem-trắng dịu, card trắng viền màu xanh lá nhạt,
+// đổ bóng đậm để tách lớp rõ ràng, không phẳng như theme tối trước đây.
+const C = {
+    bgPage: "#f4f7f5",
+    bgCard: "#ffffff",
+    bgSubtle: "#f4faf7",
+    borderSoft: "#e3e8e6",
+    borderAccent: "#bfe8d4",
+    green: "#059669",
+    greenDark: "#047857",
+    greenDarker: "#065f46",
+    greenSoft: "rgba(5,150,105,0.10)",
+    greenRing: "rgba(5,150,105,0.18)",
+    textPrimary: "#0f2419",
+    textSecondary: "#5b6b64",
+    textMuted: "#93a29b",
+    shadowCard: "0 1px 2px rgba(15,36,25,0.04), 0 14px 32px -12px rgba(5,150,105,0.18)",
+    shadowStrong: "0 4px 10px rgba(15,36,25,0.06), 0 22px 46px -14px rgba(5,150,105,0.26)",
+    shadowSoft: "0 1px 2px rgba(15,36,25,0.03), 0 6px 14px -8px rgba(5,150,105,0.16)",
+    transition: "all 0.16s ease",
+};
+
 const S = {
-    root: { display: "flex", flexDirection: "column", height: "100vh", backgroundColor: "#0b1220", fontFamily: "'Inter', 'Segoe UI', system-ui, sans-serif" },
+    root: { display: "flex", flexDirection: "column", height: "100vh", backgroundColor: C.bgPage, fontFamily: "'Inter', 'Segoe UI', system-ui, sans-serif" },
     main: { flex: 1, overflow: "visible", padding: "24px 32px", display: "flex", flexDirection: "column", minHeight: 0 },
 
-    pageTitle: { display: "flex", alignItems: "center", gap: 12, marginBottom: 20 },
-    pageTitleIcon: { width: 44, height: 44, borderRadius: 12, backgroundColor: "#0d9488", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 },
-    h1: { fontSize: 22, fontWeight: 700, color: "#f1f5f9", margin: 0 },
-    pageDesc: { fontSize: 13, color: "#94a3b8", margin: 0 },
+    pageTitle: { display: "flex", alignItems: "center", gap: 14, marginBottom: 22, paddingBottom: 18, borderBottom: `1px solid ${C.borderSoft}` },
+    pageTitleIcon: { width: 46, height: 46, borderRadius: 13, background: `linear-gradient(135deg, ${C.green}, ${C.greenDarker})`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, boxShadow: "0 10px 22px -6px rgba(5,150,105,0.55)" },
+    h1: { fontSize: 22, fontWeight: 800, color: C.textPrimary, margin: 0, letterSpacing: "-0.01em" },
+    pageDesc: { fontSize: 13, color: C.textSecondary, margin: "2px 0 0 0" },
 
     branchStrip: { display: "flex", alignItems: "center", gap: 10, marginBottom: 20, flexWrap: "wrap" },
     branchChip: (active) => ({
         display: "inline-flex", alignItems: "center", gap: 8, borderRadius: 10,
-        border: `1px solid ${active ? "#0d9488" : "#1e293b"}`,
-        backgroundColor: active ? "rgba(13,148,136,0.14)" : "#111827",
+        border: `1.5px solid ${active ? C.green : C.borderSoft}`,
+        backgroundColor: active ? C.greenSoft : C.bgCard,
         padding: "8px 14px", fontSize: 12.5, fontWeight: 600,
-        color: active ? "#5eead4" : "#94a3b8", cursor: "pointer", whiteSpace: "nowrap",
+        color: active ? C.greenDark : C.textSecondary, cursor: "pointer", whiteSpace: "nowrap",
+        boxShadow: active ? C.shadowCard : "none",
     }),
-    branchChipIcon: (active) => ({ display: "flex", color: active ? "#2dd4bf" : "#475569" }),
+    branchChipIcon: (active) => ({ display: "flex", color: active ? C.green : C.textMuted }),
 
-    filterPanel: { marginBottom: 20, borderRadius: 16, border: "1px solid #1e293b", backgroundColor: "#111827", padding: 20, flexShrink: 0 },
-    filterGrid: { display: "grid", gridTemplateColumns: "1fr auto auto auto auto", gap: 12 },
+    filterPanel: { marginBottom: 20, borderRadius: 16, border: `1.5px solid ${C.borderAccent}`, backgroundColor: C.bgCard, padding: 18, flexShrink: 0, boxShadow: C.shadowCard },
+    filterGrid: { display: "grid", gridTemplateColumns: "minmax(220px, 1.6fr) minmax(160px, 1fr) minmax(160px, 1fr) auto", gap: 10 },
     searchWrap: { position: "relative" },
-    searchIcon: { position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: "#64748b", pointerEvents: "none" },
-    searchInput: { width: "100%", boxSizing: "border-box", borderRadius: 8, border: "1px solid #1e293b", backgroundColor: "#0b1220", padding: "10px 36px 10px 36px", fontSize: 13, color: "#e2e8f0", outline: "none" },
-    clearBtn: { position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", color: "#64748b", display: "flex", padding: 2 },
+    searchIcon: { position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: C.textMuted, pointerEvents: "none" },
+    searchInput: { width: "100%", boxSizing: "border-box", borderRadius: 8, border: `1.5px solid ${C.borderSoft}`, backgroundColor: C.bgSubtle, padding: "10px 36px 10px 36px", fontSize: 13, color: C.textPrimary, outline: "none", transition: C.transition },
+    clearBtn: { position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", color: C.textMuted, display: "flex", padding: 2, borderRadius: 6, transition: C.transition },
 
     customSelectWrap: { position: "relative" },
     customSelectBtn: (open, disabled) => ({
         width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10,
-        borderRadius: 8, border: `1px solid ${open ? "#0d9488" : "#1e293b"}`, backgroundColor: disabled ? "#0d131f" : "#0b1220",
-        padding: "10px 12px", fontSize: 13, color: disabled ? "#475569" : "#e2e8f0", cursor: disabled ? "not-allowed" : "pointer", whiteSpace: "nowrap",
-        boxShadow: open ? "0 0 0 3px rgba(13,148,136,0.18)" : "none",
+        borderRadius: 8, border: `1.5px solid ${open ? C.green : C.borderSoft}`, backgroundColor: disabled ? "#eef1ef" : C.bgSubtle,
+        padding: "10px 12px", fontSize: 13, color: disabled ? C.textMuted : C.textPrimary, cursor: disabled ? "not-allowed" : "pointer", whiteSpace: "nowrap",
+        boxShadow: open ? `0 0 0 3px ${C.greenRing}` : "none",
     }),
     customSelectBtnLabel: { overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
-    customSelectChevron: (open) => ({ display: "flex", flexShrink: 0, color: "#64748b", transform: open ? "rotate(180deg)" : "none", transition: "transform 0.15s ease" }),
-    customSelectMenu: { position: "absolute", top: "calc(100% + 6px)", left: 0, right: 0, minWidth: 180, zIndex: 60, borderRadius: 10, border: "1px solid #1e293b", backgroundColor: "#111827", boxShadow: "0 16px 32px rgba(0,0,0,0.45)", padding: 6, maxHeight: 260, overflowY: "auto" },
+    customSelectChevron: (open) => ({ display: "flex", flexShrink: 0, color: C.textMuted, transform: open ? "rotate(180deg)" : "none", transition: "transform 0.15s ease" }),
+    customSelectMenu: { position: "absolute", top: "calc(100% + 6px)", left: 0, right: 0, minWidth: 180, zIndex: 60, borderRadius: 10, border: `1.5px solid ${C.borderAccent}`, backgroundColor: C.bgCard, boxShadow: C.shadowStrong, padding: 6, maxHeight: 260, overflowY: "auto" },
     customSelectOption: (active) => ({
         display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8,
         borderRadius: 8, padding: "9px 10px", fontSize: 13, cursor: "pointer",
-        color: active ? "#5eead4" : "#cbd5e1",
-        backgroundColor: active ? "rgba(13,148,136,0.14)" : "transparent",
+        color: active ? C.greenDark : C.textPrimary,
+        backgroundColor: active ? C.greenSoft : "transparent",
     }),
-    resetBtn: { borderRadius: 8, border: "1px solid #1e293b", backgroundColor: "#0b1220", padding: "10px 16px", fontSize: 13, fontWeight: 500, color: "#94a3b8", cursor: "pointer" },
+    resetBtn: { borderRadius: 8, border: `1.5px solid ${C.borderSoft}`, backgroundColor: C.bgCard, padding: "10px 16px", fontSize: 13, fontWeight: 600, color: C.textSecondary, cursor: "pointer" },
 
-    card: { borderRadius: 16, border: "1px solid #1e293b", backgroundColor: "#111827", flex: 1, display: "flex", flexDirection: "column", minHeight: 0 },
-    cardHeader: { display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: "1px solid #1e293b", padding: "14px 20px", flexShrink: 0 },
-    countText: { fontSize: 13, color: "#94a3b8" },
-    countBold: { fontWeight: 600, color: "#f1f5f9" },
+    card: { borderRadius: 16, border: `1.5px solid ${C.borderAccent}`, backgroundColor: C.bgCard, flex: 1, display: "flex", flexDirection: "column", minHeight: 0, boxShadow: C.shadowCard },
+    cardHeader: { display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: `1px solid ${C.borderSoft}`, padding: "14px 20px", flexShrink: 0, backgroundColor: C.bgSubtle, borderRadius: "16px 16px 0 0" },
+    countText: { fontSize: 13, color: C.textSecondary },
+    countBold: { fontWeight: 700, color: C.greenDark },
 
     table: { width: "100%", borderCollapse: "collapse", fontSize: 13, textAlign: "left" },
-    th: { padding: "10px 20px", fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", color: "#64748b", borderBottom: "1px solid #1e293b", textTransform: "uppercase", whiteSpace: "nowrap", backgroundColor: "#111827" },
-    thRight: { padding: "10px 20px", fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", color: "#64748b", borderBottom: "1px solid #1e293b", textAlign: "right", textTransform: "uppercase", backgroundColor: "#111827" },
-    thCenter: { padding: "10px 20px", fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", color: "#64748b", borderBottom: "1px solid #1e293b", textAlign: "center", textTransform: "uppercase", backgroundColor: "#111827" },
-    td: { padding: "14px 20px", borderBottom: "1px solid #1e293b", verticalAlign: "middle" },
-    tdRight: { padding: "14px 20px", borderBottom: "1px solid #1e293b", textAlign: "right", verticalAlign: "middle" },
-    tdCenter: { padding: "14px 20px", borderBottom: "1px solid #1e293b", textAlign: "center", verticalAlign: "middle" },
+    th: { padding: "12px 20px", fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", color: C.textSecondary, borderBottom: `2px solid ${C.borderSoft}`, textTransform: "uppercase", whiteSpace: "nowrap", backgroundColor: C.bgSubtle },
+    thRight: { padding: "12px 20px", fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", color: C.textSecondary, borderBottom: `2px solid ${C.borderSoft}`, textAlign: "right", textTransform: "uppercase", backgroundColor: C.bgSubtle },
+    thCenter: { padding: "12px 20px", fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", color: C.textSecondary, borderBottom: `2px solid ${C.borderSoft}`, textAlign: "center", textTransform: "uppercase", backgroundColor: C.bgSubtle },
+    thIcon: { padding: "12px 14px", borderBottom: `2px solid ${C.borderSoft}`, backgroundColor: C.bgSubtle, width: 40 },
+    // Ô đầu mỗi hàng — tô một vệt màu viền trái riêng cho từng hội viên (xem getRowAccentColor)
+    // để phân biệt các hàng với nhau dễ hơn khi lướt nhanh qua bảng dài.
+    thAccent: { padding: 0, borderBottom: `2px solid ${C.borderSoft}`, backgroundColor: C.bgSubtle, width: 6 },
+    tdAccent: (color) => ({ padding: 0, borderBottom: `1px solid ${C.borderSoft}`, borderLeft: `4px solid ${color}`, width: 6 }),
+    td: { padding: "13px 20px", borderBottom: `1px solid ${C.borderSoft}`, verticalAlign: "middle" },
+    tdRight: { padding: "13px 20px", borderBottom: `1px solid ${C.borderSoft}`, textAlign: "right", verticalAlign: "middle" },
+    tdCenter: { padding: "13px 20px", borderBottom: `1px solid ${C.borderSoft}`, textAlign: "center", verticalAlign: "middle" },
+    tdIcon: { padding: "13px 14px", borderBottom: `1px solid ${C.borderSoft}`, verticalAlign: "middle" },
     memberRow: { display: "flex", alignItems: "center", gap: 10 },
-    avatarImg: { width: 36, height: 36, borderRadius: "50%", objectFit: "cover", flexShrink: 0, border: "1px solid #1e293b" },
-    avatarFallback: { width: 36, height: 36, borderRadius: "50%", backgroundColor: "#1e293b", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, color: "#64748b" },
-    memberName: { fontWeight: 600, color: "#f1f5f9", fontSize: 13 },
-    memberPhone: { display: "flex", alignItems: "center", gap: 4, fontSize: 11, color: "#64748b", marginTop: 2 },
-    planName: { color: "#cbd5e1" },
-    branchTag: { display: "inline-flex", alignItems: "center", gap: 5, fontSize: 12, color: "#94a3b8" },
-    dateRange: { color: "#94a3b8", whiteSpace: "nowrap" },
-    amountMain: { fontWeight: 600, color: "#f1f5f9" },
-    amountOld: { fontSize: 11, color: "#64748b", textDecoration: "line-through" },
+    avatarImg: { width: 36, height: 36, borderRadius: "50%", objectFit: "cover", flexShrink: 0, border: `1.5px solid ${C.borderAccent}`, boxShadow: "0 2px 6px rgba(15,36,25,0.08)" },
+    avatarFallback: { width: 36, height: 36, borderRadius: "50%", backgroundColor: C.bgSubtle, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, color: C.textMuted, border: `1.5px solid ${C.borderSoft}` },
+    memberName: { fontWeight: 700, color: C.textPrimary, fontSize: 13 },
+    memberPhone: { display: "flex", alignItems: "center", gap: 4, fontSize: 11, color: C.textSecondary, marginTop: 2 },
+    planName: { color: C.textPrimary },
+    branchTag: { display: "inline-flex", alignItems: "center", gap: 5, fontSize: 12, color: C.textSecondary },
+    dateRange: { color: C.textSecondary, whiteSpace: "nowrap" },
+    amountMain: { fontWeight: 700, color: C.textPrimary },
+    amountOld: { fontSize: 11, color: C.textMuted, textDecoration: "line-through" },
+    orderCodeMain: { fontWeight: 700, color: C.textPrimary, fontSize: 13, margin: 0 },
+    orderCodeSub: { fontSize: 11, color: C.textMuted, margin: "2px 0 0 0" },
 
-    badge: (bg, color) => ({ display: "inline-flex", alignItems: "center", gap: 6, borderRadius: 9999, padding: "4px 10px", fontSize: 11, fontWeight: 600, backgroundColor: bg, color }),
+    // Nút chevron mở rộng dòng — thu gọn cột Gói tập/Chi nhánh/Kênh mua vào 1 khu vực chi tiết ẩn.
+    // Luôn có nền xanh nhạt để gợi ý đây là nút bấm được (thay vì chỉ đổi màu lúc mở), và đậm hẳn
+    // sang xanh lá khi đang mở để người dùng thấy rõ dòng nào đang xổ chi tiết.
+    expandBtn: (open) => ({
+        display: "inline-flex", alignItems: "center", justifyContent: "center",
+        width: 30, height: 30, borderRadius: 9, border: `1.5px solid ${open ? C.green : C.borderAccent}`,
+        backgroundColor: open ? C.green : C.greenSoft, color: open ? "#ffffff" : C.greenDark,
+        cursor: "pointer", transition: C.transition,
+        boxShadow: open ? "0 6px 14px -6px rgba(5,150,105,0.6)" : "none",
+    }),
+    expandChevron: (open) => ({ display: "flex", transform: open ? "rotate(180deg)" : "none", transition: "transform 0.15s ease" }),
+    expandRow: { backgroundColor: C.bgSubtle },
+    expandCell: { padding: "16px 24px 20px 58px", borderBottom: `1px solid ${C.borderSoft}` },
+    expandGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 16 },
+    expandItem: { display: "flex", flexDirection: "column", gap: 4 },
+    expandLabel: { fontSize: 10.5, fontWeight: 700, letterSpacing: "0.05em", textTransform: "uppercase", color: C.textMuted },
+    expandValue: { fontSize: 13, color: C.textPrimary, fontWeight: 500 },
 
-    invoiceBtn: { display: "inline-flex", alignItems: "center", gap: 6, borderRadius: 8, border: "1px solid #1e293b", backgroundColor: "#0b1220", padding: "6px 12px", fontSize: 12, fontWeight: 500, color: "#38bdf8", cursor: "pointer", whiteSpace: "nowrap" },
+    badge: (bg, color) => ({ display: "inline-flex", alignItems: "center", gap: 6, borderRadius: 9999, padding: "4px 10px 4px 8px", fontSize: 11, fontWeight: 700, backgroundColor: bg, color }),
+
+    invoiceBtn: { display: "inline-flex", alignItems: "center", gap: 6, borderRadius: 8, border: "1.5px solid #bfe0f5", backgroundColor: "#f0f9ff", padding: "6px 12px", fontSize: 12, fontWeight: 600, color: "#0369a1", cursor: "pointer", whiteSpace: "nowrap", transition: C.transition },
     invoiceBtnDisabled: { opacity: 0.6, cursor: "not-allowed" },
-    adjustBtn: { display: "inline-flex", alignItems: "center", gap: 6, borderRadius: 8, border: "1px solid #1e293b", backgroundColor: "#0b1220", padding: "6px 12px", fontSize: 12, fontWeight: 500, color: "#5eead4", cursor: "pointer", whiteSpace: "nowrap" },
+    adjustBtn: { display: "inline-flex", alignItems: "center", gap: 6, borderRadius: 8, border: `1.5px solid ${C.borderAccent}`, backgroundColor: C.greenSoft, padding: "6px 12px", fontSize: 12, fontWeight: 600, color: C.greenDark, cursor: "pointer", whiteSpace: "nowrap", transition: C.transition },
+    // Nút "Chi tiết" — thay thế hoàn toàn cho mũi tên xổ dòng cũ. Bấm vào sẽ điều hướng
+    // hẳn sang trang chi tiết (không phải mở rộng dòng tại chỗ nữa).
+    detailBtn: { display: "inline-flex", alignItems: "center", gap: 6, borderRadius: 8, border: `1.5px solid ${C.green}`, backgroundColor: C.green, padding: "6px 12px", fontSize: 12, fontWeight: 700, color: "#ffffff", cursor: "pointer", whiteSpace: "nowrap", transition: C.transition, boxShadow: "0 6px 14px -6px rgba(5,150,105,0.55)" },
     actionStack: { display: "flex", flexDirection: "column", alignItems: "center", gap: 6 },
 
     emptyState: { display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8, padding: "64px 24px", textAlign: "center" },
-    emptyTitle: { fontSize: 13, fontWeight: 500, color: "#cbd5e1" },
-    emptyDesc: { fontSize: 11, color: "#64748b" },
+    emptyTitle: { fontSize: 13.5, fontWeight: 700, color: C.textPrimary },
+    emptyDesc: { fontSize: 12, color: C.textSecondary },
+    stateIconWrap: (bg) => ({ width: 52, height: 52, borderRadius: "50%", backgroundColor: bg, display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 4 }),
 
     loadingState: { display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10, padding: "64px 24px", textAlign: "center" },
     errorState: { display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8, padding: "64px 24px", textAlign: "center" },
-    retryBtn: { marginTop: 8, borderRadius: 8, border: "1px solid #1e293b", backgroundColor: "#0b1220", padding: "8px 16px", fontSize: 13, fontWeight: 500, color: "#94a3b8", cursor: "pointer" },
+    retryBtn: { marginTop: 8, borderRadius: 8, border: `1.5px solid ${C.borderSoft}`, backgroundColor: C.bgCard, padding: "8px 16px", fontSize: 13, fontWeight: 600, color: C.textSecondary, cursor: "pointer", transition: C.transition },
 
     scrollArea: { flex: 1, minHeight: 0, overflowY: "auto" },
     stickyHead: { position: "sticky", top: 0, zIndex: 1 },
 
-    modalBackdrop: { position: "fixed", inset: 0, backgroundColor: "rgba(2,6,16,0.65)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50, padding: "4vh 4vw" },
+    modalBackdrop: { position: "fixed", inset: 0, backgroundColor: "rgba(15,36,25,0.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50, padding: "4vh 4vw" },
     modalBox: {
         width: "clamp(320px, 60vw, 760px)",
         height: "clamp(420px, 85vh, 900px)",
-        backgroundColor: "#111827",
+        backgroundColor: C.bgCard,
         borderRadius: 16,
         display: "flex",
         flexDirection: "column",
         overflow: "hidden",
-        border: "1px solid #1e293b",
-        boxShadow: "0 20px 50px rgba(0,0,0,0.45)",
+        border: `1.5px solid ${C.borderAccent}`,
+        boxShadow: C.shadowStrong,
     },
-    modalHeader: { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 18px", borderBottom: "1px solid #1e293b", flexShrink: 0 },
-    modalTitle: { fontSize: 14, fontWeight: 600, color: "#f1f5f9", margin: 0 },
+    modalHeader: { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 18px", borderBottom: `1px solid ${C.borderSoft}`, flexShrink: 0 },
+    modalTitle: { fontSize: 14, fontWeight: 700, color: C.textPrimary, margin: 0 },
     modalHeaderActions: { display: "flex", alignItems: "center", gap: 8 },
-    modalIconBtn: { display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, borderRadius: 8, border: "1px solid #1e293b", backgroundColor: "#0b1220", padding: "6px 10px", fontSize: 12, fontWeight: 500, color: "#94a3b8", cursor: "pointer" },
+    modalIconBtn: { display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, borderRadius: 8, border: `1.5px solid ${C.borderSoft}`, backgroundColor: C.bgSubtle, padding: "6px 10px", fontSize: 12, fontWeight: 600, color: C.textSecondary, cursor: "pointer" },
     modalBody: { flex: 1, minHeight: 0, overflow: "hidden", backgroundColor: "#fff" },
     invoiceFrame: { width: "100%", height: "100%", border: "none", display: "block", backgroundColor: "#fff" },
-    invoiceImgWrap: { width: "100%", height: "100%", overflow: "auto", display: "flex", alignItems: "flex-start", justifyContent: "center", backgroundColor: "#f1f5f9" },
+    invoiceImgWrap: { width: "100%", height: "100%", overflow: "auto", display: "flex", alignItems: "flex-start", justifyContent: "center", backgroundColor: "#f4faf7" },
     invoiceImg: { maxWidth: "100%", display: "block" },
 
     adjustModalBox: {
         width: "clamp(320px, 90vw, 980px)",
         maxHeight: "90vh",
-        backgroundColor: "#111827",
+        backgroundColor: C.bgCard,
         borderRadius: 16,
         display: "flex",
         flexDirection: "column",
         overflow: "hidden",
-        border: "1px solid #1e293b",
-        boxShadow: "0 20px 50px rgba(0,0,0,0.45)",
+        border: `1.5px solid ${C.borderAccent}`,
+        boxShadow: C.shadowStrong,
     },
     adjustModalBody: { flex: 1, minHeight: 0, overflowY: "auto", padding: 20 },
     adjustGrid: { display: "grid", gridTemplateColumns: "minmax(260px, 340px) 1fr", gap: 20, alignItems: "start" },
-    innerCard: { borderRadius: 14, border: "1px solid #1e293b", backgroundColor: "#0b1220", padding: 18 },
-    innerCardTitle: { display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, fontWeight: 700, color: "#e2e8f0", margin: "0 0 14px 0", textTransform: "uppercase", letterSpacing: "0.04em" },
+    innerCard: { borderRadius: 14, border: `1.5px solid ${C.borderSoft}`, backgroundColor: C.bgSubtle, padding: 18 },
+    innerCardTitle: { display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, fontWeight: 700, color: C.textPrimary, margin: "0 0 14px 0", textTransform: "uppercase", letterSpacing: "0.04em" },
 
     infoList: { display: "flex", flexDirection: "column", gap: 12 },
     infoRow: { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, fontSize: 13 },
-    infoLabel: { color: "#64748b" },
+    infoLabel: { color: C.textSecondary },
     infoLabelWithHint: { display: "flex", flexDirection: "column", gap: 2 },
-    infoSubHint: { fontSize: 10.5, color: "#475569" },
-    infoValue: { color: "#e2e8f0", fontWeight: 500, textAlign: "right" },
-    infoValueHighlight: { color: "#5eead4", fontWeight: 700, textAlign: "right" },
+    infoSubHint: { fontSize: 10.5, color: C.textMuted },
+    infoValue: { color: C.textPrimary, fontWeight: 500, textAlign: "right" },
+    infoValueHighlight: { color: C.greenDark, fontWeight: 700, textAlign: "right" },
 
-    priceBlock: { marginTop: 16, paddingTop: 16, borderTop: "1px solid #1e293b" },
+    priceBlock: { marginTop: 16, paddingTop: 16, borderTop: `1px solid ${C.borderSoft}` },
     priceRow: { display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 8 },
-    priceLabel: { fontSize: 12, color: "#64748b" },
-    priceOld: { fontSize: 12, color: "#64748b", textDecoration: "line-through" },
-    priceMain: { fontSize: 20, fontWeight: 700, color: "#f1f5f9" },
+    priceLabel: { fontSize: 12, color: C.textSecondary },
+    priceOld: { fontSize: 12, color: C.textMuted, textDecoration: "line-through" },
+    priceMain: { fontSize: 20, fontWeight: 700, color: C.textPrimary },
 
     formGroup: { display: "flex", flexDirection: "column", gap: 6, marginBottom: 18 },
-    label: { fontSize: 12.5, fontWeight: 600, color: "#cbd5e1", display: "flex", alignItems: "center", gap: 6 },
-    labelRequired: { color: "#fb7185" },
-    hint: { fontSize: 11.5, color: "#64748b" },
+    label: { fontSize: 12.5, fontWeight: 600, color: C.textPrimary, display: "flex", alignItems: "center", gap: 6 },
+    labelRequired: { color: "#e11d48" },
+    hint: { fontSize: 11.5, color: C.textSecondary },
 
-    textarea: { width: "100%", boxSizing: "border-box", borderRadius: 8, border: "1px solid #1e293b", backgroundColor: "#0b1220", padding: "10px 12px", fontSize: 13, color: "#e2e8f0", outline: "none", resize: "vertical", minHeight: 90, fontFamily: "inherit" },
-    charCount: { alignSelf: "flex-end", fontSize: 11, color: "#475569" },
+    textarea: { width: "100%", boxSizing: "border-box", borderRadius: 8, border: `1.5px solid ${C.borderSoft}`, backgroundColor: C.bgCard, padding: "10px 12px", fontSize: 13, color: C.textPrimary, outline: "none", resize: "vertical", minHeight: 90, fontFamily: "inherit" },
+    charCount: { alignSelf: "flex-end", fontSize: 11, color: C.textMuted },
 
-    applicablePromoBox: { borderRadius: 10, border: "1px solid #1e293b", backgroundColor: "#111827", padding: "10px 12px", marginTop: 8 },
-    applicablePromoTitle: { display: "flex", alignItems: "center", gap: 6, fontSize: 11, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 8 },
+    applicablePromoBox: { borderRadius: 10, border: `1.5px solid ${C.borderSoft}`, backgroundColor: C.bgCard, padding: "10px 12px", marginTop: 8 },
+    applicablePromoTitle: { display: "flex", alignItems: "center", gap: 6, fontSize: 11, fontWeight: 700, color: C.textSecondary, textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 8 },
     applicablePromoList: { display: "flex", flexDirection: "column", gap: 6 },
     applicablePromoItem: { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, fontSize: 12.5 },
-    applicablePromoName: { color: "#e2e8f0", fontWeight: 500 },
-    applicablePromoDesc: { color: "#5eead4", fontSize: 11.5, fontWeight: 600, whiteSpace: "nowrap" },
-    applicablePromoEmpty: { fontSize: 12, color: "#475569" },
-    applicablePromoLoadingRow: { display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "#64748b" },
+    applicablePromoName: { color: C.textPrimary, fontWeight: 500 },
+    applicablePromoDesc: { color: C.greenDark, fontSize: 11.5, fontWeight: 700, whiteSpace: "nowrap" },
+    applicablePromoEmpty: { fontSize: 12, color: C.textMuted },
+    applicablePromoLoadingRow: { display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: C.textSecondary },
 
-    previewBox: { borderRadius: 12, border: "1px dashed #1e293b", backgroundColor: "#111827", padding: 16, marginBottom: 20 },
-    previewTitle: { display: "flex", alignItems: "center", gap: 8, fontSize: 11.5, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 10 },
+    previewBox: { borderRadius: 12, border: `1.5px dashed ${C.borderAccent}`, backgroundColor: C.greenSoft, padding: 16, marginBottom: 20 },
+    previewTitle: { display: "flex", alignItems: "center", gap: 8, fontSize: 11.5, fontWeight: 700, color: C.textSecondary, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 10 },
     previewRow: { display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 13, marginBottom: 6 },
-    previewArrow: { color: "#475569", margin: "0 6px" },
-    previewNewValue: { color: "#5eead4", fontWeight: 700 },
-    previewNote: { fontSize: 11.5, color: "#64748b", marginTop: 8, display: "flex", gap: 6, alignItems: "flex-start" },
-    previewPromoBadge: { display: "inline-flex", alignItems: "center", gap: 6, borderRadius: 9999, padding: "3px 10px", fontSize: 11.5, fontWeight: 600, backgroundColor: "rgba(13,148,136,0.16)", color: "#5eead4" },
-    previewLoadingRow: { display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, color: "#64748b" },
-    previewCalcBaseRow: { display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 12, marginBottom: 6, padding: "6px 8px", borderRadius: 8, backgroundColor: "rgba(94,234,212,0.06)" },
+    previewArrow: { color: C.textMuted, margin: "0 6px" },
+    previewNewValue: { color: C.greenDark, fontWeight: 700 },
+    previewNote: { fontSize: 11.5, color: C.textSecondary, marginTop: 8, display: "flex", gap: 6, alignItems: "flex-start" },
+    previewPromoBadge: { display: "inline-flex", alignItems: "center", gap: 6, borderRadius: 9999, padding: "3px 10px", fontSize: 11.5, fontWeight: 700, backgroundColor: "#ffffff", color: C.greenDark, border: `1px solid ${C.borderAccent}` },
+    previewLoadingRow: { display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, color: C.textSecondary },
+    previewCalcBaseRow: { display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 12, marginBottom: 6, padding: "6px 8px", borderRadius: 8, backgroundColor: "#ffffff" },
 
     adjustActionsRow: { display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 4 },
-    cancelBtn: { borderRadius: 8, border: "1px solid #1e293b", backgroundColor: "#0b1220", padding: "10px 18px", fontSize: 13, fontWeight: 600, color: "#94a3b8", cursor: "pointer" },
+    cancelBtn: { borderRadius: 8, border: `1.5px solid ${C.borderSoft}`, backgroundColor: C.bgCard, padding: "10px 18px", fontSize: 13, fontWeight: 600, color: C.textSecondary, cursor: "pointer" },
     submitBtn: (disabled) => ({
         display: "inline-flex", alignItems: "center", gap: 8, borderRadius: 8, border: "none",
-        backgroundColor: disabled ? "#134e4a" : "#0d9488", padding: "10px 20px", fontSize: 13, fontWeight: 700,
-        color: disabled ? "#5f7d7a" : "#ecfeff", cursor: disabled ? "not-allowed" : "pointer",
+        backgroundColor: disabled ? "#a7d9c4" : C.green, padding: "10px 20px", fontSize: 13, fontWeight: 700,
+        color: disabled ? "#e9f6f0" : "#ffffff", cursor: disabled ? "not-allowed" : "pointer",
+        boxShadow: disabled ? "none" : "0 10px 20px -8px rgba(5,150,105,0.6)",
     }),
 
     banner: (kind) => ({
         display: "flex", alignItems: "flex-start", gap: 10, borderRadius: 10, padding: "12px 14px", fontSize: 13, marginBottom: 18,
-        backgroundColor: kind === "error" ? "rgba(190,18,60,0.12)" : "rgba(4,120,87,0.12)",
-        border: `1px solid ${kind === "error" ? "rgba(190,18,60,0.35)" : "rgba(4,120,87,0.35)"}`,
-        color: kind === "error" ? "#fda4af" : "#6ee7b7",
+        backgroundColor: kind === "error" ? "rgba(225,29,72,0.08)" : C.greenSoft,
+        border: `1.5px solid ${kind === "error" ? "rgba(225,29,72,0.3)" : C.borderAccent}`,
+        color: kind === "error" ? "#be123c" : C.greenDark,
     }),
 
     successWrap: { display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center", padding: "12px 4px 4px" },
-    successIconWrap: { width: 60, height: 60, borderRadius: "50%", backgroundColor: "rgba(4,120,87,0.16)", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 16 },
-    successTitle: { fontSize: 18, fontWeight: 700, color: "#f1f5f9", margin: "0 0 6px 0" },
-    successDesc: { fontSize: 13, color: "#94a3b8", margin: "0 0 20px 0" },
-    successInfoList: { width: "100%", maxWidth: 460, display: "flex", flexDirection: "column", gap: 10, backgroundColor: "#0b1220", border: "1px solid #1e293b", borderRadius: 12, padding: "16px 18px", textAlign: "left" },
-    successBackBtn: { display: "inline-flex", alignItems: "center", gap: 8, borderRadius: 8, border: "none", backgroundColor: "#0d9488", padding: "11px 22px", fontSize: 13.5, fontWeight: 700, color: "#ecfeff", cursor: "pointer", marginTop: 22 },
+    successIconWrap: { width: 60, height: 60, borderRadius: "50%", backgroundColor: C.greenSoft, display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 16 },
+    successTitle: { fontSize: 18, fontWeight: 700, color: C.textPrimary, margin: "0 0 6px 0" },
+    successDesc: { fontSize: 13, color: C.textSecondary, margin: "0 0 20px 0" },
+    successInfoList: { width: "100%", maxWidth: 460, display: "flex", flexDirection: "column", gap: 10, backgroundColor: C.bgSubtle, border: `1.5px solid ${C.borderSoft}`, borderRadius: 12, padding: "16px 18px", textAlign: "left" },
+    successBackBtn: { display: "inline-flex", alignItems: "center", gap: 8, borderRadius: 8, border: "none", backgroundColor: C.green, padding: "11px 22px", fontSize: 13.5, fontWeight: 700, color: "#ffffff", cursor: "pointer", marginTop: 22, boxShadow: "0 10px 20px -8px rgba(5,150,105,0.6)" },
+
+    // ===== Trang chi tiết giao dịch/hội viên — bố cục theo mẫu: thanh trên có nút quay lại +
+    // tiêu đề + nút chỉnh sửa; bên dưới chia 2 cột (ảnh/avatar lớn bên trái, thông tin dạng ô
+    // bo góc bên phải). Theo tông trắng-xanh lá, viền đậm, đổ bóng mạnh khớp với theme chung. =====
+    detailTopBar: { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 22, paddingBottom: 18, borderBottom: `1px solid ${C.borderSoft}`, flexWrap: "wrap" },
+    detailTopLeft: { display: "flex", alignItems: "center", gap: 14 },
+    detailBackBtn: { display: "inline-flex", alignItems: "center", justifyContent: "center", width: 42, height: 42, borderRadius: 12, border: `1.5px solid ${C.borderAccent}`, backgroundColor: C.bgCard, color: C.textPrimary, cursor: "pointer", boxShadow: C.shadowCard, transition: C.transition, flexShrink: 0 },
+    detailTitleWrap: {},
+    detailTitle: { fontSize: 20, fontWeight: 800, color: C.textPrimary, margin: 0, letterSpacing: "-0.01em" },
+    detailSubtitle: { fontSize: 12.5, color: C.textSecondary, margin: "2px 0 0 0" },
+    detailEditBtn: { display: "inline-flex", alignItems: "center", gap: 8, borderRadius: 10, border: "none", backgroundColor: C.green, padding: "11px 20px", fontSize: 13.5, fontWeight: 700, color: "#ffffff", cursor: "pointer", boxShadow: "0 10px 22px -8px rgba(5,150,105,0.6)", transition: C.transition },
+
+    detailBody: { flex: 1, minHeight: 0, overflowY: "auto" },
+    detailGrid: { display: "grid", gridTemplateColumns: "minmax(200px, 240px) 1fr", gap: 18, alignItems: "start" },
+
+    detailPhotoCard: { borderRadius: 16, border: `1.5px solid ${C.borderAccent}`, backgroundColor: C.bgCard, boxShadow: C.shadowCard, padding: 16, display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center" },
+    detailPhotoLabel: { display: "flex", alignItems: "center", gap: 6, fontSize: 10.5, fontWeight: 700, letterSpacing: "0.05em", textTransform: "uppercase", color: C.textMuted, marginBottom: 12, alignSelf: "flex-start" },
+    detailPhotoImgWrap: { width: 140, height: 140, borderRadius: 14, overflow: "hidden", border: `2px solid ${C.borderAccent}`, boxShadow: C.shadowSoft, backgroundColor: C.bgSubtle, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 },
+    detailPhotoImg: { width: "100%", height: "100%", objectFit: "cover" },
+    detailPhotoName: { fontSize: 15, fontWeight: 800, color: C.textPrimary, margin: "12px 0 8px 0" },
+    detailPhotoBadges: { display: "flex", flexWrap: "wrap", justifyContent: "center", gap: 8 },
+
+    detailInfoCard: { borderRadius: 16, border: `1.5px solid ${C.borderAccent}`, backgroundColor: C.bgCard, boxShadow: C.shadowCard, padding: 18 },
+    detailSectionTitle: { display: "flex", alignItems: "center", gap: 8, fontSize: 12, fontWeight: 700, color: C.greenDark, textTransform: "uppercase", letterSpacing: "0.05em", margin: "0 0 12px 0" },
+    detailFieldGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: 12 },
+    detailFieldBox: { display: "flex", flexDirection: "column", gap: 5 },
+    detailFieldLabel: { display: "flex", alignItems: "center", gap: 6, fontSize: 11, fontWeight: 700, color: C.textSecondary },
+    detailFieldValue: { borderRadius: 10, border: `1.5px solid ${C.borderAccent}`, backgroundColor: "#ffffff", padding: "9px 12px", fontSize: 13, fontWeight: 600, color: C.textPrimary, minHeight: 18, boxShadow: C.shadowSoft },
+    detailFieldValueHighlight: { borderRadius: 10, border: `1.5px solid ${C.green}`, backgroundColor: C.greenSoft, padding: "9px 12px", fontSize: 13, fontWeight: 700, color: C.greenDark, minHeight: 18, boxShadow: "0 1px 2px rgba(15,36,25,0.03), 0 8px 18px -8px rgba(5,150,105,0.35)" },
+    detailDivider: { height: 1, backgroundColor: C.borderSoft, margin: "16px 0" },
 };
 
 function StatusBadge({ status }) {
@@ -351,7 +465,7 @@ function CustomSelect({ value, onChange, options, placeholder = "Chọn...", dis
             {open && (
                 <div style={S.customSelectMenu} className="scroll-dark custom-select-menu">
                     {options.length === 0 ? (
-                        <div style={{ padding: "10px 10px", fontSize: 12.5, color: "#475569" }}>Không có dữ liệu</div>
+                        <div style={{ padding: "10px 10px", fontSize: 12.5, color: "#93a29b" }}>Không có dữ liệu</div>
                     ) : (
                         options.map((opt) => {
                             const isActive = String(opt.value) === String(value);
@@ -438,12 +552,12 @@ function InvoiceModal({ state, onClose, onPrint, onDownload }) {
                 <div style={S.modalBody}>
                     {state.loading ? (
                         <div style={S.loadingState}>
-                            <Loader2 className="spin" size={28} color="#94a3b8" />
+                            <Loader2 className="spin" size={28} color="#5b6b64" />
                             <p style={S.emptyTitle}>Đang tải hóa đơn...</p>
                         </div>
                     ) : state.error ? (
                         <div style={S.errorState}>
-                            <XCircle size={28} color="#f43f5e" />
+                            <XCircle size={28} color="#e11d48" />
                             <p style={S.emptyTitle}>{state.error}</p>
                         </div>
                     ) : showIframe ? (
@@ -459,7 +573,7 @@ function InvoiceModal({ state, onClose, onPrint, onDownload }) {
                         </div>
                     ) : (
                         <div style={S.errorState}>
-                            <XCircle size={28} color="#f43f5e" />
+                            <XCircle size={28} color="#e11d48" />
                             <p style={S.emptyTitle}>Định dạng hóa đơn không được hỗ trợ xem trực tiếp</p>
                         </div>
                     )}
@@ -542,11 +656,11 @@ function SuccessPanel({ data, onClose }) {
     return (
         <div style={S.successWrap}>
             <div style={S.successIconWrap}>
-                <CheckCircle2 size={32} color="#34d399" />
+                <CheckCircle2 size={32} color="#059669" />
             </div>
             <h2 style={S.successTitle}>Điều chỉnh thành công</h2>
             <p style={S.successDesc}>
-                Giao dịch {data?.orderCode ? <strong style={{ color: "#e2e8f0" }}>#{data.orderCode}</strong> : ""} đã được cập nhật sang gói mới.
+                Giao dịch {data?.orderCode ? <strong style={{ color: "#0f2419" }}>#{data.orderCode}</strong> : ""} đã được cập nhật sang gói mới.
             </p>
 
             <div style={S.successInfoList}>
@@ -560,7 +674,7 @@ function SuccessPanel({ data, onClose }) {
                 </div>
                 <div style={S.infoRow}>
                     <span style={S.infoLabel}>Gói mới</span>
-                    <span style={{ ...S.infoValue, color: "#5eead4" }}>{data?.newPlanName || "—"}</span>
+                    <span style={{ ...S.infoValue, color: "#047857" }}>{data?.newPlanName || "—"}</span>
                 </div>
                 <div style={S.infoRow}>
                     <span style={S.infoLabel}>Số tiền mới</span>
@@ -629,7 +743,8 @@ function AdjustModal({ transactionId, onClose, onSuccess }) {
         setDetailError(null);
         try {
             const res = await managerApi.getTransactionDetail(transactionId);
-            const data = res?.data ?? res;
+            const raw = res?.data ?? res;
+            const data = raw?.data ?? raw;
             setTransaction(data);
             setSelectedPlanId(data?.planId ?? "");
         } catch (err) {
@@ -671,8 +786,8 @@ function AdjustModal({ transactionId, onClose, onSuccess }) {
     // ---- Số điện thoại: BE trả ra dưới nhiều tên field tuỳ endpoint cũ/mới,
     // nên đọc theo thứ tự ưu tiên để tránh trường hợp field không khớp gây mất SĐT. ----
     const transactionPhone =
-        transaction?.phoneNumber ??
         transaction?.phone ??
+        transaction?.phoneNumber ??
         transaction?.sdt ??
         transaction?.soDienThoai ??
         transaction?.member?.phoneNumber ??
@@ -814,14 +929,14 @@ function AdjustModal({ transactionId, onClose, onSuccess }) {
                         <SuccessPanel data={successData} onClose={onSuccess} />
                     ) : loadingDetail ? (
                         <div style={S.loadingState}>
-                            <Loader2 className="spin" size={28} color="#94a3b8" />
+                            <Loader2 className="spin" size={28} color="#5b6b64" />
                             <p style={S.emptyTitle}>Đang tải thông tin giao dịch...</p>
                         </div>
                     ) : detailError ? (
                         <div style={S.errorState}>
-                            <XCircle size={28} color="#f43f5e" />
+                            <XCircle size={28} color="#e11d48" />
                             <p style={S.emptyTitle}>{detailError}</p>
-                            <button style={S.retryBtn} onClick={loadDetail}>Thử lại</button>
+                            <button style={S.retryBtn} className="retry-btn" onClick={loadDetail}>Thử lại</button>
                         </div>
                     ) : !transaction ? (
                         <div style={S.errorState}>
@@ -842,10 +957,10 @@ function AdjustModal({ transactionId, onClose, onSuccess }) {
                             <div style={S.innerCard}>
                                 <p style={S.innerCardTitle}>Giao dịch hiện tại</p>
 
-                                <div style={{ ...S.memberRow, marginBottom: 16, paddingBottom: 16, borderBottom: "1px solid #1e293b" }}>
+                                <div style={{ ...S.memberRow, marginBottom: 16, paddingBottom: 16, borderBottom: "1px solid #e3e8e6" }}>
                                     <Avatar src={transaction.urlImg} alt={transaction.memberName || transaction.fullName} size={44} />
                                     <div>
-                                        <p style={{ fontWeight: 600, color: "#f1f5f9", fontSize: 14, margin: 0 }}>{transaction.memberName || transaction.fullName || "—"}</p>
+                                        <p style={{ fontWeight: 600, color: "#0f2419", fontSize: 14, margin: 0 }}>{transaction.memberName || transaction.fullName || "—"}</p>
                                         <p style={S.memberPhone}><Phone size={11} />{transactionPhone || "—"}</p>
                                     </div>
                                 </div>
@@ -860,7 +975,7 @@ function AdjustModal({ transactionId, onClose, onSuccess }) {
                                             <span style={S.infoLabel}>Chi nhánh</span>
                                             <span style={S.infoValue}>
                                                 <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
-                                                    <MapPin size={12} color="#475569" />{transaction.branchName}
+                                                    <MapPin size={12} color="#93a29b" />{transaction.branchName}
                                                 </span>
                                             </span>
                                         </div>
@@ -911,7 +1026,7 @@ function AdjustModal({ transactionId, onClose, onSuccess }) {
                                 <div style={S.priceBlock}>
                                     <div style={S.priceRow}>
                                         <span style={S.priceLabel}>Giá gốc</span>
-                                        <span style={{ ...S.infoValue }}>{formatCurrency(transaction.giaGoc)}</span>
+                                        <span style={{ ...S.infoValue }}>{formatCurrency(transaction.giaGoc ?? transaction.originalAmount)}</span>
                                     </div>
                                     <div style={S.priceRow}>
                                         <span style={S.priceLabel}>Số tiền đã thanh toán</span>
@@ -979,7 +1094,7 @@ function AdjustModal({ transactionId, onClose, onSuccess }) {
                                                                 <Clock size={11} />
                                                                 Tính từ ngày bắt đầu gói
                                                             </span>
-                                                            <span style={{ color: "#5eead4", fontWeight: 700 }}>{formatDateOnly(preview.startDate)}</span>
+                                                            <span style={{ color: "#047857", fontWeight: 700 }}>{formatDateOnly(preview.startDate)}</span>
                                                         </div>
                                                     )}
                                                     <div style={S.previewRow}>
@@ -993,7 +1108,7 @@ function AdjustModal({ transactionId, onClose, onSuccess }) {
                                                     <div style={S.previewRow}>
                                                         <span style={S.infoLabel}>Giá gốc</span>
                                                         <span>
-                                                            <span style={S.priceOld}>{formatCurrency(transaction.giaGoc)}</span>
+                                                            <span style={S.priceOld}>{formatCurrency(transaction.giaGoc ?? transaction.originalAmount)}</span>
                                                             <span style={S.previewArrow}>→</span>
                                                             <span style={S.previewNewValue}>{formatCurrency(preview.giaGoc)}</span>
                                                         </span>
@@ -1053,7 +1168,223 @@ function AdjustModal({ transactionId, onClose, onSuccess }) {
     );
 }
 
-export default function Invoice() {
+// Gộp dữ liệu chi tiết (từ API) với dữ liệu dòng đã bấm trong danh sách (fallback).
+// Không dùng spread đơn giản {...fallback, ...detail} vì nếu API chi tiết trả về field
+// nào đó là null/rỗng (ví dụ chưa JOIN kịp startDate/expiryDate ở BE), spread vẫn sẽ
+// GHI ĐÈ giá trị null đó lên trên giá trị đúng đã có sẵn ở fallback — đây chính là lý do
+// "Ngày bắt đầu gói"/"Ngày hết hạn" bị mất dù danh sách đã hiển thị đúng. Hàm dưới đây chỉ
+// ghi đè khi giá trị từ API thực sự có dữ liệu (khác null/undefined/chuỗi rỗng).
+function mergeDetailData(fallback, detail) {
+    const merged = { ...(fallback || {}) };
+    if (detail) {
+        Object.keys(detail).forEach((key) => {
+            const v = detail[key];
+            if (v !== null && v !== undefined && v !== "") {
+                merged[key] = v;
+            }
+        });
+    }
+    return merged;
+}
+
+function TransactionDetailPage({ transactionId, fallbackItem, onBack, onEdit }) {
+    const [transaction, setTransaction] = useState(null);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
+
+    async function loadDetail() {
+        setLoading(true);
+        setError(null);
+        try {
+            const res = await managerApi.getTransactionDetail(transactionId);
+            // BE có thể trả trực tiếp object giao dịch, hoặc bọc thêm 1 lớp { data: {...} }
+            // tuỳ endpoint/version — bóc tách cả 2 lớp để không bị rớt field (SĐT, chi nhánh,
+            // kênh mua, ngày bắt đầu gói...) khi lớp bọc khác nhau giữa các API.
+            const raw = res?.data ?? res;
+            const data = raw?.data ?? raw;
+            setTransaction(data);
+        } catch (err) {
+            const status = err?.response?.status;
+            const msg = err?.response?.data?.message;
+            if (status === 403) setError(msg || "Bạn không có quyền xem giao dịch này.");
+            else if (status === 404) setError(msg || "Không tìm thấy giao dịch này.");
+            else setError(msg || err?.message || "Không thể tải thông tin giao dịch");
+        } finally {
+            setLoading(false);
+        }
+    }
+
+    useEffect(() => {
+        if (transactionId) loadDetail();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [transactionId]);
+
+    // Dùng dữ liệu của dòng đã bấm trong danh sách làm phương án dự phòng trong lúc
+    // đang tải chi tiết đầy đủ từ API. Merge "thông minh" — chỉ ghi đè field nào API chi
+    // tiết thực sự trả về dữ liệu, còn field nào API trả null/rỗng (vd startDate,
+    // expiryDate chưa được BE include trong endpoint chi tiết) thì vẫn giữ giá trị đúng
+    // đã có từ danh sách thay vì bị đè thành "—".
+    const data = mergeDetailData(fallbackItem, transaction);
+
+    // Đọc SĐT theo đúng tên field BE trả về ("phone") trước, các tên khác chỉ là fallback
+    // cho tương thích ngược với các version endpoint cũ.
+    const phone =
+        data.phone ?? data.phoneNumber ?? data.sdt ?? data.soDienThoai ??
+        data.member?.phoneNumber ?? data.member?.phone ?? null;
+
+    const status = data.status || data.paymentStatus;
+    const startDate = data.startDate ?? data.ngayBatDau ?? data.memberPackageStartDate ?? null;
+    const fullName = data.fullName || data.memberName || "—";
+    const isAdjustable = status === "Paid";
+
+    return (
+        <main className="main-pad" style={S.main}>
+            <div className="detail-top-bar" style={S.detailTopBar}>
+                <div style={S.detailTopLeft}>
+                    <button type="button" className="detail-back-btn" style={S.detailBackBtn} onClick={onBack} title="Quay lại danh sách">
+                        <ArrowLeft size={18} />
+                    </button>
+                    <div style={S.detailTitleWrap}>
+                        <h1 style={S.detailTitle}>Chi tiết giao dịch</h1>
+                        <p style={S.detailSubtitle}>Mã đơn: {data.orderCode || "—"}</p>
+                    </div>
+                </div>
+                {!loading && !error && (
+                    <button
+                        type="button"
+                        className="detail-edit-btn"
+                        style={{ ...S.detailEditBtn, ...(isAdjustable ? {} : { opacity: 0.5, cursor: "not-allowed" }) }}
+                        disabled={!isAdjustable}
+                        onClick={() => isAdjustable && onEdit(transactionId)}
+                        title={isAdjustable ? "Điều chỉnh gói của giao dịch này" : "Chỉ giao dịch Đã thanh toán mới điều chỉnh được"}
+                    >
+                        <PencilLine size={15} />
+                        Chỉnh sửa
+                    </button>
+                )}
+            </div>
+
+            <div className="detail-body scroll-dark" style={S.detailBody}>
+                {loading ? (
+                    <div style={S.loadingState}>
+                        <div style={S.stateIconWrap(C.greenSoft)}>
+                            <Loader2 className="spin" size={22} color={C.green} />
+                        </div>
+                        <p style={S.emptyTitle}>Đang tải thông tin giao dịch...</p>
+                    </div>
+                ) : error ? (
+                    <div style={S.errorState}>
+                        <div style={S.stateIconWrap("rgba(225,29,72,0.10)")}>
+                            <XCircle size={22} color="#e11d48" />
+                        </div>
+                        <p style={S.emptyTitle}>{error}</p>
+                        <button style={S.retryBtn} className="retry-btn" onClick={loadDetail}>Thử lại</button>
+                    </div>
+                ) : (
+                    <div className="detail-grid" style={S.detailGrid}>
+                        <div style={S.detailPhotoCard}>
+                            <span style={S.detailPhotoLabel}><User size={12} /> Ảnh hội viên</span>
+                            <div style={S.detailPhotoImgWrap}>
+                                {data.urlImg ? (
+                                    <img src={data.urlImg} alt={fullName} style={S.detailPhotoImg} />
+                                ) : (
+                                    <User size={48} color={C.textMuted} />
+                                )}
+                            </div>
+                            <p style={S.detailPhotoName}>{fullName}</p>
+                            <div style={S.detailPhotoBadges}>
+                                <StatusBadge status={status} />
+                                {data.purchaseChannel && <ChannelBadge channel={data.purchaseChannel} />}
+                            </div>
+                        </div>
+
+                        <div style={S.detailInfoCard}>
+                            <p style={S.detailSectionTitle}><User size={13} /> Thông tin hội viên</p>
+                            <div style={S.detailFieldGrid}>
+                                <div style={S.detailFieldBox}>
+                                    <span style={S.detailFieldLabel}><User size={12} /> Họ và tên</span>
+                                    <span style={S.detailFieldValue}>{fullName}</span>
+                                </div>
+                                <div style={S.detailFieldBox}>
+                                    <span style={S.detailFieldLabel}><Phone size={12} /> Số điện thoại</span>
+                                    <span style={S.detailFieldValue}>{phone || "—"}</span>
+                                </div>
+                                <div style={S.detailFieldBox}>
+                                    <span style={S.detailFieldLabel}><Hash size={12} /> Mã đơn</span>
+                                    <span style={S.detailFieldValue}>{data.orderCode || "—"}</span>
+                                </div>
+                            </div>
+
+                            <div style={S.detailDivider} />
+
+                            <p style={S.detailSectionTitle}><Package size={13} /> Gói tập &amp; giao dịch</p>
+                            <div style={S.detailFieldGrid}>
+                                <div style={S.detailFieldBox}>
+                                    <span style={S.detailFieldLabel}><Package size={12} /> Gói tập</span>
+                                    <span style={S.detailFieldValue}>{data.planName || "—"}</span>
+                                </div>
+                                <div style={S.detailFieldBox}>
+                                    <span style={S.detailFieldLabel}><MapPin size={12} /> Chi nhánh</span>
+                                    <span style={S.detailFieldValue}>{data.branchName || "—"}</span>
+                                </div>
+                                <div style={S.detailFieldBox}>
+                                    <span style={S.detailFieldLabel}><Store size={12} /> Kênh mua</span>
+                                    <span style={S.detailFieldValue}>
+                                        {data.purchaseChannel ? <ChannelBadge channel={data.purchaseChannel} /> : "—"}
+                                    </span>
+                                </div>
+                                <div style={S.detailFieldBox}>
+                                    <span style={S.detailFieldLabel}><CheckCircle2 size={12} /> Trạng thái</span>
+                                    <span style={S.detailFieldValue}><StatusBadge status={status} /></span>
+                                </div>
+                            </div>
+
+                            <div style={S.detailDivider} />
+
+                            <p style={S.detailSectionTitle}><Calendar size={13} /> Thời gian &amp; thanh toán</p>
+                            <div style={S.detailFieldGrid}>
+                                <div style={S.detailFieldBox}>
+                                    <span style={S.detailFieldLabel}><Clock size={12} /> Ngày tạo</span>
+                                    <span style={S.detailFieldValue}>{formatDateTime(data.createdAt)}</span>
+                                </div>
+                                <div style={S.detailFieldBox}>
+                                    <span style={S.detailFieldLabel}><Calendar size={12} /> Ngày bắt đầu gói</span>
+                                    <span style={S.detailFieldValueHighlight}>{formatDateOnly(startDate) || "—"}</span>
+                                </div>
+                                <div style={S.detailFieldBox}>
+                                    <span style={S.detailFieldLabel}><Calendar size={12} /> Ngày hết hạn</span>
+                                    <span style={S.detailFieldValue}>{formatDate(data.expiryDate)}</span>
+                                </div>
+                                <div style={S.detailFieldBox}>
+                                    <span style={S.detailFieldLabel}><Receipt size={12} /> Giá gốc</span>
+                                    <span style={S.detailFieldValue}>{formatCurrency(data.giaGoc ?? data.originalAmount)}</span>
+                                </div>
+                                <div style={S.detailFieldBox}>
+                                    <span style={S.detailFieldLabel}><Wallet size={12} /> Số tiền thanh toán</span>
+                                    <span style={S.detailFieldValueHighlight}>{formatCurrency(data.amount)}</span>
+                                </div>
+                                {data.bankReferenceCode && (
+                                    <div style={S.detailFieldBox}>
+                                        <span style={S.detailFieldLabel}><CreditCard size={12} /> Mã tham chiếu NH</span>
+                                        <span style={S.detailFieldValue}>{data.bankReferenceCode}</span>
+                                    </div>
+                                )}
+                                {data.updatedAt && (
+                                    <div style={S.detailFieldBox}>
+                                        <span style={S.detailFieldLabel}><Clock size={12} /> Cập nhật lần cuối</span>
+                                        <span style={S.detailFieldValue}>{formatDateTime(data.updatedAt)}</span>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                )}
+            </div>
+        </main>
+    );
+}
+
+export default function InvoiceOfManager() {
     const [history, setHistory] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
@@ -1078,6 +1409,27 @@ export default function Invoice() {
     const loadingItemRef = useRef(null);
 
     const [adjustModal, setAdjustModal] = useState({ open: false, transactionId: null });
+
+    // Điều hướng nội bộ: "list" = bảng danh sách giao dịch, "detail" = trang chi tiết
+    // toàn màn hình của 1 giao dịch/hội viên. Thay cho việc mở rộng dòng tại chỗ trước đây,
+    // bấm "Chi tiết" sẽ chuyển hẳn sang trang chi tiết riêng.
+    const [view, setView] = useState("list");
+    const [selectedItem, setSelectedItem] = useState(null);
+
+    function openDetail(item) {
+        const transactionId = item.transactionId ?? item.id;
+        if (!transactionId) {
+            alert("Không tìm thấy mã giao dịch");
+            return;
+        }
+        setSelectedItem(item);
+        setView("detail");
+    }
+
+    function backToList() {
+        setView("list");
+        setSelectedItem(null);
+    }
 
     useEffect(() => {
         async function fetchBranches() {
@@ -1204,6 +1556,10 @@ export default function Invoice() {
         setAdjustModal({ open: true, transactionId });
     }
 
+    function openAdjustModalById(transactionId) {
+        setAdjustModal({ open: true, transactionId });
+    }
+
     function closeAdjustModal() {
         setAdjustModal({ open: false, transactionId: null });
     }
@@ -1211,6 +1567,7 @@ export default function Invoice() {
     function handleAdjustSuccess() {
         closeAdjustModal();
         fetchHistory();
+        backToList();
     }
 
     return (
@@ -1219,30 +1576,32 @@ export default function Invoice() {
         * { box-sizing: border-box; }
         body { margin: 0; }
         a { text-decoration: none; }
-        input:focus { border-color: #0d9488 !important; background: #0b1220 !important; box-shadow: 0 0 0 3px rgba(13,148,136,0.18) !important; }
-        textarea:focus { border-color: #0d9488 !important; background: #0b1220 !important; box-shadow: 0 0 0 3px rgba(13,148,136,0.18) !important; }
-        tr:hover td { background-color: rgba(30,41,59,0.55) !important; }
+        input:focus { border-color: #059669 !important; background: #ffffff !important; box-shadow: 0 0 0 3px rgba(5,150,105,0.18) !important; }
+        textarea:focus { border-color: #059669 !important; background: #ffffff !important; box-shadow: 0 0 0 3px rgba(5,150,105,0.18) !important; }
+        tbody tr td { transition: background-color 0.12s ease; }
+        tr:hover td { background-color: rgba(5,150,105,0.05) !important; }
         .table-wrap { display: block; overflow-x: auto; }
         .mobile-cards { display: none; }
         .spin { animation: spin 0.8s linear infinite; }
-        .invoice-btn:hover { background-color: rgba(56,189,248,0.1) !important; border-color: #0369a1 !important; }
-        .adjust-btn:hover { background-color: rgba(13,148,136,0.1) !important; border-color: #0d9488 !important; }
-        .reset-btn:hover { background-color: #1e293b !important; }
-        .branch-chip:hover { border-color: #0d9488 !important; }
-        .modal-icon-btn:hover { background-color: #1e293b !important; }
-        .custom-select-btn:not(:disabled):hover { border-color: #334155 !important; }
-        .custom-select-option:hover { background-color: #1e293b !important; }
+        .invoice-btn:hover { background-color: rgba(56,189,248,0.15) !important; border-color: #0369a1 !important; transform: translateY(-1px); }
+        .adjust-btn:hover { background-color: rgba(5,150,105,0.18) !important; border-color: #059669 !important; transform: translateY(-1px); }
+        .expand-btn:hover { border-color: #059669 !important; box-shadow: 0 6px 14px -6px rgba(5,150,105,0.5) !important; transform: translateY(-1px); }
+        .reset-btn:hover, .retry-btn:hover { background-color: #eef3f0 !important; border-color: #93a29b !important; }
+        .branch-chip:hover { border-color: #059669 !important; }
+        .modal-icon-btn:hover { background-color: #eef3f0 !important; }
+        .custom-select-btn:not(:disabled):hover { border-color: #93a29b !important; }
+        .custom-select-option:hover { background-color: #eef3f0 !important; }
         .custom-select-menu { animation: dropdown-in 0.12s ease-out; }
-        .cancel-btn:hover { background-color: #1e293b !important; }
+        .cancel-btn:hover { background-color: #eef3f0 !important; }
         .submit-btn:not(:disabled):hover { background-color: #0f766e !important; }
         .success-back-btn:hover { background-color: #0f766e !important; }
         @keyframes dropdown-in { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
         @keyframes spin { to { transform: rotate(360deg); } }
         .scroll-dark::-webkit-scrollbar { width: 8px; height: 8px; }
         .scroll-dark::-webkit-scrollbar-track { background: transparent; }
-        .scroll-dark::-webkit-scrollbar-thumb { background-color: #1e293b; border-radius: 8px; }
-        .scroll-dark::-webkit-scrollbar-thumb:hover { background-color: #334155; }
-        .scroll-dark { scrollbar-width: thin; scrollbar-color: #1e293b transparent; }
+        .scroll-dark::-webkit-scrollbar-thumb { background-color: #c7d3ce; border-radius: 8px; }
+        .scroll-dark::-webkit-scrollbar-thumb:hover { background-color: #93a29b; }
+        .scroll-dark { scrollbar-width: thin; scrollbar-color: #c7d3ce transparent; }
         .app-root { height: 100vh; height: 100dvh; }
         @media (max-width: 1024px) {
           .filter-grid { grid-template-columns: 1fr 1fr !important; }
@@ -1250,6 +1609,7 @@ export default function Invoice() {
         }
         @media (max-width: 960px) {
           .adjust-grid { grid-template-columns: 1fr !important; }
+          .detail-grid { grid-template-columns: 1fr !important; }
         }
         @media (max-width: 768px) {
           .table-wrap { display: none !important; }
@@ -1279,226 +1639,223 @@ export default function Invoice() {
       `}</style>
 
             <div className="app-root" style={S.root}>
-                <main className="main-pad" style={S.main}>
-                    <div className="page-title" style={S.pageTitle}>
-                        <div className="page-title-icon" style={S.pageTitleIcon}>
-                            <History size={20} color="#fff" />
+                {view === "list" && (
+                    <main className="main-pad" style={S.main}>
+                        <div className="page-title" style={S.pageTitle}>
+                            <div className="page-title-icon" style={S.pageTitleIcon}>
+                                <History size={20} color="#fff" />
+                            </div>
+                            <div>
+                                <h1 className="page-title-h1" style={S.h1}>Hóa đơn</h1>
+                                <p className="page-desc" style={S.pageDesc}>Xem lại các giao dịch của hội viên</p>
+                            </div>
                         </div>
-                        <div>
-                            <h1 className="page-title-h1" style={S.h1}>Hóa đơn</h1>
-                            <p className="page-desc" style={S.pageDesc}>Xem lại các giao dịch của hội viên</p>
-                        </div>
-                    </div>
 
-                    {!branchesLoading && branches.length > 0 && (
-                        <div className="branch-strip scroll-dark" style={S.branchStrip}>
-                            <button
-                                className="branch-chip"
-                                style={S.branchChip(branchFilter === "all")}
-                                onClick={() => setBranchFilter("all")}
-                            >
-                                <span style={S.branchChipIcon(branchFilter === "all")}><Building2 size={14} /></span>
-                                Tất cả chi nhánh
-                            </button>
-                            {branches.map((b) => (
-                                <button
-                                    key={b.branchId}
-                                    className="branch-chip"
-                                    style={S.branchChip(String(branchFilter) === String(b.branchId))}
-                                    onClick={() => setBranchFilter(b.branchId)}
-                                >
-                                    <span style={S.branchChipIcon(String(branchFilter) === String(b.branchId))}><MapPin size={14} /></span>
-                                    {b.branchName}
-                                </button>
-                            ))}
-                        </div>
-                    )}
 
-                    <div className="filter-panel" style={S.filterPanel}>
-                        <div className="filter-grid" style={S.filterGrid}>
-                            <div style={S.searchWrap}>
-                                <span style={S.searchIcon}><Search size={16} /></span>
-                                <input
-                                    style={S.searchInput}
-                                    value={searchTerm}
-                                    onChange={(e) => { setSearchTerm(e.target.value); }}
-                                    placeholder="Tìm theo tên hội viên hoặc số điện thoại..."
+
+                        <div className="filter-panel" style={S.filterPanel}>
+                            <div className="filter-grid" style={S.filterGrid}>
+                                <div style={S.searchWrap}>
+                                    <span style={S.searchIcon}><Search size={16} /></span>
+                                    <input
+                                        style={S.searchInput}
+                                        value={searchTerm}
+                                        onChange={(e) => { setSearchTerm(e.target.value); }}
+                                        placeholder="Tìm theo tên, số điện thoại hoặc mã giao dịch..."
+                                    />
+                                    {searchTerm && (
+                                        <button style={S.clearBtn} onClick={() => setSearchTerm("")}>
+                                            <X size={14} />
+                                        </button>
+                                    )}
+                                </div>
+
+                                <CustomSelect
+                                    value={statusFilter}
+                                    onChange={setStatusFilter}
+                                    placeholder="Tất cả trạng thái"
+                                    options={[
+                                        { value: "all", label: "Tất cả trạng thái" },
+                                        { value: "Pending", label: "Chờ thanh toán" },
+                                        { value: "Paid", label: "Đã thanh toán" },
+                                        { value: "Cancelled", label: "Đã hủy" },
+                                    ]}
                                 />
-                                {searchTerm && (
-                                    <button style={S.clearBtn} onClick={() => setSearchTerm("")}>
-                                        <X size={14} />
-                                    </button>
-                                )}
+
+                                <CustomSelect
+                                    value={channelFilter}
+                                    onChange={setChannelFilter}
+                                    placeholder="Tất cả kênh mua"
+                                    options={[
+                                        { value: "all", label: "Tất cả kênh mua" },
+                                        { value: "Online", label: "Online" },
+                                        { value: "Tại quầy", label: "Tại quầy" },
+                                    ]}
+                                />
+
+
+
+                                <button className="reset-btn" style={S.resetBtn} onClick={resetFilters}>Đặt lại</button>
                             </div>
-
-                            <CustomSelect
-                                value={statusFilter}
-                                onChange={setStatusFilter}
-                                placeholder="Tất cả trạng thái"
-                                options={[
-                                    { value: "all", label: "Tất cả trạng thái" },
-                                    { value: "Pending", label: "Chờ thanh toán" },
-                                    { value: "Paid", label: "Đã thanh toán" },
-                                    { value: "Cancelled", label: "Đã hủy" },
-                                ]}
-                            />
-
-                            <CustomSelect
-                                value={channelFilter}
-                                onChange={setChannelFilter}
-                                placeholder="Tất cả kênh mua"
-                                options={[
-                                    { value: "all", label: "Tất cả kênh mua" },
-                                    { value: "Online", label: "Online" },
-                                    { value: "Tại quầy", label: "Tại quầy" },
-                                ]}
-                            />
-
-                            <CustomSelect
-                                value={branchFilter}
-                                onChange={setBranchFilter}
-                                placeholder="Tất cả chi nhánh"
-                                options={[
-                                    { value: "all", label: "Tất cả chi nhánh" },
-                                    ...branches.map((b) => ({ value: b.branchId, label: b.branchName })),
-                                ]}
-                            />
-
-                            <button className="reset-btn" style={S.resetBtn} onClick={resetFilters}>Đặt lại</button>
-                        </div>
-                    </div>
-
-                    <div style={S.card}>
-                        <div style={S.cardHeader}>
-                            <p style={S.countText}>
-                                {loading ? "Đang tải..." : (
-                                    <>Tìm thấy <span style={S.countBold}>{history.length}</span> giao dịch</>
-                                )}
-                            </p>
                         </div>
 
-                        {loading ? (
-                            <div style={S.loadingState}>
-                                <Loader2 className="spin" size={28} color="#94a3b8" />
-                                <p style={S.emptyTitle}>Đang tải lịch sử đăng ký...</p>
+                        <div style={S.card}>
+                            <div style={S.cardHeader}>
+                                <p style={S.countText}>
+                                    {loading ? "Đang tải..." : (
+                                        <>Tìm thấy <span style={S.countBold}>{history.length}</span> giao dịch</>
+                                    )}
+                                </p>
                             </div>
-                        ) : error ? (
-                            <div style={S.errorState}>
-                                <XCircle size={28} color="#f43f5e" />
-                                <p style={S.emptyTitle}>{error}</p>
-                                <button style={S.retryBtn} onClick={fetchHistory}>Thử lại</button>
-                            </div>
-                        ) : history.length === 0 ? (
-                            <div style={S.emptyState}>
-                                <Search size={28} color="#334155" />
-                                <p style={S.emptyTitle}>Không tìm thấy giao dịch phù hợp</p>
-                                <p style={S.emptyDesc}>Thử đổi từ khóa hoặc xóa bộ lọc đang áp dụng</p>
-                            </div>
-                        ) : (
-                            <>
-                                <div className="table-wrap scroll-dark" style={S.scrollArea}>
-                                    <table style={S.table}>
-                                        <thead style={S.stickyHead}>
-                                            <tr>
-                                                <th style={S.th}>Hội viên</th>
-                                                <th style={S.th}>Mã giao dịch</th>
-                                                <th style={S.th}>Gói tập</th>
-                                                <th style={S.th}>Chi nhánh</th>
-                                                <th style={S.th}>Kênh mua</th>
 
-                                                <th style={S.thRight}>Số tiền</th>
-                                                <th style={S.th}>Trạng thái</th>
-                                                <th style={S.thCenter}>Hóa đơn</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {history.map((item, idx) => {
-                                                const rowKey = `${item.phone}-${item.planName}-${item.startDate}-${idx}`;
-                                                const isThisLoading = invoiceModal.open && invoiceModal.loading && invoiceModal.item === item;
-                                                return (
-                                                    <tr key={rowKey}>
-                                                        <td style={S.td}>
-                                                            <div style={S.memberRow}>
-                                                                <Avatar src={item.urlImg} alt={item.fullName} />
-                                                                <div>
-                                                                    <p style={S.memberName}>{item.fullName}</p>
-                                                                    <p style={S.memberPhone}><Phone size={10} />{item.phone}</p>
+                            {loading ? (
+                                <div style={S.loadingState}>
+                                    <div style={S.stateIconWrap(C.greenSoft)}>
+                                        <Loader2 className="spin" size={22} color={C.green} />
+                                    </div>
+                                    <p style={S.emptyTitle}>Đang tải lịch sử đăng ký...</p>
+                                </div>
+                            ) : error ? (
+                                <div style={S.errorState}>
+                                    <div style={S.stateIconWrap("rgba(225,29,72,0.10)")}>
+                                        <XCircle size={22} color="#e11d48" />
+                                    </div>
+                                    <p style={S.emptyTitle}>{error}</p>
+                                    <button style={S.retryBtn} className="retry-btn" onClick={fetchHistory}>Thử lại</button>
+                                </div>
+                            ) : history.length === 0 ? (
+                                <div style={S.emptyState}>
+                                    <div style={S.stateIconWrap(C.bgSubtle)}>
+                                        <Search size={22} color={C.textMuted} />
+                                    </div>
+                                    <p style={S.emptyTitle}>Không tìm thấy giao dịch phù hợp</p>
+                                    <p style={S.emptyDesc}>Thử đổi từ khóa hoặc xóa bộ lọc đang áp dụng</p>
+                                </div>
+                            ) : (
+                                <>
+                                    <div className="table-wrap scroll-dark" style={S.scrollArea}>
+                                        <table style={S.table}>
+                                            <thead style={S.stickyHead}>
+                                                <tr>
+                                                    <th style={S.thAccent}></th>
+                                                    <th style={S.th}>Hội viên</th>
+                                                    <th style={S.th}>Gói tập</th>
+                                                    <th style={S.th}>Chi nhánh</th>
+                                                    <th style={S.thCenter}>Kênh mua</th>
+                                                    <th style={S.thRight}>Số tiền</th>
+                                                    <th style={S.th}>Trạng thái</th>
+                                                    <th style={S.thCenter}>Thao tác</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {history.map((item, idx) => {
+                                                    const rowKey = `${item.phone}-${item.planName}-${item.startDate}-${idx}`;
+                                                    const isThisLoading = invoiceModal.open && invoiceModal.loading && invoiceModal.item === item;
+                                                    const accentColor = getRowAccentColor(item.phone || item.fullName || rowKey);
+                                                    return (
+                                                        <tr key={rowKey}>
+                                                            <td style={S.tdAccent(accentColor)}></td>
+                                                            <td style={S.td}>
+                                                                <div style={S.memberRow}>
+                                                                    <Avatar src={item.urlImg} alt={item.fullName} />
+                                                                    <div>
+                                                                        <p style={S.memberName}>{item.fullName}</p>
+                                                                        <p style={S.memberPhone}><Phone size={10} />{item.phone}</p>
+                                                                    </div>
                                                                 </div>
-                                                            </div>
-                                                        </td>
-                                                        <td>{item.orderCode}</td>
-                                                        <td style={S.td}><span style={S.planName}>{item.planName}</span></td>
-                                                        <td style={S.td}>
-                                                            <span style={S.branchTag}>
-                                                                <MapPin size={12} color="#475569" />
-                                                                {item.branchName || "—"}
-                                                            </span>
-                                                        </td>
-                                                        <td style={S.td}><ChannelBadge channel={item.purchaseChannel} /></td>
-
-                                                        <td style={S.tdRight}>
-                                                            <p style={S.amountMain}>{formatCurrency(item.amount)}</p>
-                                                            {item.amount !== item.originalAmount && (
-                                                                <p style={S.amountOld}>{formatCurrency(item.originalAmount)}</p>
-                                                            )}
-                                                        </td>
-                                                        <td style={S.td}><StatusBadge status={item.status} /></td>
-                                                        <td style={S.tdCenter}>
-                                                            <div style={S.actionStack}>
-                                                                <InvoiceButton item={item} onView={handleViewInvoice} loading={isThisLoading} />
-                                                                {item.status === "Paid" && (
-                                                                    <AdjustButton item={item} onClick={handleAdjustTransaction} />
+                                                            </td>
+                                                            <td style={S.td}><span style={S.planName}>{item.planName || "—"}</span></td>
+                                                            <td style={S.td}>
+                                                                <span style={S.branchTag}><MapPin size={12} color="#93a29b" />{item.branchName || "—"}</span>
+                                                            </td>
+                                                            <td style={S.tdCenter}><ChannelBadge channel={item.purchaseChannel} /></td>
+                                                            <td style={S.tdRight}>
+                                                                <p style={S.amountMain}>{formatCurrency(item.amount)}</p>
+                                                                {item.amount !== item.originalAmount && (
+                                                                    <p style={S.amountOld}>{formatCurrency(item.originalAmount)}</p>
                                                                 )}
-                                                            </div>
-                                                        </td>
-                                                    </tr>
-                                                );
-                                            })}
-                                        </tbody>
-                                    </table>
-                                </div>
+                                                            </td>
+                                                            <td style={S.td}><StatusBadge status={item.status} /></td>
+                                                            <td style={S.tdCenter}>
+                                                                <div style={S.actionStack}>
+                                                                    <button
+                                                                        type="button"
+                                                                        className="detail-btn"
+                                                                        style={S.detailBtn}
+                                                                        onClick={() => openDetail(item)}
+                                                                    >
+                                                                        Chi tiết
+                                                                        <ArrowRight size={13} />
+                                                                    </button>
+                                                                    <InvoiceButton item={item} onView={handleViewInvoice} loading={isThisLoading} />
+                                                                    {item.status === "Paid" && (
+                                                                        <AdjustButton item={item} onClick={handleAdjustTransaction} />
+                                                                    )}
+                                                                </div>
+                                                            </td>
+                                                        </tr>
+                                                    );
+                                                })}
+                                            </tbody>
+                                        </table>
+                                    </div>
 
-                                <div className="mobile-cards scroll-dark" style={S.scrollArea}>
-                                    {history.map((item, idx) => {
-                                        const rowKey = `${item.phone}-${item.planName}-${item.startDate}-${idx}`;
-                                        const isThisLoading = invoiceModal.open && invoiceModal.loading && invoiceModal.item === item;
-                                        return (
-                                            <div key={rowKey} style={{ borderRadius: 12, border: "1px solid #1e293b", padding: 16, backgroundColor: "#0b1220" }}>
-                                                <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
-                                                    <div style={S.memberRow}>
-                                                        <Avatar src={item.urlImg} alt={item.fullName} />
-                                                        <div>
-                                                            <p style={S.memberName}>{item.fullName}</p>
-                                                            <p style={S.memberPhone}><Phone size={10} />{item.phone}</p>
+                                    <div className="mobile-cards scroll-dark" style={S.scrollArea}>
+                                        {history.map((item, idx) => {
+                                            const rowKey = `${item.phone}-${item.planName}-${item.startDate}-${idx}`;
+                                            const isThisLoading = invoiceModal.open && invoiceModal.loading && invoiceModal.item === item;
+                                            const accentColor = getRowAccentColor(item.phone || item.fullName || rowKey);
+                                            return (
+                                                <div key={rowKey} style={{ borderRadius: 12, border: "1.5px solid #bfe8d4", borderLeft: `4px solid ${accentColor}`, padding: 16, backgroundColor: "#ffffff", boxShadow: "0 1px 2px rgba(15,36,25,0.04), 0 10px 22px -10px rgba(5,150,105,0.22)" }}>
+                                                    <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
+                                                        <div style={S.memberRow}>
+                                                            <Avatar src={item.urlImg} alt={item.fullName} />
+                                                            <div>
+                                                                <p style={S.memberName}>{item.fullName}</p>
+                                                                <p style={S.memberPhone}><Phone size={10} />{item.phone}</p>
+                                                            </div>
                                                         </div>
+                                                        <StatusBadge status={item.status} />
                                                     </div>
-                                                    <StatusBadge status={item.status} />
+                                                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 10, fontSize: 13 }}>
+                                                        <span style={{ color: "#0f2419" }}>{item.planName}</span>
+                                                        <ChannelBadge channel={item.purchaseChannel} />
+                                                    </div>
+                                                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 8 }}>
+                                                        <span style={S.branchTag}><MapPin size={12} color="#93a29b" />{item.branchName || "—"}</span>
+                                                    </div>
+                                                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 8, fontSize: 11, color: "#5b6b64" }}>
+                                                        <span>{formatDate(item.startDate)} → {formatDate(item.expiryDate)}</span>
+                                                        <span style={{ fontSize: 13, fontWeight: 600, color: "#0f2419" }}>{formatCurrency(item.amount)}</span>
+                                                    </div>
+                                                    <div style={{ marginTop: 12, display: "flex", justifyContent: "flex-end", gap: 8, flexWrap: "wrap" }}>
+                                                        <button type="button" className="detail-btn" style={S.detailBtn} onClick={() => openDetail(item)}>
+                                                            Chi tiết
+                                                            <ArrowRight size={13} />
+                                                        </button>
+                                                        <InvoiceButton item={item} onView={handleViewInvoice} loading={isThisLoading} />
+                                                        {item.status === "Paid" && (
+                                                            <AdjustButton item={item} onClick={handleAdjustTransaction} />
+                                                        )}
+                                                    </div>
                                                 </div>
-                                                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 12, fontSize: 13 }}>
-                                                    <span style={{ color: "#cbd5e1" }}>{item.planName}</span>
-                                                    <ChannelBadge channel={item.purchaseChannel} />
-                                                </div>
-                                                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 8 }}>
-                                                    <span style={S.branchTag}><MapPin size={12} color="#475569" />{item.branchName || "—"}</span>
-                                                </div>
-                                                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 8, fontSize: 11, color: "#64748b" }}>
-                                                    <span>{formatDate(item.startDate)} → {formatDate(item.expiryDate)}</span>
-                                                    <span style={{ fontSize: 13, fontWeight: 600, color: "#f1f5f9" }}>{formatCurrency(item.amount)}</span>
-                                                </div>
-                                                <div style={{ marginTop: 12, display: "flex", justifyContent: "flex-end", gap: 8 }}>
-                                                    <InvoiceButton item={item} onView={handleViewInvoice} loading={isThisLoading} />
-                                                    {item.status === "Paid" && (
-                                                        <AdjustButton item={item} onClick={handleAdjustTransaction} />
-                                                    )}
-                                                </div>
-                                            </div>
-                                        );
-                                    })}
-                                </div>
-                            </>
-                        )}
-                    </div>
-                </main>
+                                            );
+                                        })}
+                                    </div>
+                                </>
+                            )}
+                        </div>
+                    </main>
+                )}
+
+                {view === "detail" && selectedItem && (
+                    <TransactionDetailPage
+                        transactionId={selectedItem.transactionId ?? selectedItem.id}
+                        fallbackItem={selectedItem}
+                        onBack={backToList}
+                        onEdit={openAdjustModalById}
+                    />
+                )}
             </div>
 
             <InvoiceModal

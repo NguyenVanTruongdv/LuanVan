@@ -268,18 +268,18 @@ export default function AddBranch() {
         <div className="ab-root">
             <style>{`
         .ab-root {
-          --cyan: #06B6D4;
-          --cyan-dark: #0E7490;
-          --cyan-soft: rgba(6, 182, 212, 0.14);
-          --ink: #F1F5F9;
-          --muted: #94A3B8;
-          --muted-dim: #64748B;
-          --line: #334155;
-          --bg: #0B1120;
-          --card-bg: #1E293B;
-          --input-bg: #0F172A;
-          --red: #F87171;
-          --red-bg: rgba(248, 113, 113, 0.1);
+          --cyan: #16A34A;
+          --cyan-dark: #15803D;
+          --cyan-soft: rgba(22, 163, 74, 0.12);
+          --ink: #0F172A;
+          --muted: #64748B;
+          --muted-dim: #94A3B8;
+          --line: #E2E8F0;
+          --bg: #F8FAFC;
+          --card-bg: #FFFFFF;
+          --input-bg: #F8FAFC;
+          --red: #EF4444;
+          --red-bg: rgba(239, 68, 68, 0.08);
           font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
           background: var(--bg);
           min-height: 100vh;
@@ -312,7 +312,7 @@ export default function AddBranch() {
           border: 1px solid var(--line);
           border-radius: 14px;
           padding: 26px;
-          box-shadow: 0 8px 30px rgba(0,0,0,0.35);
+          box-shadow: 0 4px 16px rgba(15, 23, 42, 0.06);
         }
         .ab-card-title {
           font-size: 16px;
@@ -398,7 +398,7 @@ export default function AddBranch() {
         }
         .ab-input-wrap.has-error input:focus,
         .ab-input-wrap.has-error textarea:focus {
-          box-shadow: 0 0 0 3px rgba(248, 113, 113, 0.15);
+          box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.12);
         }
 
         .ab-error {
@@ -442,8 +442,8 @@ export default function AddBranch() {
           align-items: center;
           gap: 6px;
           background: var(--cyan-soft);
-          color: var(--cyan);
-          border: 1px solid rgba(6, 182, 212, 0.35);
+          color: var(--cyan-dark);
+          border: 1px solid rgba(22, 163, 74, 0.3);
           border-radius: 999px;
           padding: 4px 6px 4px 10px;
           font-size: 12.5px;
@@ -452,14 +452,14 @@ export default function AddBranch() {
         .ab-chip button {
           border: none;
           background: transparent;
-          color: var(--cyan);
+          color: var(--cyan-dark);
           cursor: pointer;
           display: flex;
           align-items: center;
           padding: 2px;
           border-radius: 50%;
         }
-        .ab-chip button:hover { background: rgba(6, 182, 212, 0.25); }
+        .ab-chip button:hover { background: rgba(22, 163, 74, 0.2); }
 
         .ab-manager-menu {
           position: absolute;
@@ -469,7 +469,7 @@ export default function AddBranch() {
           background: var(--card-bg);
           border: 1px solid var(--line);
           border-radius: 12px;
-          box-shadow: 0 12px 30px rgba(0,0,0,0.45);
+          box-shadow: 0 12px 30px rgba(15, 23, 42, 0.14);
           z-index: 10;
           overflow: hidden;
         }
@@ -491,7 +491,7 @@ export default function AddBranch() {
           border-radius: 8px;
           cursor: pointer;
         }
-        .ab-manager-option:hover { background: var(--input-bg); }
+        .ab-manager-option:hover { background: var(--bg); }
         .ab-manager-check {
           width: 18px;
           height: 18px;
@@ -506,7 +506,7 @@ export default function AddBranch() {
         .ab-manager-option.selected .ab-manager-check {
           background: var(--cyan);
           border-color: var(--cyan);
-          color: #04222B;
+          color: #FFFFFF;
         }
         .ab-manager-name { font-size: 14px; font-weight: 600; color: var(--ink); }
         .ab-manager-role { font-size: 12px; color: var(--muted); }
@@ -548,7 +548,7 @@ export default function AddBranch() {
         .ab-dropzone-btn {
           margin-top: 4px;
           border: 1px solid var(--cyan);
-          color: var(--cyan);
+          color: var(--cyan-dark);
           background: transparent;
           border-radius: 8px;
           padding: 7px 16px;
@@ -586,7 +586,7 @@ export default function AddBranch() {
           width: 22px;
           height: 22px;
           border-radius: 50%;
-          background: rgba(11, 17, 32, 0.75);
+          background: rgba(15, 23, 42, 0.55);
           color: #fff;
           border: none;
           display: flex;
@@ -594,7 +594,7 @@ export default function AddBranch() {
           justify-content: center;
           cursor: pointer;
         }
-        .ab-preview-remove:hover { background: rgba(11, 17, 32, 0.92); }
+        .ab-preview-remove:hover { background: rgba(15, 23, 42, 0.75); }
         .ab-preview-type {
           padding: 8px;
           border-top: 1px solid var(--line);
@@ -634,21 +634,21 @@ export default function AddBranch() {
           color: var(--ink);
           transition: background 0.15s, border-color 0.15s;
         }
-        .ab-btn:hover { background: var(--input-bg); }
+        .ab-btn:hover { background: var(--bg); }
         .ab-btn:disabled { opacity: 0.6; cursor: not-allowed; }
         .ab-btn-primary {
           background: var(--cyan);
           border-color: var(--cyan);
-          color: #04222B;
+          color: #FFFFFF;
         }
-        .ab-btn-primary:hover { background: var(--cyan-dark); border-color: var(--cyan-dark); color: #F1F5F9; }
+        .ab-btn-primary:hover { background: var(--cyan-dark); border-color: var(--cyan-dark); color: #FFFFFF; }
 
         .ab-toast {
           max-width: 1200px;
           margin-top: 16px;
-          background: rgba(34, 197, 94, 0.12);
-          border: 1px solid rgba(34, 197, 94, 0.35);
-          color: #4ADE80;
+          background: rgba(22, 163, 74, 0.1);
+          border: 1px solid rgba(22, 163, 74, 0.3);
+          color: #15803D;
           padding: 12px 16px;
           border-radius: 10px;
           font-size: 14px;
@@ -657,9 +657,9 @@ export default function AddBranch() {
         .ab-toast-error {
           max-width: 1200px;
           margin-top: 16px;
-          background: rgba(248, 113, 113, 0.12);
-          border: 1px solid rgba(248, 113, 113, 0.35);
-          color: #F87171;
+          background: rgba(239, 68, 68, 0.08);
+          border: 1px solid rgba(239, 68, 68, 0.3);
+          color: #B91C1C;
           padding: 12px 16px;
           border-radius: 10px;
           font-size: 14px;

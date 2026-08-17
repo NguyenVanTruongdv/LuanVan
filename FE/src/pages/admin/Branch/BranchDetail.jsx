@@ -1,4 +1,7 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useNavigate, useParams } from "react-router-dom";
+import adminApi from "../../../api/adminApi";
+
 function Icon({ name, size = 18 }) {
     const common = {
         width: size,
@@ -109,34 +112,163 @@ function Icon({ name, size = 18 }) {
                     <polyline points="12 5 19 12 12 19" />
                 </svg>
             );
+        case "arrow-left":
+            return (
+                <svg {...common} width="15" height="15">
+                    <line x1="19" y1="12" x2="5" y2="12" />
+                    <polyline points="12 19 5 12 12 5" />
+                </svg>
+            );
         default:
             return null;
     }
 }
 
+function formatDate(iso) {
+    if (!iso) return "Chưa cập nhật";
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return iso;
+    const pad = (n) => String(n).padStart(2, "0");
+    return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`;
+}
 
+function getImageUrl(rawImg) {
+    if (!rawImg) return null;
+    if (typeof rawImg === "string") return rawImg;
+    return rawImg.url ?? rawImg.imageUrl ?? rawImg.imagePath ?? rawImg.path ?? null;
+}
+
+function getImageId(rawImg, idx) {
+    if (rawImg && typeof rawImg === "object") {
+        return rawImg.id ?? rawImg.imageId ?? idx;
+    }
+    return idx;
+}
 
 export default function BranchDetailOfAdmin() {
-    const [branch, setBranch] = useState(INITIAL_BRANCH);
+    const { id } = useParams();
+    const navigate = useNavigate();
+
+    const [branch, setBranch] = useState(null);
+    const [images, setImages] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
+
     const [activeImage, setActiveImage] = useState(0);
+
     const [editOpen, setEditOpen] = useState(false);
     const [draft, setDraft] = useState(null);
+    const [saving, setSaving] = useState(false);
+
+    const [availableManagers, setAvailableManagers] = useState([]);
     const [managerMenuOpen, setManagerMenuOpen] = useState(false);
     const [managerSearch, setManagerSearch] = useState("");
 
-    const managers = useMemo(
-        () => EMPLOYEES.filter((e) => branch.managerIds.includes(e.id)),
-        [branch.managerIds]
-    );
+    // Tải chi tiết chi nhánh + ảnh chi nhánh từ API thật
+    useEffect(() => {
+        if (!id) return;
+        let cancelled = false;
 
-    const openEdit = () => {
-        setDraft({ ...branch, managerIds: [...branch.managerIds] });
+        async function load() {
+            setLoading(true);
+            setError(null);
+            try {
+                const [detailRes, imagesRes] = await Promise.all([
+                    adminApi.getDetailBranch(id),
+                    adminApi.getImagesBranch(id).catch(() => null), // ảnh có thể chưa có, không chặn trang
+                ]);
+
+                const detail = detailRes?.data ?? detailRes;
+                const imgsRaw = imagesRes?.data ?? imagesRes ?? [];
+                const imgs = Array.isArray(imgsRaw) ? imgsRaw : imgsRaw?.items ?? [];
+
+                if (!cancelled) {
+                    setBranch(detail);
+                    setImages(imgs);
+                    setActiveImage(0);
+                }
+            } catch (err) {
+                console.error(err);
+                if (!cancelled) setError("Không thể tải thông tin chi nhánh. Vui lòng thử lại.");
+            } finally {
+                if (!cancelled) setLoading(false);
+            }
+        }
+
+        load();
+        return () => {
+            cancelled = true;
+        };
+    }, [id]);
+
+    const managers = branch?.managers ?? [];
+
+    // Danh sách nhân viên có thể chọn làm quản lý trong modal sửa: gộp danh sách
+    // "còn trống" từ BE với các quản lý hiện tại của chi nhánh (để họ vẫn hiện ra đã được chọn sẵn)
+    const managerOptions = useMemo(() => {
+        const map = new Map();
+        availableManagers.forEach((m) => map.set(m.employeeId ?? m.id, m));
+        managers.forEach((m) => map.set(m.employeeId ?? m.id, m));
+        return Array.from(map.values());
+    }, [availableManagers, managers]);
+
+    const filteredManagerOptions = useMemo(() => {
+        const q = managerSearch.trim().toLowerCase();
+        if (!q) return managerOptions;
+        return managerOptions.filter(
+            (e) =>
+                (e.fullName || "").toLowerCase().includes(q) ||
+                (e.role || e.roleName || "").toLowerCase().includes(q)
+        );
+    }, [managerOptions, managerSearch]);
+
+    const openEdit = async () => {
+        if (!branch) return;
+        setDraft({
+            branchName: branch.branchName,
+            address: branch.address,
+            phone: branch.phone,
+            status: branch.status,
+            managerIds: managers.map((m) => m.employeeId ?? m.id),
+        });
         setEditOpen(true);
+
+        if (availableManagers.length === 0) {
+            try {
+                const res = await adminApi.getAvailableManager();
+                setAvailableManagers(res?.data ?? res ?? []);
+            } catch (err) {
+                console.error(err);
+            }
+        }
     };
 
-    const saveEdit = () => {
-        setBranch(draft);
-        setEditOpen(false);
+    const saveEdit = async () => {
+        if (!branch || !draft) return;
+        setSaving(true);
+        try {
+            // TODO: xác nhận lại với BE field chính xác nhận trong body updateBranch
+            // (branchName/address/phone/status có khớp tên field BE mong đợi không).
+            // Việc gán quản lý (managerIds) hiện gửi kèm ở đây — nếu BE có endpoint
+            // riêng để gán quản lý chi nhánh, cần tách ra gọi endpoint đó thay vì
+            // gộp chung vào updateBranch.
+            await adminApi.updateBranch(branch.branchId, {
+                branchName: draft.branchName,
+                address: draft.address,
+                phone: draft.phone,
+                status: draft.status,
+                managerIds: draft.managerIds,
+            });
+
+            const detailRes = await adminApi.getDetailBranch(branch.branchId);
+            setBranch(detailRes?.data ?? detailRes);
+            setEditOpen(false);
+        } catch (err) {
+            console.error(err);
+            alert("Cập nhật chi nhánh thất bại. Vui lòng thử lại.");
+        } finally {
+            setSaving(false);
+        }
     };
 
     const toggleDraftManager = (id) => {
@@ -148,30 +280,24 @@ export default function BranchDetailOfAdmin() {
         }));
     };
 
-    const filteredEmployees = useMemo(() => {
-        const q = managerSearch.trim().toLowerCase();
-        if (!q) return EMPLOYEES;
-        return EMPLOYEES.filter((e) => e.name.toLowerCase().includes(q) || e.role.toLowerCase().includes(q));
-    }, [managerSearch]);
-
     return (
         <div className="bd-root">
             <style>{`
         .bd-root {
-          --cyan: #06B6D4;
-          --cyan-dark: #0E7490;
-          --cyan-soft: rgba(6, 182, 212, 0.14);
-          --ink: #F1F5F9;
-          --muted: #94A3B8;
-          --muted-dim: #64748B;
-          --line: #334155;
-          --bg: #0B1120;
-          --card-bg: #1E293B;
-          --input-bg: #0F172A;
-          --red: #F87171;
-          --red-soft: rgba(248, 113, 113, 0.12);
-          --green: #4ADE80;
-          --green-soft: rgba(74, 222, 128, 0.12);
+          --cyan: #16A34A;
+          --cyan-dark: #15803D;
+          --cyan-soft: rgba(22, 163, 74, 0.12);
+          --ink: #0F172A;
+          --muted: #64748B;
+          --muted-dim: #94A3B8;
+          --line: #CBD5E1;
+          --bg: #F1F5F9;
+          --card-bg: #FFFFFF;
+          --input-bg: #F8FAFC;
+          --red: #DC2626;
+          --red-soft: rgba(220, 38, 38, 0.1);
+          --green: #15803D;
+          --green-soft: rgba(22, 163, 74, 0.12);
           font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
           background: var(--bg);
           min-height: 100vh;
@@ -191,8 +317,43 @@ export default function BranchDetailOfAdmin() {
           margin-bottom: 18px;
           flex-wrap: wrap;
         }
-        .bd-breadcrumb .current { color: var(--cyan); font-weight: 600; }
+        .bd-breadcrumb .current { color: var(--cyan-dark); font-weight: 700; }
         .bd-breadcrumb .sep { color: var(--muted-dim); }
+        .bd-back-btn {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          background: transparent;
+          border: none;
+          color: var(--muted);
+          font-size: 13px;
+          font-weight: 600;
+          cursor: pointer;
+          padding: 0;
+        }
+        .bd-back-btn:hover { color: var(--cyan-dark); }
+
+        .bd-state {
+          background: var(--card-bg);
+          border: 1.5px solid var(--line);
+          border-radius: 16px;
+          padding: 60px 24px;
+          text-align: center;
+          color: var(--muted);
+          font-size: 14px;
+        }
+        .bd-state.error { color: var(--red); border-color: rgba(220, 38, 38, 0.35); }
+        .bd-retry-btn {
+          margin-top: 12px;
+          display: inline-flex;
+          border: 1.5px solid var(--line);
+          background: var(--input-bg);
+          color: var(--ink);
+          border-radius: 8px;
+          padding: 8px 16px;
+          cursor: pointer;
+          font-size: 13px;
+        }
 
         .bd-layout {
           display: grid;
@@ -207,7 +368,7 @@ export default function BranchDetailOfAdmin() {
           position: relative;
           border-radius: 16px;
           overflow: hidden;
-          border: 1px solid var(--line);
+          border: 1.5px solid var(--line);
           aspect-ratio: 16 / 10;
           background: var(--card-bg);
         }
@@ -218,7 +379,8 @@ export default function BranchDetailOfAdmin() {
           display: flex;
           align-items: center;
           justify-content: center;
-          color: rgba(241,245,249,0.55);
+          color: var(--muted-dim);
+          background: var(--input-bg);
         }
         .bd-gallery-tag {
           position: absolute;
@@ -227,8 +389,8 @@ export default function BranchDetailOfAdmin() {
           display: flex;
           align-items: center;
           gap: 6px;
-          background: rgba(11, 17, 32, 0.7);
-          color: var(--ink);
+          background: rgba(15, 23, 42, 0.65);
+          color: #FFFFFF;
           font-size: 12px;
           font-weight: 700;
           letter-spacing: 0.03em;
@@ -256,7 +418,7 @@ export default function BranchDetailOfAdmin() {
           display: flex;
           align-items: center;
           justify-content: center;
-          color: rgba(241,245,249,0.5);
+          color: var(--muted-dim);
           transition: border-color 0.15s;
         }
         .bd-thumb.active { border-color: var(--cyan); }
@@ -270,7 +432,7 @@ export default function BranchDetailOfAdmin() {
           align-items: center;
           justify-content: center;
           gap: 8px;
-          border: 1px solid var(--line);
+          border: 1.5px solid var(--line);
           background: var(--card-bg);
           color: var(--ink);
           border-radius: 10px;
@@ -281,17 +443,17 @@ export default function BranchDetailOfAdmin() {
           text-decoration: none;
           transition: border-color 0.15s, color 0.15s;
         }
-        .bd-manage-images-btn:hover { border-color: var(--cyan); color: var(--cyan); }
+        .bd-manage-images-btn:hover { border-color: var(--cyan); color: var(--cyan-dark); }
 
         /* Info panel */
         .bd-info-card {
           position: relative;
           background: var(--card-bg);
-          border: 1px solid var(--line);
+          border: 1.5px solid var(--line);
           border-radius: 16px;
           padding: 28px 26px 24px;
           overflow: hidden;
-          box-shadow: 0 8px 30px rgba(0,0,0,0.35);
+          box-shadow: 0 4px 16px rgba(15, 23, 42, 0.06);
         }
         .bd-info-card::before {
           content: "";
@@ -310,16 +472,16 @@ export default function BranchDetailOfAdmin() {
         }
         .bd-code-row { display: flex; align-items: center; gap: 10px; }
         .bd-code { font-size: 14px; font-weight: 700; color: var(--muted); }
-        .bd-pill { font-size: 12px; font-weight: 700; padding: 3px 10px; border-radius: 999px; display: inline-flex; align-items: center; gap: 5px; }
-        .bd-pill.active { background: var(--green-soft); color: var(--green); }
-        .bd-pill.inactive { background: var(--red-soft); color: var(--red); }
+        .bd-pill { font-size: 12px; font-weight: 700; padding: 3px 10px; border-radius: 999px; display: inline-flex; align-items: center; gap: 5px; border: 1px solid transparent; }
+        .bd-pill.active { background: var(--green-soft); color: var(--green); border-color: rgba(22, 163, 74, 0.35); }
+        .bd-pill.inactive { background: var(--red-soft); color: var(--red); border-color: rgba(220, 38, 38, 0.35); }
         .bd-pill .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
 
         .bd-edit-btn {
           display: flex;
           align-items: center;
           gap: 6px;
-          border: 1px solid var(--line);
+          border: 1.5px solid var(--line);
           background: var(--input-bg);
           color: var(--ink);
           border-radius: 9px;
@@ -329,7 +491,7 @@ export default function BranchDetailOfAdmin() {
           cursor: pointer;
           white-space: nowrap;
         }
-        .bd-edit-btn:hover { border-color: var(--cyan); color: var(--cyan); }
+        .bd-edit-btn:hover { border-color: var(--cyan); color: var(--cyan-dark); }
 
         .bd-name { font-size: 22px; font-weight: 700; margin: 0 0 10px; color: var(--ink); }
         .bd-address {
@@ -342,15 +504,16 @@ export default function BranchDetailOfAdmin() {
           margin-bottom: 22px;
           line-height: 1.5;
         }
-        .bd-address svg { color: var(--cyan); flex-shrink: 0; margin-top: 3px; }
+        .bd-address svg { color: var(--cyan-dark); flex-shrink: 0; margin-top: 3px; }
 
         .bd-grid {
           display: grid;
           grid-template-columns: 1fr 1fr;
           gap: 18px 16px;
-          padding: 18px 0;
-          border-top: 1px solid var(--line);
-          border-bottom: 1px solid var(--line);
+          padding: 18px;
+          border: 1.5px solid var(--line);
+          border-radius: 12px;
+          background: var(--input-bg);
           margin-bottom: 22px;
         }
         .bd-grid-item .label {
@@ -369,7 +532,7 @@ export default function BranchDetailOfAdmin() {
           align-items: center;
           gap: 6px;
         }
-        .bd-grid-item .value svg { color: var(--cyan); }
+        .bd-grid-item .value svg { color: var(--cyan-dark); }
 
         .bd-section-title {
           display: flex;
@@ -382,7 +545,7 @@ export default function BranchDetailOfAdmin() {
           text-transform: uppercase;
           margin-bottom: 14px;
         }
-        .bd-section-title svg { color: var(--cyan); }
+        .bd-section-title svg { color: var(--cyan-dark); }
 
         .bd-manager-list { display: flex; flex-direction: column; gap: 14px; }
         .bd-manager-item { display: flex; gap: 12px; align-items: flex-start; position: relative; }
@@ -400,7 +563,8 @@ export default function BranchDetailOfAdmin() {
           height: 32px;
           border-radius: 50%;
           background: var(--cyan-soft);
-          color: var(--cyan);
+          color: var(--cyan-dark);
+          border: 1.5px solid rgba(22, 163, 74, 0.35);
           display: flex;
           align-items: center;
           justify-content: center;
@@ -417,7 +581,7 @@ export default function BranchDetailOfAdmin() {
         .bd-modal-overlay {
           position: fixed;
           inset: 0;
-          background: rgba(2, 6, 15, 0.65);
+          background: rgba(15, 23, 42, 0.55);
           display: flex;
           align-items: center;
           justify-content: center;
@@ -427,19 +591,20 @@ export default function BranchDetailOfAdmin() {
         }
         .bd-modal {
           background: var(--card-bg);
-          border: 1px solid var(--line);
+          border: 1.5px solid var(--line);
+          border-top: 4px solid var(--cyan);
           border-radius: 14px;
           padding: 26px;
           width: 100%;
           max-width: 460px;
-          box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+          box-shadow: 0 20px 50px rgba(15, 23, 42, 0.25);
         }
         .bd-modal h3 { margin: 0 0 20px; font-size: 17px; font-weight: 700; color: var(--ink); }
         .bd-field { margin-bottom: 16px; }
         .bd-field label { display: block; font-size: 13px; font-weight: 600; color: var(--ink); margin-bottom: 7px; }
         .bd-field input, .bd-field textarea {
           width: 100%;
-          border: 1px solid var(--line);
+          border: 1.5px solid var(--line);
           border-radius: 10px;
           padding: 10px 13px;
           font-size: 14px;
@@ -455,7 +620,7 @@ export default function BranchDetailOfAdmin() {
         .bd-manager-box { position: relative; }
         .bd-manager-trigger {
           width: 100%;
-          border: 1px solid var(--line);
+          border: 1.5px solid var(--line);
           border-radius: 10px;
           padding: 9px 13px;
           background: var(--input-bg);
@@ -468,28 +633,27 @@ export default function BranchDetailOfAdmin() {
           min-height: 42px;
         }
         .bd-manager-trigger:hover { border-color: var(--cyan); }
-        .bd-manager-trigger svg.chev { color: var(--muted); transition: transform 0.15s; flex-shrink: 0; }
         .bd-manager-trigger.open svg.chev { transform: rotate(180deg); }
         .bd-manager-placeholder { color: var(--muted-dim); font-size: 13.5px; font-weight: 500; }
         .bd-manager-chips { display: flex; flex-wrap: wrap; gap: 6px; }
         .bd-chip {
           display: flex; align-items: center; gap: 6px;
-          background: var(--cyan-soft); color: var(--cyan);
-          border: 1px solid rgba(6, 182, 212, 0.35);
+          background: var(--cyan-soft); color: var(--cyan-dark);
+          border: 1px solid rgba(22, 163, 74, 0.3);
           border-radius: 999px; padding: 3px 6px 3px 10px;
           font-size: 12px; font-weight: 600;
         }
-        .bd-chip button { border: none; background: transparent; color: var(--cyan); cursor: pointer; display: flex; align-items: center; padding: 2px; border-radius: 50%; }
-        .bd-chip button:hover { background: rgba(6, 182, 212, 0.25); }
+        .bd-chip button { border: none; background: transparent; color: var(--cyan-dark); cursor: pointer; display: flex; align-items: center; padding: 2px; border-radius: 50%; }
+        .bd-chip button:hover { background: rgba(22, 163, 74, 0.2); }
 
         .bd-manager-menu {
           position: absolute; top: calc(100% + 6px); left: 0; right: 0;
-          background: var(--card-bg); border: 1px solid var(--line); border-radius: 12px;
-          box-shadow: 0 12px 30px rgba(0,0,0,0.45); z-index: 10; overflow: hidden;
+          background: var(--card-bg); border: 1.5px solid var(--line); border-radius: 12px;
+          box-shadow: 0 12px 30px rgba(15, 23, 42, 0.14); z-index: 10; overflow: hidden;
         }
-        .bd-manager-search { padding: 9px; border-bottom: 1px solid var(--line); }
+        .bd-manager-search { padding: 9px; border-bottom: 1.5px solid var(--line); }
         .bd-manager-search input {
-          width: 100%; border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px 8px 32px;
+          width: 100%; border: 1.5px solid var(--line); border-radius: 8px; padding: 8px 10px 8px 32px;
           font-size: 13.5px; color: var(--ink); background: var(--input-bg); outline: none;
         }
         .bd-manager-search-wrap { position: relative; }
@@ -501,11 +665,12 @@ export default function BranchDetailOfAdmin() {
           width: 17px; height: 17px; border-radius: 5px; border: 1.5px solid var(--line);
           display: flex; align-items: center; justify-content: center; flex-shrink: 0; color: transparent;
         }
-        .bd-manager-option.selected .bd-manager-check { background: var(--cyan); border-color: var(--cyan); color: #04222B; }
+        .bd-manager-option.selected .bd-manager-check { background: var(--cyan); border-color: var(--cyan); color: #FFFFFF; }
+        .bd-manager-empty-option { padding: 10px; font-size: 13px; color: var(--muted); text-align: center; }
 
         .bd-status-toggle { display: flex; gap: 8px; }
         .bd-status-opt {
-          flex: 1; text-align: center; padding: 9px; border-radius: 9px; border: 1px solid var(--line);
+          flex: 1; text-align: center; padding: 9px; border-radius: 9px; border: 1.5px solid var(--line);
           background: var(--input-bg); color: var(--muted); font-size: 13px; font-weight: 700; cursor: pointer;
         }
         .bd-status-opt.selected.active { border-color: var(--green); color: var(--green); background: var(--green-soft); }
@@ -514,11 +679,12 @@ export default function BranchDetailOfAdmin() {
         .bd-modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 22px; }
         .bd-btn {
           border-radius: 10px; padding: 10px 20px; font-size: 14px; font-weight: 700; cursor: pointer;
-          border: 1px solid var(--line); background: var(--card-bg); color: var(--ink);
+          border: 1.5px solid var(--line); background: var(--card-bg); color: var(--ink);
         }
-        .bd-btn:hover { background: var(--input-bg); }
-        .bd-btn-primary { background: var(--cyan); border-color: var(--cyan); color: #04222B; }
-        .bd-btn-primary:hover { background: var(--cyan-dark); border-color: var(--cyan-dark); color: var(--ink); }
+        .bd-btn:hover { background: var(--input-bg); border-color: var(--muted); }
+        .bd-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+        .bd-btn-primary { background: var(--cyan); border-color: var(--cyan); color: #FFFFFF; }
+        .bd-btn-primary:hover { background: var(--cyan-dark); border-color: var(--cyan-dark); color: #FFFFFF; }
 
         @media (max-width: 1024px) {
           .bd-layout { grid-template-columns: 1fr; }
@@ -535,101 +701,135 @@ export default function BranchDetailOfAdmin() {
       `}</style>
 
             <div className="bd-breadcrumb">
-                <span>Trang chủ</span>
+                <button type="button" className="bd-back-btn" onClick={() => navigate(-1)}>
+                    <Icon name="arrow-left" size={14} /> Quay lại
+                </button>
                 <span className="sep">›</span>
                 <span>Quản lý chi nhánh</span>
                 <span className="sep">›</span>
                 <span className="current">Chi tiết chi nhánh</span>
             </div>
 
-            <div className="bd-layout">
-                <div>
-                    <div className="bd-gallery-main">
-                        <div className="bd-gallery-tag"><Icon name="image" size={13} /> Ảnh</div>
-                        <div className="bd-gallery-placeholder" style={{ background: `linear-gradient(135deg, ${GALLERY[activeImage].tone}, #0B1120)` }}>
-                            <Icon name="building" size={56} />
-                        </div>
-                    </div>
-                    <div className="bd-thumbs">
-                        {GALLERY.map((g, idx) => (
-                            <div
-                                key={g.id}
-                                className={`bd-thumb${idx === activeImage ? " active" : ""}`}
-                                onClick={() => setActiveImage(idx)}
-                            >
-                                <div style={{ width: "100%", height: "100%", background: `linear-gradient(135deg, ${g.tone}, #0B1120)`, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                                    <Icon name="building" size={22} />
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                    <a href="/admin/branches-img" className="bd-manage-images-btn">
-                        <Icon name="images-stack" />
-                        Quản lý hình ảnh chi nhánh
-                        <Icon name="arrow-right" />
-                    </a>
-                </div>
+            {loading && <div className="bd-state">Đang tải thông tin chi nhánh...</div>}
 
-                <div className="bd-info-card">
-                    <div className="bd-info-top">
-                        <div className="bd-code-row">
-                            <span className="bd-code">#{branch.code}</span>
-                            <span className={`bd-pill ${branch.status}`}>
-                                <span className="dot" />
-                                {branch.status === "active" ? "Đang hoạt động" : "Ngưng hoạt động"}
-                            </span>
+            {!loading && error && (
+                <div className="bd-state error">
+                    {error}
+                    <br />
+                    <button className="bd-retry-btn" onClick={() => navigate(0)}>Thử lại</button>
+                </div>
+            )}
+
+            {!loading && !error && !branch && (
+                <div className="bd-state">Không tìm thấy chi nhánh này.</div>
+            )}
+
+            {!loading && !error && branch && (
+                <div className="bd-layout">
+                    <div>
+                        <div className="bd-gallery-main">
+                            <div className="bd-gallery-tag"><Icon name="image" size={13} /> Ảnh</div>
+                            {getImageUrl(images[activeImage]) ? (
+                                <img src={getImageUrl(images[activeImage])} alt={branch.branchName} />
+                            ) : (
+                                <div className="bd-gallery-placeholder">
+                                    <Icon name="building" size={56} />
+                                </div>
+                            )}
                         </div>
-                        <button type="button" className="bd-edit-btn" onClick={openEdit}>
-                            <Icon name="edit" /> Chỉnh sửa thông tin
+
+                        {images.length > 0 && (
+                            <div className="bd-thumbs">
+                                {images.map((img, idx) => (
+                                    <div
+                                        key={getImageId(img, idx)}
+                                        className={`bd-thumb${idx === activeImage ? " active" : ""}`}
+                                        onClick={() => setActiveImage(idx)}
+                                    >
+                                        {getImageUrl(img) ? (
+                                            <img src={getImageUrl(img)} alt="" />
+                                        ) : (
+                                            <Icon name="building" size={22} />
+                                        )}
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+
+                        <button
+                            type="button"
+                            className="bd-manage-images-btn"
+                            onClick={() => navigate(`/admin/branches-img`)}
+                        >
+                            <Icon name="images-stack" />
+                            Quản lý hình ảnh chi nhánh
+                            <Icon name="arrow-right" />
                         </button>
                     </div>
 
-                    <h1 className="bd-name">{branch.branch_name}</h1>
-                    <div className="bd-address">
-                        <Icon name="pin" />
-                        {branch.address}
-                    </div>
+                    <div className="bd-info-card">
+                        <div className="bd-info-top">
+                            <div className="bd-code-row">
+                                <span className="bd-code">#{branch.branchId}</span>
+                                <span className={`bd-pill ${branch.status === "Active" ? "active" : "inactive"}`}>
+                                    <span className="dot" />
+                                    {branch.status === "Active" ? "Đang hoạt động" : "Ngưng hoạt động"}
+                                </span>
+                            </div>
+                            <button type="button" className="bd-edit-btn" onClick={openEdit}>
+                                <Icon name="edit" /> Chỉnh sửa thông tin
+                            </button>
+                        </div>
 
-                    <div className="bd-grid">
-                        <div className="bd-grid-item">
-                            <div className="label">Số điện thoại</div>
-                            <div className="value"><Icon name="phone" />{branch.phone || "Chưa cập nhật"}</div>
+                        <h1 className="bd-name">{branch.branchName}</h1>
+                        <div className="bd-address">
+                            <Icon name="pin" />
+                            {branch.address}
                         </div>
-                        <div className="bd-grid-item">
-                            <div className="label">Ngày tạo</div>
-                            <div className="value"><Icon name="calendar" />{branch.createdAt}</div>
-                        </div>
-                        <div className="bd-grid-item">
-                            <div className="label">Số quản lý</div>
-                            <div className="value"><Icon name="users" />{managers.length} người</div>
-                        </div>
-                        <div className="bd-grid-item">
-                            <div className="label">Mã chi nhánh</div>
-                            <div className="value">#{branch.code}</div>
-                        </div>
-                    </div>
 
-                    <div className="bd-section-title"><Icon name="users" /> Quản lý chi nhánh</div>
-                    <div className="bd-manager-list">
-                        {managers.length === 0 ? (
-                            <div className="bd-manager-empty">Chưa gán quản lý cho chi nhánh này.</div>
-                        ) : (
-                            managers.map((m) => (
-                                <div className="bd-manager-item" key={m.id}>
-                                    <div className="bd-manager-avatar">{m.name.split(" ").slice(-1)[0][0]}</div>
-                                    <div>
-                                        <div className="bd-manager-name">{m.name}</div>
-                                        <div className="bd-manager-role">{m.role}</div>
+                        <div className="bd-grid">
+                            <div className="bd-grid-item">
+                                <div className="label">Số điện thoại</div>
+                                <div className="value"><Icon name="phone" />{branch.phone || "Chưa cập nhật"}</div>
+                            </div>
+                            <div className="bd-grid-item">
+                                <div className="label">Ngày tạo</div>
+                                <div className="value"><Icon name="calendar" />{formatDate(branch.createdAt)}</div>
+                            </div>
+                            <div className="bd-grid-item">
+                                <div className="label">Số quản lý</div>
+                                <div className="value"><Icon name="users" />{managers.length} người</div>
+                            </div>
+                            <div className="bd-grid-item">
+                                <div className="label">Mã chi nhánh</div>
+                                <div className="value">#{branch.branchId}</div>
+                            </div>
+                        </div>
+
+                        <div className="bd-section-title"><Icon name="users" /> Quản lý chi nhánh</div>
+                        <div className="bd-manager-list">
+                            {managers.length === 0 ? (
+                                <div className="bd-manager-empty">Chưa gán quản lý cho chi nhánh này.</div>
+                            ) : (
+                                managers.map((m) => (
+                                    <div className="bd-manager-item" key={m.employeeId ?? m.id}>
+                                        <div className="bd-manager-avatar">
+                                            {(m.fullName || "?").trim().split(" ").slice(-1)[0][0]}
+                                        </div>
+                                        <div>
+                                            <div className="bd-manager-name">{m.fullName}</div>
+                                            <div className="bd-manager-role">{m.phone || m.role || ""}</div>
+                                        </div>
                                     </div>
-                                </div>
-                            ))
-                        )}
+                                ))
+                            )}
+                        </div>
                     </div>
                 </div>
-            </div>
+            )}
 
             {editOpen && draft && (
-                <div className="bd-modal-overlay" onClick={() => setEditOpen(false)}>
+                <div className="bd-modal-overlay" onClick={() => !saving && setEditOpen(false)}>
                     <div className="bd-modal" onClick={(e) => e.stopPropagation()}>
                         <h3>Chỉnh sửa thông tin chi nhánh</h3>
 
@@ -637,8 +837,8 @@ export default function BranchDetailOfAdmin() {
                             <label>Tên chi nhánh</label>
                             <input
                                 type="text"
-                                value={draft.branch_name}
-                                onChange={(e) => setDraft((d) => ({ ...d, branch_name: e.target.value }))}
+                                value={draft.branchName}
+                                onChange={(e) => setDraft((d) => ({ ...d, branchName: e.target.value }))}
                             />
                         </div>
 
@@ -664,14 +864,14 @@ export default function BranchDetailOfAdmin() {
                             <label>Trạng thái</label>
                             <div className="bd-status-toggle">
                                 <div
-                                    className={`bd-status-opt${draft.status === "active" ? " selected active" : ""}`}
-                                    onClick={() => setDraft((d) => ({ ...d, status: "active" }))}
+                                    className={`bd-status-opt${draft.status === "Active" ? " selected active" : ""}`}
+                                    onClick={() => setDraft((d) => ({ ...d, status: "Active" }))}
                                 >
                                     Đang hoạt động
                                 </div>
                                 <div
-                                    className={`bd-status-opt${draft.status === "inactive" ? " selected inactive" : ""}`}
-                                    onClick={() => setDraft((d) => ({ ...d, status: "inactive" }))}
+                                    className={`bd-status-opt${draft.status === "Inactive" ? " selected inactive" : ""}`}
+                                    onClick={() => setDraft((d) => ({ ...d, status: "Inactive" }))}
                                 >
                                     Ngưng hoạt động
                                 </div>
@@ -689,14 +889,22 @@ export default function BranchDetailOfAdmin() {
                                         <span className="bd-manager-placeholder">Chọn nhân viên làm quản lý</span>
                                     ) : (
                                         <div className="bd-manager-chips">
-                                            {EMPLOYEES.filter((e) => draft.managerIds.includes(e.id)).map((m) => (
-                                                <span className="bd-chip" key={m.id}>
-                                                    {m.name}
-                                                    <button type="button" onClick={(e) => { e.stopPropagation(); toggleDraftManager(m.id); }}>
-                                                        <Icon name="x" />
-                                                    </button>
-                                                </span>
-                                            ))}
+                                            {managerOptions
+                                                .filter((e) => draft.managerIds.includes(e.employeeId ?? e.id))
+                                                .map((m) => (
+                                                    <span className="bd-chip" key={m.employeeId ?? m.id}>
+                                                        {m.fullName}
+                                                        <button
+                                                            type="button"
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                toggleDraftManager(m.employeeId ?? m.id);
+                                                            }}
+                                                        >
+                                                            <Icon name="x" />
+                                                        </button>
+                                                    </span>
+                                                ))}
                                         </div>
                                     )}
                                     <Icon name="chevron" size={16} />
@@ -717,22 +925,27 @@ export default function BranchDetailOfAdmin() {
                                             </div>
                                         </div>
                                         <div className="bd-manager-list-menu">
-                                            {filteredEmployees.map((emp) => {
-                                                const selected = draft.managerIds.includes(emp.id);
-                                                return (
-                                                    <div
-                                                        key={emp.id}
-                                                        className={`bd-manager-option${selected ? " selected" : ""}`}
-                                                        onClick={() => toggleDraftManager(emp.id)}
-                                                    >
-                                                        <span className="bd-manager-check"><Icon name="check" /></span>
-                                                        <span>
-                                                            <div style={{ fontSize: 13.5, fontWeight: 600, color: "var(--ink)" }}>{emp.name}</div>
-                                                            <div style={{ fontSize: 11.5, color: "var(--muted)" }}>{emp.role}</div>
-                                                        </span>
-                                                    </div>
-                                                );
-                                            })}
+                                            {filteredManagerOptions.length === 0 ? (
+                                                <div className="bd-manager-empty-option">Không có nhân viên phù hợp.</div>
+                                            ) : (
+                                                filteredManagerOptions.map((emp) => {
+                                                    const empId = emp.employeeId ?? emp.id;
+                                                    const selected = draft.managerIds.includes(empId);
+                                                    return (
+                                                        <div
+                                                            key={empId}
+                                                            className={`bd-manager-option${selected ? " selected" : ""}`}
+                                                            onClick={() => toggleDraftManager(empId)}
+                                                        >
+                                                            <span className="bd-manager-check"><Icon name="check" /></span>
+                                                            <span>
+                                                                <div style={{ fontSize: 13.5, fontWeight: 600, color: "var(--ink)" }}>{emp.fullName}</div>
+                                                                <div style={{ fontSize: 11.5, color: "var(--muted)" }}>{emp.role || emp.roleName || emp.phone || ""}</div>
+                                                            </span>
+                                                        </div>
+                                                    );
+                                                })
+                                            )}
                                         </div>
                                     </div>
                                 )}
@@ -740,8 +953,10 @@ export default function BranchDetailOfAdmin() {
                         </div>
 
                         <div className="bd-modal-actions">
-                            <button type="button" className="bd-btn" onClick={() => setEditOpen(false)}>Hủy</button>
-                            <button type="button" className="bd-btn bd-btn-primary" onClick={saveEdit}>Lưu thay đổi</button>
+                            <button type="button" className="bd-btn" onClick={() => setEditOpen(false)} disabled={saving}>Hủy</button>
+                            <button type="button" className="bd-btn bd-btn-primary" onClick={saveEdit} disabled={saving}>
+                                {saving ? "Đang lưu..." : "Lưu thay đổi"}
+                            </button>
                         </div>
                     </div>
                 </div>

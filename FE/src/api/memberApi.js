@@ -272,3 +272,10 @@ const memberApi = {
 };
 
 export default memberApi;
+
+// //  <button onClick={() => navigate("/cashier/report")}>
+// //             Đi tới báo cáo
+// //         </button>
+// //     );
+// }
+

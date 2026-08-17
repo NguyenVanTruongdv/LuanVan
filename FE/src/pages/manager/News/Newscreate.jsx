@@ -27,10 +27,17 @@ export default function NewsCreate() {
             .getEmployeeProfile()
             .then((res) => {
                 const profile = res?.data ?? res;
-                setBranches(profile?.branches ?? []);
-                if (profile?.defaultBranchId) {
-                    setForm((prev) => ({ ...prev, branchId: String(profile.defaultBranchId) }));
-                }
+                const branchList = profile?.branches ?? [];
+                setBranches(branchList);
+                // Không còn option "Tất cả chi nhánh" nữa, nên dropdown luôn hiển thị
+                // sẵn 1 chi nhánh cụ thể — phải đồng bộ state theo đúng cái đang hiển
+                // thị, nếu không lúc submit sẽ gửi giá trị khác với UI đang cho thấy.
+                const resolvedBranchId = profile?.defaultBranchId
+                    ? String(profile.defaultBranchId)
+                    : branchList[0]?.branchId
+                        ? String(branchList[0].branchId)
+                        : "";
+                setForm((prev) => ({ ...prev, branchId: resolvedBranchId }));
             })
             .catch((err) => {
                 console.error("getEmployeeProfile error:", err?.response?.status, err?.response?.data ?? err);
@@ -72,20 +79,24 @@ export default function NewsCreate() {
         <div className="news-create">
             <style>{`
                 .news-create {
-                    --nc-bg-panel: #141a29;
-                    --nc-bg-card: #1a2233;
-                    --nc-border: #262f45;
-                    --nc-text-primary: #e7ecf5;
-                    --nc-text-secondary: #8b95ab;
-                    --nc-teal: #2dd4bf;
-                    --nc-cyan: #22d3ee;
-                    --nc-red: #f87171;
-                    --nc-green: #34d399;
-                    --nc-radius: 14px;
+                    --nc-bg-page: #f4f6fb;
+                    --nc-bg-card: #ffffff;
+                    --nc-bg-input: #f7f9fc;
+                    --nc-border: #e8ecf3;
+                    --nc-text-primary: #1b2233;
+                    --nc-text-secondary: #8a93a6;
+                    --nc-teal: #16a34a;
+                    --nc-cyan: #4ade80;
+                    --nc-green-tint: #bbf7d0;
+                    --nc-red: #ef4444;
+                    --nc-green: #16a34a;
+                    --nc-radius: 20px;
+                    --nc-shadow: 0 20px 40px -16px rgba(15, 23, 42, 0.16), 0 4px 12px rgba(15, 23, 42, 0.05);
 
                     max-width: 720px;
                     margin: 0 auto;
                     padding: 28px;
+                    background: var(--nc-bg-page);
                     color: var(--nc-text-primary);
                     font-family: "Inter", "Segoe UI", system-ui, sans-serif;
                 }
@@ -96,9 +107,10 @@ export default function NewsCreate() {
 
                 .news-create__title {
                     margin: 0 0 4px;
-                    font-size: 22px;
-                    font-weight: 700;
+                    font-size: 24px;
+                    font-weight: 800;
                     letter-spacing: -0.01em;
+                    color: var(--nc-text-primary);
                 }
 
                 .news-create__subtitle {
@@ -111,10 +123,11 @@ export default function NewsCreate() {
                     display: flex;
                     flex-direction: column;
                     gap: 18px;
-                    padding: 24px;
+                    padding: 26px;
                     background: var(--nc-bg-card);
                     border: 1px solid var(--nc-border);
                     border-radius: var(--nc-radius);
+                    box-shadow: var(--nc-shadow);
                 }
 
                 .news-create__field {
@@ -125,7 +138,7 @@ export default function NewsCreate() {
 
                 .news-create__label {
                     font-size: 13px;
-                    font-weight: 600;
+                    font-weight: 700;
                     color: var(--nc-text-primary);
                 }
 
@@ -137,25 +150,33 @@ export default function NewsCreate() {
                 .news-create__textarea {
                     width: 100%;
                     padding: 11px 14px;
-                    border-radius: 10px;
-                    border: 1px solid var(--nc-border);
-                    background: var(--nc-bg-panel);
+                    border-radius: 12px;
+                    border: 1.5px solid var(--nc-green-tint);
+                    background: #ffffff;
                     color: var(--nc-text-primary);
                     font-size: 13.5px;
                     font-family: inherit;
                     outline: none;
-                    transition: border-color 0.15s ease;
+                    box-shadow: 0 8px 18px -14px rgba(22, 163, 74, 0.3), inset 0 1px 2px rgba(15, 23, 42, 0.04);
+                    transition: border-color 0.15s ease, box-shadow 0.15s ease;
                     box-sizing: border-box;
+                }
+
+                .news-create__input:hover,
+                .news-create__textarea:hover {
+                    border-color: #86efac;
                 }
 
                 .news-create__input::placeholder,
                 .news-create__textarea::placeholder {
-                    color: #5b6478;
+                    color: #a7afc0;
                 }
 
                 .news-create__input:focus,
                 .news-create__textarea:focus {
                     border-color: var(--nc-teal);
+                    box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.16);
+                    background: #ffffff;
                 }
 
                 .news-create__textarea {
@@ -171,20 +192,20 @@ export default function NewsCreate() {
                 /* Messages */
                 .news-create__message {
                     padding: 10px 14px;
-                    border-radius: 10px;
+                    border-radius: 12px;
                     font-size: 13px;
-                    font-weight: 500;
+                    font-weight: 600;
                 }
 
                 .news-create__message--error {
-                    background: rgba(248, 113, 113, 0.1);
-                    border: 1px solid rgba(248, 113, 113, 0.35);
+                    background: rgba(239, 68, 68, 0.08);
+                    border: 1px solid rgba(239, 68, 68, 0.25);
                     color: var(--nc-red);
                 }
 
                 .news-create__message--success {
-                    background: rgba(52, 211, 153, 0.1);
-                    border: 1px solid rgba(52, 211, 153, 0.35);
+                    background: rgba(22, 163, 74, 0.08);
+                    border: 1px solid rgba(22, 163, 74, 0.25);
                     color: var(--nc-green);
                 }
 
@@ -198,41 +219,45 @@ export default function NewsCreate() {
 
                 .news-create__cancel-btn {
                     padding: 11px 20px;
-                    border-radius: 10px;
-                    border: 1px solid var(--nc-border);
-                    background: transparent;
+                    border-radius: 12px;
+                    border: 1.5px solid var(--nc-border);
+                    background: #ffffff;
                     color: var(--nc-text-secondary);
                     font-size: 13.5px;
-                    font-weight: 600;
+                    font-weight: 700;
                     cursor: pointer;
-                    transition: border-color 0.15s ease, color 0.15s ease;
+                    transition: border-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
                 }
 
                 .news-create__cancel-btn:hover {
-                    border-color: #3a4460;
+                    border-color: #cfd6e4;
                     color: var(--nc-text-primary);
+                    box-shadow: 0 6px 16px -8px rgba(15, 23, 42, 0.2);
                 }
 
                 .news-create__submit-btn {
                     padding: 11px 22px;
-                    border-radius: 10px;
+                    border-radius: 12px;
                     border: none;
                     background: linear-gradient(135deg, var(--nc-cyan), var(--nc-teal));
-                    color: #04211d;
+                    color: #ffffff;
                     font-size: 13.5px;
                     font-weight: 700;
                     cursor: pointer;
-                    transition: filter 0.15s ease, transform 0.15s ease;
+                    box-shadow: 0 12px 24px -10px rgba(34, 197, 94, 0.55);
+                    transition: filter 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
                 }
 
                 .news-create__submit-btn:hover:not(:disabled) {
-                    filter: brightness(1.08);
+                    filter: brightness(1.05);
                     transform: translateY(-1px);
+                    box-shadow: 0 16px 28px -10px rgba(34, 197, 94, 0.6);
                 }
 
                 .news-create__submit-btn:disabled {
                     opacity: 0.65;
                     cursor: not-allowed;
+                    box-shadow: none;
                 }
 
                 /* ---------- Responsive ---------- */
@@ -243,7 +268,7 @@ export default function NewsCreate() {
 
                     .news-create__form {
                         padding: 18px;
-                        border-radius: 12px;
+                        border-radius: 16px;
                     }
 
                     .news-create__actions {
@@ -289,7 +314,6 @@ export default function NewsCreate() {
                         value={form.branchId}
                         onChange={handleChange("branchId")}
                     >
-                        <option value="">Tất cả chi nhánh</option>
                         {branches.map((b) => (
                             <option key={b.branchId} value={b.branchId}>
                                 {b.branchName}

@@ -15,7 +15,7 @@ public class ForumPostService
    
     private static readonly List<string> BadWordList = new List<string>
     {
-        //chỗ này dùng để ghi các tù ngũ thô tục nma nó nhạy cảm quá nên là e tạm ẩn nha thầy 
+       "ngu","cho","đm"
     };
 
     public ForumPostService(GymManagementContext context, S3StorageService storageService)
@@ -169,8 +169,8 @@ public class ForumPostService
             Status = "Active",
             LikeCount = 0,
             CommentCount = 0,
-            CreatedAt = DateTime.UtcNow,
-            UpdatedAt = DateTime.UtcNow
+            CreatedAt = DateTime.Now,
+            UpdatedAt = DateTime.Now
         };
 
         if (dto.ImageUrls != null && dto.ImageUrls.Count > 0)
@@ -182,7 +182,7 @@ public class ForumPostService
                 {
                     ImageUrl = url,
                     SortOrder = order,
-                    UploadedAt = DateTime.UtcNow
+                    UploadedAt = DateTime.Now
                 });
                 order = (sbyte)(order + 1);
             }
@@ -243,7 +243,7 @@ public class ForumPostService
         post.Title = dto.Title;
         post.CategoryId = dto.CategoryId;
         post.Content = dto.Content;
-        post.UpdatedAt = DateTime.UtcNow;
+        post.UpdatedAt = DateTime.Now;
 
         // Danh sách URL cuối cùng client muốn giữ (ảnh cũ giữ lại + ảnh mới đã upload)
         List<string> newImageUrls = dto.ImageUrls ?? new List<string>();
@@ -274,7 +274,7 @@ public class ForumPostService
                 {
                     ImageUrl = url,
                     SortOrder = order,
-                    UploadedAt = DateTime.UtcNow
+                    UploadedAt = DateTime.Now
                 });
                 order = (sbyte)(order + 1);
             }
@@ -305,7 +305,7 @@ public class ForumPostService
         }
 
         post.Status = "Deleted";
-        post.UpdatedAt = DateTime.UtcNow;
+        post.UpdatedAt = DateTime.Now;
 
         await _context.SaveChangesAsync();
         return (true, null);
@@ -322,7 +322,7 @@ public class ForumPostService
         }
 
         post.Status = "Hidden";
-        post.UpdatedAt = DateTime.UtcNow;
+        post.UpdatedAt = DateTime.Now;
 
         await _context.SaveChangesAsync();
         return (true, null);
@@ -365,11 +365,11 @@ public class ForumPostService
         DateTime? fromDate = null;
         if (range == "week")
         {
-            fromDate = DateTime.UtcNow.AddDays(-7);
+            fromDate = DateTime.Now.AddDays(-7);
         }
         else if (range == "month")
         {
-            fromDate = DateTime.UtcNow.AddMonths(-1);
+            fromDate = DateTime.Now.AddMonths(-1);
         }
         // range == "all" -> không lọc thời gian
 
@@ -467,7 +467,7 @@ public class ForumPostService
     // chiếm top; nếu không đủ 'top' bài trong khoảng đó thì lấy bổ sung toàn thời gian.
     public async Task<List<ForumPostDto>> GetFeaturedPostsAsync(long? currentMemberId, int top = 3, int recentDays = 30)
     {
-        DateTime fromDate = DateTime.UtcNow.AddDays(-recentDays);
+        DateTime fromDate = DateTime.Now.AddDays(-recentDays);
 
         var baseQuery = _context.ForumPosts
             .Include(p => p.Member).ThenInclude(m => m.FaceDatum)

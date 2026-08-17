@@ -140,7 +140,7 @@ namespace BE.Services
             thietBiMoi.BranchId = dto.BranchId;
             thietBiMoi.Description = dto.Description;
             thietBiMoi.Status = EqmEnumStatus.Active.ToString();
-            thietBiMoi.AddedAt = DateTime.UtcNow;
+            thietBiMoi.AddedAt = DateTime.Now;
 
             if (dto.Image != null && dto.Image.Length > 0)
             {

@@ -3,42 +3,51 @@ import cashierApi from "../../../api/cashierApi";
 import memberApi from "../../../api/memberApi";
 
 // ============================================================
-// THEME — tông màu đồng bộ với trang đăng nhập (StaffLogin)
+// THEME — tông màu đồng bộ với logo VT Gym (xanh rêu/teal đậm)
 // ============================================================
 const T = {
-    bgDeep: "#0F172A",
-    panelDark: "#1E293B",
-    panelDarkSoft: "#1A2744",
-    panelDarkSofter: "#243352",
-    cyan: "#06B6D4",
-    cyanLight: "#67E8F9",
-    cyanDark: "#0891B2",
-    cyanSoft: "rgba(6, 182, 212, 0.14)",
-    cyanSoftStrong: "rgba(6, 182, 212, 0.22)",
-    cyanBorder: "rgba(6, 182, 212, 0.35)",
-    cyanGlow: "rgba(6, 182, 212, 0.35)",
+    // Nền tối riêng cho khung camera (giữ tối để hình ảnh nổi bật, giống viewfinder)
+    camBg1: "#0B1F17",
+    camBg2: "#13291F",
+
+    // Nền/khối UI chung — sáng, đồng bộ với sidebar VT Gym
+    bgDeep: "#F5F7F4",
+    panelDark: "#F3F4F6",
+    panelDarkSoft: "#F8FAF9",
+    panelDarkSofter: "#E5E7EB",
+
+    // Tông xanh rêu/teal đậm giống logo VT Gym, bớt tươi, bớt chói
+    cyan: "#166534",
+    cyanLight: "#2F8F52",
+    cyanDark: "#0F4C2C",
+    cyanSoft: "rgba(22, 101, 52, 0.07)",
+    cyanSoftStrong: "rgba(22, 101, 52, 0.13)",
+    cyanBorder: "rgba(22, 101, 52, 0.22)",
+    cyanGlow: "rgba(22, 101, 52, 0.16)",
+    onAccent: "#FFFFFF",
+
     blue: "#6366F1",
-    textPrimary: "#F1F5F9",
-    textSecondary: "#94A3B8",
-    textMuted: "#64748B",
-    border: "rgba(51, 65, 85, 0.8)",
-    borderSoft: "rgba(51, 65, 85, 0.5)",
-    bgPage: "#0F172A",
-    bgCard: "#1E293B",
-    bgSubtle: "rgba(6, 182, 212, 0.06)",
+    textPrimary: "#1F2937",
+    textSecondary: "#6B7280",
+    textMuted: "#9CA3AF",
+    border: "#E5E7EB",
+    borderSoft: "rgba(229, 231, 235, 0.9)",
+    bgPage: "#F9FAFB",
+    bgCard: "#FFFFFF",
+    bgSubtle: "rgba(22, 101, 52, 0.04)",
     amber: "#F59E0B",
-    amberBg: "rgba(245, 158, 11, 0.14)",
-    amberBorder: "rgba(245, 158, 11, 0.4)",
-    amberText: "#FBBF6D",
-    discount: "#34D399",
-    discountBg: "rgba(52, 211, 153, 0.14)",
-    discountBorder: "rgba(52, 211, 153, 0.4)",
-    discountText: "#6EE7B7",
-    danger: "#F87171",
-    dangerBg: "rgba(220, 38, 38, 0.14)",
-    dangerBorder: "rgba(248, 113, 113, 0.4)",
-    success: "#4ADE80",
-    successBg: "rgba(74, 222, 128, 0.12)",
+    amberBg: "rgba(245, 158, 11, 0.12)",
+    amberBorder: "rgba(245, 158, 11, 0.35)",
+    amberText: "#B45309",
+    discount: "#0D9488",
+    discountBg: "rgba(13, 148, 136, 0.10)",
+    discountBorder: "rgba(13, 148, 136, 0.35)",
+    discountText: "#0F766E",
+    danger: "#EF4444",
+    dangerBg: "rgba(239, 68, 68, 0.10)",
+    dangerBorder: "rgba(239, 68, 68, 0.35)",
+    success: "#059669",
+    successBg: "rgba(5, 150, 105, 0.10)",
 };
 
 // ============================================================
@@ -67,7 +76,6 @@ const PAYMENT_METHODS = [
     { id: "Cash", label: "Tiền mặt", icon: "💵" },
     { id: "BankTransfer", label: "Chuyển khoản", icon: "🏦" },
 ];
-const CURRENT_BRANCH_NAME = "Chi nhánh Quận 1";
 const fmt = (n) =>
     new Intl.NumberFormat("vi-VN", { style: "currency", currency: "VND" }).format(n);
 
@@ -208,13 +216,45 @@ function useCamera(initialPhoto = null) {
     const retake = () => { setPhoto(null); setCamState("on"); };
     const loadFromFile = (file) => {
         if (!file) return;
+        if (!file.type.startsWith("image/")) {
+            setCamError("Chỉ chấp nhận tệp hình ảnh (JPG, PNG, WEBP...).");
+            return;
+        }
+        // HEIC/HEIF (ảnh chụp mặc định trên iPhone) không được trình duyệt giải mã
+        // qua thẻ <img>, và cũng không được AWS Rekognition hỗ trợ -> chặn sớm.
+        const lowerName = (file.name || "").toLowerCase();
+        if (file.type === "image/heic" || file.type === "image/heif" ||
+            lowerName.endsWith(".heic") || lowerName.endsWith(".heif")) {
+            setCamError("Không hỗ trợ định dạng HEIC/HEIF. Vui lòng chọn ảnh JPG hoặc PNG.");
+            return;
+        }
         streamRef.current?.getTracks().forEach((t) => t.stop());
         streamRef.current = null;
         const reader = new FileReader();
         reader.onload = () => {
-            setPhoto(reader.result);
-            setCamError("");
-            setCamState("captured");
+            // Chuẩn hoá mọi ảnh tải lên về JPEG qua canvas (giống ảnh chụp từ camera),
+            // vì AWS Rekognition chỉ chấp nhận JPEG/PNG -> tránh lỗi
+            // "Request has invalid image format" khi người dùng tải lên WEBP, BMP, v.v.
+            const img = new Image();
+            img.onload = () => {
+                const canvas = canvasRef.current;
+                if (!canvas) {
+                    setPhoto(reader.result);
+                    setCamError("");
+                    setCamState("captured");
+                    return;
+                }
+                canvas.width = img.naturalWidth || img.width;
+                canvas.height = img.naturalHeight || img.height;
+                const ctx = canvas.getContext("2d");
+                ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                const dataUrl = canvas.toDataURL("image/jpeg", 0.88);
+                setPhoto(dataUrl);
+                setCamError("");
+                setCamState("captured");
+            };
+            img.onerror = () => setCamError("Không đọc được tệp ảnh, vui lòng thử lại với ảnh khác.");
+            img.src = reader.result;
         };
         reader.onerror = () => setCamError("Không đọc được tệp ảnh, vui lòng thử lại.");
         reader.readAsDataURL(file);
@@ -297,7 +337,7 @@ function CameraPanel({ cam }) {
                 {camState === "captured" && <div style={cs.capturedBadge}>✓ Đã chụp</div>}
             </div>
             {camError && <p style={cs.camErr}>{camError}</p>}
-            <input ref={fileInputRef} type="file" accept="image/*" style={{ display: "none" }} onChange={onFileChange} />
+            <input ref={fileInputRef} type="file" accept="image/jpeg,image/png,image/webp" style={{ display: "none" }} onChange={onFileChange} />
             <div style={cs.btnRow}>
                 {camState === "idle" && (
                     <>
@@ -366,16 +406,16 @@ const cs = {
         width: 26, height: 26, borderRadius: 8, background: T.cyanSoft,
         display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, color: T.cyan,
     },
-    headerText: { fontSize: 12, fontWeight: 800, color: T.cyanLight, letterSpacing: "0.05em", textTransform: "uppercase" },
+    headerText: { fontSize: 12, fontWeight: 800, color: T.cyanDark, letterSpacing: "0.05em", textTransform: "uppercase" },
     frame: {
         flex: 1,
         minHeight: 340,
-        background: `linear-gradient(160deg, ${T.bgDeep}, ${T.panelDark})`,
+        background: `linear-gradient(160deg, ${T.camBg1}, ${T.camBg2})`,
         borderRadius: 16,
         overflow: "hidden",
         position: "relative",
         border: `2px solid ${T.cyanBorder}`,
-        boxShadow: `0 0 0 1px rgba(0,0,0,0.4), 0 10px 30px rgba(0,0,0,0.45), inset 0 0 40px rgba(6,182,212,0.05)`,
+        boxShadow: `0 0 0 1px rgba(0,0,0,0.15), 0 10px 30px rgba(16,185,129,0.12), inset 0 0 40px rgba(16,185,129,0.05)`,
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
@@ -411,14 +451,14 @@ const cs = {
     },
     liveBadge: {
         position: "absolute", top: 12, left: 12,
-        background: "rgba(6,182,212,.92)", color: "#04222B",
+        background: "rgba(16,185,129,.92)", color: T.onAccent,
         fontSize: 11, fontWeight: 800, padding: "3px 9px",
         borderRadius: 5, display: "flex", alignItems: "center", gap: 5, letterSpacing: "0.1em",
     },
-    liveDot: { width: 7, height: 7, borderRadius: "50%", background: "#04222B", flexShrink: 0 },
+    liveDot: { width: 7, height: 7, borderRadius: "50%", background: T.onAccent, flexShrink: 0 },
     capturedBadge: {
         position: "absolute", bottom: 14, left: "50%", transform: "translateX(-50%)",
-        background: "rgba(8,145,178,.94)", color: "#fff",
+        background: "rgba(5,150,105,.94)", color: "#fff",
         fontSize: 13, fontWeight: 700, padding: "5px 16px",
         borderRadius: 20,
     },
@@ -426,29 +466,31 @@ const cs = {
     btnRow: { display: "flex", gap: 8 },
     btnStart: {
         flex: 1, display: "flex", alignItems: "center", justifyContent: "center",
-        padding: "12px 0", background: `linear-gradient(135deg, ${T.cyan}, ${T.cyanLight})`, color: "#04222B",
+        padding: "12px 0", background: `linear-gradient(135deg, ${T.cyan}, ${T.cyanLight})`, color: T.onAccent,
         border: "none", borderRadius: 12, fontSize: 14, fontWeight: 700, cursor: "pointer",
+        boxShadow: `0 4px 14px ${T.cyanGlow}`,
     },
     btnUpload: {
         flex: 1, display: "flex", alignItems: "center", justifyContent: "center",
-        padding: "12px 0", background: T.panelDarkSoft, color: T.cyanLight,
+        padding: "12px 0", background: T.panelDarkSoft, color: T.cyanDark,
         border: `1.5px solid ${T.cyanBorder}`, borderRadius: 12, fontSize: 14, fontWeight: 700, cursor: "pointer",
     },
     btnUploadGhost: {
         flex: 1, display: "flex", alignItems: "center", justifyContent: "center",
-        padding: "12px 0", background: T.panelDarkSoft, color: T.cyanLight,
+        padding: "12px 0", background: T.panelDarkSoft, color: T.cyanDark,
         border: `1.5px solid ${T.cyanBorder}`, borderRadius: 12, fontSize: 14, fontWeight: 600, cursor: "pointer",
     },
     btnCapture: {
-        flex: 2, padding: "12px 0", background: `linear-gradient(135deg, ${T.cyan}, ${T.cyanLight})`, color: "#04222B",
+        flex: 2, padding: "12px 0", background: `linear-gradient(135deg, ${T.cyan}, ${T.cyanLight})`, color: T.onAccent,
         border: "none", borderRadius: 12, fontSize: 14, fontWeight: 700, cursor: "pointer",
+        boxShadow: `0 4px 14px ${T.cyanGlow}`,
     },
     btnCancel: {
-        flex: 1, padding: "12px 0", background: T.panelDarkSoft, color: T.cyanLight,
+        flex: 1, padding: "12px 0", background: T.panelDarkSoft, color: T.cyanDark,
         border: `1px solid ${T.cyanBorder}`, borderRadius: 12, fontSize: 14, cursor: "pointer",
     },
     btnRetake: {
-        flex: 1, padding: "12px 0", background: T.panelDarkSoft, color: T.cyanLight,
+        flex: 1, padding: "12px 0", background: T.panelDarkSoft, color: T.cyanDark,
         border: `1px solid ${T.cyanBorder}`, borderRadius: 12, fontSize: 14, fontWeight: 600, cursor: "pointer",
     },
 };
@@ -657,10 +699,6 @@ function StepMemberInfo({ formData, setFormData, savedPhoto, onNext }) {
                             onChange={set("internalNotes")}
                         />
                     </Field>
-                    <div style={g.branchBadge}>
-                        <span style={{ fontSize: 16 }}>📍</span>
-                        <span style={{ fontSize: 13 }}>Chi nhánh: <strong>{CURRENT_BRANCH_NAME}</strong></span>
-                    </div>
                 </div>
             </div>
             <div style={g.footer}>
@@ -815,7 +853,7 @@ function StepPackage({ memberForm, memberPhoto, pkgData, setPkgData, onBack, onD
                             </svg>
                         </div>
                         <div style={{ ...g.compareCard, ...g.compareCardSel }}>
-                            <div style={{ ...g.compareLabel, color: T.cyanLight }}>GÓI MUỐN MUA</div>
+                            <div style={{ ...g.compareLabel, color: T.cyanDark }}>GÓI MUỐN MUA</div>
                             <div style={g.compareName}>
                                 {selectedPkg ? selectedPkg.planName : <span style={{ color: T.textMuted, fontWeight: 500 }}>Chưa chọn gói</span>}
                             </div>
@@ -879,7 +917,7 @@ function StepPackage({ memberForm, memberPhoto, pkgData, setPkgData, onBack, onD
                                             Thời hạn {pkg.durationDays} ngày{pkg.description ? ` · ${pkg.description}` : ""}
                                         </div>
                                     </div>
-                                    <div style={{ ...g.pkgRowPrice, ...(sel ? { color: T.cyanLight } : {}) }}>
+                                    <div style={{ ...g.pkgRowPrice, ...(sel ? { color: T.cyanDark } : {}) }}>
                                         {fmt(pkg.price)}
                                     </div>
                                 </div>
@@ -922,7 +960,7 @@ function StepPackage({ memberForm, memberPhoto, pkgData, setPkgData, onBack, onD
                                             </span>
                                             {sel && (
                                                 <span style={{ ...g.promoCheck, background: bonus ? T.amber : T.discount }}>
-                                                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#04222B" strokeWidth="3">
+                                                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth="3">
                                                         <polyline points="20 6 9 17 4 12" />
                                                     </svg>
                                                 </span>
@@ -939,7 +977,7 @@ function StepPackage({ memberForm, memberPhoto, pkgData, setPkgData, onBack, onD
                             <div style={g.divider} />
                             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
                                 <span style={{ fontWeight: 700, fontSize: 14, color: T.textPrimary }}>Thành tiền</span>
-                                <span style={{ fontWeight: 800, fontSize: 20, color: T.cyanLight }}>{fmt(finalPrice)}</span>
+                                <span style={{ fontWeight: 800, fontSize: 20, color: T.cyanDark }}>{fmt(finalPrice)}</span>
                             </div>
                         </>
                     )}
@@ -951,10 +989,10 @@ function StepPackage({ memberForm, memberPhoto, pkgData, setPkgData, onBack, onD
                             return (
                                 <div key={pm.id} style={{ ...g.pmCard, ...(sel ? g.pmSel : {}) }} onClick={() => setPayment(pm.id)}>
                                     <span style={{ fontSize: 18 }}>{pm.icon}</span>
-                                    <span style={{ fontSize: 13, fontWeight: sel ? 700 : 500, color: sel ? T.cyanLight : T.textSecondary }}>{pm.label}</span>
+                                    <span style={{ fontSize: 13, fontWeight: sel ? 700 : 500, color: sel ? T.cyanDark : T.textSecondary }}>{pm.label}</span>
                                     {sel && (
                                         <span style={g.pmCheck}>
-                                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#04222B" strokeWidth="3">
+                                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth="3">
                                                 <polyline points="20 6 9 17 4 12" />
                                             </svg>
                                         </span>
@@ -987,7 +1025,7 @@ function StepPackage({ memberForm, memberPhoto, pkgData, setPkgData, onBack, onD
                         ["Học phí", selectedPkg ? fmt(finalPrice) : "—"],
                         ["Khuyến mãi", selectedPromotion ? promoShortLabel(selectedPromotion) : "—"],
                         ["Thanh toán", PAYMENT_METHODS.find((p) => p.id === payment)?.label || <span style={{ color: T.textMuted }}>Chưa chọn</span>],
-                        ["Face ID", memberPhoto ? <span style={{ color: T.cyanLight, fontWeight: 700 }}>Đã chụp</span> : <span style={{ color: T.danger }}>Chưa chụp</span>],
+                        ["Face ID", memberPhoto ? <span style={{ color: T.cyanDark, fontWeight: 700 }}>Đã chụp</span> : <span style={{ color: T.danger }}>Chưa chụp</span>],
                     ].map(([k, v]) => (
                         <div key={k} style={g.orderRow}>
                             <span style={{ color: T.textMuted, fontSize: 13 }}>{k}</span>
@@ -1024,12 +1062,12 @@ function StepSuccess({ result, onNew }) {
             </p>
             {member?.generatedPassword && (
                 <div style={{ background: T.amberBg, border: `1px solid ${T.amberBorder}`, borderRadius: 12, padding: "10px 24px", display: "inline-block", marginBottom: 14, color: T.amberText, fontWeight: 700, fontSize: 14 }}>
-                    Mật khẩu tạm thời: {member.generatedPassword}
+
                 </div>
             )}
             <br />
             {member?.memberId && (
-                <div style={{ background: T.cyanSoft, border: `1px solid ${T.cyanBorder}`, borderRadius: 12, padding: "12px 28px", display: "inline-block", marginBottom: 28, color: T.cyanLight, fontWeight: 700, fontSize: 15 }}>
+                <div style={{ background: T.cyanSoft, border: `1px solid ${T.cyanBorder}`, borderRadius: 12, padding: "12px 28px", display: "inline-block", marginBottom: 28, color: T.cyanDark, fontWeight: 700, fontSize: 15 }}>
                     Mã hội viên: #{member.memberId}
                 </div>
             )}
@@ -1051,7 +1089,7 @@ function ProgressBar({ step }) {
             {steps.map((label, i) => (
                 <div key={i} style={{ display: "flex", alignItems: "center", flex: i < steps.length - 1 ? 1 : 0 }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
-                        <div style={{ ...g.dot, background: i <= step ? `linear-gradient(135deg, ${T.cyan}, ${T.cyanLight})` : T.panelDarkSofter, color: i <= step ? "#04222B" : T.textMuted }}>
+                        <div style={{ ...g.dot, background: i <= step ? `linear-gradient(135deg, ${T.cyan}, ${T.cyanLight})` : T.panelDarkSofter, color: i <= step ? T.onAccent : T.textMuted }}>
                             {i < step ? "✓" : i + 1}
                         </div>
                         <span style={{ fontSize: 13, color: i <= step ? T.textPrimary : T.textMuted, fontWeight: i === step ? 700 : 400 }}>
@@ -1126,8 +1164,8 @@ const g = {
         display: "flex", alignItems: "center",
         background: T.bgCard, borderRadius: 14,
         padding: "16px 28px", marginBottom: 22,
-        boxShadow: "0 4px 16px rgba(0,0,0,.25)",
-        border: `1px solid ${T.border}`,
+        boxShadow: "0 4px 16px rgba(16,24,40,.06)",
+        border: `1.5px solid ${T.cyanBorder}`,
     },
     dot: {
         width: 28, height: 28, borderRadius: "50%",
@@ -1138,8 +1176,8 @@ const g = {
     card: {
         background: T.bgCard, borderRadius: 18,
         padding: "32px 36px 28px",
-        boxShadow: "0 1px 4px rgba(0,0,0,.2), 0 12px 32px rgba(0,0,0,.35)",
-        border: `1px solid ${T.borderSoft}`,
+        boxShadow: "0 1px 4px rgba(16,24,40,.04), 0 8px 24px rgba(16,24,40,.06)",
+        border: `1.5px solid ${T.cyanBorder}`,
     },
     cardTitle: {
         fontSize: 22, fontWeight: 800, color: T.textPrimary,
@@ -1150,26 +1188,20 @@ const g = {
     leftCol: { paddingTop: 5 },
     rightCol: {},
     secLabel: {
-        fontSize: 11, fontWeight: 700, color: T.cyanLight,
+        fontSize: 11, fontWeight: 700, color: T.cyanDark,
         letterSpacing: "0.08em", textTransform: "uppercase",
         marginBottom: 12, marginTop: 20,
     },
     fieldLabel: { display: "block", fontSize: 13, fontWeight: 600, color: T.textSecondary, marginBottom: 6 },
     input: {
         width: "100%", padding: "10px 14px",
-        border: `1.5px solid ${T.border}`, borderRadius: 10,
+        border: `1.5px solid ${T.cyanBorder}`, borderRadius: 10,
         fontSize: 14, outline: "none", boxSizing: "border-box",
         background: T.panelDarkSoft, color: T.textPrimary, transition: "border .15s",
         fontFamily: "inherit",
     },
     inputErr: { borderColor: T.danger, background: T.dangerBg },
     radioLabel: { display: "flex", alignItems: "center", fontSize: 14, cursor: "pointer", color: T.textSecondary },
-    branchBadge: {
-        display: "flex", alignItems: "center", gap: 8,
-        background: T.cyanSoft, border: `1px solid ${T.cyanBorder}`,
-        borderRadius: 10, padding: "10px 14px", marginTop: 4,
-        color: T.textPrimary,
-    },
     footer: {},
 
     hintChecking: { fontSize: 12, color: T.textSecondary, marginTop: 6, marginBottom: 0, display: "flex", alignItems: "center" },
@@ -1187,14 +1219,15 @@ const g = {
     banner: {
         position: "relative",
         display: "flex", alignItems: "center", gap: 14,
-        background: `linear-gradient(135deg, ${T.bgDeep}, ${T.panelDarkSoft})`,
+        background: `linear-gradient(135deg, #ECFDF5, #F0FDF4)`,
+        border: `1px solid ${T.cyanBorder}`,
         borderRadius: 16, padding: "20px 24px", marginBottom: 22,
-        overflow: "hidden", boxShadow: "0 8px 24px rgba(0,0,0,.4)",
+        overflow: "hidden", boxShadow: "0 4px 16px rgba(16,185,129,.10)",
     },
     bannerGlow: {
         position: "absolute", top: -60, right: -60, width: 200, height: 200,
         borderRadius: "50%",
-        background: `radial-gradient(circle, ${T.cyanGlow} 0%, rgba(6,182,212,0) 70%)`,
+        background: `radial-gradient(circle, ${T.cyanGlow} 0%, rgba(16,185,129,0) 70%)`,
         pointerEvents: "none",
     },
     bannerIcon: {
@@ -1203,18 +1236,18 @@ const g = {
         display: "flex", alignItems: "center", justifyContent: "center",
         flexShrink: 0, position: "relative", zIndex: 1,
     },
-    bannerTitle: { fontSize: 17, fontWeight: 800, color: "#F1F5F9", position: "relative", zIndex: 1 },
-    bannerSubtitle: { fontSize: 13, color: "#94A3B8", marginTop: 2, position: "relative", zIndex: 1 },
+    bannerTitle: { fontSize: 17, fontWeight: 800, color: T.textPrimary, position: "relative", zIndex: 1 },
+    bannerSubtitle: { fontSize: 13, color: T.textSecondary, marginTop: 2, position: "relative", zIndex: 1 },
 
     pkgPageLayout: { display: "grid", gridTemplateColumns: "1fr 340px", gap: 24, alignItems: "start" },
     leftPkgCol: {
-        background: T.bgCard, border: `1px solid ${T.borderSoft}`, borderRadius: 18,
-        padding: "24px 26px", boxShadow: "0 1px 4px rgba(0,0,0,.2), 0 12px 32px rgba(0,0,0,.35)",
+        background: T.bgCard, border: `2px solid ${T.cyan}`, borderRadius: 18,
+        padding: "24px 26px", boxShadow: "0 1px 4px rgba(16,24,40,.04), 0 8px 24px rgba(16,24,40,.06)",
     },
 
     compareRow: { display: "flex", alignItems: "stretch", gap: 12, marginBottom: 20 },
-    compareCard: { flex: 1, border: `1.5px solid ${T.border}`, borderRadius: 12, padding: "12px 14px", background: T.panelDarkSoft },
-    compareCardSel: { border: `1.5px solid ${T.cyanBorder}`, background: T.cyanSoft },
+    compareCard: { flex: 1, border: `2px solid ${T.cyanBorder}`, borderRadius: 12, padding: "12px 14px", background: T.panelDarkSoft },
+    compareCardSel: { border: `2px solid ${T.cyan}`, background: T.cyanSoft },
     compareLabel: { fontSize: 10, fontWeight: 800, letterSpacing: "0.06em", color: T.textMuted, marginBottom: 6 },
     compareName: { fontSize: 14, fontWeight: 700, color: T.textPrimary },
     compareSub: { fontSize: 12, color: T.textMuted, marginTop: 2 },
@@ -1223,11 +1256,11 @@ const g = {
     pkgList: { display: "flex", flexDirection: "column", gap: 10, marginBottom: 8 },
     pkgRow: {
         display: "flex", alignItems: "center", gap: 14,
-        border: `1.5px solid ${T.border}`, borderRadius: 12,
+        border: `2px solid ${T.cyanBorder}`, borderRadius: 12,
         padding: "14px 16px", cursor: "pointer",
         background: T.panelDarkSoft, transition: "border .15s, background .15s, box-shadow .15s",
     },
-    pkgRowSel: { border: `1.5px solid ${T.cyan}`, background: T.cyanSoftStrong, boxShadow: `0 0 0 3px ${T.cyanSoft}` },
+    pkgRowSel: { border: `2px solid ${T.cyan}`, background: T.cyanSoftStrong, boxShadow: `0 0 0 3px ${T.cyanSoft}` },
     pkgRadio: {
         width: 20, height: 20, borderRadius: "50%",
         border: `2px solid ${T.cyanBorder}`, flexShrink: 0,
@@ -1243,27 +1276,27 @@ const g = {
         padding: "2px 7px", borderRadius: 6, letterSpacing: "0.03em",
     },
 
-    timelineBox: { background: T.cyanSoft, border: `1px solid ${T.cyanBorder}`, borderRadius: 14, padding: "16px 18px", marginBottom: 20 },
+    timelineBox: { background: T.cyanSoft, border: `2px solid ${T.cyan}`, borderRadius: 14, padding: "16px 18px", marginBottom: 20 },
     bonusPill: { display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 700, color: T.amberText, marginBottom: 10 },
     bonusDot: { width: 6, height: 6, borderRadius: "50%", background: T.amber, flexShrink: 0 },
     timelineLabels: { display: "flex", justifyContent: "space-between", marginTop: 10 },
     timelineLabelSmall: { fontSize: 11, color: T.textMuted },
     timelineLabelDate: { fontSize: 13, fontWeight: 700, color: T.textPrimary, marginTop: 2 },
-    timelineBar: { display: "flex", width: "100%", height: 8, background: "rgba(6, 182, 212, 0.18)", borderRadius: 6, overflow: "hidden" },
+    timelineBar: { display: "flex", width: "100%", height: 8, background: "rgba(16, 185, 129, 0.15)", borderRadius: 6, overflow: "hidden" },
     timelineSegBase: { background: T.cyan, height: "100%" },
     timelineSegBonus: { background: T.amber, height: "100%" },
 
     promoBoxDays: {
         display: "flex", alignItems: "flex-start", gap: 10,
-        background: T.amberBg, border: `1.5px solid ${T.amberBorder}`,
+        background: T.amberBg, border: `2px solid ${T.amber}`,
         borderRadius: 12, padding: "12px 14px", cursor: "pointer",
     },
     promoBoxDiscount: {
         display: "flex", alignItems: "flex-start", gap: 10,
-        background: T.discountBg, border: `1.5px solid ${T.discountBorder}`,
+        background: T.discountBg, border: `2px solid ${T.discount}`,
         borderRadius: 12, padding: "12px 14px", cursor: "pointer",
     },
-    promoBoxInactive: { background: T.panelDarkSoft, border: `1.5px solid ${T.border}`, opacity: 0.7 },
+    promoBoxInactive: { opacity: 0.55 },
     promoIconWrap: { width: 30, height: 30, borderRadius: 9, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" },
     promoIconWrapDays: { background: "rgba(245,158,11,0.18)", color: T.amberText },
     promoIconWrapDiscount: { background: "rgba(52,211,153,0.18)", color: T.discountText },
@@ -1276,11 +1309,11 @@ const g = {
     pmCard: {
         flex: 1, position: "relative",
         display: "flex", alignItems: "center", gap: 10,
-        border: `1.5px solid ${T.border}`, borderRadius: 12,
+        border: `2px solid ${T.cyanBorder}`, borderRadius: 12,
         padding: "12px 14px", cursor: "pointer",
         background: T.panelDarkSoft, transition: "border .15s",
     },
-    pmSel: { border: `1.5px solid ${T.cyan}`, background: T.cyanSoftStrong },
+    pmSel: { border: `2px solid ${T.cyan}`, background: T.cyanSoftStrong },
     pmCheck: {
         position: "absolute", right: 12, width: 18, height: 18, borderRadius: "50%",
         background: T.cyan, display: "flex", alignItems: "center", justifyContent: "center",
@@ -1288,10 +1321,10 @@ const g = {
 
     orderMember: { display: "flex", alignItems: "center", gap: 12, marginBottom: 6 },
     orderBox: {
-        background: T.bgCard, border: `1px solid ${T.borderSoft}`,
+        background: T.bgCard, border: `2px solid ${T.cyan}`,
         borderRadius: 18, padding: "22px 20px",
         position: "sticky", top: 20,
-        boxShadow: "0 1px 4px rgba(0,0,0,.2), 0 12px 32px rgba(0,0,0,.35)",
+        boxShadow: "0 1px 4px rgba(16,24,40,.04), 0 8px 24px rgba(16,24,40,.06)",
     },
     divider: { height: 1, background: T.border, margin: "14px 0" },
     orderRow: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 },
@@ -1300,11 +1333,11 @@ const g = {
         width: 36, height: 36, borderRadius: 10,
         background: T.panelDarkSoft, border: `1px solid ${T.cyanBorder}`,
         display: "flex", alignItems: "center", justifyContent: "center",
-        cursor: "pointer", flexShrink: 0, color: T.cyanLight,
+        cursor: "pointer", flexShrink: 0, color: T.cyanDark,
     },
     btnPrimary: {
         display: "block", width: "100%", padding: "14px",
-        background: `linear-gradient(135deg, ${T.cyan}, ${T.cyanLight})`, color: "#04222B",
+        background: `linear-gradient(135deg, ${T.cyan}, ${T.cyanLight})`, color: T.onAccent,
         border: "none", borderRadius: 12,
         fontSize: 15, fontWeight: 700, cursor: "pointer",
         letterSpacing: "0.01em", boxShadow: `0 4px 16px ${T.cyanGlow}`,
@@ -1315,4 +1348,4 @@ const g = {
         borderRadius: 8, padding: "10px 14px",
         color: T.danger, fontSize: 13, marginTop: 14,
     },
-};
+}; 

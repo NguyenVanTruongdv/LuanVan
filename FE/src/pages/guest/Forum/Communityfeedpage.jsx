@@ -17,82 +17,6 @@ import { Link, useLocation, useOutletContext } from "react-router-dom";
 import memberApi from "../../../api/memberApi";
 /* npm install lucide-react react-router-dom — dùng cùng bộ icon 1 màu với Layout.jsx */
 
-/* ============================================================================
-   CommunityFeedPage — nội dung render vào <Outlet/> của Layout.jsx
-   ----------------------------------------------------------------------------
-   CẬP NHẬT — ĐỐI CHIẾU LẠI VỚI BE THẬT (ForumPostService, ForumLikeService):
-
-   - ForumPostDto thật sự có: postId, memberId, memberName, memberAvatar,
-     title, categoryId, categoryName, content, postType, originalPostId,
-     originalPost, likeCount, commentCount, repostCount, status,
-     isLikedByCurrentUser, imageUrls, createdAt, updatedAt. KHÔNG CÓ
-     viewCount — nên bản này bỏ hẳn "lượt xem".
-
-   - memberAvatar lấy từ FaceDatum.ProfileImage bên BE -> CÓ THỂ NULL nếu
-     hội viên chưa đăng ký khuôn mặt. FE luôn fallback về avatar chữ cái
-     đầu (getInitials) khi memberAvatar là null/rỗng, thay vì hiển thị ảnh
-     vỡ hoặc để trống.
-
-   - GetFeedAsync chỉ hỗ trợ 2 kiểu sort thật: "trending" và mặc định (mới
-     nhất theo CreatedAt) — chỉ còn "Mới nhất" / "Thịnh hành".
-
-   - CategoryId ở BE là số nguyên -> ép Number(activeTopic)/Number(postTopic)
-     trước khi gửi lên API.
-
-   - Nút "Thích" gọi thật ForumLikeService qua memberApi.toggleForumPostLike
-     (trả về { isLiked, likeCount }), cập nhật lại state ngay khi có phản hồi.
-
-   - activeTopic/setActiveTopic/categories lấy từ Layout qua useOutletContext()
-     — chọn danh mục ở đây hoặc ở sidebar trái đều đồng bộ 2 chiều.
-
-   - formatRelativeTime / getInitials / mapApiPost được EXPORT để
-     PostDetailPage.jsx dùng lại y hệt, đảm bảo 2 trang luôn hiển thị
-     đồng bộ dữ liệu (không lệch field khi BE đổi DTO).
-
-   MỚI — Nút "Quay lại" ở PostDetailPage nhớ đúng nơi xuất phát:
-   - Mỗi Link trỏ tới `/bai-viet/{id}` (tiêu đề, số bình luận, nút "Bình
-     luận") giờ kèm `state.backTo` = đường dẫn hiện tại của trang Feed này
-     (bao gồm cả query nếu có). PostDetailPage đọc lại state này để nút
-     quay lại trỏ đúng về đây, giống hệt cách ProfilePage đã làm.
-
-   FIX (quan trọng) — Lỗi 400 "The Title field is required":
-   - Backend action Create() dùng [FromForm] ForumPostCreateDto + List<IFormFile>?
-     images -> BẮT BUỘC request phải là Content-Type: multipart/form-data.
-   - Trước đây handleSubmitPost gửi 1 object JS thường (title, categoryId,
-     content, imageUrls: [blobURL...]) -> nếu memberApi gửi dạng JSON thì
-     model binder [FromForm] không đọc được field nào cả (kể cả Title) ->
-     400 "Title field is required".
-   - Ảnh trước đây chỉ lưu blob URL tạm (URL.createObjectURL) chứ không giữ
-     lại File gốc -> không có gì để đính kèm thật vào multipart cho server
-     upload lên S3.
-   - Sửa: handleFiles giữ lại `file` gốc trong state ảnh; handleSubmitPost
-     build FormData đúng tên field mà DTO/action cần (Title, CategoryId,
-     Content, images) rồi gọi memberApi.createForumPost(formData). Bỏ hẳn
-     việc tự gửi imageUrls từ FE (server tự upload file thật rồi set
-     dto.ImageUrls ở phía BE).
-   - LƯU Ý: memberApi.createForumPost cần đảm bảo KHÔNG set cứng
-     "Content-Type: application/json" khi body là FormData — để axios/fetch
-     tự set "multipart/form-data; boundary=..." (xem ghi chú cuối file).
-
-   MỚI — Thu nhỏ chiều cao khung "Hôm nay bạn muốn chia sẻ điều gì?" (desktop,
-   trạng thái thu gọn chưa bấm vào) cho gọn hơn, và cho phép bấm vào ảnh
-   trong bài viết để xem to (lightbox) — xem state `lightboxImage` +
-   component `ImageLightbox` cuối file.
-
-   MỚI — Xác định bài viết có phải của chính mình để hiện nút "..." xoá bài:
-   - mapApiPost giờ map thêm `authorId` (= p.memberId) cho mỗi bài viết.
-   - Khi vào trang, gọi memberApi.getMyProfile() một lần để biết
-     `currentMemberId` (id của người đang đăng nhập) — LƯU Ý: nếu dự án đã
-     có sẵn context/hook auth (ví dụ AuthContext, hoặc decode từ JWT) thì
-     nên dùng lại thay vì gọi thêm API này, tránh gọi dư thừa.
-   - Nút "..." trong header mỗi bài viết chỉ hiện MENU xoá khi
-     `post.authorId === currentMemberId`. Bấm "Xoá bài viết" sẽ hỏi xác
-     nhận rồi gọi memberApi.deleteForumPost(postId), xoá lạc quan khỏi
-     danh sách khi thành công.
-
-   Responsive (breakpoint 860px, đồng bộ với Layout.jsx).
-   ============================================================================ */
-
 const SORT_TABS = [
     { key: "newest", label: "Mới nhất" },
     { key: "trending", label: "Thịnh hành" },
@@ -129,6 +53,7 @@ export function mapApiPost(p) {
         authorId: p.memberId, // MỚI — dùng để so sánh "có phải bài của mình không"
         author: p.memberName ?? "Ẩn danh",
         avatar: p.memberAvatar || null, // null/rỗng -> FE fallback chữ cái đầu
+        categoryId: p.categoryId, // MỚI — giữ lại categoryId để tra icon danh mục thật từ DB
         tag: p.categoryName ?? "",
         time: formatRelativeTime(p.createdAt),
         title: p.title ?? "",
@@ -139,6 +64,16 @@ export function mapApiPost(p) {
         isLiked: p.isLikedByCurrentUser ?? false,
         postType: p.postType,
     };
+}
+
+/* MỚI — Tra icon (component) của 1 danh mục theo categoryId, dựa trên danh
+   sách `categories` lấy từ Layout (đã map sẵn field `icon` từ DB qua
+   useOutletContext). Trả về null nếu không khớp category nào, để chỗ gọi
+   tự quyết định fallback. */
+function getCategoryIcon(categories, categoryId) {
+    if (categoryId == null) return null;
+    const match = categories.find((c) => String(c.key) === String(categoryId));
+    return match?.icon ?? null;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -662,6 +597,9 @@ export default function CommunityFeedPage() {
                         post.authorId != null &&
                         String(post.authorId) === String(currentMemberId);
 
+                    // MỚI — icon danh mục thật lấy từ DB (qua categories context), không phải icon cố định
+                    const TagIcon = getCategoryIcon(categories, post.categoryId);
+
                     return (
                         <article
                             key={post.id}
@@ -672,7 +610,12 @@ export default function CommunityFeedPage() {
                                 <div className="feed-post__meta">
                                     <div className="feed-post__author-row">
                                         <span className="feed-post__author">{post.author}</span>
-                                        <span className="feed-post__tag">{post.tag}</span>
+                                        {post.tag && (
+                                            <span className="feed-post__tag">
+                                                {TagIcon && <TagIcon size={11} className="feed-post__tag-icon" />}
+                                                {post.tag}
+                                            </span>
+                                        )}
                                     </div>
                                     <span className="feed-post__time">{post.time}</span>
                                 </div>
@@ -1029,9 +972,11 @@ const CSS = `
 .feed-post__author-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .feed-post__author { font-weight: 700; font-size: 14px; }
 .feed-post__tag {
+  display: inline-flex; align-items: center; gap: 4px;
   font-size: 11px; font-weight: 700; color: var(--accent); background: var(--accent-soft);
   padding: 2px 8px; border-radius: 999px;
 }
+.feed-post__tag-icon { flex-shrink: 0; }
 .feed-post__time { font-size: 12px; color: var(--text-muted); }
 
 /* MỚI — nút "..." + menu xoá bài viết */

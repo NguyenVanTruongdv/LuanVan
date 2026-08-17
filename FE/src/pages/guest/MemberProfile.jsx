@@ -157,9 +157,14 @@ function sessionTypeToTag(sessionType) {
   return "info";
 }
 
+// Các trường thay đổi không hiển thị cho hội viên (ghi chú nội bộ chỉ dành cho nhân viên)
+const HIDDEN_LOG_FIELDS = ["Ghi chú nội bộ"];
+
 function buildLogText(changes) {
   if (!changes || changes.length === 0) return "";
-  return changes
+  const visible = changes.filter((c) => !HIDDEN_LOG_FIELDS.includes(c.fieldName));
+  if (visible.length === 0) return "";
+  return visible
     .map((c) => `${c.fieldName}: ${c.oldValue ?? "—"} → ${c.newValue ?? "—"}`)
     .join(" · ");
 }
@@ -207,20 +212,26 @@ function mapProfileResponse(raw) {
     };
   }
 
-  const history = (raw.updateHistory || []).map((h) => {
-    const { date, time } = formatDateTime(h.updatedAt);
-    return {
-      sessionId: h.sessionId,
-      date,
-      time,
-      tag: sessionTypeToTag(h.sessionType),
-      staff: h.employeeName,
-      reason: h.reason,
-      log: buildLogText(h.changes),
-      oldImageUrl: h.oldImageUrl,
-      newImageUrl: h.newImageUrl,
-    };
-  });
+  const history = (raw.updateHistory || [])
+    .map((h) => {
+      const { date, time } = formatDateTime(h.updatedAt);
+      const visibleChanges = (h.changes || []).filter((c) => !HIDDEN_LOG_FIELDS.includes(c.fieldName));
+      return {
+        sessionId: h.sessionId,
+        date,
+        time,
+        tag: sessionTypeToTag(h.sessionType),
+        staff: h.employeeName,
+        reason: h.reason,
+        log: buildLogText(h.changes),
+        hasVisibleChanges: visibleChanges.length > 0,
+        oldImageUrl: h.oldImageUrl,
+        newImageUrl: h.newImageUrl,
+      };
+    })
+    // Ẩn hẳn những lượt cập nhật mà nội dung duy nhất là "Ghi chú nội bộ"
+    // (không phải FaceID và không còn thay đổi nào khác để hiển thị).
+    .filter((h) => h.tag === "faceid" || h.hasVisibleChanges);
 
   // avatar: đọc theo nhiều tên field phòng trường hợp BE trả tên khác nhau
   // tuỳ endpoint (urlImg / avatar / image...).
@@ -302,7 +313,8 @@ export default function MemberProfilePage() {
   const FIELDS = [
     { key: "name", label: "Họ và tên", type: "text" },
     { key: "gender", label: "Giới tính", type: "select", options: GENDER_OPTIONS },
-    { key: "phone", label: "Số điện thoại", type: "tel" },
+    // Số điện thoại chỉ để xem — không cho chỉnh sửa (ô sẽ bị disable khi ở chế độ sửa)
+    { key: "phone", label: "Số điện thoại", type: "tel", readOnly: true },
   ];
 
   const startEdit = () => {
@@ -347,7 +359,8 @@ export default function MemberProfilePage() {
     const payload = {
       fullName: draft.name,
       gender: GENDER_LABEL_TO_API[draft.gender] || draft.gender,
-      phone: draft.phone,
+      // Số điện thoại không cho sửa, luôn giữ nguyên giá trị gốc
+      phone: profile.phone,
     };
     if (draft.password) {
       payload.password = draft.password;
@@ -577,10 +590,11 @@ export default function MemberProfilePage() {
                           </select>
                         ) : (
                           <input
-                            className="mp-input"
+                            className={"mp-input" + (f.readOnly ? " mp-input-disabled" : "")}
                             type={f.type}
                             value={draft[f.key]}
                             onChange={(e) => updateDraft(f.key, e.target.value)}
+                            disabled={!!f.readOnly}
                           />
                         )
                       ) : (
@@ -696,10 +710,7 @@ export default function MemberProfilePage() {
 
                   {pkg.description && <p style={{ color: "var(--text-muted)", fontSize: 13.5, marginTop: 16 }}>{pkg.description}</p>}
 
-                  <div style={{ display: "flex", gap: 10, marginTop: 22 }}>
-                    <button className="mp-btn solid">Gia hạn gói tập</button>
-                    <button className="mp-btn">Xem chi tiết gói</button>
-                  </div>
+
                 </>
               ) : (
                 <p style={{ color: "var(--text-muted)" }}>Bạn chưa có gói tập nào đang hoạt động.</p>
@@ -1072,6 +1083,9 @@ const FULL_STYLE = `
           outline: none; transition: border-color 0.15s;
         }
         .mp-input:focus, .mp-select:focus { border-color: var(--accent); }
+        .mp-input-disabled, .mp-input:disabled {
+          opacity: 0.6; cursor: not-allowed; color: var(--text-muted);
+        }
         .mp-select { appearance: none; cursor: pointer; }
         .mp-input-ok { border-color: var(--success) !important; }
         .mp-input-bad { border-color: #FF5A5A !important; }

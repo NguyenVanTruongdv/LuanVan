@@ -330,6 +330,97 @@ const managerApi = {
         const query = toReportQuery(range);
         return authApi.get(`/api/reports/equipment/by-branch${query ? `?${query}` : ""}`);
     },
+    // MANAGER DASHBOARD
+    // =========================================================================
+
+    // GET /api/dashboard/manager
+    // Dashboard tổng quan dành cho Quản lý chi nhánh.
+    // params:
+    //   range : "today" | "7d" | "30d" | "custom"
+    //   start : ISO DateTime (chỉ dùng khi range = "custom")
+    //   end   : ISO DateTime (chỉ dùng khi range = "custom")
+    getManagerDashboard({ range = "7d", start, end } = {}) {
+        const params = new URLSearchParams();
+
+        params.append("range", range);
+
+        if (range === "custom") {
+            if (start) {
+                params.append(
+                    "start",
+                    start instanceof Date ? start.toISOString() : start
+                );
+            }
+
+            if (end) {
+                params.append(
+                    "end",
+                    end instanceof Date ? end.toISOString() : end
+                );
+            }
+        }
+
+        return authApi.get(`/api/dashboard/manager?${params.toString()}`);
+    },
+
+    // =========================================================================
+    // MANAGER DASHBOARD - KPI
+    // Tổng doanh thu, số hội viên hoạt động,
+    // số sự cố chưa xử lý,...
+    // =========================================================================
+    getManagerKpi({ range = "7d", start, end } = {}) {
+        return this.getManagerDashboard({ range, start, end });
+    },
+
+    // =========================================================================
+    // MANAGER DASHBOARD - Revenue Chart
+    // Biểu đồ doanh thu theo ngày.
+    // FE lấy response.RevenueTrend
+    // =========================================================================
+    getRevenueTrend({ range = "7d", start, end } = {}) {
+        return this.getManagerDashboard({ range, start, end });
+    },
+
+    // =========================================================================
+    // MANAGER DASHBOARD - Hội viên check-in gần đây
+    // FE lấy response.RecentMembers
+    // =========================================================================
+    getRecentMembers({ range = "7d", start, end } = {}) {
+        return this.getManagerDashboard({ range, start, end });
+    },
+
+    // =========================================================================
+    // MANAGER DASHBOARD - Danh sách sự cố chưa xử lý
+    // FE lấy response.UnresolvedIssues
+    // =========================================================================
+    getUnresolvedIssues({ range = "7d", start, end } = {}) {
+        return this.getManagerDashboard({ range, start, end });
+    },
+
+    // =========================================================================
+    // MANAGER DASHBOARD - Tình trạng thiết bị
+    // FE lấy response.EquipmentStatus
+    // =========================================================================
+    getEquipmentStatus({ range = "7d", start, end } = {}) {
+        return this.getManagerDashboard({ range, start, end });
+    },
+    // GET: api/dashboard/manager?range=today|7d|30d|custom&start=&end=
+    getManagerDashboard(params = {}) {
+        const query = new URLSearchParams(
+            Object.entries(params).filter(
+                ([, v]) => v !== undefined && v !== null && v !== ""
+            )
+        ).toString();
+
+        const url = query
+            ? `/api/dashboard/manager?${query}`
+            : "/api/dashboard/manager";
+        return authApi.get(url);
+    },
+    getAdjustmentHistory(transactionId) {
+    return authApi.get(`/api/transactions/${transactionId}/adjustment-history`);  // cái hàm này dùng để lấy lịch sủ
+    //  giao dịch cho trang admin chú  manager k dùng
+    },
 };
 
 export default managerApi;

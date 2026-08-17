@@ -36,7 +36,7 @@ public class ForumNotificationService
             CommentId = commentId,
             LikeId = likeId,
             IsRead = false,
-            CreatedAt = DateTime.UtcNow,
+            CreatedAt = DateTime.Now,
         };
 
         _context.ForumNotifications.Add(thongBaoMoi);

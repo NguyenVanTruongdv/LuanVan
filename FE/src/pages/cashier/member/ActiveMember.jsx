@@ -15,6 +15,7 @@ import {
   ShieldCheck,
   Sparkles,
   Tag,
+  Upload,
   User,
 } from "lucide-react";
 import React, { useCallback, useEffect, useRef, useState } from "react";
@@ -551,6 +552,7 @@ function FaceIdStep({
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const streamRef = useRef(null);
+  const fileInputRef = useRef(null);
   const [cameraState, setCameraState] = useState("idle"); // idle | loading | ready | error
   const [errorMsg, setErrorMsg] = useState("");
 
@@ -571,7 +573,7 @@ function FaceIdStep({
     } catch (err) {
       setCameraState("error");
       setErrorMsg(
-        "Không thể truy cập camera (có thể do trình duyệt chặn quyền truy cập). Bạn vẫn có thể dùng ảnh minh họa để tiếp tục demo."
+        "Không thể truy cập camera (có thể do trình duyệt chặn quyền truy cập). Bạn vẫn có thể tải ảnh lên từ thiết bị để tiếp tục."
       );
     }
   }, []);
@@ -611,6 +613,24 @@ function FaceIdStep({
   const handleRetake = () => {
     onRetake();
     startCamera();
+  };
+
+  // Tải ảnh có sẵn lên từ thiết bị (thay cho chụp trực tiếp bằng camera).
+  const handleUploadClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleFileChange = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    stopCamera();
+    const reader = new FileReader();
+    reader.onload = () => {
+      onCapture(reader.result);
+    };
+    reader.readAsDataURL(file);
+    // reset input để có thể chọn lại cùng 1 file nếu cần
+    e.target.value = "";
   };
 
   return (
@@ -664,6 +684,27 @@ function FaceIdStep({
             </>
           )}
 
+          {/* Khung ngắm oval — vị trí đặt khuôn mặt, luôn hiển thị đè lên
+              video/ảnh khi chưa chụp, giúp hội viên căn mặt vào giữa khung.
+              Chỉ còn viền nét đứt, KHÔNG còn lớp phủ mờ xám bên ngoài. */}
+          {!capturedImage && (
+            <div className="face-oval-guide">
+              <svg viewBox="0 0 220 280" width="100%" height="100%">
+                <ellipse
+                  cx="110"
+                  cy="140"
+                  rx="82"
+                  ry="106"
+                  fill="none"
+                  stroke="#ffffff"
+                  strokeWidth="2.5"
+                  strokeDasharray="10 8"
+                  className={cameraState === "ready" ? "face-oval-ring pulsing" : "face-oval-ring"}
+                />
+              </svg>
+            </div>
+          )}
+
           {/* khung ngắm góc kiểu face-scan */}
           <div className="scan-corners">
             <span className="corner tl" />
@@ -675,6 +716,13 @@ function FaceIdStep({
         </div>
 
         <canvas ref={canvasRef} style={{ display: "none" }} />
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          style={{ display: "none" }}
+          onChange={handleFileChange}
+        />
 
         <div className="faceid-side">
           <div className="faceid-tips">
@@ -704,13 +752,23 @@ function FaceIdStep({
 
           <div className="faceid-actions">
             {capturedImage ? (
-              <button className="btn-secondary" onClick={handleRetake}>
-                <RefreshCw size={15} /> Chụp lại
-              </button>
+              <>
+                <button className="btn-secondary" onClick={handleRetake}>
+                  <RefreshCw size={15} /> Chụp lại
+                </button>
+                <button className="btn-secondary" onClick={handleUploadClick}>
+                  <Upload size={15} /> Tải ảnh khác
+                </button>
+              </>
             ) : (
-              <button className="btn-primary" onClick={handleCapture}>
-                <Camera size={16} /> Chụp ảnh
-              </button>
+              <>
+                <button className="btn-primary" onClick={handleCapture}>
+                  <Camera size={16} /> Chụp ảnh
+                </button>
+                <button className="btn-secondary" onClick={handleUploadClick}>
+                  <Upload size={15} /> Tải ảnh lên
+                </button>
+              </>
             )}
           </div>
 
@@ -1317,12 +1375,14 @@ const CSS = `
   --muted:#6B7280;
   --primary:#1B6F53;
   --primary-dark:#145940;
-  --primary-light:rgba(27,111,83,0.10);
+  --primary-light:rgba(27,111,83,0.14);
   --navy:#1B6F53;
   --navy-light:#20876A;
-  --surface:#FFFFFF;
-  --bg:#F4F6F8;
-  --border:#E5E9EF;
+  --surface:#FCFFFE;
+  --card-alt:#D6EFE3;
+  --bg:#F1F7F3;
+  --border:#8FCDAE;
+  --card-border:rgba(20,89,64,0.45);
   --danger:#D14C43;
   --danger-bg:rgba(209,76,67,0.10);
   --warn:#B7791F;
@@ -1331,10 +1391,10 @@ const CSS = `
   --bonus-bg:rgba(217,164,65,0.14);
   --discount:#178A56;
   --discount-bg:rgba(23,138,86,0.10);
-  --shadow-sm:0 1px 2px rgba(16,24,40,0.05);
-  --shadow-md:0 4px 12px rgba(16,24,40,0.06), 0 1px 3px rgba(16,24,40,0.05);
-  --shadow-lg:0 12px 28px rgba(16,24,40,0.10), 0 2px 6px rgba(16,24,40,0.06);
-  --shadow-focus:0 0 0 3px rgba(27,111,83,0.16);
+  --shadow-sm:0 2px 4px rgba(12,80,58,0.12), 0 1px 2px rgba(12,80,58,0.08);
+  --shadow-md:0 4px 10px rgba(12,80,58,0.14), 0 14px 32px rgba(12,80,58,0.14);
+  --shadow-lg:0 6px 16px rgba(12,80,58,0.16), 0 26px 56px rgba(12,80,58,0.20);
+  --shadow-focus:0 0 0 3px rgba(27,111,83,0.22);
 }
 *{box-sizing:border-box;}
 .app-shell{
@@ -1354,7 +1414,7 @@ const CSS = `
 .page-head{
   display:flex;gap:14px;align-items:flex-start;margin-bottom:24px;
   background:var(--surface);
-  border:1px solid var(--border);
+  border:2px solid var(--card-border);
   border-radius:16px;padding:20px 24px;
   box-shadow:var(--shadow-md);
 }
@@ -1367,7 +1427,7 @@ const CSS = `
 
 .search-bar{
   display:flex;align-items:center;gap:10px;
-  background:var(--surface);border:1px solid var(--border);
+  background:var(--surface);border:2px solid var(--card-border);
   border-radius:12px;padding:12px 16px;margin-bottom:18px;
   box-shadow:var(--shadow-sm);transition:box-shadow .15s, border-color .15s;
 }
@@ -1382,7 +1442,7 @@ const CSS = `
 .member-list{display:flex;flex-direction:column;gap:10px;}
 .member-row{
   display:flex;align-items:center;gap:14px;
-  background:var(--surface);border:1px solid var(--border);
+  background:var(--surface);border:2px solid var(--card-border);
   border-radius:14px;padding:14px 16px;box-shadow:var(--shadow-sm);
   transition:border-color .15s, box-shadow .15s, transform .15s;
 }
@@ -1431,13 +1491,13 @@ const CSS = `
 .layout{display:grid;grid-template-columns:1fr 300px;gap:20px;align-items:start;}
 @media (max-width:820px){.layout{grid-template-columns:1fr;}}
 .layout-main{min-width:0;}
-.card{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:22px;box-shadow:var(--shadow-md);}
+.card{background:var(--surface);border:2px solid var(--card-border);border-radius:16px;padding:22px;box-shadow:var(--shadow-md);}
 .card-head-title{font-size:16px;font-weight:700;margin-bottom:4px;color:var(--ink);}
 .card-head-sub{font-size:13px;color:var(--muted);margin-bottom:20px;}
 
 /* Package — chuyển đổi gói + timeline */
 .pkg-switch{display:flex;align-items:stretch;gap:12px;margin-bottom:20px;}
-.pkg-switch-box{flex:1;background:var(--bg);border:1px solid var(--border);border-radius:12px;padding:14px 16px;min-width:0;}
+.pkg-switch-box{flex:1;background:var(--card-alt);border:1.5px solid var(--card-border);border-radius:12px;padding:14px 16px;min-width:0;}
 .pkg-switch-new.filled{border-color:var(--primary);background:var(--primary-light);box-shadow:var(--shadow-sm);}
 .pkg-switch-label{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px;}
 .pkg-switch-value{font-weight:700;font-size:14.5px;overflow-wrap:anywhere;color:var(--ink);}
@@ -1464,7 +1524,7 @@ const CSS = `
 .package-list{display:flex;flex-direction:column;gap:8px;}
 .package-row{
   display:flex;align-items:center;gap:12px;text-align:left;width:100%;
-  background:var(--bg);border:1.5px solid var(--border);border-radius:12px;
+  background:var(--card-alt);border:2px solid var(--card-border);border-radius:12px;
   padding:12px 14px;cursor:pointer;transition:all .15s;
 }
 .package-row:hover{border-color:var(--primary);box-shadow:var(--shadow-sm);}
@@ -1482,7 +1542,7 @@ const CSS = `
 /* Khuyến mãi tự động (thay cho voucher chọn thủ công trước đây) */
 .voucher-row{
   display:flex;align-items:center;gap:12px;text-align:left;width:100%;
-  background:var(--bg);border:1.5px solid var(--border);border-left-width:4px;
+  background:var(--card-alt);border:2px solid var(--card-border);border-left-width:4px;
   border-radius:12px;padding:12px 14px;transition:all .15s;box-shadow:var(--shadow-sm);
 }
 .voucher-row-static{cursor:default;}
@@ -1516,7 +1576,7 @@ const CSS = `
 .payment-methods{display:flex;gap:10px;flex-wrap:wrap;}
 .payment-method-btn{
   flex:1;min-width:150px;display:flex;align-items:center;gap:9px;
-  background:var(--bg);border:1.5px solid var(--border);border-radius:12px;
+  background:var(--card-alt);border:2px solid var(--card-border);border-radius:12px;
   padding:12px 14px;cursor:pointer;font-size:13.5px;font-weight:600;color:var(--ink);
   transition:all .15s;position:relative;
 }
@@ -1530,7 +1590,7 @@ const CSS = `
 .faceid-frame{
   position:relative;width:320px;height:320px;border-radius:20px;overflow:hidden;
   background:linear-gradient(160deg,var(--navy-light),var(--navy));flex:none;
-  border:1px solid var(--border);box-shadow:var(--shadow-lg);
+  border:2px solid var(--card-border);box-shadow:var(--shadow-lg);
 }
 .faceid-media{width:100%;height:100%;object-fit:cover;}
 .faceid-video{transform:scaleX(-1);}
@@ -1548,6 +1608,22 @@ const CSS = `
   display:flex;flex-direction:column;align-items:center;gap:6px;
   font-size:12px;color:#FFD7D3;text-align:center;padding:0 20px;
 }
+
+/* Khung ngắm oval — vị trí đặt mặt ở giữa khung camera, chỉ còn viền nét
+   đứt, không còn lớp phủ mờ xám bên ngoài. */
+.face-oval-guide{
+  position:absolute; inset:0; pointer-events:none; z-index:2;
+}
+.face-oval-guide svg{display:block;}
+.face-oval-ring{ vector-effect:non-scaling-stroke; }
+.face-oval-ring.pulsing{
+  animation:oval-pulse 1.8s ease-in-out infinite;
+}
+@keyframes oval-pulse{
+  0%,100%{ stroke:#ffffff; opacity:1; }
+  50%{ stroke:#8FE6C4; opacity:.85; }
+}
+
 .scan-corners{position:absolute;inset:22px;pointer-events:none;}
 .corner{position:absolute;width:22px;height:22px;border:2.5px solid rgba(255,255,255,0.9);}
 .corner.tl{top:0;left:0;border-right:none;border-bottom:none;border-top-left-radius:6px;}
@@ -1565,11 +1641,12 @@ const CSS = `
 }
 
 .faceid-side{flex:1;display:flex;flex-direction:column;gap:16px;min-width:0;}
-.faceid-tips{background:var(--bg);border:1px solid var(--border);border-radius:12px;padding:14px 16px;box-shadow:var(--shadow-sm);}
+.faceid-tips{background:var(--card-alt);border:2px solid var(--card-border);border-radius:12px;padding:14px 16px;box-shadow:var(--shadow-sm);}
 .faceid-tips-title{display:flex;align-items:center;gap:6px;font-weight:700;font-size:13px;margin-bottom:8px;color:var(--primary-dark);}
 .faceid-tips ul{margin:0;padding-left:18px;font-size:12.5px;color:var(--muted);line-height:1.7;}
 .faceid-member{display:flex;align-items:center;gap:10px;}
-.faceid-actions{margin-top:auto;display:flex;gap:10px;}
+.faceid-actions{margin-top:auto;display:flex;gap:10px;flex-wrap:wrap;}
+.faceid-actions .btn-primary,.faceid-actions .btn-secondary{flex:1;min-width:130px;}
 .hint-error{font-size:12px;color:var(--danger);}
 
 .facecheck-box{
@@ -1594,7 +1671,7 @@ const CSS = `
 .btn-secondary{
   background:var(--surface);color:var(--ink);border:1.5px solid var(--border);border-radius:10px;
   padding:11px 18px;font-size:13.5px;font-weight:600;cursor:pointer;
-  display:inline-flex;align-items:center;gap:7px;box-shadow:var(--shadow-sm);
+  display:inline-flex;align-items:center;justify-content:center;gap:7px;box-shadow:var(--shadow-sm);
   transition:border-color .15s, box-shadow .15s, color .15s;
 }
 .btn-secondary:hover{border-color:var(--primary);color:var(--primary-dark);box-shadow:var(--shadow-md);}
@@ -1616,7 +1693,7 @@ const CSS = `
 
 /* Summary side */
 .layout-side{position:sticky;top:24px;}
-.summary-card{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:20px;box-shadow:var(--shadow-lg);}
+.summary-card{background:var(--surface);border:2px solid var(--card-border);border-radius:16px;padding:20px;box-shadow:var(--shadow-lg);}
 .summary-title{font-size:11.5px;font-weight:700;letter-spacing:.06em;color:var(--muted);margin-bottom:14px;}
 .summary-member{display:flex;align-items:center;gap:10px;margin-bottom:14px;}
 .summary-divider{height:1px;background:var(--border);margin:6px 0 14px;}

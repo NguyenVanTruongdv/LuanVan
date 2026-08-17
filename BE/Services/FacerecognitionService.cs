@@ -5,7 +5,7 @@ using Microsoft.Extensions.Configuration;
 
 namespace BE.Services.FaceRecognition
 {
-    
+
     public enum FaceOwnerType
     {
         Member,
@@ -27,7 +27,7 @@ namespace BE.Services.FaceRecognition
         public long? EmployeeId { get; set; }
         public float Similarity { get; set; }
 
-       
+
         public string? MatchedFaceId { get; set; }
     }
 
@@ -35,7 +35,7 @@ namespace BE.Services.FaceRecognition
     {
         private const string MemberPrefix = "member-";
         private const string EmployeePrefix = "employee-";
-
+        //khi mà avvs trả về thì có dạng: member-id hoạc emoloyee-id. biết đc đó là employee hay là member. 
         private readonly IAmazonRekognition _rekognitionClient;
         private readonly string _collectionId;
 
@@ -60,38 +60,42 @@ namespace BE.Services.FaceRecognition
                 ?? throw new InvalidOperationException("Thiếu cấu hình Aws:RekognitionCollectionId");
         }
 
-  
+
 
         // Đăng ký/cập nhật khuôn mặt cho hội viên. Trả về FaceId do AWS cấp.
         public Task<string> RegisterMemberFaceAsync(IFormFile image, long memberId)
-            => RegisterFaceInternalAsync(image, BuildMemberExternalImageId(memberId));
+            => ThemMatVaoCollectionAsync(image, BuildMemberExternalImageId(memberId));
 
         // Đăng ký/cập nhật khuôn mặt cho nhân viên. Trả về FaceId do AWS cấp.
         public Task<string> RegisterEmployeeFaceAsync(IFormFile image, long employeeId)
-            => RegisterFaceInternalAsync(image, BuildEmployeeExternalImageId(employeeId));
+            => ThemMatVaoCollectionAsync(image, BuildEmployeeExternalImageId(employeeId));
 
-        // Giữ overload tổng quát này cho các nơi đang tự build sẵn externalImageId,
-        // để không phải sửa lại code cũ.
-        public Task<string> RegisterFaceAsync(IFormFile image, string externalImageId)
-            => RegisterFaceInternalAsync(image, externalImageId);
 
-        private async Task<string> RegisterFaceInternalAsync(IFormFile image, string externalImageId)
+
+        // Hàm nội bộ: đọc ảnh -> gửi lên AWS Rekognition để "index" (thêm khuôn
+        // mặt vào collection) -> trả về FaceId mà AWS cấp cho khuôn mặt đó.
+        // externalImageId là chuỗi do mình tự đặt (dạng "member-123" hoặc
+        // "employee-45") để sau này biết FaceId này thuộc về ai.
+        private async Task<string> ThemMatVaoCollectionAsync(IFormFile image, string externalImageId)
         {
+            // B1: đọc file ảnh người dùng upload vào bộ nhớ (MemoryStream)
             using var luongDoc = image.OpenReadStream();
             using var anhStream = new MemoryStream();
             await luongDoc.CopyToAsync(anhStream);
             anhStream.Position = 0;
 
+            // B2: chuẩn bị request gửi cho AWS Rekognition
             var yeuCau = new IndexFacesRequest
             {
                 CollectionId = _collectionId,
                 Image = new Amazon.Rekognition.Model.Image { Bytes = anhStream },
-                ExternalImageId = externalImageId,
-                MaxFaces = 1,
-                QualityFilter = QualityFilter.AUTO,
-                DetectionAttributes = new List<string> { "DEFAULT" }
+                ExternalImageId = externalImageId, //này là chuỗi luu trên avvs
+                MaxFaces = 1,       //lấy khuôn mạt rõ nhất 
+                QualityFilter = QualityFilter.AUTO,  //avvs tụ động lọc ảnh chất luongj kém
+                DetectionAttributes = new List<string> { "DEFAULT" }  //thông tin cần avvs trả về. 
             };
 
+            // B3: gọi AWS. Nếu ảnh không có mặt rõ, AWS sẽ ném InvalidParameterException.
             IndexFacesResponse ketQua;
             try
             {
@@ -103,19 +107,21 @@ namespace BE.Services.FaceRecognition
                 throw new ArgumentException("Ảnh không nhận diện được khuôn mặt rõ ràng. Vui lòng chụp lại.");
             }
 
+            // B4: nếu AWS xử lý được nhưng không tìm thấy khuôn mặt nào trong ảnh
             if (ketQua.FaceRecords.Count == 0)
                 throw new ArgumentException("Không tìm thấy khuôn mặt trong ảnh. Vui lòng chụp lại ảnh rõ nét hơn.");
 
+            // B5: lấy FaceId của khuôn mặt vừa được AWS index, trả về cho nơi gọi lưu vào DB
             return ketQua.FaceRecords[0].Face.FaceId;
         }
 
-     
+
         // NHẬN DIỆN - CHECK-IN (ưu tiên Employee), chỉ dùng cho luồng check-in
         // tự động qua camera.
-   
+
         public async Task<FaceSearchResult> SearchFaceByImageAsync(byte[] imageBytes)
         {
-            var dsKhop = await SearchAndParseMatchesAsync(imageBytes);
+            var dsKhop = await TimKiemVaChuyenKetQuaAsync(imageBytes);
 
             if (dsKhop.Count == 1 &&
                 (dsKhop[0].Status == FaceSearchStatus.NoFace || dsKhop[0].Status == FaceSearchStatus.NotRecognized))
@@ -146,10 +152,10 @@ namespace BE.Services.FaceRecognition
             return dsKhop.First();
         }
 
-   
+
         // NHẬN DIỆN - CHECK TRÙNG KHI ĐĂNG KÝ (không ưu tiên ai), dùng bởi
         // FaceIdService.CheckFaceInternalAsync để tự lọc đúng scope Member/Employee
-  
+
 
         // Trả về toàn bộ match hợp lệ đã parse Member/Employee, sắp giảm dần
         // theo similarity, không ưu tiên loại nào.
@@ -157,12 +163,16 @@ namespace BE.Services.FaceRecognition
         // không khớp ai, trả về list chỉ chứa 1 phần tử NoFace
         // Caller tự lọc theo scope (Member/Employee) mình đang cần kiểm tra.
         public async Task<List<FaceSearchResult>> SearchAllFaceMatchesAsync(byte[] imageBytes)
-            => await SearchAndParseMatchesAsync(imageBytes);
+            => await TimKiemVaChuyenKetQuaAsync(imageBytes);
 
-        private async Task<List<FaceSearchResult>> SearchAndParseMatchesAsync(byte[] imageBytes)
+        // Hàm nội bộ: gửi ảnh lên AWS để tìm các khuôn mặt giống trong collection,
+        // sau đó chuyển (convert) từng kết quả AWS trả về thành FaceSearchResult
+        // (biết được đó là Member hay Employee, id bao nhiêu).
+        private async Task<List<FaceSearchResult>> TimKiemVaChuyenKetQuaAsync(byte[] imageBytes)
         {
             using var anhStream = new MemoryStream(imageBytes);
 
+            // B1: gọi AWS Rekognition để tìm các khuôn mặt giống trong collection
             SearchFacesByImageResponse ketQua;
             try
             {
@@ -180,26 +190,34 @@ namespace BE.Services.FaceRecognition
                 return new List<FaceSearchResult> { new FaceSearchResult { Status = FaceSearchStatus.NoFace } };
             }
 
+            // B2: AWS xử lý được ảnh nhưng không tìm thấy ai khớp
             if (ketQua.FaceMatches == null || ketQua.FaceMatches.Count == 0)
                 return new List<FaceSearchResult> { new FaceSearchResult { Status = FaceSearchStatus.NotRecognized } };
 
-       
+            // B3: mỗi match AWS trả về có ExternalImageId (vd "member-123").
+            // Chuyển từng cái thành FaceSearchResult, sắp xếp similarity giảm dần,
+            // chỉ giữ lại những cái parse thành công (Status == Found).
             var dsMatch = ketQua.FaceMatches
                 .OrderByDescending(kh => kh.Similarity)
-                .Select(kh => ParseExternalImageId(kh.Face.ExternalImageId, kh.Similarity ?? 0, kh.Face.FaceId))
+                .Select(kh => ChuyenExternalImageIdThanhKetQua(kh.Face.ExternalImageId, kh.Similarity ?? 0, kh.Face.FaceId))
                 .Where(kq => kq.Status == FaceSearchStatus.Found)
                 .ToList();
 
+            // B4: nếu sau khi lọc không còn ai hợp lệ -> coi như không nhận diện được
             return dsMatch.Count == 0
                 ? new List<FaceSearchResult> { new FaceSearchResult { Status = FaceSearchStatus.NotRecognized } }
                 : dsMatch;
         }
 
-        private static FaceSearchResult ParseExternalImageId(string? externalImageId, float similarity, string? faceId)
+        // Hàm nội bộ: đọc chuỗi externalImageId (vd "member-123" hoặc
+        // "employee-45") mà mình tự đặt lúc đăng ký, để biết khuôn mặt khớp
+        // được là của Member hay Employee, id bao nhiêu.
+        private static FaceSearchResult ChuyenExternalImageIdThanhKetQua(string? externalImageId, float similarity, string? faceId)
         {
             if (string.IsNullOrEmpty(externalImageId))
                 return new FaceSearchResult { Status = FaceSearchStatus.NotRecognized };
 
+            // Trường hợp là hội viên: "member-123"
             if (externalImageId.StartsWith(MemberPrefix, StringComparison.Ordinal) &&
                 long.TryParse(externalImageId.AsSpan(MemberPrefix.Length), out var memberId))
             {
@@ -213,6 +231,7 @@ namespace BE.Services.FaceRecognition
                 };
             }
 
+            // Trường hợp là nhân viên: "employee-45"
             if (externalImageId.StartsWith(EmployeePrefix, StringComparison.Ordinal) &&
                 long.TryParse(externalImageId.AsSpan(EmployeePrefix.Length), out var employeeId))
             {
@@ -230,7 +249,7 @@ namespace BE.Services.FaceRecognition
             return new FaceSearchResult { Status = FaceSearchStatus.NotRecognized };
         }
         // XOÁ FACEID (khi cập nhật ảnh mới, xoá face cũ khỏi collection)
- 
+
         public async Task DeleteFaceAsync(string? faceId)
         {
             if (string.IsNullOrWhiteSpace(faceId))

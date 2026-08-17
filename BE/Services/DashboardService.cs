@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using BE.Data;
+using BE.Services.Reports;
 using Microsoft.EntityFrameworkCore;
 
 namespace BE.Services
@@ -15,10 +16,12 @@ namespace BE.Services
     public class DashboardService
     {
         private readonly GymManagementContext _context;
+        private readonly ReportService _reportService;
 
-        public DashboardService(GymManagementContext context)
+        public DashboardService(GymManagementContext context, ReportService reportService)
         {
             _context = context;
+            _reportService = reportService;
         }
 
         // ====================== CÁC HÀM DASHBOARD TỔNG QUAN (CŨ) ======================
@@ -208,6 +211,12 @@ namespace BE.Services
         /// <summary>
         /// branchId = null  => Admin, xem toàn hệ thống
         /// branchId = X     => Cashier / Manager, chỉ xem chi nhánh X
+        ///
+        /// Dashboard thu ngân chỉ lọc theo khoảng thời gian (query.Range / Start / End).
+        /// Phương thức thanh toán và kênh bán hàng (tại quầy/online) KHÔNG còn là bộ lọc —
+        /// luôn tính trên toàn bộ giao dịch trong khoảng thời gian đã chọn, giống hành vi
+        /// "Tất cả phương thức" / "Tất cả hình thức" trước đây. Các trường Method/Channel
+        /// trong CashierDashboardQueryDto (nếu FE còn gửi lên) sẽ bị bỏ qua.
         /// </summary>
         public async Task<CashierDashboardDto> GetCashierDashboardAsync(int? branchId, CashierDashboardQueryDto query)
         {
@@ -219,20 +228,10 @@ namespace BE.Services
             if (branchId.HasValue)
                 txQuery = txQuery.Where(t => t.BranchId == branchId);
 
-            if (!string.IsNullOrWhiteSpace(query.Method) && query.Method != "Tất cả")
-                txQuery = txQuery.Where(t => t.PaymentMethod == query.Method);
-
             // Không có cột Channel trong Transactions => suy ra kênh bán hàng từ EmployeeId:
             // có nhân viên xử lý (EmployeeId != null) = "Tại quầy", không có = "Online" (khách tự thanh toán).
+            // Vẫn tính để hiển thị breakdown, nhưng không dùng để lọc nữa.
             // TODO: đổi "t.EmployeeId" thành đúng tên property nếu entity của bạn đặt tên khác.
-            if (!string.IsNullOrWhiteSpace(query.Channel) && query.Channel != "Tất cả")
-            {
-                if (query.Channel == "Tại quầy")
-                    txQuery = txQuery.Where(t => t.EmployeeId != null);
-                else if (query.Channel == "Online")
-                    txQuery = txQuery.Where(t => t.EmployeeId == null);
-            }
-
             var transactions = await txQuery
                 .OrderBy(t => t.CreatedAt)
                 .Select(t => new
@@ -367,6 +366,26 @@ namespace BE.Services
                 .ToList();
 
             return dto;
+        }
+
+        // ====================== DASHBOARD THU NGÂN — BẢN TỔNG HỢP TỪ REPORT ======================
+
+        /// <summary>
+        /// Chuyển từ ReportService sang đây (đây là dashboard, không phải report).
+        /// Gộp 3 report Member/CheckIn/Revenue thành 1 dashboard thu ngân, dùng
+        /// ReportFilter/ReportService sẵn có bên BE.Services.Reports.
+        /// Lưu ý: trả về BE.Services.Reports.CashierDashboardDto (khác với
+        /// CashierDashboardDto ở trên — 2 class trùng tên, khác namespace, khác cấu trúc),
+        /// nên phải fully-qualify để tránh nhầm lẫn với hàm GetCashierDashboardAsync phía trên.
+        /// </summary>
+        public async Task<BE.Services.Reports.CashierDashboardDto> GetCashierReportDashboardAsync(ReportFilter filter)
+        {
+            return new BE.Services.Reports.CashierDashboardDto
+            {
+                MemberReport = await _reportService.GetMemberSummaryReportAsync(filter),
+                CheckInReport = await _reportService.GetCheckInReportAsync(filter),
+                RevenueReport = await _reportService.GetRevenueReportAsync(filter)
+            };
         }
 
         // ====================== DASHBOARD QUẢN LÝ (MANAGER MỚI) ======================

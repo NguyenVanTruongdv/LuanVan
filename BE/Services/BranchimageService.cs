@@ -212,7 +212,7 @@ public class BranchImageService
             entity.ImageUrl = url;
             entity.ImageType = imageType;
             entity.SortOrder = nextOrder;
-            entity.UploadedAt = DateTime.UtcNow;
+            entity.UploadedAt = DateTime.Now;
 
             _context.BranchImages.Add(entity);
             result.Add(entity);
