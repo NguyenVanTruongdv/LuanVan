@@ -12,10 +12,10 @@ public class ForumPostService
     private readonly S3StorageService _storageService;
 
     // Danh sách từ ngữ thô tục / cấm dùng trong bài viết 
-   
+
     private static readonly List<string> BadWordList = new List<string>
     {
-       "ngu","cho","đm"
+       "ngu","đm"
     };
 
     public ForumPostService(GymManagementContext context, S3StorageService storageService)

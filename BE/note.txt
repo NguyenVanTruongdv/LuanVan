@@ -1,0 +1,24 @@
+aws rekognition delete-collection \
+  --collection-id gym-members \
+  --region ap-southeast-1
+
+  aws rekognition create-collection \
+  --collection-id gym-members \
+  --region ap-southeast-1
+
+
+  aws rekognition describe-collection \
+  --collection-id gym-members \
+  --region ap-southeast-1
+
+  ngrok http 5231 
+
+  SET GLOBAL event_scheduler = ON; 
+CREATE EVENT update_expired_packages
+ON SCHEDULE EVERY 1 DAY
+STARTS TIMESTAMP(CURRENT_DATE + INTERVAL 1 DAY, '00:00:00')
+DO
+    UPDATE member_packages
+    SET package_status = 'Expired'
+    WHERE expiry_date < CURDATE()
+      AND package_status = 'Active';

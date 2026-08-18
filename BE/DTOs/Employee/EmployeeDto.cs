@@ -89,8 +89,8 @@ namespace BE.DTOs.Employee
     {
         [Required] public string FullName { get; set; } = null!;
         public string Phone { get; set; } = null!;
-        [Required] public string Gender { get; set; } = null!;
-        [Required] public long RoleId { get; set; }
+         public string Gender { get; set; } = null!;
+        public long RoleId { get; set; }
         public List<int> BranchIds { get; set; } = new();
     }
 
@@ -192,7 +192,7 @@ namespace BE.DTOs.Employee
     {
         [Required] public string FullName { get; set; } = null!;
         [Required] public string Phone { get; set; } = null!;
-        [Required] public string Gender { get; set; } = null!;
+       public string? Gender { get; set; } = null!;
         public List<int> BranchIds { get; set; } = new();
     }
 

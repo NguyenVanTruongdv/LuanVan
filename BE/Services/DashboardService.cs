@@ -61,7 +61,8 @@ namespace BE.Services
                 .Where(t => t.CreatedAt.Date == yesterday)
                 .SumAsync(t => (decimal?)t.Amount) ?? 0;
 
-            var checkinQuery = _context.CheckIns.AsQueryable();
+            // Chỉ tính check-in của hội viên (member_id != null), bỏ qua chấm công nhân viên (employee_id)
+            var checkinQuery = _context.CheckIns.Where(c => c.MemberId != null);
             if (branchId.HasValue)
                 checkinQuery = checkinQuery.Where(c => c.BranchId == branchId);
 
@@ -96,10 +97,12 @@ namespace BE.Services
         // ---- 2. Danh sách check-in gần đây ----
         public async Task<List<RecentCheckinDto>> GetRecentCheckinsAsync(int? branchId, int take = 10)
         {
+            // Chỉ lấy check-in của hội viên, bỏ qua chấm công nhân viên (employee_id)
             var query = _context.CheckIns
                 .Include(c => c.Member)
                 .Include(c => c.MemberPackage)
                     .ThenInclude(mp => mp.Plan)
+                .Where(c => c.MemberId != null)
                 .AsQueryable();
 
             if (branchId.HasValue)
@@ -159,7 +162,9 @@ namespace BE.Services
             if (branchId.HasValue)
                 txQuery = txQuery.Where(t => t.BranchId == branchId);
 
-            var checkinQuery = _context.CheckIns.Where(c => c.CheckInTime >= fromDate);
+            // Chỉ tính check-in của hội viên, bỏ qua chấm công nhân viên (employee_id)
+            var checkinQuery = _context.CheckIns
+                .Where(c => c.CheckInTime >= fromDate && c.MemberId != null);
             if (branchId.HasValue)
                 checkinQuery = checkinQuery.Where(c => c.BranchId == branchId);
 
@@ -244,11 +249,12 @@ namespace BE.Services
                 })
                 .ToListAsync();
 
+            // Chỉ lấy check-in của hội viên, bỏ qua chấm công nhân viên (employee_id)
             var checkinQuery = _context.CheckIns
                 .Include(c => c.Member)
                 .Include(c => c.MemberPackage)
                     .ThenInclude(mp => mp.Plan)
-                .Where(c => c.CheckInTime >= from && c.CheckInTime <= to);
+                .Where(c => c.CheckInTime >= from && c.CheckInTime <= to && c.MemberId != null);
 
             if (branchId.HasValue)
                 checkinQuery = checkinQuery.Where(c => c.BranchId == branchId);
@@ -496,10 +502,12 @@ namespace BE.Services
         // ---- Hội viên check-in gần đây, kèm trạng thái gói (active/expiring/expired) ----
         public async Task<List<MemberCheckinRowDto>> GetRecentMembersWithStatusAsync(int? branchId, int take = 10)
         {
+            // Chỉ lấy check-in của hội viên, bỏ qua chấm công nhân viên (employee_id)
             var query = _context.CheckIns
                 .Include(c => c.Member)
                 .Include(c => c.MemberPackage)
                     .ThenInclude(mp => mp.Plan)
+                .Where(c => c.MemberId != null)
                 .AsQueryable();
 
             if (branchId.HasValue)

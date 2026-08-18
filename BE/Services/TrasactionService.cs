@@ -120,20 +120,55 @@ namespace BE.Services
 
         // ===================== HỘI VIÊN XEM LỊCH SỬ GIAO DỊCH CỦA CHÍNH MÌNH =====================
         public async Task<List<HistoryRegisPacReponse>> GetMyHistoryAsync(long memberId)
-        {
-            var transactions = await _context.Transactions
-                .Include(t => t.Member).ThenInclude(m => m.FaceDatum)
-                .Include(t => t.Member).ThenInclude(m => m.Account)
-                .Include(t => t.Plan)
-                .Include(t => t.MemberPackages)
-                .Where(t => t.MemberId == memberId)
-                .OrderByDescending(t => t.CreatedAt)
-                .ToListAsync();
+            {
+                var transactions = await _context.Transactions
+                    .Include(t => t.Member)
+                    .Include(t => t.Plan)
+                    .Include(t => t.Branch)
+                    .Include(t => t.MemberPackages)
+                    .Where(t => t.MemberId == memberId)
+                    .OrderByDescending(t => t.CreatedAt)
+                    .ToListAsync();
 
-            var adjustedIds = await GetAdjustedTransactionIdsAsync(transactions.Select(t => t.TransactionId));
+                var adjustedIds = await GetAdjustedTransactionIdsAsync(
+                    transactions.Select(t => t.TransactionId)
+                );
 
-            return transactions.Select(MapToHistoryResponse(includeBranch: false, adjustedIds)).ToList();
-        }
+                return transactions.Select(t =>
+                {
+                    var package = t.MemberPackages
+                        .OrderByDescending(x => x.CreatedAt)
+                        .FirstOrDefault();
+
+                    return new HistoryRegisPacReponse
+                    {
+                        transactionId = t.TransactionId,
+                        UrlImg = t.Member.FaceDatum?.ProfileImage,
+                        Phone = t.Member.Phone,
+                        FullName = t.Member.FullName,
+                        OrderCode = t.OrderCode,
+                        PlanName = t.Plan.PlanName,
+
+                        BranchName = t.Branch?.BranchName,
+
+                        PurchaseChannel = t.EmployeeId != null
+                            ? "Tại quầy"
+                            : "Online",
+
+                        StartDate = package?.StartDate
+                            ?? DateOnly.FromDateTime(t.CreatedAt),
+
+                        ExpiryDate = package?.ExpiryDate
+                            ?? DateOnly.FromDateTime(t.CreatedAt),
+
+                        OriginalAmount = t.GiaGoc,
+                        Amount = t.Amount,
+                        Status = t.PaymentStatus,
+                        BankReferenceCode = t.BankReferenceCode,
+                        IsAdjusted = adjustedIds.Contains(t.TransactionId)
+                    };
+                }).ToList();
+            }
 
         private static Func<Transaction, HistoryRegisPacReponse> MapToHistoryResponse(
             bool includeBranch, HashSet<long> adjustedTransactionIds)

@@ -563,59 +563,69 @@ namespace BE.Services
         // NHÓM 4: CẬP NHẬT THÔNG TIN HỘI VIÊN
         // =========================================================================
 
-        public async Task<MemberResponse> UpdateMemberInfoAsync(long memberId, UpdateMemberInfoRequest request, long? performedBy)
+     public async Task<MemberResponse> UpdateMemberInfoAsync(long memberId, UpdateMemberInfoRequest request, long? performedBy)
+{
+    Member? hoiVien = await _context.Members.FirstOrDefaultAsync(m => m.MemberId == memberId);
+    if (hoiVien == null)
+        throw new KeyNotFoundException("Không tìm thấy hội viên.");
+
+    DateTime now = DateTime.Now;
+    Guid sessionId = Guid.NewGuid();
+    var danhSachLog = new List<MemberUpdateLog>();
+
+    void TrackChange(string field, string? oldValue, string? newValue)
+    {
+        if (oldValue == newValue) return;
+        danhSachLog.Add(new MemberUpdateLog
         {
-            Member? hoiVien = await _context.Members.FirstOrDefaultAsync(m => m.MemberId == memberId);
-            if (hoiVien == null)
-                throw new KeyNotFoundException("Không tìm thấy hội viên.");
+            UpdateSessionId = sessionId,
+            MemberId = memberId,
+            FieldName = field,
+            OldValue = oldValue,
+            NewValue = newValue ?? string.Empty,
+            UpdatedByEmployeeId = performedBy,
+            UpdatedAt = now
+        });
+    }
 
-            DateTime now = DateTime.Now;
-            Guid sessionId = Guid.NewGuid();
-            var danhSachLog = new List<MemberUpdateLog>();
+    if (request.FullName != null && request.FullName != hoiVien.FullName)
+    {
+        TrackChange("Họ và tên", hoiVien.FullName, request.FullName);
+        hoiVien.FullName = request.FullName;
+    }
 
-            void TrackChange(string field, string? oldValue, string? newValue)
-            {
-                if (oldValue == newValue) return;
-                danhSachLog.Add(new MemberUpdateLog
-                {
-                    UpdateSessionId = sessionId,
-                    MemberId = memberId,
-                    FieldName = field,
-                    OldValue = oldValue,
-                    NewValue = newValue ?? string.Empty,
-                    UpdatedByEmployeeId = performedBy,
-                    UpdatedAt = now
-                });
-            }
+    if (request.Phone != null && request.Phone != hoiVien.Phone)
+    {
+        bool trungSdt = await _context.Members
+            .AnyAsync(m => m.MemberId != memberId && m.Phone == request.Phone);
+        if (trungSdt)
+            throw new InvalidOperationException("Số điện thoại đã được sử dụng bởi hội viên khác.");
 
-            if (request.FullName != null && request.FullName != hoiVien.FullName)
-            {
-                TrackChange("Họ và tên", hoiVien.FullName, request.FullName);
-                hoiVien.FullName = request.FullName;
-            }
+        TrackChange("Số điện thoại", hoiVien.Phone, request.Phone);
+        hoiVien.Phone = request.Phone;
+    }
 
-            if (request.Gender != null && request.Gender != hoiVien.Gender)
-            {
-                TrackChange("Giới tính", hoiVien.Gender, request.Gender);
-                hoiVien.Gender = request.Gender;
-            }
+    if (request.Gender != null && request.Gender != hoiVien.Gender)
+    {
+        TrackChange("Giới tính", hoiVien.Gender, request.Gender);
+        hoiVien.Gender = request.Gender;
+    }
 
-            if (request.InternalNotes != null && request.InternalNotes != hoiVien.InternalNotes)
-            {
-                TrackChange("Ghi chú nội bộ", hoiVien.InternalNotes, request.InternalNotes);
-                hoiVien.InternalNotes = request.InternalNotes;
-            }
+    if (request.InternalNotes != null && request.InternalNotes != hoiVien.InternalNotes)
+    {
+        TrackChange("Ghi chú nội bộ", hoiVien.InternalNotes, request.InternalNotes);
+        hoiVien.InternalNotes = request.InternalNotes;
+    }
 
-            if (danhSachLog.Count == 0)
-                return await BuildMemberResponse(memberId);
+    if (danhSachLog.Count == 0)
+        return await BuildMemberResponse(memberId);
 
-            hoiVien.UpdatedAt = now;
-            _context.MemberUpdateLogs.AddRange(danhSachLog);
-            await _context.SaveChangesAsync();
+    hoiVien.UpdatedAt = now;
+    _context.MemberUpdateLogs.AddRange(danhSachLog);
+    await _context.SaveChangesAsync();
 
-            return await BuildMemberResponse(memberId);
-        }
-
+    return await BuildMemberResponse(memberId);
+}
         // Admin/nhân viên đặt lại mật khẩu cho hội viên — không cần mật khẩu cũ.
         // Ủy quyền qua AccountService.ResetPasswordAsync (tự hash + thu hồi hết refresh token).
         // Ghi log không lưu giá trị mật khẩu thật, chỉ ghi dạng ẩn để biết có thao tác đổi.
@@ -1269,65 +1279,84 @@ namespace BE.Services
             };
         }
 
-        public async Task<MemberProfileDto?> GetMyProfileAsync(long memberId)
-        {
-            Member? hoiVien = await _context.Members
-                .Include(m => m.FaceDatum)
-                .FirstOrDefaultAsync(m => m.MemberId == memberId);
+       public async Task<MemberProfileDto?> GetMyProfileAsync(long memberId)
+{
+    Member? hoiVien = await _context.Members
+        .Include(m => m.FaceDatum)
+        .FirstOrDefaultAsync(m => m.MemberId == memberId);
 
-            if (hoiVien == null)
-                return null;
+    if (hoiVien == null)
+        return null;
 
-            Account? taiKhoan = await _context.Accounts.FirstOrDefaultAsync(a => a.MemberId == memberId);
+    Account? taiKhoan = await _context.Accounts
+        .FirstOrDefaultAsync(a => a.MemberId == memberId);
 
-            List<MemberUpdateSessionResponse> lichSuCapNhat = await GetUpdateHistoryAsync(memberId);
-            MemberUpdateSessionResponse? capNhatGanNhat = lichSuCapNhat.FirstOrDefault();
+    List<MemberUpdateSessionResponse> lichSuCapNhat =
+        await GetUpdateHistoryAsync(memberId);
 
-            DateOnly homNay = DateOnly.FromDateTime(DateTime.Today);
+    MemberUpdateSessionResponse? capNhatGanNhat =
+        lichSuCapNhat.FirstOrDefault();
 
-            MemberPackage? goiDangHieuLuc = await _context.MemberPackages
-                .Include(mp => mp.Plan)
-                .FirstOrDefaultAsync(mp =>
-                    mp.MemberId == memberId &&
-                    mp.StartDate <= homNay &&
-                    mp.ExpiryDate >= homNay);
-        var history = await _context.FaceUpdateHistories
-    .Include(x => x.PerformedByNavigation)
-        .ThenInclude(x => x.Branches)
-    .Where(x => x.MemberId == memberId)
-    .FirstOrDefaultAsync();
+    DateOnly homNay = DateOnly.FromDateTime(DateTime.Today);
 
-    var branches = history?.PerformedByNavigation?.Branches.FirstOrDefault();
-    var branchname=branches.BranchName;
+    MemberPackage? goiDangHieuLuc = await _context.MemberPackages
+        .Include(mp => mp.Plan)
+        .FirstOrDefaultAsync(mp =>
+            mp.MemberId == memberId &&
+            mp.StartDate <= homNay &&
+            mp.ExpiryDate >= homNay);
 
-            return new MemberProfileDto
+    // Lấy chi nhánh từ lịch sử FaceID
+    var history = await _context.FaceUpdateHistories
+        .Include(x => x.PerformedByNavigation)
+            .ThenInclude(x => x.Branches)
+        .Where(x => x.MemberId == memberId)
+        .OrderByDescending(x => x.PerformedAt) // nếu có cột này
+        .FirstOrDefaultAsync();
+
+    var branchname = history?
+        .PerformedByNavigation?
+        .Branches?
+        .FirstOrDefault()?
+        .BranchName;
+
+    return new MemberProfileDto
+    {
+        MemberId = hoiVien.MemberId,
+        FullName = hoiVien.FullName,
+        Avatar = hoiVien.FaceDatum?.ProfileImage,
+
+        Phone = hoiVien.Phone,
+        Gender = hoiVien.Gender,
+        JoinedAt = hoiVien.CreatedAt,
+
+        // Không có chi nhánh thì trả null
+        BranchName = branchname,
+
+        Update = capNhatGanNhat?.UpdatedAt.ToString("dd/MM/yyyy HH:mm"),
+        EmployeeName = capNhatGanNhat?.EmployeeName,
+
+        MembershipPlanReponse = goiDangHieuLuc == null
+            ? null
+            : new MembershipPlanReponse
             {
-                MemberId = hoiVien.MemberId,
-                FullName = hoiVien.FullName,
-                Avatar = hoiVien.FaceDatum?.ProfileImage,
+                PlanName = goiDangHieuLuc.Plan?.PlanName,
+                Price = goiDangHieuLuc.Plan?.Price ?? 0,
 
-                Phone = hoiVien.Phone,
-                Gender = hoiVien.Gender,
-                JoinedAt = hoiVien.CreatedAt,
-                BranchName=branchname,
-                Update = capNhatGanNhat?.UpdatedAt.ToString("dd/MM/yyyy HH:mm"),
-                EmployeeName = capNhatGanNhat?.EmployeeName,
+                StartDate = goiDangHieuLuc.StartDate.HasValue
+                    ? goiDangHieuLuc.StartDate.Value.ToDateTime(TimeOnly.MinValue)
+                    : default,
 
-                MembershipPlanReponse = goiDangHieuLuc == null
-                    ? null
-                    : new MembershipPlanReponse
-                    {
-                        PlanName = goiDangHieuLuc.Plan.PlanName,
-                        Price = goiDangHieuLuc.Plan.Price,
-                        StartDate = goiDangHieuLuc.StartDate.HasValue ? goiDangHieuLuc.StartDate.Value.ToDateTime(TimeOnly.MinValue) : default,
-                        EndDate = goiDangHieuLuc.ExpiryDate.HasValue ? goiDangHieuLuc.ExpiryDate.Value.ToDateTime(TimeOnly.MinValue) : default,
-                    },
+                EndDate = goiDangHieuLuc.ExpiryDate.HasValue
+                    ? goiDangHieuLuc.ExpiryDate.Value.ToDateTime(TimeOnly.MinValue)
+                    : default
+            },
 
-                UpdateHistory = lichSuCapNhat,
+        UpdateHistory = lichSuCapNhat,
 
-                // TODO: Lấy lịch sử giao dịch
-                HistoryTransaction = await _transactionService.GetMyHistoryAsync(memberId)
-            };
-        }
+        HistoryTransaction =
+            await _transactionService.GetMyHistoryAsync(memberId)
+    };
+}
     }
 }

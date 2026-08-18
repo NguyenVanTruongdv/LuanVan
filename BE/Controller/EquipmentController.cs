@@ -22,7 +22,7 @@ namespace BE.Controllers
         [AllowAnonymous]
         public async Task<IActionResult> GetList([FromQuery] EquipmentFilterDto filter)
         {
-            var currentEmployeeId = GetCurrentUserId(); // null nếu là khách
+            long currentEmployeeId = GetCurrentUserId(); // null nếu là khách
 
             try
             {

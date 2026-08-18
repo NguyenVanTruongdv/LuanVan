@@ -110,7 +110,7 @@ namespace BE.Dtos.Member
 
         [Phone(ErrorMessage = "Số điện thoại không hợp lệ")]
         [StringLength(15, ErrorMessage = "Số điện thoại tối đa 15 ký tự")]
-
+        public string? Phone {get;set;}
         public string? Gender { get; set; }
         public string? InternalNotes { get; set; }
     }
