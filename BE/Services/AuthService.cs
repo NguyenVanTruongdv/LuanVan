@@ -207,6 +207,7 @@ public class AuthService
 
         Member member = new Member();
         member.FullName = req.FullName;
+        member.Phone=req.Phone;
         member.Gender = req.Gender;
         member.Status = MemberStatus.PendingActivation.ToString();
 

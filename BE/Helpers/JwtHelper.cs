@@ -22,13 +22,13 @@ public class JwtHelper
     public string GenerateAccessToken(JwtUserInfo user)
     {
         var claims = new List<Claim>
-        {
-            new(ClaimTypes.NameIdentifier, user.Id.ToString()),
-            new(ClaimTypes.Name,           user.FullName),
-            new(ClaimTypes.Role,           user.Role),
-            new(ClaimEntityType,           user.EntityType),
-            new(ClaimAccountId,            user.AccountId.ToString()),
-        };
+            {
+                new(ClaimTypes.NameIdentifier, user.Id.ToString()),
+                new(ClaimTypes.Name,           user.FullName),
+                new(ClaimTypes.Role,           user.Role),
+                new(ClaimEntityType,           user.EntityType),
+                new(ClaimAccountId,            user.AccountId.ToString()),
+            };
 
         // Mỗi chi nhánh 1 claim riêng — nhân viên có thể thuộc nhiều chi nhánh
         foreach (var branchId in user.BranchIds)
@@ -36,12 +36,12 @@ public class JwtHelper
             claims.Add(new Claim(ClaimBranchId, branchId.ToString()));
         }
 
-        var key   = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_config["Jwt:Key"]!));
+        var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_config["Jwt:Key"]!));
         var token = new JwtSecurityToken(
-            issuer:             _config["Jwt:Issuer"],
-            audience:           _config["Jwt:Audience"],
-            claims:             claims,
-            expires:            DateTime.UtcNow.AddMinutes(TokenTtlHelper.AccessTokenMinutes),
+            issuer: _config["Jwt:Issuer"],
+            audience: _config["Jwt:Audience"],
+            claims: claims,
+            expires: DateTime.UtcNow.AddMinutes(TokenTtlHelper.AccessTokenMinutes),
             signingCredentials: new SigningCredentials(key, SecurityAlgorithms.HmacSha256));
 
         return new JwtSecurityTokenHandler().WriteToken(token);
@@ -50,7 +50,7 @@ public class JwtHelper
     // Tạo Refresh Token ngẫu nhiên + hash để lưu DB
     public (string rawToken, string tokenHash) GenerateRefreshToken()
     {
-        var raw  = Convert.ToBase64String(RandomNumberGenerator.GetBytes(64));
+        var raw = Convert.ToBase64String(RandomNumberGenerator.GetBytes(64));
         var hash = ComputeSha256(raw);
         return (raw, hash);
     }
@@ -63,9 +63,9 @@ public class JwtHelper
     }
 
     // Đọc claims từ token đã xác thực
-    public long   GetUserId(ClaimsPrincipal u)     => long.Parse(u.FindFirstValue(ClaimTypes.NameIdentifier)!);
-    public long   GetAccountId(ClaimsPrincipal u)  => long.Parse(u.FindFirstValue(ClaimAccountId)!);
-    public string GetRole(ClaimsPrincipal u)        => u.FindFirstValue(ClaimTypes.Role)!;
-    public string GetFullName(ClaimsPrincipal u)    => u.FindFirstValue(ClaimTypes.Name)!;
-    public string GetEntityType(ClaimsPrincipal u)  => u.FindFirstValue(ClaimEntityType)!;
+    public long GetUserId(ClaimsPrincipal u) => long.Parse(u.FindFirstValue(ClaimTypes.NameIdentifier)!);
+    public long GetAccountId(ClaimsPrincipal u) => long.Parse(u.FindFirstValue(ClaimAccountId)!);
+    public string GetRole(ClaimsPrincipal u) => u.FindFirstValue(ClaimTypes.Role)!;
+    public string GetFullName(ClaimsPrincipal u) => u.FindFirstValue(ClaimTypes.Name)!;
+    public string GetEntityType(ClaimsPrincipal u) => u.FindFirstValue(ClaimEntityType)!;
 }
